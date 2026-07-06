@@ -1,0 +1,49 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [dev, main]
+  push:
+    branches: [dev, main]
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: dama
+          POSTGRES_PASSWORD: dama
+          POSTGRES_DB: dama
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U dama"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+      redis:
+        image: redis:7-alpine
+        ports: ["6379:6379"]
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      DATABASE_URL: postgresql://dama:dama@localhost:5432/dama
+      REDIS_URL: redis://localhost:6379
+      JWT_ACCESS_SECRET: ci-access
+      JWT_REFRESH_SECRET: ci-refresh
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with: { version: 9 }
+      - uses: actions/setup-node@v4
+        with: { node-version: 20, cache: pnpm }
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter server prisma generate
+      - run: pnpm lint
+      - run: pnpm typecheck
+      - run: pnpm --filter server prisma migrate deploy
+      - run: pnpm test           # includes the mandatory game-engine suite
+      - run: pnpm build
+      # e2e runs only on PRs targeting dev/main
+      - if: github.event_name == 'pull_request'
+        run: pnpm e2e

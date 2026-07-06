@@ -1,0 +1,24 @@
+{
+  "name": "filipinodama-royal",
+  "private": true,
+  "packageManager": "pnpm@9.0.0",
+  "engines": { "node": ">=20" },
+  "scripts": {
+    "dev": "turbo run dev",
+    "build": "turbo run build",
+    "lint": "turbo run lint",
+    "typecheck": "turbo run typecheck",
+    "test": "turbo run test",
+    "e2e": "turbo run e2e",
+    "db:migrate": "pnpm --filter server prisma migrate dev",
+    "db:deploy": "pnpm --filter server prisma migrate deploy",
+    "db:seed": "pnpm --filter server prisma db seed",
+    "db:studio": "pnpm --filter server prisma studio"
+  },
+  "devDependencies": {
+    "turbo": "^2.0.0",
+    "typescript": "^5.5.0",
+    "prettier": "^3.3.0",
+    "eslint": "^9.0.0"
+  }
+}
