@@ -1,58 +1,38 @@
 /**
  * assets.ts — central map of asset keys → public `/assets/...` URLs.
  *
- * Every image the UI references lives under `apps/web/public/assets/`. Screens
- * and components should import from here instead of hard-coding path strings, so
- * that filenames/extensions live in exactly one place. Paths are absolute and
- * resolve at runtime from the web root (Vite serves `public/` at `/`).
+ * Every image the UI references lives under `apps/web/public/assets/`, copied
+ * verbatim (flat filenames) from `handoff/assets/` per handoff/ASSETS.md. Screens
+ * and components import from here instead of hard-coding path strings. Paths are
+ * absolute and resolve at runtime from the web root (Vite serves `public/` at `/`).
  */
 
 const BASE = "/assets";
 
-/** Currency / reward icons (note: these ship as .webp, not .png). */
+/** Currency / reward icons (flat .png, per ASSETS.md). */
 export const ICONS = {
-  coin: `${BASE}/icons/ic-coin.webp`,
-  gem: `${BASE}/icons/ic-gem.webp`,
-  trophy: `${BASE}/icons/ic-trophy.webp`,
-  chest: `${BASE}/icons/ic-chest.webp`,
+  coin: `${BASE}/ic-coin.png`,
+  gem: `${BASE}/ic-gem.png`,
+  trophy: `${BASE}/ic-trophy.png`,
+  chest: `${BASE}/ic-chest.png`,
 } as const;
 export type IconKey = keyof typeof ICONS;
 
-/** Default glossy piece art (transparent .webp — render directly on the board). */
-export const PIECES = {
-  "red-man": `${BASE}/pieces/red-man.webp`,
-  "red-king": `${BASE}/pieces/red-king.webp`,
-  "red-castle": `${BASE}/pieces/red-castle.webp`,
-  "blue-man": `${BASE}/pieces/blue-man.webp`,
-  "blue-king": `${BASE}/pieces/blue-king.webp`,
-  "blue-castle": `${BASE}/pieces/blue-castle.webp`,
-} as const;
-export type PieceArtKey = keyof typeof PIECES;
-
 /**
- * Alternate piece skins. Each skin folder holds `<color>-<rank>.png`
- * (color: red|blue, rank: man|king). `default` returns the top-level glossy webp.
+ * Piece disc skins. Pieces are rendered as CSS discs (see components/Piece.tsx) —
+ * NO image files — matching the approved redesign's round Dama discs. A skin just
+ * re-tints the disc. `default` = classic crimson/royal.
  */
 export const PIECE_SKINS = ["crimson", "jade", "obsidian"] as const;
 export type PieceSkin = (typeof PIECE_SKINS)[number] | "default";
 
-export function pieceArt(
-  color: "red" | "blue",
-  king: boolean,
-  skin: PieceSkin = "default",
-): string {
-  const rank = king ? "king" : "man";
-  if (skin === "default") return PIECES[`${color}-${rank}` as PieceArtKey];
-  return `${BASE}/pieces/skins/${skin}/${color}-${rank}.png`;
-}
-
-/** Board surface textures (full-image board themes). */
+/** Board surface textures (full-image board themes, flat filenames per ASSETS.md). */
 export const BOARDS = {
-  marble: `${BASE}/board/board-marble.png`,
-  classic: `${BASE}/board/board-classic.webp`,
-  wood: `${BASE}/board/board-wood.png`,
-  ebony: `${BASE}/board/board-ebony.png`,
-  obsidian: `${BASE}/board/board-obsidian.png`,
+  marble: `${BASE}/board-marble.png`,
+  classic: `${BASE}/board-wood.png`, // "Classic Wood" is the wood board
+  wood: `${BASE}/board-wood.png`,
+  ebony: `${BASE}/board-ebony.png`,
+  obsidian: `${BASE}/board-obsidian.png`,
 } as const;
 export type BoardTextureKey = keyof typeof BOARDS;
 
@@ -62,7 +42,7 @@ export function boardTexture(key: BoardTextureKey): string {
 
 /** Rank-tier art. `img` keys come from @dama/shared RANK_TIERS (e.g. "tier-bayani"). */
 export function tierArt(img: string): string {
-  return `${BASE}/achievements/${img}.png`;
+  return `${BASE}/${img}.png`;
 }
 
 /** Named hero avatars (opaque portraits — always render inside a masked token). */
@@ -89,7 +69,7 @@ export function avatar(key: AvatarKey | (string & {})): string {
     : `${BASE}/avatars/${key}`;
 }
 
-/** Cosmetic profile frames (transparent overlays). */
+/** Cosmetic profile frames (in the frames/ subfolder, per ASSETS.md). */
 export const FRAMES = {
   laurel: `${BASE}/frames/laurel.png`,
   silver: `${BASE}/frames/silver.png`,
@@ -103,7 +83,7 @@ export function frameArt(key: FrameKey | (string & {})): string {
   return key.startsWith("/") ? key : `${BASE}/frames/${key}`;
 }
 
-/** Brand marks. */
+/** Brand marks (flat filename per ASSETS.md). */
 export const BRAND = {
-  logoSun: `${BASE}/brand/logo-sun.png`,
+  logoSun: `${BASE}/logo-sun.png`,
 } as const;

@@ -28,9 +28,9 @@ function tierByKey(key: RankTierKey): RankTier {
  * RankBadge — tier crest + name in the tier accent colour.
  *
  * Resolves the rank tier from `tier` (explicit) or `trophies` (via the shared
- * `rankTierFor`), then renders `/assets/achievements/tier-<img>.png` with the
- * tier's label coloured by its accent. Tier data (name, sub, accent, art key)
- * is the single source of truth from @dama/shared RANK_TIERS.
+ * `rankTierFor`), then renders `/assets/tier-<img>.png` with the tier's label
+ * coloured by its accent. Tier data (name, sub, accent, art key) is the single
+ * source of truth from @dama/shared RANK_TIERS.
  */
 export function RankBadge({
   trophies,

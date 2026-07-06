@@ -1,113 +1,85 @@
-import { useState } from "react";
 import type { PieceColor } from "@dama/shared";
-import { pieceArt, type PieceSkin } from "../lib/assets";
+import type { PieceSkin } from "../lib/assets";
 
-/** Piece-face palette per color (radial gradient + rim), ported from the
- *  prototype's default "Classic" skin. Used for the CSS-disc fallback. */
-const FACE: Record<PieceColor, { face: string; rim: string }> = {
+/**
+ * Piece-face palette per colour. Classic glossy Dama discs — deep crimson and
+ * royal blue with a bright specular top-left, matching the approved redesign
+ * mockup (round checker discs, NOT figurine art). Skins re-tint the same disc.
+ */
+const FACE: Record<PieceColor, { face: string; rim: string; ringLo: string }> = {
   red: {
-    face: "radial-gradient(circle at 38% 27%,#ff8790 0%,#e5434f 38%,#a81f2b 70%,#67101a 100%)",
-    rim: "#7a1420",
+    face: "radial-gradient(circle at 36% 26%,#ff9aa0 0%,#e5434f 34%,#b3222e 62%,#7a1420 100%)",
+    rim: "#5c0f18",
+    ringLo: "rgba(120,20,30,.85)",
   },
   blue: {
-    face: "radial-gradient(circle at 38% 27%,#8fbcff 0%,#3f79d6 38%,#1f4a92 70%,#122f63 100%)",
-    rim: "#122f5c",
+    face: "radial-gradient(circle at 36% 26%,#a3c8ff 0%,#3f79d6 34%,#255aa8 62%,#153a72 100%)",
+    rim: "#0f2b57",
+    ringLo: "rgba(20,45,95,.85)",
+  },
+};
+
+/** Skin re-tints for the disc (all round discs — the prototype's skin variants). */
+const SKIN_FACE: Partial<Record<Exclude<PieceSkin, "default">, Record<PieceColor, { face: string; rim: string; ringLo: string }>>> = {
+  jade: {
+    red: { face: "radial-gradient(circle at 36% 26%,#ffd9a0 0%,#e8a23c 34%,#b8781f 62%,#7a4d12 100%)", rim: "#5c3a0f", ringLo: "rgba(120,80,20,.85)" },
+    blue: { face: "radial-gradient(circle at 36% 26%,#b8f0d0 0%,#3fbf7a 34%,#2a8f57 62%,#175236 100%)", rim: "#0f3a22", ringLo: "rgba(20,80,50,.85)" },
+  },
+  crimson: {
+    red: { face: "radial-gradient(circle at 36% 26%,#ffb0a8 0%,#d63b46 34%,#a01f2b 62%,#66101a 100%)", rim: "#4d0c14", ringLo: "rgba(110,18,26,.85)" },
+    blue: { face: "radial-gradient(circle at 36% 26%,#e6c3ff 0%,#8b5cf0 34%,#5f3ab0 62%,#3a2270 100%)", rim: "#281550", ringLo: "rgba(55,30,110,.85)" },
+  },
+  obsidian: {
+    red: { face: "radial-gradient(circle at 36% 26%,#c98a92 0%,#7a3a44 34%,#4d222a 62%,#2a1218 100%)", rim: "#1a0c10", ringLo: "rgba(60,25,32,.85)" },
+    blue: { face: "radial-gradient(circle at 36% 26%,#8a9ab8 0%,#3a4a6e 34%,#22304d 62%,#12182a 100%)", rim: "#0a0e18", ringLo: "rgba(25,35,55,.85)" },
   },
 };
 
 export type PieceProps = {
   color: PieceColor;
   king?: boolean;
-  /** piece art skin ("default" uses the glossy transparent .webp) */
+  /** disc tint skin ("default" = classic crimson/royal) */
   skin?: PieceSkin;
   /** gold selection ring */
   selected?: boolean;
   /** green must-capture glow */
   glow?: boolean;
-  /** force the CSS radial-gradient disc instead of the image art */
-  disc?: boolean;
 };
 
 /**
- * Piece — a single glossy playing disc.
+ * Piece — a single glossy Dama disc, rendered entirely in CSS (no image files).
  *
- * Two render modes, matching the prototype 1:1:
- *  - image art (default): the transparent skin .webp/.png, insets `-11%` so the
- *    sculpted piece slightly overflows its cell, with a drop-shadow and an
- *    optional coloured glow halo for selected/must-capture.
- *  - CSS disc (fallback, or `disc`): layered radial-gradient face + rim, inner
- *    ring, top-left specular highlight, and a ♛ for kings. Selected → gold ring,
- *    must-capture → green glow ring.
- *
- * Sized to fill its parent (the Board cell wraps it at 80% of the square).
+ * A layered disc that matches the approved redesign: radial-gradient face + dark
+ * rim, a raised concentric inner ring (the classic checker groove), a top-left
+ * specular highlight, and a gold ♛ crown for kings. Selected → gold ring;
+ * must-capture → green glow ring. Sized to fill its Board cell (80% of a square).
  */
-export function Piece({
-  color,
-  king = false,
-  skin = "default",
-  selected = false,
-  glow = false,
-  disc = false,
-}: PieceProps) {
-  const [imgFailed, setImgFailed] = useState(false);
-  const useImage = !disc && !imgFailed;
+export function Piece({ color, king = false, skin = "default", selected = false, glow = false }: PieceProps) {
+  const pal =
+    skin !== "default" && SKIN_FACE[skin as Exclude<PieceSkin, "default">]
+      ? SKIN_FACE[skin as Exclude<PieceSkin, "default">]![color]
+      : FACE[color];
 
-  const pal = FACE[color];
   const ringColor = glow ? "rgba(120,240,160,.95)" : selected ? "#F5D783" : null;
-
-  if (useImage) {
-    const haloColor = glow ? "rgba(120,240,160,1)" : selected ? "rgba(245,215,131,1)" : null;
-    const filter =
-      "drop-shadow(0 3px 5px rgba(0,0,0,.6))" +
-      (haloColor ? ` drop-shadow(0 0 6px ${haloColor}) drop-shadow(0 0 5px ${haloColor})` : "");
-    return (
-      <div
-        style={{
-          position: "absolute",
-          inset: 0,
-          margin: "auto",
-          width: "80%",
-          height: "80%",
-          borderRadius: "50%",
-        }}
-      >
-        <img
-          src={pieceArt(color, king, skin)}
-          alt={`${color} ${king ? "king" : "man"}`}
-          draggable={false}
-          onError={() => setImgFailed(true)}
-          style={{
-            position: "absolute",
-            inset: "-11%",
-            width: "122%",
-            height: "122%",
-            objectFit: "contain",
-            pointerEvents: "none",
-            filter,
-          }}
-        />
-      </div>
-    );
-  }
-
-  // CSS-disc fallback (matches the prototype's procedural piece exactly).
-  const ring = glow
+  const stateRing = glow
     ? ", 0 0 0 4px rgba(120,240,160,.95), 0 0 18px rgba(90,220,130,.6)"
     : selected
       ? ", 0 0 0 4px #F5D783, 0 0 16px rgba(245,215,131,.65)"
       : "";
+
   return (
     <div
       style={{
         position: "absolute",
         inset: 0,
         margin: "auto",
-        width: "80%",
-        height: "80%",
+        width: "82%",
+        height: "82%",
         borderRadius: "50%",
-        filter: "drop-shadow(0 5px 6px rgba(0,0,0,.6))",
+        filter: "drop-shadow(0 5px 7px rgba(0,0,0,.6))",
       }}
     >
+      {/* outer disc: glossy face + dark bevel rim */}
       <div
         style={{
           position: "absolute",
@@ -115,31 +87,45 @@ export function Piece({
           borderRadius: "50%",
           background: pal.face,
           boxShadow:
-            "inset 0 -5px 9px rgba(0,0,0,.55), inset 0 4px 7px rgba(255,255,255,.4), 0 0 0 2px " +
+            "inset 0 -6px 10px rgba(0,0,0,.55), inset 0 5px 8px rgba(255,255,255,.42), 0 0 0 2px " +
             (king ? "#F5D783" : pal.rim) +
-            (ringColor ? ring : ""),
+            (ringColor ? stateRing : ""),
         }}
       >
+        {/* raised concentric ring (the classic checker groove) */}
         <div
           style={{
             position: "absolute",
-            inset: "19%",
+            inset: "17%",
             borderRadius: "50%",
-            border: "2px solid rgba(255,255,255,.18)",
-            boxShadow: "inset 0 1px 2px rgba(0,0,0,.45), inset 0 -1px 1px rgba(255,255,255,.15)",
+            border: `2px solid ${pal.ringLo}`,
+            boxShadow:
+              "inset 0 2px 3px rgba(0,0,0,.5), inset 0 -2px 2px rgba(255,255,255,.2), 0 1px 0 rgba(255,255,255,.15)",
           }}
         />
+        {/* inner disc face for depth */}
         <div
           style={{
             position: "absolute",
-            top: "11%",
-            left: "19%",
-            width: "46%",
-            height: "32%",
+            inset: "27%",
             borderRadius: "50%",
-            background: "radial-gradient(circle,rgba(255,255,255,.65),transparent 70%)",
+            background: pal.face,
+            boxShadow: "inset 0 3px 6px rgba(0,0,0,.4), inset 0 -2px 4px rgba(255,255,255,.25)",
           }}
         />
+        {/* specular highlight */}
+        <div
+          style={{
+            position: "absolute",
+            top: "10%",
+            left: "18%",
+            width: "44%",
+            height: "30%",
+            borderRadius: "50%",
+            background: "radial-gradient(circle,rgba(255,255,255,.7),transparent 70%)",
+          }}
+        />
+        {/* king crown */}
         {king && (
           <div
             style={{
@@ -148,9 +134,9 @@ export function Piece({
               display: "flex",
               alignItems: "center",
               justifyContent: "center",
-              fontSize: "clamp(11px,2.7vw,21px)",
+              fontSize: "clamp(11px,2.8vw,22px)",
               color: "#F7E29A",
-              textShadow: "0 1px 3px rgba(0,0,0,.7)",
+              textShadow: "0 1px 3px rgba(0,0,0,.75), 0 0 6px rgba(247,226,154,.5)",
             }}
           >
             ♛
