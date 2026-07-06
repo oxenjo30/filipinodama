@@ -13,7 +13,11 @@ export default defineConfig({
         theme_color: "#160b28",
         background_color: "#160b28",
         display: "standalone",
-        icons: [{ src: "/assets/logo-sun.png", sizes: "512x512", type: "image/png" }],
+        icons: [
+          { src: "/assets/brand/icon-192.png", sizes: "192x192", type: "image/png" },
+          { src: "/assets/brand/icon-512.png", sizes: "512x512", type: "image/png" },
+          { src: "/assets/brand/icon-512.png", sizes: "512x512", type: "image/png", purpose: "any maskable" },
+        ],
       },
     }),
   ],

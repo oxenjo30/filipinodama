@@ -1,6 +1,9 @@
 /* FilipinoDama Royal — theme tokens (verbatim from the prototype).
    Import once in main.tsx: `import "./theme/tokens.css"`. */
 @import url("https://fonts.googleapis.com/css2?family=Cinzel:wght@500;600;700;800;900&family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;600;700&display=swap");
+/* Shared component classes (.frame, .btn, .pill, .navlink, .ptitle, …) live in
+   index.css and load through this import so screens get them for free. */
+@import "../index.css";
 
 :root {
   --gold: #E8B84B;
@@ -49,6 +52,12 @@ body {
 @keyframes fdspin { to { transform: rotate(360deg); } }
 @keyframes fdslidein { from { transform: translateX(30px); opacity: 0; } to { transform: none; opacity: 1; } }
 @keyframes fdfade { from { opacity: 0; } to { opacity: 1; } }
-@keyframes fdcoinflip { 0%,16% { transform: rotateY(0); } 42%,58% { transform: rotateY(180deg); } 84%,100% { transform: rotateY(360deg); } }
-@keyframes fdconf { 0% { transform: translate(0,0) rotate(0) scale(1); opacity: 1; } 100% { transform: translate(var(--cx), var(--cy)) rotate(var(--cr)) scale(0.4); opacity: 0; } }
-/* (fdcoinbob, fdshadowpulse, fdsheen, fdck* also live in the prototype — copy as needed) */
+@keyframes fdcoinflip { 0%,16% { transform: rotateY(0deg); } 42%,58% { transform: rotateY(180deg); } 84%,100% { transform: rotateY(360deg); } }
+@keyframes fdcoinbob { 0%,100% { transform: translateY(0); } 50% { transform: translateY(-12px); } }
+@keyframes fdshadowpulse { 0%,100% { transform: scaleX(1); opacity: 0.5; } 50% { transform: scaleX(0.72); opacity: 0.28; } }
+@keyframes fdsheen { 0%,100% { opacity: 0; transform: translateX(-120%) skewX(-18deg); } 12% { opacity: 0.7; } 30% { opacity: 0; transform: translateX(220%) skewX(-18deg); } }
+@keyframes fdckring { 0% { stroke-dashoffset: 166; opacity: 0.2; } 100% { stroke-dashoffset: 0; opacity: 1; } }
+@keyframes fdckdraw { 0% { stroke-dashoffset: 48; } 100% { stroke-dashoffset: 0; } }
+@keyframes fdckpop { 0% { transform: scale(0); opacity: 0; } 55% { transform: scale(1.14); } 72% { transform: scale(0.94); } 100% { transform: scale(1); opacity: 1; } }
+@keyframes fdckwave { 0% { transform: scale(0.6); opacity: 0.55; } 100% { transform: scale(2.3); opacity: 0; } }
+@keyframes fdconf { 0% { transform: translate(0,0) rotate(0deg) scale(1); opacity: 1; } 100% { transform: translate(var(--cx), var(--cy)) rotate(var(--cr)) scale(0.4); opacity: 0; } }

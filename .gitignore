@@ -10,3 +10,6 @@ coverage/
 .DS_Store
 apps/server/prisma/migrations/dev.db*
 apps/web/dev-dist/
+
+# TS build info
+*.tsbuildinfo

@@ -26,7 +26,7 @@ model User {
   trophies Int    @default(1000)
   gold     Int    @default(0)
   diamonds Int    @default(0)
-  rankTier String @default("wood")
+  rankTier String @default("squire") // packages/shared ranks.ts (Squire..Alamat)
 
   // equipped cosmetics
   equippedBoard String?
@@ -160,10 +160,10 @@ model Payment {
   id           String    @id @default(cuid())
   userId       String
   user         User      @relation(fields: [userId], references: [id])
-  provider     String    @default("stripe")
-  providerRef  String    @unique
-  amountCents  Int
-  currencyCode String    @default("usd")
+  provider     String    @default("paymongo")
+  providerRef  String    @unique // PayMongo event id (idempotency key for crediting)
+  amountCents  Int // PHP centavos (₱100 = 10000)
+  currencyCode String    @default("php")
   diamonds     Int
   status       String    @default("pending")
   createdAt    DateTime  @default(now())

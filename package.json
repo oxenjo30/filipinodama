@@ -2,7 +2,9 @@
   "name": "filipinodama-royal",
   "private": true,
   "packageManager": "pnpm@9.0.0",
-  "engines": { "node": ">=20" },
+  "engines": {
+    "node": ">=20"
+  },
   "scripts": {
     "dev": "turbo run dev",
     "build": "turbo run build",
@@ -16,9 +18,9 @@
     "db:studio": "pnpm --filter server prisma studio"
   },
   "devDependencies": {
-    "turbo": "^2.0.0",
-    "typescript": "^5.5.0",
+    "eslint": "^9.0.0",
     "prettier": "^3.3.0",
-    "eslint": "^9.0.0"
+    "turbo": "^2.0.0",
+    "typescript": "^5.5.0"
   }
 }

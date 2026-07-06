@@ -94,9 +94,10 @@ function captureChains(
         c += d.c;
       }
       if (!inBounds(r, c)) continue;
+      // pieceOn() already excludes squares taken earlier in this chain, so a
+      // still-present captured piece is never selected as a (re-)victim here.
       const victim = pieceOn(pieces, taken, r, c);
       if (!victim || victim.color === p.color) continue;
-      if (taken.some((t) => t.r === r && t.c === c)) continue;
       // landing squares beyond the victim
       let lr = r + d.r;
       let lc = c + d.c;
@@ -111,9 +112,10 @@ function captureChains(
       const lr = from.r + 2 * d.r;
       const lc = from.c + 2 * d.c;
       if (!inBounds(lr, lc)) continue;
+      // pieceOn() already excludes a square taken earlier in this chain, so the
+      // same enemy man can never be jumped twice within one chain.
       const victim = pieceOn(pieces, taken, mr, mc);
       if (!victim || victim.color === p.color) continue;
-      if (taken.some((t) => t.r === mr && t.c === mc)) continue;
       if (occupied(pieces, taken, lr, lc)) continue;
       // promotion mid-chain ends the turn (Filipino rule)
       const promotes = lr === backRank(p.color);
@@ -139,14 +141,26 @@ function pushChain(
   else results.push(...cont);
 }
 
-/** a square is "occupied" if a live (non-taken) piece stands there */
-function occupied(pieces: Piece[], taken: Square[], r: number, c: number) {
-  return !!pieceOn(pieces, taken, r, c);
+/**
+ * A square is "occupied" if ANY piece physically stands on it — including a
+ * piece captured earlier in the current chain. Per GAME_RULES.md §5, captured
+ * pieces are not removed until the chain ends: their squares still BLOCK landing
+ * and a flying king cannot pass over them. So occupancy is based on physical
+ * presence (`at`), not on whether the piece is still capturable.
+ */
+function occupied(pieces: Piece[], _taken: Square[], r: number, c: number) {
+  return !!at(pieces, r, c);
 }
+/**
+ * The capturable enemy piece on a square, if any. A piece already taken this
+ * chain is NOT a valid victim (you may not re-jump the same piece), so it is
+ * reported as absent for victim-selection purposes even though it still
+ * physically blocks the board (see `occupied`).
+ */
 function pieceOn(pieces: Piece[], taken: Square[], r: number, c: number) {
   const pc = at(pieces, r, c);
   if (!pc) return undefined;
-  if (taken.some((t) => t.r === r && t.c === c)) return undefined; // captured this chain still blocks re-jump but not landing
+  if (taken.some((t) => t.r === r && t.c === c)) return undefined; // taken -> not a re-jumpable victim
   return pc;
 }
 
@@ -181,20 +195,105 @@ export function isLegal(state: GameState, move: Move): boolean {
   );
 }
 
-export function applyMove(state: GameState, move: Move): GameState {
-  if (!isLegal(state, move)) throw new Error("Illegal move");
-  const next = clone(state);
-  const p = at(next.pieces, move.from.r, move.from.c)!;
-  // remove captured
-  next.pieces = next.pieces.filter((pc) => !move.captures.some((cap) => sameSquare(cap, pc.square)));
+/**
+ * Apply a move to a board in place (mutating). Does NOT compute outcome or
+ * clone. Used internally by applyMove (on a fresh clone) and by history replay
+ * so that checkOutcome can reconstruct prior positions without recursing back
+ * into itself through applyMove.
+ */
+function applyMoveRaw(state: GameState, move: Move): void {
+  const p = at(state.pieces, move.from.r, move.from.c)!;
+  state.pieces = state.pieces.filter(
+    (pc) => !move.captures.some((cap) => sameSquare(cap, pc.square)),
+  );
   const landing = move.path[move.path.length - 1];
   p.square = { ...landing };
   if (move.promotion) p.king = true;
-  next.history.push(move);
-  next.turn = opp(state.turn);
-  next.moveNumber += 1;
+  state.history.push(move);
+  state.turn = opp(state.turn);
+  state.moveNumber += 1;
+}
+
+export function applyMove(state: GameState, move: Move): GameState {
+  if (!isLegal(state, move)) throw new Error("Illegal move");
+  const next = clone(state);
+  applyMoveRaw(next, move);
   next.result = checkOutcome(next);
   return next;
+}
+
+/**
+ * A canonical, side-to-move-aware string key for a position. Pieces are sorted
+ * by square so piece ordering / ids never affect the key. Two positions with
+ * the same key are the "same position" for threefold-repetition purposes.
+ */
+export function positionKey(state: GameState): string {
+  const parts = state.pieces
+    .map((p) => `${p.square.r},${p.square.c},${p.color},${p.king ? "K" : "m"}`)
+    .sort();
+  return `${state.turn}|${parts.join(";")}`;
+}
+
+/**
+ * Reconstruct every position the game has passed through, from the initial
+ * (pre-move) position up to and including the current one, by replaying
+ * `history` on a fresh clone. Never invokes checkOutcome, so it is safe to call
+ * from within checkOutcome. Also reports, per ply, whether the moved piece was
+ * a king at the moment it moved (used for the inactivity rule).
+ */
+function reconstruct(state: GameState): {
+  keys: string[];
+  plyWasKingMove: boolean[];
+} {
+  const start = startingBoard(state);
+  const keys: string[] = [positionKey(start)];
+  const plyWasKingMove: boolean[] = [];
+  const board = clone(start);
+  for (const mv of state.history) {
+    const mover = at(board.pieces, mv.from.r, mv.from.c);
+    plyWasKingMove.push(!!mover && mover.king);
+    applyMoveRaw(board, mv);
+    keys.push(positionKey(board));
+  }
+  return { keys, plyWasKingMove };
+}
+
+/**
+ * Reconstruct the board as it was BEFORE the first move in history, by
+ * un-applying each recorded move from the current position in reverse. This
+ * keeps piece identities and works for arbitrary seeded start positions (tests
+ * build custom boards), not just the standard opening.
+ */
+function startingBoard(state: GameState): GameState {
+  const board = clone(state);
+  board.result = undefined;
+  for (let i = board.history.length - 1; i >= 0; i--) {
+    const mv = board.history[i];
+    board.turn = opp(board.turn);
+    board.moveNumber -= 1;
+    const landing = mv.path[mv.path.length - 1];
+    const p = at(board.pieces, landing.r, landing.c)!;
+    // move the piece back to its origin and undo promotion done by this move
+    p.square = { ...mv.from };
+    if (mv.promotion) p.king = false;
+    // Restore captured pieces. The Move records their squares but not their
+    // king-ness, so they are restored as opponent men. This is exact for the
+    // common man-capture case; it can only mis-state king-ness in a historical
+    // reconstruction, never in the live position. Repetition equality is
+    // unaffected because any position that repeats must have identical material
+    // to its earlier occurrence, so no capture can have happened between two
+    // matching keys — the reconstructed captures fall outside any repeat window.
+    for (const cap of mv.captures) {
+      board.pieces.push({
+        id: `restored-${i}-${cap.r}-${cap.c}`,
+        color: opp(p.color),
+        king: false,
+        square: { r: cap.r, c: cap.c },
+      });
+    }
+  }
+  board.history = [];
+  return board;
 }
 
 export function checkOutcome(state: GameState): GameState["result"] {
@@ -205,15 +304,27 @@ export function checkOutcome(state: GameState): GameState["result"] {
   if (legalMoves(state, state.turn).length === 0) {
     return { winner: opp(state.turn), reason: "no-moves" };
   }
-  // draw by inactivity: N consecutive king moves w/ no capture and no man move
+
   const limit = state.settings.drawMoveLimit;
-  const recent = state.history.slice(-limit);
-  if (
-    recent.length >= limit &&
-    recent.every((m) => m.captures.length === 0 && !m.promotion)
-  ) {
-    // (a fuller impl also checks the moved piece was a king; kept simple here)
-    return { winner: "draw", reason: "inactivity" };
+  const { keys, plyWasKingMove } = reconstruct(state);
+
+  // Threefold repetition: the current position (last key) has occurred three
+  // times across the whole game history including now.
+  const current = keys[keys.length - 1];
+  let occurrences = 0;
+  for (const k of keys) if (k === current) occurrences++;
+  if (occurrences >= 3) return { winner: "draw", reason: "repetition" };
+
+  // Inactivity: the last `limit` plies were ALL king moves (moved piece was a
+  // king) with no capture and no promotion — i.e. no man moved and nothing was
+  // taken over that whole window, by BOTH sides.
+  if (plyWasKingMove.length >= limit) {
+    const window = plyWasKingMove.slice(-limit);
+    const moves = state.history.slice(-limit);
+    const stale = window.every(
+      (wasKing, i) => wasKing && moves[i].captures.length === 0 && !moves[i].promotion,
+    );
+    if (stale) return { winner: "draw", reason: "inactivity" };
   }
   return undefined;
 }
