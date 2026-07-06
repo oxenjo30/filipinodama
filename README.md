@@ -1,64 +1,51 @@
-# FilipinoDama
+# FilipinoDama Royal — Scaffold
 
-Filipino Dama (Filipino checkers), reimagined as a premium dark-fantasy web game.
-React 19 + TypeScript + Vite 8 + Tailwind CSS v4 + Zustand, with a pure-TypeScript
-rules engine and Vitest coverage.
+This is a **runnable starter** for the production build described in the sibling docs (`../BUILD_PROMPT.md`, `../ARCHITECTURE.md`, etc.). It boots empty but wired: monorepo, DB, a real (tested) game engine, shared types, and a themed web shell. The AI agent fleshes out each feature per `../ROADMAP.md`.
+
+## What's already here
+
+```
+scaffold/
+├─ package.json, pnpm-workspace.yaml, turbo.json   # monorepo
+├─ docker-compose.yml                              # postgres + redis
+├─ .env.example                                    # copy → .env
+├─ .github/workflows/ci.yml                        # lint/typecheck/test/build + e2e
+├─ packages/
+│  ├─ shared/         # ✅ types, enums, socket event names, zod DTOs, rank tiers, constants
+│  └─ game-engine/    # ✅ WORKING Filipino Dama engine (moves, mandatory+maximal capture,
+│  │                  #    flying kings, promotion, outcomes) + AI (minimax) + Vitest suite
+├─ apps/
+│  ├─ server/         # Fastify + Socket.IO boot, prisma schema (full), seed, economy ledger
+│  └─ web/            # React + Vite + Tailwind + PWA, theme tokens (verbatim), router skeleton
+```
+
+✅ = real, functioning code. Everything else is a stub with TODOs pointing at the roadmap.
 
 ## Run it
 
 ```bash
-npm install
-npm run dev        # dev server
-npm test           # rules-engine test suite (26 tests)
-npm run lint       # oxlint
-npm run build      # typecheck + production build to dist/
-npm run preview    # serve the production build
+cp .env.example .env
+pnpm install
+docker-compose up -d
+pnpm --filter server prisma migrate dev --name init
+pnpm --filter server prisma db seed
+pnpm test          # game-engine suite should pass
+pnpm dev           # web :5173  ·  server :4000
 ```
 
-Extra scripts:
+## First branches (see ../ROADMAP.md)
 
-```bash
-npm run prepare-assets      # re-copy/optimize art from the original library
-node scripts/verify.mjs     # Playwright end-to-end sweep of the built app
-node scripts/shot.mjs /home out.png [w] [h]   # one-off page screenshot
-```
+1. `chore/scaffold` — make everything above install + boot + CI-green on your remote.
+2. `feat/game-engine` — extend the engine's edge cases + finish the full test matrix in `../GAME_RULES.md`.
+3. `feat/db-schema` → `feat/auth` → `feat/app-shell` → gameplay …
 
-## What's implemented
+## Wiring notes baked into the stubs
 
-- **Full Filipino Dama rules** in a pure engine (`src/game/`, zero React/DOM):
-  mandatory capture, multi-jump chains, the maximum-capture rule with free
-  choice between tied routes, backward captures for men, flying kings,
-  end-of-turn-only promotion, win by elimination or blockade.
-- **Local 2-player** and **vs Bot** (legal-move bot: win > max capture >
-  promotion > random), with undo, restart, surrender, move history, result
-  stats, and rematch.
-- **Pages**: splash, landing, home, mode select, create/join room (honest
-  local-only previews — no fake multiplayer), tutorial/rules with diagrams,
-  leaderboard (clean empty state), profile (real zero-based stats), settings
-  (sound, music, board theme, piece style, hints, animation speed, language
-  placeholder) — all persisted to localStorage.
-- **Art** reused from the original FilipinoDama library via
-  `scripts/prepare-assets.mjs` → `public/assets`, referenced only through
-  `src/assets/assetManifest.ts`. The faction portraits are opaque renders on
-  near-black backgrounds, so the UI always shows them inside masked circular
-  tokens/avatars — never as raw rectangles.
+- **Server-authoritative:** `apps/server/src/realtime/index.ts` shows the `match:move` validation pattern using `@dama/game-engine`. Never trust client moves/outcomes.
+- **Economy:** `apps/server/src/economy/ledger.ts` is the ONLY way to change a balance — atomic transaction + append-only `LedgerEntry`. `purchaseItem()` shows the spend+grant pattern.
+- **Diamonds:** credit them ONLY from the Stripe webhook (`modules/payments`, to be built) — never from a client call.
+- **Assets:** copy the files in `../assets/` into `apps/web/public/assets/` (see `../ASSETS.md`).
+- **Theme:** `apps/web/src/theme/tokens.css` + `tailwind.config.ts` are the exact prototype tokens — build screens against them to match `../FilipinoDama Royal.dc.html`.
 
-## Architecture
-
-```
-src/game/       pure rules engine + tests (types, moveGenerator, applyMove, bot…)
-src/store/      zustand stores: settings (persisted), match (selection model)
-src/components/ Board, PieceToken, PlayerPanel, Modal, GameButton, icons…
-src/pages/      one file per route
-src/online/     RoomService contract + local-only implementation (TODO backend)
-src/audio/      WebAudio SFX synth + music element ("Balangay of Iron")
-```
-
-The move generator returns **complete turn sequences**; the UI narrows them
-tap-by-tap, so illegal moves are unrepresentable. Animation is transform-only
-and purely cosmetic — the engine resolves moves instantly.
-
-## Online multiplayer
-
-Not connected yet — see [docs/ONLINE_TODO.md](docs/ONLINE_TODO.md) for the
-Firebase wiring plan (project `dama-90740` from the previous build is reusable).
+## The rule
+One feature = one `feat/*` branch → tested on `dev` → merged → `dev` promoted to `main` for production. Full details in `../GIT_WORKFLOW.md`.

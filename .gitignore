@@ -1,32 +1,12 @@
-# Logs
-logs
-*.log
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-pnpm-debug.log*
-lerna-debug.log*
-
-node_modules
-dist
-dist-ssr
-*.local
-
-# Local-only design archive (98 MB — never commit)
-FilipinoDama Web Game Design.zip
-
-# Env / secrets
+node_modules/
+dist/
+.next/
+.turbo/
+coverage/
 .env
 .env.*
 !.env.example
-
-# Editor directories and files
-.vscode/*
-!.vscode/extensions.json
-.idea
+*.log
 .DS_Store
-*.suo
-*.ntvs*
-*.njsproj
-*.sln
-*.sw?
+apps/server/prisma/migrations/dev.db*
+apps/web/dev-dist/
