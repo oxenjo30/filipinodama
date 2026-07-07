@@ -33,7 +33,7 @@ model User {
   resetExpires    DateTime?
 
   // economy caches (authoritative source = LedgerEntry aggregates)
-  trophies Int    @default(1000)
+  trophies Int    @default(0) // new players start at Squire (0); earn trophies to climb
   gold     Int    @default(0)
   diamonds Int    @default(0)
   rankTier String @default("squire") // packages/shared ranks.ts (Squire..Alamat)

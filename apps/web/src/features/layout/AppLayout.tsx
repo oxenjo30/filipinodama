@@ -37,7 +37,8 @@ export function AppLayout() {
   const showToast = useAppStore((s) => s.showToast);
   const [acctOpen, setAcctOpen] = useState(false);
 
-  const loggedIn = !!me;
+  const isGuest = !!me?.isGuest;
+  const registered = !!me && !me.isGuest; // a real (non-guest) account
   const displayName = me?.displayName ?? "Guest";
   const playerTag = me?.tag ?? "";
   const gold = me?.gold ?? 0;
@@ -95,61 +96,79 @@ export function AppLayout() {
               ))}
             </nav>
             <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 10 }}>
-              <span className="pill fd-hide-narrow" style={{ color: "#f2d493" }} title="Gold — earned from daily challenges, quests & matches. Spend it in the Store.">
-                <Icon src={ICONS.coin} alt="Gold" /> {gold.toLocaleString()}
-              </span>
-              <span className="pill fd-hide-narrow" style={{ color: "#ff9aa8", gap: 6, paddingRight: 5 }} title="Diamonds — premium currency. Top up with real money.">
-                <Icon src={ICONS.gem} alt="Diamonds" /> {diamonds.toLocaleString()}
-                <button onClick={() => showToast("Diamond top-up arrives with payments.")} title="Top up Diamonds" style={{ width: 22, height: 22, flex: "none", borderRadius: "50%", border: "none", background: "linear-gradient(180deg,#f0cf72,#c99a2e)", color: "#3a2405", font: "800 15px Inter", lineHeight: 1, cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}>+</button>
-              </span>
-              <button onClick={() => showToast("Notifications arrive with online play.")} title="Notifications" style={{ position: "relative", width: 40, height: 40, borderRadius: 10, border: "1px solid rgba(232,184,75,.35)", background: "rgba(15,8,32,.6)", color: "var(--gold-lt)", cursor: "pointer", fontSize: 18 }}>
-                🔔
-              </button>
-              {!me && (
-                <button onClick={() => navigate("/login")} className="btn btn-gold fd-hide-narrow" style={{ padding: "9px 18px", fontSize: 13 }}>
-                  Sign In
-                </button>
-              )}
-              <div style={{ position: "relative" }}>
-                <div onClick={() => setAcctOpen((v) => !v)} style={{ display: "flex", alignItems: "center", gap: 10, paddingLeft: 6, cursor: "pointer" }}>
-                  {avatarToken}
-                  <div className="fd-hide-narrow" style={{ flexDirection: "column", alignItems: "flex-start", gap: 1, lineHeight: 1.2 }}>
-                    <div style={{ font: "700 14px Inter", color: "#fff", whiteSpace: "nowrap" }}>{displayName}</div>
-                    <div style={{ font: "600 11px Inter", color: "var(--gold)", whiteSpace: "nowrap" }}>
-                      {tier.label} <span style={{ color: "var(--ink2)", fontFamily: "'JetBrains Mono',monospace" }}>{playerTag}</span>
-                    </div>
-                  </div>
-                  <span className="fd-hide-narrow" style={{ color: "var(--ink2)", fontSize: 11, transform: acctOpen ? "rotate(180deg)" : "none", transition: "transform .15s ease" }}>▼</span>
-                </div>
-                {acctOpen && (
-                  <>
-                    <div onClick={() => setAcctOpen(false)} style={{ position: "fixed", inset: 0, zIndex: 70 }} />
-                    <div style={{ position: "absolute", top: "calc(100% + 10px)", right: 0, zIndex: 71, width: 240, borderRadius: 14, border: "1px solid rgba(232,184,75,.28)", background: "linear-gradient(180deg,#20132f,#170c26)", boxShadow: "0 18px 44px rgba(0,0,0,.55)", overflow: "hidden", animation: "fdrise .18s ease both" }}>
-                      <div style={{ display: "flex", alignItems: "center", gap: 11, padding: "15px 16px", borderBottom: "1px solid rgba(232,184,75,.14)" }}>
-                        {avatarToken}
-                        <div style={{ minWidth: 0 }}>
-                          <div style={{ font: "700 14px Inter", color: "#fff", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{displayName}</div>
-                          <div style={{ font: "700 11px 'JetBrains Mono',monospace", color: "var(--ink2)" }}>{playerTag}</div>
+              {registered ? (
+                <>
+                  {/* ── REGISTERED USER: full account chrome ── */}
+                  <span className="pill fd-hide-narrow" style={{ color: "#f2d493" }} title="Gold — earned from daily challenges, quests & matches. Spend it in the Store.">
+                    <Icon src={ICONS.coin} alt="Gold" /> {gold.toLocaleString()}
+                  </span>
+                  <span className="pill fd-hide-narrow" style={{ color: "#ff9aa8", gap: 6, paddingRight: 5 }} title="Diamonds — premium currency. Top up with real money.">
+                    <Icon src={ICONS.gem} alt="Diamonds" /> {diamonds.toLocaleString()}
+                    <button onClick={() => showToast("Diamond top-up arrives with payments.")} title="Top up Diamonds" style={{ width: 22, height: 22, flex: "none", borderRadius: "50%", border: "none", background: "linear-gradient(180deg,#f0cf72,#c99a2e)", color: "#3a2405", font: "800 15px Inter", lineHeight: 1, cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}>+</button>
+                  </span>
+                  <button onClick={() => showToast("Notifications arrive with online play.")} title="Notifications" style={{ position: "relative", width: 40, height: 40, borderRadius: 10, border: "1px solid rgba(232,184,75,.35)", background: "rgba(15,8,32,.6)", color: "var(--gold-lt)", cursor: "pointer", fontSize: 18 }}>
+                    🔔
+                  </button>
+                  <div style={{ position: "relative" }}>
+                    <div onClick={() => setAcctOpen((v) => !v)} style={{ display: "flex", alignItems: "center", gap: 10, paddingLeft: 6, cursor: "pointer" }}>
+                      {avatarToken}
+                      <div className="fd-hide-narrow" style={{ flexDirection: "column", alignItems: "flex-start", gap: 1, lineHeight: 1.2 }}>
+                        <div style={{ font: "700 14px Inter", color: "#fff", whiteSpace: "nowrap" }}>{displayName}</div>
+                        <div style={{ font: "600 11px Inter", color: "var(--gold)", whiteSpace: "nowrap" }}>
+                          {tier.label} <span style={{ color: "var(--ink2)", fontFamily: "'JetBrains Mono',monospace" }}>{playerTag}</span>
                         </div>
                       </div>
-                      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, padding: "11px 16px", borderBottom: "1px solid rgba(232,184,75,.14)" }} title="Trophies — your Ranked ladder rating">
-                        <span style={{ font: "600 11px Inter", letterSpacing: "1.5px", textTransform: "uppercase", color: "var(--ink2)" }}>Trophies</span>
-                        <span style={{ display: "inline-flex", alignItems: "center", gap: 7, font: "800 15px 'JetBrains Mono',monospace", color: "var(--gold-lt)" }}>
-                          <Icon src={ICONS.trophy} alt="Trophies" size={16} /> {trophies.toLocaleString()}
-                        </span>
-                      </div>
-                      <div style={{ padding: 6 }}>
-                        {acctItems.map((mi) => (
-                          <button key={mi.label} onClick={() => { setAcctOpen(false); mi.on(); }} style={{ display: "flex", alignItems: "center", gap: 11, width: "100%", padding: "10px 12px", borderRadius: 9, border: "none", background: "none", color: "var(--ink)", font: "600 13px Inter", cursor: "pointer", textAlign: "left" }}>
-                            <span style={{ width: 20, textAlign: "center", flex: "none" }}>{mi.icon}</span>
-                            {mi.label}
-                          </button>
-                        ))}
-                      </div>
+                      <span className="fd-hide-narrow" style={{ color: "var(--ink2)", fontSize: 11, transform: acctOpen ? "rotate(180deg)" : "none", transition: "transform .15s ease" }}>▼</span>
                     </div>
-                  </>
-                )}
-              </div>
+                    {acctOpen && (
+                      <>
+                        <div onClick={() => setAcctOpen(false)} style={{ position: "fixed", inset: 0, zIndex: 70 }} />
+                        <div style={{ position: "absolute", top: "calc(100% + 10px)", right: 0, zIndex: 71, width: 240, borderRadius: 14, border: "1px solid rgba(232,184,75,.28)", background: "linear-gradient(180deg,#20132f,#170c26)", boxShadow: "0 18px 44px rgba(0,0,0,.55)", overflow: "hidden", animation: "fdrise .18s ease both" }}>
+                          <div style={{ display: "flex", alignItems: "center", gap: 11, padding: "15px 16px", borderBottom: "1px solid rgba(232,184,75,.14)" }}>
+                            {avatarToken}
+                            <div style={{ minWidth: 0 }}>
+                              <div style={{ font: "700 14px Inter", color: "#fff", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{displayName}</div>
+                              <div style={{ font: "700 11px 'JetBrains Mono',monospace", color: "var(--ink2)" }}>{playerTag}</div>
+                            </div>
+                          </div>
+                          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, padding: "11px 16px", borderBottom: "1px solid rgba(232,184,75,.14)" }} title="Trophies — your Ranked ladder rating">
+                            <span style={{ font: "600 11px Inter", letterSpacing: "1.5px", textTransform: "uppercase", color: "var(--ink2)" }}>Trophies</span>
+                            <span style={{ display: "inline-flex", alignItems: "center", gap: 7, font: "800 15px 'JetBrains Mono',monospace", color: "var(--gold-lt)" }}>
+                              <Icon src={ICONS.trophy} alt="Trophies" size={16} /> {trophies.toLocaleString()}
+                            </span>
+                          </div>
+                          <div style={{ padding: 6 }}>
+                            {acctItems.map((mi) => (
+                              <button key={mi.label} onClick={() => { setAcctOpen(false); mi.on(); }} style={{ display: "flex", alignItems: "center", gap: 11, width: "100%", padding: "10px 12px", borderRadius: 9, border: "none", background: "none", color: "var(--ink)", font: "600 13px Inter", cursor: "pointer", textAlign: "left" }}>
+                                <span style={{ width: 20, textAlign: "center", flex: "none" }}>{mi.icon}</span>
+                                {mi.label}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      </>
+                    )}
+                  </div>
+                </>
+              ) : isGuest ? (
+                <>
+                  {/* ── GUEST: temporary session — nudge to sign in, no account chrome ── */}
+                  <span className="fd-hide-narrow" style={{ font: "600 12px Inter", color: "var(--ink2)" }}>Playing as guest</span>
+                  <button onClick={() => navigate("/login")} className="btn btn-gold" style={{ padding: "9px 18px", fontSize: 13 }}>
+                    Sign In / Sign Up
+                  </button>
+                  <button onClick={signOut} title="End guest session" style={{ width: 40, height: 40, borderRadius: 10, border: "1px solid rgba(232,184,75,.3)", background: "rgba(15,8,32,.6)", color: "var(--ink2)", cursor: "pointer", fontSize: 15 }}>
+                    ⎋
+                  </button>
+                </>
+              ) : (
+                <>
+                  {/* ── LOGGED OUT: just Sign In ── */}
+                  <button onClick={() => navigate("/login")} className="btn btn-gold" style={{ padding: "9px 20px", fontSize: 13 }}>
+                    Sign In
+                  </button>
+                </>
+              )}
             </div>
           </div>
         </header>

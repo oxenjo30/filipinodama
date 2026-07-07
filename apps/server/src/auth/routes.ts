@@ -8,6 +8,7 @@ import { attachUser, requireAuth } from "./guards.js";
 import { signAccess, COOKIE, cookieOpts, ttlToMs } from "./tokens.js";
 import { env } from "../config/env.js";
 import * as svc from "./service.js";
+import { type OAuthProvider, isConfigured, makeState, consumeState, authUrl, fetchProfile, findOrCreateOAuthUser } from "./oauth.js";
 
 const verifySchema = z.object({ token: z.string().min(1) });
 const forgotSchema = z.object({ email: z.string().email() });
@@ -95,14 +96,36 @@ export async function authRoutes(app: FastifyInstance) {
     return ok({ user: svc.publicUser(user) });
   });
 
-  // GET /api/auth/oauth/:provider  — real flow needs creds; honest 503 otherwise
-  app.get<{ Params: { provider: string } }>("/oauth/:provider", async (req) => {
-    const p = req.params.provider;
-    const configured = p === "google" ? features.googleOAuth : p === "facebook" ? features.facebookOAuth : false;
-    if (!configured) throw new ApiError(503, "NOT_CONFIGURED", `${p} sign-in is not configured yet`);
-    // OAuth redirect implemented once creds are provided (M2 follow-up).
-    throw new ApiError(501, "NOT_IMPLEMENTED", `${p} OAuth redirect pending credential setup`);
+  // GET /api/auth/oauth/:provider → redirect to the provider's consent screen
+  app.get<{ Params: { provider: string } }>("/oauth/:provider", async (req, reply) => {
+    const p = req.params.provider as OAuthProvider;
+    if (p !== "google" && p !== "facebook") throw new ApiError(404, "UNKNOWN_PROVIDER", "Unknown provider");
+    if (!isConfigured(p)) throw new ApiError(503, "NOT_CONFIGURED", `${p} sign-in is not configured yet`);
+    const state = makeState();
+    reply.redirect(authUrl(p, state));
   });
+
+  // GET /api/auth/oauth/:provider/callback → exchange code, sign in, redirect to app
+  app.get<{ Params: { provider: string }; Querystring: { code?: string; state?: string; error?: string } }>(
+    "/oauth/:provider/callback",
+    async (req, reply) => {
+      const p = req.params.provider as OAuthProvider;
+      const { code, state, error } = req.query;
+      const fail = (msg: string) => reply.redirect(`${env.WEB_ORIGIN}/login?error=${encodeURIComponent(msg)}`);
+      if (p !== "google" && p !== "facebook") return fail("Unknown provider");
+      if (!isConfigured(p)) return fail(`${p} sign-in is not configured`);
+      if (error) return fail("Sign-in was cancelled");
+      if (!code || !state || !consumeState(state)) return fail("Sign-in expired, please try again");
+      try {
+        const profile = await fetchProfile(p, code);
+        const user = await findOrCreateOAuthUser(p, profile);
+        await issueSession(reply, req, user);
+        return reply.redirect(`${env.WEB_ORIGIN}/`);
+      } catch {
+        return fail("Sign-in failed, please try again");
+      }
+    },
+  );
 
   // expose which login methods are live so the client can enable/disable buttons
   app.get("/providers", async (req) => {

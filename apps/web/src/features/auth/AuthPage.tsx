@@ -76,10 +76,15 @@ export function AuthPage({ initialMode = "signin" }: { initialMode?: Mode }) {
     setError(null);
     setBusy(true);
     try {
+      // Normalize the email (lowercase + trim) so a stray capital or space from
+      // autocorrect/autofill can't cause a false "wrong password". Trim the
+      // password of surrounding whitespace only (never alter the middle).
+      const cleanEmail = email.trim().toLowerCase();
+      const cleanPass = pass.trim();
       if (isSignup) {
-        await register({ email: email.trim(), password: pass, username: name.trim() });
+        await register({ email: cleanEmail, password: cleanPass, username: name.trim() });
       } else {
-        await login({ email: email.trim(), password: pass });
+        await login({ email: cleanEmail, password: cleanPass });
       }
       navigate(next);
     } catch (e) {
