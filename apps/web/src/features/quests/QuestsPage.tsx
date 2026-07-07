@@ -159,9 +159,9 @@ function QuestRow({ q, busy, onClaim }: { q: Quest; busy: boolean; onClaim: (id:
 export function QuestsPage() {
   const me = useAuthStore((s) => s.me);
   const patchMe = useAuthStore((s) => s.patchMe);
-  const phGold = useAppStore((s) => s.gold);
   const showToast = useAppStore((s) => s.showToast);
-  const gold = me?.gold ?? phGold;
+  // Real balance only — 0 when logged out. Never fall back to a placeholder.
+  const gold = me?.gold ?? 0;
 
   const [daily, setDaily] = useState<Quest[]>([]);
   const [seasonal, setSeasonal] = useState<Quest[]>([]);

@@ -1,24 +1,16 @@
 import { create } from "zustand";
 
 /**
- * appStore — light-weight global UI state that isn't part of a match: the
- * player's placeholder profile/currency balances shown in the nav, and a simple
- * toast queue used to give feedback for "coming soon" actions so no control is
- * ever dead.
+ * appStore — light-weight global UI state that isn't part of a match. Currently
+ * just the toast queue. Real user identity + currency balances live in authStore
+ * (useAuthStore().me), sourced from the server — they are NEVER duplicated here
+ * with placeholder values (a previous placeholder set leaked fake
+ * "DamaMaster / 12,480 gold" into the UI when logged out).
  */
 
 export type Toast = { id: number; message: string };
 
 export type AppStore = {
-  // ── placeholder profile / currencies (no backend yet) ──
-  displayName: string;
-  playerTag: string;
-  avatar: string;
-  gold: number;
-  diamonds: number;
-  trophies: number;
-
-  // ── toasts ──
   toasts: Toast[];
   showToast: (message: string) => void;
   dismissToast: (id: number) => void;
@@ -27,13 +19,6 @@ export type AppStore = {
 let toastId = 0;
 
 export const useAppStore = create<AppStore>((set) => ({
-  displayName: "DamaMaster",
-  playerTag: "#0000",
-  avatar: "champion",
-  gold: 12480,
-  diamonds: 320,
-  trophies: 1250,
-
   toasts: [],
   showToast: (message) => {
     const id = ++toastId;

@@ -114,7 +114,9 @@ export function GamePage({ mode = "ai" }: { mode?: "ai" | "local" }) {
   }, []);
 
   const result = state.result;
-  const aiThinking = status === "thinking";
+  // "Thinking" only exists in vs-AI mode — a local (pass-and-play) match has no AI,
+  // so it must never show the AI-thinking banner or the avatar spinner.
+  const aiThinking = !isLocal && status === "thinking";
   // In local mode BOTH sides accept taps; the "active" side is just whoever is to
   // move. In vs-AI mode only the human (RED) is interactive.
   const redToMove = !result && state.turn === "red" && status === "playing";
