@@ -39,12 +39,16 @@ jobs:
       - uses: actions/setup-node@v4
         with: { node-version: 22, cache: pnpm }
       - run: pnpm install --no-frozen-lockfile
-      - run: pnpm --filter server prisma generate
+      # Generate the Prisma client BEFORE any tsc runs — the server's types import
+      # from @prisma/client, so a missing/stale client makes typecheck+build fail
+      # with "no exported member 'User'/'Quest'/…". Run it explicitly + force
+      # turbo to not reuse a cached typecheck from before generation.
+      - run: pnpm --filter server run db:generate
       - run: pnpm lint
-      - run: pnpm typecheck
+      - run: pnpm typecheck --force
       - run: pnpm --filter server prisma migrate deploy
       - run: pnpm test           # includes the mandatory game-engine suite
-      - run: pnpm build
+      - run: pnpm build --force
       # e2e runs only on PRs targeting dev/main
       - if: github.event_name == 'pull_request'
         run: pnpm e2e
