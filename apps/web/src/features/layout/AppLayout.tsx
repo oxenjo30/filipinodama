@@ -5,6 +5,7 @@ import { useAppStore } from "../../stores/appStore";
 import { useAuthStore } from "../../stores/authStore";
 import { ICONS, BRAND, avatar as avatarUrl } from "../../lib/assets";
 import { Toasts } from "../shared/Toasts";
+import { Footer } from "./Footer";
 
 /**
  * AppLayout — the top nav + mobile nav + fixed background, reproduced VERBATIM
@@ -194,6 +195,7 @@ export function AppLayout() {
         <main style={{ flex: 1 }}>
           <Outlet />
         </main>
+        <Footer />
       </div>
       <Toasts />
     </>
