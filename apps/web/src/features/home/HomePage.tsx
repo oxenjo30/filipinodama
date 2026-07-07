@@ -216,6 +216,9 @@ export function HomePage() {
     if (title === "Play vs AI" || title === "Classic Mode") navigate("/play/ai");
     else if (title === "Ranked Mode") {
       if (me && !me.isGuest) navigate("/play/online?mode=ranked");
+      // A guest can't play ranked, and routing to /login would loop (its guest
+      // option sends them right back). Tell them; a logged-out user signs in.
+      else if (me?.isGuest) showToast("Ranked needs a free account — create one to climb the ladder.");
       else navigate(`/login?next=${encodeURIComponent("/play/online?mode=ranked")}`);
     } else showToast("Kingdom Mode is coming soon.");
   };

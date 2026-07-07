@@ -88,12 +88,17 @@ export function PlayHubPage() {
   const me = useAuthStore((s) => s.me);
 
   // Online modes require a session. Casual/private allow guests; Ranked requires
-  // a real (non-guest) account per owner mandate. A visitor who fails the gate is
-  // sent to sign in first (and returned to the game afterwards).
+  // a real (non-guest) account per owner mandate.
   const requireLogin = (next: string, requireAccount = false) => {
     if (me && (!requireAccount || !me.isGuest)) {
       navigate(next);
+    } else if (me?.isGuest && requireAccount) {
+      // A guest can't access an account-only mode. Do NOT send them to /login —
+      // its "Play as guest" would route them right back here → an inescapable
+      // loop. They already have a session; just tell them.
+      showToast("Ranked needs a free account — create one to climb the ladder.");
     } else {
+      // Logged out (no session at all) → sign in, returned to the game after.
       showToast("Sign in to play online.");
       navigate(`/login?next=${encodeURIComponent(next)}`);
     }

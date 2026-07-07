@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { useAuthStore, ApiError } from "../../stores/authStore";
+import { useAppStore } from "../../stores/appStore";
 import { api } from "../../lib/api";
 import { BRAND } from "../../lib/assets";
 
@@ -71,6 +72,7 @@ export function AuthPage({ initialMode = "signin" }: { initialMode?: Mode }) {
   const login = useAuthStore((s) => s.login);
   const register = useAuthStore((s) => s.register);
   const guest = useAuthStore((s) => s.guest);
+  const showToast = useAppStore((s) => s.showToast);
 
   const [mode, setMode] = useState<Mode>(initialMode);
   const [name, setName] = useState("");
@@ -150,13 +152,31 @@ export function AuthPage({ initialMode = "signin" }: { initialMode?: Mode }) {
     }
   }
 
+  /**
+   * A guest CANNOT access account-only destinations (Ranked matchmaking requires
+   * a real account per owner mandate). If `next` points at such a page, sending
+   * the fresh guest there just bounces them right back to /login — an inescapable
+   * redirect loop. So for guests we only honour a guest-SAFE `next`; otherwise we
+   * drop them on /play with a clear note. Real login/register still honour `next`.
+   */
+  function guestSafeNext(target: string): { to: string; blocked: boolean } {
+    // Ranked online play is the account-only destination today.
+    const isRanked = /\/play\/online/.test(target) && /mode=ranked/i.test(target);
+    if (isRanked) return { to: "/play", blocked: true };
+    return { to: target, blocked: false };
+  }
+
   async function playAsGuest() {
     if (!requireTerms()) return;
     setError(null);
     setBusy(true);
     try {
       await guest();
-      navigate(next);
+      const { to, blocked } = guestSafeNext(next);
+      if (blocked) {
+        showToast("Ranked needs a free account — create one anytime. Playing as guest for now.");
+      }
+      navigate(to);
     } catch (e) {
       setError(e instanceof ApiError ? e.message : "Something went wrong. Please try again.");
     } finally {
@@ -236,6 +256,30 @@ export function AuthPage({ initialMode = "signin" }: { initialMode?: Mode }) {
           background: "linear-gradient(180deg,#1c1130,#140a24)",
         }}
       >
+        {/* Escape hatch — /login renders OUTSIDE AppLayout (no nav/hamburger), so
+            without this a user who lands here has no way back into the app. Always
+            available; returns to Home, which has full navigation. */}
+        <button
+          type="button"
+          onClick={() => navigate("/")}
+          className="fd-tap"
+          style={{
+            position: "absolute",
+            top: 12,
+            left: 12,
+            display: "inline-flex",
+            alignItems: "center",
+            gap: 6,
+            border: "none",
+            background: "transparent",
+            color: "var(--ink2)",
+            font: "700 12px Inter",
+            cursor: "pointer",
+            padding: "6px 8px",
+          }}
+        >
+          ‹ Back to game
+        </button>
         <div style={{ textAlign: "center", marginBottom: 24 }}>
           <div style={{ display: "flex", justifyContent: "center", marginBottom: 12 }}>
             <img src={BRAND.logoSun} alt="" width={54} height={54} style={{ objectFit: "contain" }} />

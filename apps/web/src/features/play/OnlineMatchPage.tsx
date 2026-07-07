@@ -91,8 +91,17 @@ export function OnlineMatchPage() {
   // in first and returned to the match afterwards. This is the authoritative gate
   // on the ranked destination (covers direct URLs, not just nav entry points).
   useEffect(() => {
-    if (!me || (mode === "RANKED" && me.isGuest)) {
+    // Logged out → sign in (returned to this match after). But a GUEST who lands
+    // on ranked must NOT be bounced to /login: /login offers "Play as guest",
+    // which would send them right back here → an inescapable redirect loop. A
+    // guest already has a session, so route them somewhere they can act instead.
+    if (!me) {
       navigate(`/login?next=${encodeURIComponent(`/play/online?mode=${mode.toLowerCase()}`)}`);
+      return;
+    }
+    if (mode === "RANKED" && me.isGuest) {
+      showToast("Ranked needs a free account — create one anytime. Try Casual for now.");
+      navigate("/play");
       return;
     }
     // If we arrived ALREADY in a match — a private-room Start or a Continue-Playing
@@ -166,11 +175,11 @@ export function OnlineMatchPage() {
                 key={m}
                 onClick={() => {
                   if (m === mode) return;
-                  // Ranked requires a non-guest account; a guest switching to it is
-                  // sent to sign in first (mirrors the entry-point gate).
+                  // Ranked requires a non-guest account. A guest is already in a
+                  // session here, so DON'T route them to /login (its "Play as guest"
+                  // would loop them back). Just tell them and keep them on casual.
                   if (m === "RANKED" && me?.isGuest) {
-                    showToast("Sign in with an account to play Ranked.");
-                    navigate(`/login?next=${encodeURIComponent("/play/online?mode=ranked")}`);
+                    showToast("Ranked needs a free account — create one to climb the ladder.");
                     return;
                   }
                   leaveQueue();
