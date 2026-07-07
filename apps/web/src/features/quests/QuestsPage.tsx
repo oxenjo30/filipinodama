@@ -70,6 +70,17 @@ const BTN_CLAIMED: React.CSSProperties = {
   color: "#7ee6a4",
 };
 
+// Live "RESETS IN 6h 12m" style label — daily quests reset at 00:00 UTC (matches
+// the backend period key), so this counts down honestly to that boundary.
+function timeUntilUtcMidnight(): string {
+  const now = new Date();
+  const next = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + 1, 0, 0, 0);
+  const ms = next - now.getTime();
+  const h = Math.floor(ms / 3_600_000);
+  const m = Math.floor((ms % 3_600_000) / 60_000);
+  return h > 0 ? `${h}h ${m}m` : `${m}m`;
+}
+
 function QuestRow({ q, busy, onClaim }: { q: Quest; busy: boolean; onClaim: (id: string) => void }) {
   const cur = Math.min(q.value, q.goal);
   // Prototype rule: min 2% so an empty bar is still visible.
@@ -156,6 +167,13 @@ export function QuestsPage() {
   const [seasonal, setSeasonal] = useState<Quest[]>([]);
   const [loaded, setLoaded] = useState(false);
   const [claiming, setClaiming] = useState<string | null>(null);
+  const [resetLabel, setResetLabel] = useState(timeUntilUtcMidnight());
+
+  // Tick the daily-reset countdown once a minute.
+  useEffect(() => {
+    const t = setInterval(() => setResetLabel(timeUntilUtcMidnight()), 60_000);
+    return () => clearInterval(t);
+  }, []);
 
   const load = useCallback(async () => {
     if (!me) return;
@@ -266,7 +284,7 @@ export function QuestsPage() {
                 padding: "3px 9px",
               }}
             >
-              RESETS AT MIDNIGHT
+              RESETS IN {resetLabel}
             </span>
           </div>
           <span style={{ font: "700 12px Inter", color: "var(--ink2)" }}>

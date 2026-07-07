@@ -1,28 +1,25 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { api, ApiError } from "../../lib/api";
+import { useAuthStore } from "../../stores/authStore";
 import { useAppStore } from "../../stores/appStore";
+import { useSettingsStore } from "../../stores/settingsStore";
 
 /**
- * SettingsPage (/settings) — ported faithfully from the approved prototype
- * (handoff lines 2110-2198, settingsRows at line 3799).
+ * SettingsPage (/settings) — faithful port of the approved prototype
+ * (handoff lines 2110-2198), LIVE-wired to the real backend.
  *
- * The prototype drives each row through a segmented control (`segS`) bound to
- * component state (setSound / setMusic / setHints / setBoard / setPiece /
- * setAnim). Here those become REAL local React state so the toggles actually
- * toggle and reflect the selected option's gold-highlighted styling — these are
- * genuine UI preferences, not fabricated activity data.
+ * Preference toggles (Sound / Music / Hints / Board / Piece / Animation) are
+ * genuine device preferences persisted in the zustand `settingsStore`
+ * (localStorage key `fdr.settings`) — real local state, not fabricated data.
  *
- * Account actions are destructive/backend operations we have no server for yet:
- * Export My Data and Privacy & Terms and the final delete confirmation all route
- * to a toast (STALE-DATA / NO-DEAD-CONTROLS rules). Delete Account opens the
- * typed-confirm modal exactly as the prototype does; "Delete Forever" only
- * enables once the user types DELETE, then fires the toast.
+ * Account actions hit real endpoints:
+ *   • Export My Data → GET  /api/users/me/export → triggers a JSON download
+ *   • Privacy & Terms → navigate to /legal
+ *   • Delete Account (typed DELETE confirm) → DELETE /api/users/me
+ *     { confirm:"DELETE" } → logout + redirect home
  *
- * NOTE ON "language": the screen brief mentions a language row, but the
- * owner-approved prototype's actual `settingsRows` array (line 3799) contains no
- * language control — reproducing it faithfully means the 6 rows below and no
- * invented 7th. (The sc-for hint-placeholder-count of 7 is a loose hint, not the
- * real data.)
+ * Logged-out (me === null) shows an honest sign-in prompt instead of crashing.
  */
 
 type SettingKey = "setSound" | "setMusic" | "setHints" | "setBoard" | "setPiece" | "setAnim";
@@ -38,17 +35,7 @@ const ROWS: Row[] = [
   { key: "setAnim", label: "Animation Speed", opts: ["Off", "Normal", "Fast"] },
 ];
 
-// Default selections mirror the prototype's implicit initial state.
-const DEFAULTS: Record<SettingKey, string> = {
-  setSound: "On",
-  setMusic: "On",
-  setHints: "On",
-  setBoard: "Marble",
-  setPiece: "Gem",
-  setAnim: "Normal",
-};
-
-// Reproduces segS's per-option style (selected vs unselected).
+// Reproduces the prototype segS's per-option style (selected vs unselected).
 function segStyle(selected: boolean): React.CSSProperties {
   return {
     flex: 1,
@@ -78,36 +65,139 @@ export function SettingsPage() {
   const navigate = useNavigate();
   const showToast = useAppStore((s) => s.showToast);
 
-  const [prefs, setPrefs] = useState<Record<SettingKey, string>>(DEFAULTS);
+  const me = useAuthStore((s) => s.me);
+  const logout = useAuthStore((s) => s.logout);
+
+  const s = useSettingsStore();
+
   const [deleteShow, setDeleteShow] = useState(false);
   const [deleteConfirm, setDeleteConfirm] = useState("");
+  const [deleting, setDeleting] = useState(false);
+  const [exporting, setExporting] = useState(false);
 
-  const setPref = (key: SettingKey, value: string) => setPrefs((p) => ({ ...p, [key]: value }));
+  // Map each row's key to the live selected value + setter from the persisted store.
+  const selected = (key: SettingKey): string => {
+    switch (key) {
+      case "setSound":
+        return s.sound ? "On" : "Off";
+      case "setMusic":
+        return s.music ? "On" : "Off";
+      case "setHints":
+        return s.hints ? "On" : "Off";
+      case "setBoard":
+        return s.boardPref;
+      case "setPiece":
+        return s.piecePref;
+      case "setAnim":
+        return s.animPref;
+    }
+  };
+
+  const choose = (key: SettingKey, value: string) => {
+    switch (key) {
+      case "setSound":
+        s.setSound(value === "On");
+        break;
+      case "setMusic":
+        s.setMusic(value === "On");
+        break;
+      case "setHints":
+        s.setHints(value === "On");
+        break;
+      case "setBoard":
+        s.setBoardPref(value as typeof s.boardPref);
+        break;
+      case "setPiece":
+        s.setPiecePref(value as typeof s.piecePref);
+        break;
+      case "setAnim":
+        s.setAnimPref(value as typeof s.animPref);
+        break;
+    }
+  };
 
   const deleteReady = deleteConfirm.trim().toUpperCase() === "DELETE";
 
   const closeDelete = () => {
+    if (deleting) return;
     setDeleteShow(false);
     setDeleteConfirm("");
   };
 
-  const confirmDelete = () => {
-    if (!deleteReady) return;
-    closeDelete();
-    showToast("Account deletion arrives with online play.");
+  const exportData = async () => {
+    if (!me || exporting) return;
+    setExporting(true);
+    try {
+      const data = await api.get<unknown>("/api/users/me/export");
+      const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `filipinodama-data-${me.tag.replace(/[^a-z0-9]/gi, "") || "account"}.json`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+      showToast("Your data export has downloaded.");
+    } catch (e) {
+      showToast(e instanceof ApiError ? e.message : "Couldn't export your data. Try again.");
+    } finally {
+      setExporting(false);
+    }
   };
+
+  const confirmDelete = async () => {
+    if (!deleteReady || deleting) return;
+    setDeleting(true);
+    try {
+      await api.del("/api/users/me", { confirm: "DELETE" });
+      await logout();
+      setDeleteShow(false);
+      setDeleteConfirm("");
+      showToast("Your account has been deleted.");
+      navigate("/");
+    } catch (e) {
+      showToast(e instanceof ApiError ? e.message : "Couldn't delete your account. Try again.");
+      setDeleting(false);
+    }
+  };
+
+  // ── Logged-out guard: honest sign-in prompt, never crash ──
+  if (!me) {
+    return (
+      <div style={{ maxWidth: 640, margin: "0 auto", padding: 26 }}>
+        <div style={{ textAlign: "center", margin: "6px 0 24px" }}>
+          <div
+            style={{ font: "700 12px Inter", letterSpacing: 2, textTransform: "uppercase", color: "var(--gold)" }}
+          >
+            Preferences
+          </div>
+          <h1 style={{ margin: "8px 0 0", font: "800 32px Cinzel,serif", color: "var(--gold-lt)" }}>Settings</h1>
+        </div>
+        <div className="frame" style={{ padding: 40, textAlign: "center" }}>
+          <div style={{ fontSize: 34, marginBottom: 10 }}>🔒</div>
+          <p style={{ margin: "0 0 20px", font: "500 15px/1.6 Inter", color: "var(--ink)" }}>
+            Sign in to manage your preferences and account.
+          </p>
+          <button
+            type="button"
+            className="btn btn-gold"
+            onClick={() => navigate("/login")}
+            style={{ padding: "12px 26px" }}
+          >
+            Sign In
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <>
       <div data-screen-label="Settings" style={{ maxWidth: 640, margin: "0 auto", padding: 26 }}>
         <div style={{ textAlign: "center", margin: "6px 0 24px" }}>
           <div
-            style={{
-              font: "700 12px Inter",
-              letterSpacing: 2,
-              textTransform: "uppercase",
-              color: "var(--gold)",
-            }}
+            style={{ font: "700 12px Inter", letterSpacing: 2, textTransform: "uppercase", color: "var(--gold)" }}
           >
             Preferences
           </div>
@@ -134,8 +224,8 @@ export function SettingsPage() {
                   <button
                     key={o}
                     type="button"
-                    onClick={() => setPref(row.key, o)}
-                    style={segStyle(prefs[row.key] === o)}
+                    onClick={() => choose(row.key, o)}
+                    style={segStyle(selected(row.key) === o)}
                   >
                     {o}
                   </button>
@@ -153,17 +243,22 @@ export function SettingsPage() {
           <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
             <button
               type="button"
-              onClick={() => showToast("Data export arrives with online play.")}
+              onClick={exportData}
+              disabled={exporting}
               style={{
                 ...ACCOUNT_BTN,
                 border: "1px solid rgba(232,184,75,.18)",
                 background: "rgba(0,0,0,.2)",
+                opacity: exporting ? 0.6 : 1,
+                cursor: exporting ? "wait" : "pointer",
               }}
             >
               <span style={{ display: "flex", alignItems: "center", gap: 12 }}>
                 <span style={{ fontSize: 18 }}>🗂️</span>
                 <span style={{ textAlign: "left" }}>
-                  <span style={{ display: "block", font: "700 14px Inter", color: "#efe7fb" }}>Export My Data</span>
+                  <span style={{ display: "block", font: "700 14px Inter", color: "#efe7fb" }}>
+                    {exporting ? "Preparing…" : "Export My Data"}
+                  </span>
                   <span style={{ font: "500 11px Inter", color: "var(--ink2)" }}>
                     Download a copy of your account data
                   </span>
@@ -174,7 +269,7 @@ export function SettingsPage() {
 
             <button
               type="button"
-              onClick={() => showToast("Privacy & Terms arrive with online play.")}
+              onClick={() => navigate("/legal")}
               style={{
                 ...ACCOUNT_BTN,
                 border: "1px solid rgba(232,184,75,.18)",
@@ -184,7 +279,9 @@ export function SettingsPage() {
               <span style={{ display: "flex", alignItems: "center", gap: 12 }}>
                 <span style={{ fontSize: 18 }}>🔒</span>
                 <span style={{ textAlign: "left" }}>
-                  <span style={{ display: "block", font: "700 14px Inter", color: "#efe7fb" }}>Privacy &amp; Terms</span>
+                  <span style={{ display: "block", font: "700 14px Inter", color: "#efe7fb" }}>
+                    Privacy &amp; Terms
+                  </span>
                   <span style={{ font: "500 11px Inter", color: "var(--ink2)" }}>Review our policies</span>
                 </span>
               </span>
@@ -314,6 +411,7 @@ export function SettingsPage() {
                   value={deleteConfirm}
                   onChange={(e) => setDeleteConfirm(e.target.value)}
                   placeholder="DELETE"
+                  disabled={deleting}
                   style={{
                     width: "100%",
                     boxSizing: "border-box",
@@ -333,6 +431,7 @@ export function SettingsPage() {
                 <button
                   type="button"
                   onClick={closeDelete}
+                  disabled={deleting}
                   style={{
                     flex: 1,
                     padding: 13,
@@ -341,7 +440,7 @@ export function SettingsPage() {
                     background: "rgba(15,8,32,.5)",
                     color: "var(--ink)",
                     font: "700 13px Inter",
-                    cursor: "pointer",
+                    cursor: deleting ? "not-allowed" : "pointer",
                   }}
                 >
                   Cancel
@@ -349,20 +448,23 @@ export function SettingsPage() {
                 <button
                   type="button"
                   onClick={confirmDelete}
-                  disabled={!deleteReady}
+                  disabled={!deleteReady || deleting}
                   style={{
                     flex: 1,
                     padding: 13,
                     borderRadius: 10,
-                    border: `1px solid ${deleteReady ? "rgba(232,93,115,.9)" : "rgba(232,93,115,.25)"}`,
-                    background: deleteReady ? "linear-gradient(180deg,#c94257,#8a1f30)" : "rgba(232,93,115,.08)",
-                    color: deleteReady ? "#fff" : "rgba(255,131,152,.5)",
+                    border: `1px solid ${deleteReady && !deleting ? "rgba(232,93,115,.9)" : "rgba(232,93,115,.25)"}`,
+                    background:
+                      deleteReady && !deleting
+                        ? "linear-gradient(180deg,#c94257,#8a1f30)"
+                        : "rgba(232,93,115,.08)",
+                    color: deleteReady && !deleting ? "#fff" : "rgba(255,131,152,.5)",
                     font: "800 13px Inter",
                     letterSpacing: ".4px",
-                    cursor: deleteReady ? "pointer" : "not-allowed",
+                    cursor: deleteReady && !deleting ? "pointer" : "not-allowed",
                   }}
                 >
-                  Delete Forever
+                  {deleting ? "Deleting…" : "Delete Forever"}
                 </button>
               </div>
             </div>

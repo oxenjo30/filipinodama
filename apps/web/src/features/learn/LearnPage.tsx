@@ -1,4 +1,8 @@
+import { useCallback, useEffect, useState } from "react";
+import { Link, useNavigate } from "react-router-dom";
+import { api } from "../../lib/api";
 import { useAppStore } from "../../stores/appStore";
+import { useAuthStore } from "../../stores/authStore";
 
 /**
  * LearnPage (/learn) — ported faithfully from the approved prototype
@@ -8,38 +12,48 @@ import { useAppStore } from "../../stores/appStore";
  * Capture" primer, a search bar, and the four topic cards; a right rail with
  * "What You'll Learn" and "Video Lessons".
  *
- * STALE-DATA RULE: we have no real per-user lesson progress yet, so ALL
- * progress is honest ZERO — 0 of 8 lessons done, 0% complete, 0 XP, rank
- * "Beginner", and every lesson badge in its "not started" state. The
- * "Continue Learning" card points at the FIRST lesson (an honest starting
- * point, not a fabricated resume). Lesson DEFINITIONS (titles, tags, topic
- * cards, video-lesson metadata) come straight from the prototype JS. The
- * interactive lesson player ships later, so every "start / open lesson"
- * control raises the standard coming-soon toast rather than deep-linking to a
- * screen that does not exist yet.
+ * LIVE DATA: on mount (when logged in) we GET /api/learn/lessons →
+ * { lessons: [{ id, title, summary, completed }], completedCount, total }.
+ * The lesson list, the "N of M lessons done" count, the progress bar, the % /
+ * XP / rank tiles, and each lesson's done-badge all reflect the REAL per-user
+ * completion state returned by the server — nothing is hardcoded. XP is a
+ * derived display value (50 per completed lesson) and the learning rank is a
+ * label derived from the real completed count.
+ *
+ * ACTIONS (match the prototype's openLesson()): every interactive control opens
+ * the real interactive lesson player at /learn/:id (LessonPage). "Continue
+ * Learning" navigates to the first not-yet-completed lesson (a real resume
+ * point; when everything is done it opens the first lesson to review). Each "All
+ * Lessons" row opens that lesson. The four topic cards and the video-lesson rows
+ * jump to the specific lesson the prototype maps them to. Completion itself
+ * happens inside LessonPage (POST /api/learn/lessons/:id/complete), so progress
+ * advances honestly after the user actually works through a lesson.
+ *
+ * LOGGED OUT (me === null): no fetch fires, the header prompts sign-in, and the
+ * journey card renders an honest zero state — no crash. (LessonPage itself shows
+ * a sign-in prompt if a logged-out visitor deep-links into a lesson.)
+ *
+ * STATIC (non-user) content only: the "How to Move & Capture" primer, the four
+ * topic cards, the "What You'll Learn" bullets, and the "Video Lessons" list are
+ * ambient educational copy from the prototype, not per-user data.
  */
 
-// ── lesson definitions (from _lessonData() in the prototype JS) ──
-type Lesson = { id: number; title: string; tag: string; color: string };
-const LESSONS: Lesson[] = [
-  { id: 0, title: "The Board & Setup", tag: "Basics", color: "#5a86e6" },
-  { id: 1, title: "How Pieces Move", tag: "Movement", color: "#3fbf6f" },
-  { id: 2, title: "Making a Capture", tag: "Capturing", color: "#E8B84B" },
-  { id: 3, title: "Multiple Jumps", tag: "Capturing", color: "#d97a2e" },
-  { id: 4, title: "Becoming a Dama", tag: "Promotion", color: "#b78bff" },
-  { id: 5, title: "King (Dama) Movement", tag: "Promotion", color: "#8c5ad6" },
-  { id: 6, title: "Winning the Game", tag: "Endgame", color: "#e05566" },
-  { id: 7, title: "Strategy & Tactics", tag: "Mastery", color: "#3fb0bf" },
-];
+// ── server lesson shape (GET /api/learn/lessons) ──
+type Lesson = { id: string; title: string; summary: string; completed: boolean };
+type LessonsResponse = { lessons: Lesson[]; completedCount: number; total: number };
 
-// ── honest zero progress (no real per-user data yet) ──
-const DONE_COUNT = 0;
-const LEARN_TOTAL = LESSONS.length;
-const LEARN_PCT = Math.round((DONE_COUNT / LEARN_TOTAL) * 100); // 0
-const LEARN_XP = DONE_COUNT * 50; // 0
-const LEARN_RANK = "Beginner"; // doneCount < 3
+const XP_PER_LESSON = 50;
 
-// ── topic cards (from learnTopics) ──
+/** Learning rank label derived from the REAL completed-lesson count. */
+function learnRankFor(done: number, total: number): string {
+  if (total > 0 && done >= total) return "Dama Master";
+  if (done >= 6) return "Strategist";
+  if (done >= 3) return "Apprentice";
+  if (done >= 1) return "Novice";
+  return "Beginner";
+}
+
+// ── topic cards (ambient educational copy from the prototype learnTopics) ──
 type Topic = {
   title: string;
   desc: string;
@@ -48,6 +62,8 @@ type Topic = {
   tint: string;
   border: string;
   btn: string;
+  /** the lesson this card opens — matches the prototype's openLesson() target */
+  lessonId: string;
 };
 const TOPICS: Topic[] = [
   {
@@ -58,6 +74,7 @@ const TOPICS: Topic[] = [
     tint: "rgba(30,50,95,.45)",
     border: "rgba(60,110,200,.5)",
     btn: "btn-blue",
+    lessonId: "basics-board",
   },
   {
     title: "Mandatory Capture",
@@ -67,6 +84,7 @@ const TOPICS: Topic[] = [
     tint: "rgba(90,28,38,.45)",
     border: "rgba(180,60,70,.5)",
     btn: "btn-red",
+    lessonId: "basics-capture",
   },
   {
     title: "King (Dama) Movement",
@@ -76,6 +94,7 @@ const TOPICS: Topic[] = [
     tint: "rgba(50,32,90,.45)",
     border: "rgba(140,90,210,.5)",
     btn: "btn-purple",
+    lessonId: "rules-dama",
   },
   {
     title: "Strategy & Tactics",
@@ -85,6 +104,7 @@ const TOPICS: Topic[] = [
     tint: "rgba(24,64,44,.45)",
     border: "rgba(50,150,100,.5)",
     btn: "btn-green",
+    lessonId: "strategy-endgame",
   },
 ];
 
@@ -96,11 +116,11 @@ const WHAT_YOULL_LEARN = [
   "Compete and climb the leaderboards",
 ];
 
-type Video = { title: string; time: string; level: string; lc: string };
+type Video = { title: string; time: string; level: string; lc: string; lessonId: string };
 const VIDEO_LESSONS: Video[] = [
-  { title: "Filipino Dama: Rules for Beginners", time: "6:45", level: "Beginner", lc: "#3fbf6f" },
-  { title: "How to Capture Like a Pro", time: "8:12", level: "Intermediate", lc: "#E8B84B" },
-  { title: "King Moves & Advanced Tactics", time: "10:21", level: "Advanced", lc: "#d63b52" },
+  { title: "Filipino Dama: Rules for Beginners", time: "6:45", level: "Beginner", lc: "#3fbf6f", lessonId: "basics-board" },
+  { title: "How to Capture Like a Pro", time: "8:12", level: "Intermediate", lc: "#E8B84B", lessonId: "basics-capture" },
+  { title: "King Moves & Advanced Tactics", time: "10:21", level: "Advanced", lc: "#d63b52", lessonId: "rules-dama" },
 ];
 
 // ── Marble board theme (default) from boardTheme() ──
@@ -212,9 +232,56 @@ function CheckIcon() {
 }
 
 export function LearnPage() {
+  const me = useAuthStore((s) => s.me);
   const showToast = useAppStore((s) => s.showToast);
+  const navigate = useNavigate();
 
-  const startLearning = () => showToast("Interactive lessons arrive with online play.");
+  const [lessons, setLessons] = useState<Lesson[]>([]);
+  const [total, setTotal] = useState(0);
+  const [doneCount, setDoneCount] = useState(0);
+  const [loading, setLoading] = useState(true);
+
+  // Open the real interactive lesson player (prototype's openLesson()).
+  const openLesson = useCallback((id: string) => navigate(`/learn/${id}`), [navigate]);
+
+  const load = useCallback(async () => {
+    if (!me) {
+      setLessons([]);
+      setTotal(0);
+      setDoneCount(0);
+      setLoading(false);
+      return;
+    }
+    setLoading(true);
+    try {
+      const res = await api.get<LessonsResponse>("/api/learn/lessons");
+      setLessons(res.lessons);
+      setTotal(res.total);
+      setDoneCount(res.completedCount);
+    } catch {
+      showToast("Couldn't load lessons. Please try again.");
+      setLessons([]);
+      setTotal(0);
+      setDoneCount(0);
+    } finally {
+      setLoading(false);
+    }
+  }, [me, showToast]);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  // ── derived, real progress ──
+  const learnTotal = total || lessons.length;
+  const learnPct = learnTotal > 0 ? Math.round((doneCount / learnTotal) * 100) : 0;
+  const learnXp = doneCount * XP_PER_LESSON;
+  const learnRank = learnRankFor(doneCount, learnTotal);
+
+  // Real resume point: first not-yet-completed lesson (undefined = all done).
+  const resumeLesson = lessons.find((l) => !l.completed);
+  const resumeIndex = resumeLesson ? lessons.indexOf(resumeLesson) : -1;
+  const allDone = learnTotal > 0 && doneCount >= learnTotal;
 
   return (
     <div
@@ -241,9 +308,9 @@ export function LearnPage() {
               style={{ width: 44, height: 44, objectFit: "contain" }}
             />
             <div>
-              <div style={{ font: "700 15px Cinzel,serif", color: "var(--gold-lt)" }}>{LEARN_RANK}</div>
+              <div style={{ font: "700 15px Cinzel,serif", color: "var(--gold-lt)" }}>{learnRank}</div>
               <div style={{ font: "500 12px Inter", color: "var(--ink)" }}>
-                {DONE_COUNT} of {LEARN_TOTAL} lessons done
+                {me ? `${doneCount} of ${learnTotal} lessons done` : "Sign in to track your progress"}
               </div>
             </div>
           </div>
@@ -259,7 +326,7 @@ export function LearnPage() {
           >
             <div
               style={{
-                width: `${LEARN_PCT}%`,
+                width: `${learnPct}%`,
                 height: "100%",
                 background: "linear-gradient(90deg,#3f79d6,#6fa8ff)",
               }}
@@ -272,7 +339,7 @@ export function LearnPage() {
               textAlign: "center",
             }}
           >
-            {LEARN_PCT}% complete
+            {learnPct}% complete
           </div>
           <div
             style={{
@@ -292,7 +359,7 @@ export function LearnPage() {
               }}
             >
               <div style={{ font: "700 17px 'JetBrains Mono',monospace", color: "var(--gold-lt)" }}>
-                {DONE_COUNT}
+                {doneCount}
               </div>
               <div style={{ font: "500 10px Inter", color: "var(--ink2)" }}>Lessons</div>
             </div>
@@ -306,7 +373,7 @@ export function LearnPage() {
               }}
             >
               <div style={{ font: "700 17px 'JetBrains Mono',monospace", color: "#3fbf6f" }}>
-                {LEARN_PCT}%
+                {learnPct}%
               </div>
               <div style={{ font: "500 10px Inter", color: "var(--ink2)" }}>Progress</div>
             </div>
@@ -320,111 +387,165 @@ export function LearnPage() {
               }}
             >
               <div style={{ font: "700 17px 'JetBrains Mono',monospace", color: "#ff9a5a" }}>
-                {LEARN_XP}
+                {learnXp}
               </div>
               <div style={{ font: "500 10px Inter", color: "var(--ink2)" }}>XP</div>
             </div>
           </div>
         </div>
 
-        {/* Continue Learning — honest first-lesson starting point */}
+        {/* Continue Learning — real resume point (first unfinished lesson) */}
         <div className="frame" style={{ padding: 18 }}>
           <div className="ptitle" style={{ textAlign: "left", border: "none", marginBottom: 12 }}>
             Continue Learning
           </div>
-          <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
-            <div style={{ width: 60, height: 60, flex: "none" }}>
-              <MiniBoard />
+          {!me ? (
+            <div style={{ font: "500 12px/1.5 Inter", color: "var(--ink2)" }}>
+              <Link to="/login" style={{ color: "var(--gold)", fontWeight: 700 }}>
+                Sign in
+              </Link>{" "}
+              to start your learning journey and track completed lessons.
             </div>
-            <div style={{ flex: 1 }}>
-              <div style={{ font: "700 14px Inter", color: "var(--gold-lt)" }}>{LESSONS[0].title}</div>
-              <div style={{ font: "500 11px Inter", color: "var(--ink2)", margin: "2px 0 6px" }}>
-                Lesson 1 · {LESSONS[0].tag}
-              </div>
-              <div
-                style={{
-                  height: 6,
-                  borderRadius: 100,
-                  background: "rgba(0,0,0,.4)",
-                  overflow: "hidden",
-                }}
-              >
-                <div style={{ width: `${LEARN_PCT}%`, height: "100%", background: "#3fbf6f" }} />
-              </div>
-            </div>
-          </div>
-          <button
-            type="button"
-            className="btn btn-purple"
-            onClick={startLearning}
-            style={{ width: "100%", marginTop: 14, padding: 11, fontSize: 12 }}
-          >
-            Start Learning
-          </button>
-        </div>
-
-        {/* All Lessons */}
-        <div className="frame" style={{ padding: 18 }}>
-          <div className="ptitle">All Lessons</div>
-          {LESSONS.map((l) => (
-            <button
-              key={l.id}
-              type="button"
-              onClick={startLearning}
-              style={{
-                width: "100%",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "space-between",
-                gap: 10,
-                padding: "12px 0",
-                border: "none",
-                borderTop: "1px solid rgba(232,184,75,.1)",
-                background: "none",
-                color: "var(--ink)",
-                cursor: "pointer",
-                textAlign: "left",
-              }}
-            >
-              <span style={{ display: "flex", alignItems: "center", gap: 11, minWidth: 0 }}>
-                <span
-                  style={{
-                    flex: "none",
-                    width: 26,
-                    height: 26,
-                    borderRadius: "50%",
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    font: "800 11px 'JetBrains Mono',monospace",
-                    border: "1px solid rgba(232,184,75,.3)",
-                    background: "rgba(0,0,0,.25)",
-                    color: "var(--gold-lt)",
-                  }}
-                >
-                  {l.id + 1}
-                </span>
-                <span style={{ minWidth: 0 }}>
-                  <span
+          ) : (
+            <>
+              <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
+                <div style={{ width: 60, height: 60, flex: "none" }}>
+                  <MiniBoard />
+                </div>
+                <div style={{ flex: 1 }}>
+                  <div style={{ font: "700 14px Inter", color: "var(--gold-lt)" }}>
+                    {allDone
+                      ? "All lessons complete"
+                      : resumeLesson
+                        ? resumeLesson.title
+                        : loading
+                          ? "Loading…"
+                          : "No lessons available"}
+                  </div>
+                  <div style={{ font: "500 11px Inter", color: "var(--ink2)", margin: "2px 0 6px" }}>
+                    {allDone
+                      ? "You've mastered every lesson"
+                      : resumeLesson
+                        ? `Lesson ${resumeIndex + 1} · ${resumeLesson.summary}`.slice(0, 60)
+                        : ""}
+                  </div>
+                  <div
                     style={{
-                      display: "block",
-                      font: "600 13px Inter",
-                      color: "#fff",
-                      whiteSpace: "nowrap",
+                      height: 6,
+                      borderRadius: 100,
+                      background: "rgba(0,0,0,.4)",
                       overflow: "hidden",
-                      textOverflow: "ellipsis",
                     }}
                   >
-                    {l.title}
+                    <div style={{ width: `${learnPct}%`, height: "100%", background: "#3fbf6f" }} />
+                  </div>
+                </div>
+              </div>
+              <button
+                type="button"
+                className="btn btn-purple"
+                disabled={lessons.length === 0}
+                onClick={() => {
+                  const target = resumeLesson ?? lessons[0];
+                  if (target) openLesson(target.id);
+                }}
+                style={{
+                  width: "100%",
+                  marginTop: 14,
+                  padding: 11,
+                  fontSize: 12,
+                  opacity: lessons.length === 0 ? 0.6 : 1,
+                  cursor: lessons.length === 0 ? "default" : "pointer",
+                }}
+              >
+                {doneCount === 0 ? "Start Learning" : allDone ? "Review Lessons" : "Resume Lesson"}
+              </button>
+            </>
+          )}
+        </div>
+
+        {/* All Lessons — real list + real completion state */}
+        <div className="frame" style={{ padding: 18 }}>
+          <div className="ptitle">All Lessons</div>
+          {!me ? (
+            <div style={{ font: "500 12px/1.5 Inter", color: "var(--ink2)", paddingTop: 8 }}>
+              Sign in to see the full lesson catalog and your progress.
+            </div>
+          ) : loading ? (
+            <div style={{ font: "500 12px Inter", color: "var(--ink2)", paddingTop: 8 }}>
+              Loading lessons…
+            </div>
+          ) : lessons.length === 0 ? (
+            <div style={{ font: "500 12px Inter", color: "var(--ink2)", paddingTop: 8 }}>
+              No lessons available yet.
+            </div>
+          ) : (
+            lessons.map((l, i) => {
+              const done = l.completed;
+              const badgeBorder = done ? "rgba(63,191,111,.5)" : "rgba(232,184,75,.3)";
+              const badgeBg = done ? "rgba(47,143,91,.2)" : "rgba(0,0,0,.25)";
+              const badgeInk = done ? "#7ee6a4" : "var(--gold-lt)";
+              return (
+                <button
+                  key={l.id}
+                  type="button"
+                  onClick={() => openLesson(l.id)}
+                  style={{
+                    width: "100%",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "space-between",
+                    gap: 10,
+                    padding: "12px 0",
+                    border: "none",
+                    borderTop: "1px solid rgba(232,184,75,.1)",
+                    background: "none",
+                    color: "var(--ink)",
+                    cursor: "pointer",
+                    textAlign: "left",
+                  }}
+                >
+                  <span style={{ display: "flex", alignItems: "center", gap: 11, minWidth: 0 }}>
+                    <span
+                      style={{
+                        flex: "none",
+                        width: 26,
+                        height: 26,
+                        borderRadius: "50%",
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        font: "800 11px 'JetBrains Mono',monospace",
+                        border: `1px solid ${badgeBorder}`,
+                        background: badgeBg,
+                        color: badgeInk,
+                      }}
+                    >
+                      {done ? "✓" : i + 1}
+                    </span>
+                    <span style={{ minWidth: 0 }}>
+                      <span
+                        style={{
+                          display: "block",
+                          font: "600 13px Inter",
+                          color: "#fff",
+                          whiteSpace: "nowrap",
+                          overflow: "hidden",
+                          textOverflow: "ellipsis",
+                        }}
+                      >
+                        {l.title}
+                      </span>
+                      <span style={{ font: "500 10px Inter", color: "var(--ink2)" }}>
+                        {done ? "Completed" : `Lesson ${i + 1}`}
+                      </span>
+                    </span>
                   </span>
-                  <span style={{ font: "500 10px Inter", color: "var(--ink2)" }}>
-                    Lesson {l.id + 1} · {l.tag}
-                  </span>
-                </span>
-              </span>
-              <span style={{ color: "var(--ink2)", flex: "none" }}>›</span>
-            </button>
-          ))}
+                  <span style={{ color: "var(--ink2)", flex: "none" }}>›</span>
+                </button>
+              );
+            })
+          )}
         </div>
       </div>
 
@@ -564,7 +685,7 @@ export function LearnPage() {
               <button
                 type="button"
                 className={`btn ${t.btn}`}
-                onClick={startLearning}
+                onClick={() => openLesson(t.lessonId)}
                 style={{ width: "100%", padding: 9, fontSize: 10 }}
               >
                 {t.cta}
@@ -612,18 +733,26 @@ export function LearnPage() {
             >
               Video Lessons
             </span>
-            <span
-              onClick={() => showToast("Video lessons arrive with online play.")}
-              style={{ font: "600 11px Inter", color: "var(--gold)", cursor: "pointer" }}
+            <button
+              type="button"
+              onClick={() => openLesson(VIDEO_LESSONS[0].lessonId)}
+              style={{
+                font: "600 11px Inter",
+                color: "var(--gold)",
+                cursor: "pointer",
+                background: "none",
+                border: "none",
+                padding: 0,
+              }}
             >
               View All
-            </span>
+            </button>
           </div>
           {VIDEO_LESSONS.map((v) => (
             <button
               key={v.title}
               type="button"
-              onClick={() => showToast("Video lessons arrive with online play.")}
+              onClick={() => openLesson(v.lessonId)}
               style={{
                 width: "100%",
                 display: "flex",

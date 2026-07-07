@@ -57,8 +57,8 @@ export function AppLayout() {
 
   const acctItems = [
     { icon: "👤", label: "My Profile", on: () => navigate("/profile") },
-    { icon: "🎒", label: "Inventory", on: () => showToast("Inventory is coming soon.") },
-    { icon: "🧾", label: "Orders", on: () => showToast("Orders are coming soon.") },
+    { icon: "🎒", label: "Inventory", on: () => navigate("/inventory") },
+    { icon: "🧾", label: "Orders", on: () => navigate("/orders") },
     { icon: "⚙️", label: "Settings", on: () => navigate("/settings") },
     me
       ? { icon: "🚪", label: "Sign Out", on: signOut }

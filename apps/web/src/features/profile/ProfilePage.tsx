@@ -1,43 +1,106 @@
-import { useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { RANK_TIERS, rankTierFor, type RankTier } from "@dama/shared";
+import { api, ApiError } from "../../lib/api";
 import { useAppStore } from "../../stores/appStore";
 import { useAuthStore } from "../../stores/authStore";
 
 /**
  * ProfilePage — /profile
  *
- * Faithful port of the prototype Profile screen (lines 1359-1472). Overview and
- * History tabs. Per the owner stale-data rule, all per-user stats are REAL (from
- * the logged-in account) — zero only when the account is genuinely at zero.
- * Trophy History and Match History still show honest empty states (no match
- * history endpoint wired here). Identity (avatar, name, tier, trophy balance)
- * comes from the real auth session (useAuthStore().me); when logged out we fall
- * back to the appStore placeholder so the screen still renders sensibly.
+ * Faithful port of the prototype Profile screen (lines 1359-1472), fully wired to
+ * LIVE data. There is NO mock/placeholder user data:
+ *   • Identity + all per-user stats come from useAuthStore().me (real account —
+ *     zero for a brand-new user). Logged out ⇒ sign-in prompt, never fake data.
+ *   • Rank ladder is RANK_TIERS from @dama/shared; current tier via rankTierFor().
+ *   • Trophy History  → GET /api/users/me/ledger?currency=TROPHIES.
+ *   • Match History   → GET /api/matches?userId=<me>&result=<filter>.
+ *   • Edit Profile    → PATCH /api/users/me (inline display-name edit).
+ * Each async section shows an honest loading state while pending and an honest
+ * empty state when there is nothing to show.
  */
 
-// ── rank-tier ladder (art /assets/tier-*.png, floors from screen notes) ──
-type Tier = { key: string; name: string; sub: string; floor: number; img: string };
+// ── live DTO shapes (mirror the server serializers) ──
+type MatchPlayer = {
+  id: string;
+  username: string;
+  displayName: string;
+  tag: string;
+  avatarUrl: string | null;
+  rankTier: string;
+  trophies: number;
+} | null;
 
-const TIERS: Tier[] = [
-  { key: "squire", name: "Squire", sub: "The first rung", floor: 0, img: "/assets/tier-squire.png" },
-  { key: "mandirigma", name: "Mandirigma", sub: "Warrior", floor: 300, img: "/assets/tier-mandirigma.png" },
-  { key: "kabalyero", name: "Kabalyero", sub: "Knight", floor: 600, img: "/assets/tier-kabalyero.png" },
-  { key: "bayani", name: "Bayani", sub: "Hero", floor: 900, img: "/assets/tier-bayani.png" },
-  { key: "datu", name: "Datu", sub: "Chieftain", floor: 1100, img: "/assets/tier-datu.png" },
-  { key: "star-guardian", name: "Star Guardian", sub: "Bantay Bituin", floor: 1200, img: "/assets/tier-star-guardian.png" },
-  { key: "alamat", name: "Alamat", sub: "Legend", floor: 1800, img: "/assets/tier-alamat.png" },
+type MatchRow = {
+  id: string;
+  mode: "AI" | "CASUAL" | "RANKED" | "PRIVATE" | "LOCAL";
+  winner: "red" | "blue" | "draw" | null;
+  reason: string | null;
+  red: MatchPlayer;
+  blue: MatchPlayer;
+  redId?: string;
+  blueId?: string;
+  redTrophyDelta: number | null;
+  blueTrophyDelta: number | null;
+  goldReward: number | null;
+  startedAt: string;
+  endedAt: string | null;
+};
+
+type LedgerRow = {
+  id: string;
+  currency: "GOLD" | "DIAMONDS" | "TROPHIES";
+  amount: number;
+  balance: number;
+  reason: string | null;
+  refType: string | null;
+  refId: string | null;
+  createdAt: string;
+};
+
+const MODE_LABEL: Record<string, string> = {
+  AI: "vs AI",
+  CASUAL: "Casual",
+  RANKED: "Ranked",
+  PRIVATE: "Private",
+  LOCAL: "Local",
+};
+
+type HistoryFilter = "all" | "win" | "loss" | "draw";
+const HISTORY_FILTERS: { key: HistoryFilter; label: string }[] = [
+  { key: "all", label: "All" },
+  { key: "win", label: "Wins" },
+  { key: "loss", label: "Losses" },
+  { key: "draw", label: "Draws" },
 ];
 
-// ── real stats derived from the account (zero only when genuinely zero) ──
-function statsFor(wins: number, losses: number, draws: number): { k: string; v: string; c: string }[] {
-  const total = wins + losses + draws;
-  const winRate = total > 0 ? Math.round((wins / total) * 100) : 0;
-  return [
-    { k: "Wins", v: wins.toLocaleString(), c: "var(--green)" },
-    { k: "Losses", v: losses.toLocaleString(), c: "var(--red)" },
-    { k: "Draws", v: draws.toLocaleString(), c: "var(--ink)" },
-    { k: "Win Rate", v: `${winRate}%`, c: "var(--gold-lt)" },
-  ];
+/** Human "x ago" from an ISO timestamp. */
+function timeAgo(iso: string | null): string {
+  if (!iso) return "—";
+  const then = new Date(iso).getTime();
+  if (Number.isNaN(then)) return "—";
+  const s = Math.max(0, Math.floor((Date.now() - then) / 1000));
+  if (s < 60) return "just now";
+  const m = Math.floor(s / 60);
+  if (m < 60) return `${m}m ago`;
+  const h = Math.floor(m / 60);
+  if (h < 24) return `${h}h ago`;
+  const d = Math.floor(h / 24);
+  if (d < 30) return `${d}d ago`;
+  const mo = Math.floor(d / 30);
+  if (mo < 12) return `${mo}mo ago`;
+  return `${Math.floor(mo / 12)}y ago`;
+}
+
+/** Match duration between started/ended timestamps. */
+function duration(startedAt: string, endedAt: string | null): string {
+  if (!endedAt) return "—";
+  const ms = new Date(endedAt).getTime() - new Date(startedAt).getTime();
+  if (Number.isNaN(ms) || ms <= 0) return "—";
+  const s = Math.floor(ms / 1000);
+  const mm = Math.floor(s / 60);
+  const ss = s % 60;
+  return `${mm}:${ss.toString().padStart(2, "0")}`;
 }
 
 /** Masked circular portrait — opaque pngs need the mask + brightness lift. */
@@ -63,43 +126,111 @@ function Portrait({ src, size, alt }: { src: string; size: number; alt: string }
   );
 }
 
+/** Resolve a Me.avatarUrl (bare key | "/assets/…" | full URL) to a renderable src. */
+function avatarSrc(avatarUrl: string | null): string {
+  if (!avatarUrl) return "/assets/avatars/champion.png";
+  if (avatarUrl.startsWith("/") || avatarUrl.startsWith("http")) return avatarUrl;
+  return `/assets/avatars/${avatarUrl}.png`;
+}
+
 export function ProfilePage() {
   const navigate = useNavigate();
   const me = useAuthStore((s) => s.me);
-  const phName = useAppStore((s) => s.displayName);
-  const phTag = useAppStore((s) => s.playerTag);
-  const phAvatar = useAppStore((s) => s.avatar);
-  const phTrophies = useAppStore((s) => s.trophies);
+  const ready = useAuthStore((s) => s.ready);
+  const patchMe = useAuthStore((s) => s.patchMe);
   const showToast = useAppStore((s) => s.showToast);
 
   const [tab, setTab] = useState<"overview" | "history">("overview");
 
-  // Real account takes precedence; fall back to the appStore placeholder when
-  // logged out so the screen never crashes or renders blank.
-  const displayName = me?.displayName ?? phName;
-  const playerTag = me?.tag ?? phTag;
-  const trophies = me?.trophies ?? phTrophies;
-  const STATS = statsFor(me?.wins ?? 0, me?.losses ?? 0, me?.draws ?? 0);
+  // ── Edit Profile (inline display-name edit → PATCH /api/users/me) ──
+  const [editing, setEditing] = useState(false);
+  const [nameDraft, setNameDraft] = useState("");
+  const [saving, setSaving] = useState(false);
 
-  // me.avatarUrl may be a bare key ("champion"), a "/assets/..." path, or an
-  // uploaded URL — resolve all three to a renderable src.
-  const avatarSrc = me?.avatarUrl
-    ? me.avatarUrl.startsWith("/") || me.avatarUrl.startsWith("http")
-      ? me.avatarUrl
-      : `/assets/avatars/${me.avatarUrl}.png`
-    : `/assets/avatars/${phAvatar}.png`;
+  // ── Trophy History (live ledger) ──
+  const [trophyRows, setTrophyRows] = useState<LedgerRow[] | null>(null);
+  const [trophyErr, setTrophyErr] = useState<string | null>(null);
 
-  // ── derive current tier + progress toward next from trophy balance ──
-  let curIdx = 0;
-  for (let i = 0; i < TIERS.length; i++) {
-    if (trophies >= TIERS[i].floor) curIdx = i;
-  }
-  const tierNow = TIERS[curIdx];
-  const nextTier = TIERS[curIdx + 1];
-  const span = nextTier ? nextTier.floor - tierNow.floor : 1;
-  const into = trophies - tierNow.floor;
-  const pct = nextTier ? Math.max(0, Math.min(100, Math.round((into / span) * 100))) : 100;
-  const toNextLabel = nextTier ? `${Math.max(0, nextTier.floor - trophies)} trophies to next tier` : "Top tier reached";
+  // ── Match History (live matches) ──
+  const [historyFilter, setHistoryFilter] = useState<HistoryFilter>("all");
+  const [matches, setMatches] = useState<MatchRow[] | null>(null);
+  const [matchErr, setMatchErr] = useState<string | null>(null);
+
+  const meId = me?.id ?? null;
+
+  // Trophy ledger — fetch once we have a session (Overview tab).
+  useEffect(() => {
+    if (!meId) {
+      setTrophyRows(null);
+      return;
+    }
+    let cancelled = false;
+    setTrophyRows(null);
+    setTrophyErr(null);
+    api
+      .get<{ items: LedgerRow[]; nextCursor: string | null }>("/api/users/me/ledger?currency=TROPHIES")
+      .then((res) => {
+        if (!cancelled) setTrophyRows(res.items);
+      })
+      .catch((e: unknown) => {
+        if (!cancelled) {
+          setTrophyRows([]);
+          setTrophyErr(e instanceof ApiError ? e.message : "Could not load trophy history.");
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [meId]);
+
+  // Match history — refetch on filter change (History tab).
+  useEffect(() => {
+    if (!meId) {
+      setMatches(null);
+      return;
+    }
+    let cancelled = false;
+    setMatches(null);
+    setMatchErr(null);
+    const params = new URLSearchParams({ userId: meId });
+    if (historyFilter !== "all") params.set("result", historyFilter);
+    api
+      .get<{ items: MatchRow[]; nextCursor: string | null }>(`/api/matches?${params.toString()}`)
+      .then((res) => {
+        if (!cancelled) setMatches(res.items);
+      })
+      .catch((e: unknown) => {
+        if (!cancelled) {
+          setMatches([]);
+          setMatchErr(e instanceof ApiError ? e.message : "Could not load match history.");
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [meId, historyFilter]);
+
+  const saveName = useCallback(async () => {
+    const next = nameDraft.trim();
+    if (!next || next === me?.displayName) {
+      setEditing(false);
+      return;
+    }
+    setSaving(true);
+    try {
+      const res = await api.patch<{ user: { displayName: string; tag: string; avatarUrl: string | null } }>(
+        "/api/users/me",
+        { displayName: next },
+      );
+      patchMe({ displayName: res.user.displayName });
+      showToast("Profile updated.");
+      setEditing(false);
+    } catch (e) {
+      showToast(e instanceof ApiError ? e.message : "Could not update profile.");
+    } finally {
+      setSaving(false);
+    }
+  }, [nameDraft, me?.displayName, patchMe, showToast]);
 
   const tabStyle = (active: boolean): React.CSSProperties => ({
     background: "none",
@@ -114,12 +245,62 @@ export function ProfilePage() {
     marginBottom: "-1px",
   });
 
+  // ── logged-out / loading guards (never fake a user) ──
+  if (!ready) {
+    return (
+      <div style={{ maxWidth: 900, margin: "0 auto", padding: 26, textAlign: "center", color: "var(--ink2)", font: "500 14px Inter" }}>
+        Loading your profile…
+      </div>
+    );
+  }
+  if (!me) {
+    return (
+      <div style={{ maxWidth: 900, margin: "0 auto", padding: 26 }}>
+        <div className="frame" style={{ padding: 40, textAlign: "center", display: "flex", flexDirection: "column", gap: 16, alignItems: "center" }}>
+          <div className="ptitle" style={{ marginBottom: 0 }}>Sign in to view your profile</div>
+          <div style={{ color: "var(--ink2)", font: "500 13px/1.6 Inter", maxWidth: 420 }}>
+            Your rank, trophies, match history and achievements live on your account.
+          </div>
+          <button className="btn btn-gold" onClick={() => navigate("/login")} style={{ padding: "12px 26px" }}>
+            Sign In
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  // ── real identity + stats (zero when the account is genuinely at zero) ──
+  const displayName = me.displayName;
+  const playerTag = me.tag;
+  const trophies = me.trophies;
+  const wins = me.wins;
+  const losses = me.losses;
+  const draws = me.draws;
+  const total = wins + losses + draws;
+  const winRate = total > 0 ? Math.round((wins / total) * 100) : 0;
+
+  const STATS: { k: string; v: string; c: string }[] = [
+    { k: "Wins", v: wins.toLocaleString(), c: "var(--green)" },
+    { k: "Losses", v: losses.toLocaleString(), c: "var(--red)" },
+    { k: "Draws", v: draws.toLocaleString(), c: "var(--ink)" },
+    { k: "Win Rate", v: `${winRate}%`, c: "var(--gold-lt)" },
+  ];
+
+  // ── rank ladder from shared RANK_TIERS + progress from trophy balance ──
+  const tierNow = rankTierFor(trophies);
+  const curIdx = RANK_TIERS.findIndex((t) => t.key === tierNow.key);
+  const nextTier: RankTier | undefined = RANK_TIERS[curIdx + 1];
+  const span = nextTier ? nextTier.min - tierNow.min : 1;
+  const into = trophies - tierNow.min;
+  const pct = nextTier ? Math.max(0, Math.min(100, Math.round((into / span) * 100))) : 100;
+  const toNextLabel = nextTier ? `${Math.max(0, nextTier.min - trophies)} trophies to next tier` : "Top tier reached";
+
   return (
     <div style={{ maxWidth: 900, margin: "0 auto", padding: 26, display: "flex", flexDirection: "column", gap: 20 }}>
       {/* ── identity header ── */}
       <div className="frame" style={{ padding: 28, display: "flex", alignItems: "center", gap: 22, flexWrap: "wrap" }}>
         <div style={{ position: "relative", flex: "none" }}>
-          <Portrait src={avatarSrc} size={92} alt={displayName} />
+          <Portrait src={avatarSrc(me.avatarUrl)} size={92} alt={displayName} />
           <button
             onClick={() => showToast("Avatar customization arrives with online play.")}
             title="Change avatar"
@@ -145,20 +326,53 @@ export function ProfilePage() {
           </button>
         </div>
         <div style={{ flex: 1, minWidth: 200 }}>
-          <h1 style={{ margin: 0, font: "800 30px Cinzel,serif", color: "var(--gold-lt)" }}>
-            {displayName}{" "}
-            <span style={{ font: "800 18px 'JetBrains Mono',monospace", color: "var(--ink2)", verticalAlign: "middle" }}>
-              {playerTag}
-            </span>
-          </h1>
+          {editing ? (
+            <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+              <input
+                autoFocus
+                value={nameDraft}
+                maxLength={24}
+                onChange={(e) => setNameDraft(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") saveName();
+                  if (e.key === "Escape") setEditing(false);
+                }}
+                style={{
+                  font: "800 24px Cinzel,serif",
+                  color: "var(--gold-lt)",
+                  background: "rgba(0,0,0,.35)",
+                  border: "1px solid rgba(232,184,75,.4)",
+                  borderRadius: 10,
+                  padding: "6px 12px",
+                  minWidth: 220,
+                }}
+              />
+              <button className="btn btn-gold" disabled={saving} onClick={saveName} style={{ padding: "8px 16px" }}>
+                {saving ? "Saving…" : "Save"}
+              </button>
+              <button className="btn btn-purple" disabled={saving} onClick={() => setEditing(false)} style={{ padding: "8px 16px" }}>
+                Cancel
+              </button>
+            </div>
+          ) : (
+            <h1 style={{ margin: 0, font: "800 30px Cinzel,serif", color: "var(--gold-lt)" }}>
+              {displayName}{" "}
+              <span style={{ font: "800 18px 'JetBrains Mono',monospace", color: "var(--ink2)", verticalAlign: "middle" }}>
+                {playerTag}
+              </span>
+            </h1>
+          )}
           <div style={{ font: "600 13px Inter", color: "var(--gold)", margin: "4px 0 12px" }}>
-            {tierNow.name} · 🏆 {trophies.toLocaleString()}
+            {tierNow.label} · 🏆 {trophies.toLocaleString()}
           </div>
         </div>
         <div style={{ display: "flex", gap: 10, flexWrap: "wrap", width: "100%", justifyContent: "flex-end" }}>
           <button
             className="btn btn-gold"
-            onClick={() => showToast("Profile editing arrives with online play.")}
+            onClick={() => {
+              setNameDraft(me.displayName);
+              setEditing(true);
+            }}
             style={{ padding: "12px 22px" }}
           >
             Edit Profile
@@ -198,7 +412,7 @@ export function ProfilePage() {
             ))}
           </div>
 
-          {/* rank tiers */}
+          {/* rank tiers — from shared RANK_TIERS */}
           <div className="frame" style={{ padding: 24 }}>
             <div className="ptitle">Rank Tiers</div>
             <div
@@ -213,12 +427,12 @@ export function ProfilePage() {
               }}
             >
               <img
-                src={tierNow.img}
-                alt={tierNow.name}
+                src={`/assets/${tierNow.img}.png`}
+                alt={tierNow.label}
                 style={{ width: 56, height: 56, objectFit: "contain", flex: "none" }}
               />
               <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ font: "800 20px Cinzel,serif", color: "var(--gold-lt)" }}>{tierNow.name}</div>
+                <div style={{ font: "800 20px Cinzel,serif", color: "var(--gold-lt)" }}>{tierNow.label}</div>
                 <div style={{ font: "500 12px Inter", color: "var(--ink2)" }}>
                   {tierNow.sub} · 🏆 {trophies.toLocaleString()}
                 </div>
@@ -234,9 +448,7 @@ export function ProfilePage() {
                 margin: "14px 0 6px",
               }}
             >
-              <div
-                style={{ width: `${pct}%`, height: "100%", background: "linear-gradient(90deg,#c98b2e,#f7e2a0)" }}
-              />
+              <div style={{ width: `${pct}%`, height: "100%", background: "linear-gradient(90deg,#c98b2e,#f7e2a0)" }} />
             </div>
             <div
               style={{
@@ -248,11 +460,11 @@ export function ProfilePage() {
               }}
             >
               <span>{toNextLabel}</span>
-              <span>Next: {nextTier ? nextTier.name : "—"}</span>
+              <span>Next: {nextTier ? nextTier.label : "—"}</span>
             </div>
-            {TIERS.map((t, i) => {
+            {RANK_TIERS.map((t, i) => {
               const isCurrent = i === curIdx;
-              const reached = trophies >= t.floor;
+              const reached = trophies >= t.min;
               const badge = isCurrent ? "CURRENT" : reached ? "REACHED" : "LOCKED";
               const badgeStyle: React.CSSProperties = {
                 flex: "none",
@@ -284,21 +496,21 @@ export function ProfilePage() {
                     opacity: reached ? 1 : 0.55,
                   }}
                 >
-                  <img src={t.img} alt={t.name} style={{ width: 34, height: 34, objectFit: "contain", flex: "none" }} />
+                  <img src={`/assets/${t.img}.png`} alt={t.label} style={{ width: 34, height: 34, objectFit: "contain", flex: "none" }} />
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <span style={{ font: "700 14px Cinzel,serif", color: isCurrent ? "var(--gold-lt)" : "var(--ink)" }}>
-                      {t.name}
+                      {t.label}
                     </span>{" "}
                     <span style={{ font: "400 12px Inter", color: "var(--ink2)" }}>{t.sub}</span>
                   </div>
-                  <span style={{ font: "700 12px 'JetBrains Mono',monospace", color: "var(--ink)" }}>🏆 {t.floor}+</span>
+                  <span style={{ font: "700 12px 'JetBrains Mono',monospace", color: "var(--ink)" }}>🏆 {t.min}+</span>
                   <span style={badgeStyle}>{badge}</span>
                 </div>
               );
             })}
           </div>
 
-          {/* trophy history — honest empty */}
+          {/* trophy history — LIVE ledger */}
           <div className="frame" style={{ padding: 24 }}>
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 4 }}>
               <div className="ptitle" style={{ marginBottom: 0 }}>
@@ -313,39 +525,87 @@ export function ProfilePage() {
                   color: "var(--gold-lt)",
                 }}
               >
-                <img src="/assets/ic-coin.png" alt="" style={{ width: 18, height: 18, objectFit: "contain" }} />
+                <img src="/assets/ic-trophy.png" alt="" style={{ width: 18, height: 18, objectFit: "contain" }} />
                 {trophies.toLocaleString()}
               </span>
             </div>
             <div style={{ font: "400 12px Inter", color: "var(--ink2)", marginBottom: 14 }}>
               Trophies change only in Ranked — win +25, loss −5.
             </div>
-            <div
-              style={{
-                textAlign: "center",
-                padding: "38px 12px",
-                color: "var(--ink2)",
-                font: "500 13px/1.6 Inter",
-                borderTop: "1px solid rgba(232,184,75,.1)",
-              }}
-            >
-              No ranked matches yet.
-              <br />
-              Play a Ranked game and your trophy changes will appear here.
-            </div>
+
+            {trophyRows === null ? (
+              <div style={{ textAlign: "center", padding: "38px 12px", color: "var(--ink2)", font: "500 13px Inter", borderTop: "1px solid rgba(232,184,75,.1)" }}>
+                Loading trophy history…
+              </div>
+            ) : trophyRows.length === 0 ? (
+              <div style={{ textAlign: "center", padding: "38px 12px", color: "var(--ink2)", font: "500 13px/1.6 Inter", borderTop: "1px solid rgba(232,184,75,.1)" }}>
+                {trophyErr ? (
+                  trophyErr
+                ) : (
+                  <>
+                    No ranked matches yet.
+                    <br />
+                    Play a Ranked game and your trophy changes will appear here.
+                  </>
+                )}
+              </div>
+            ) : (
+              <div style={{ display: "flex", flexDirection: "column" }}>
+                {trophyRows.map((h) => {
+                  const positive = h.amount >= 0;
+                  const dc = positive ? "var(--green)" : "var(--red)";
+                  const tint = positive ? "rgba(47,143,91,.14)" : "rgba(199,58,58,.14)";
+                  const ring = positive ? "rgba(47,143,91,.4)" : "rgba(199,58,58,.4)";
+                  const label = positive ? "WIN" : "LOSS";
+                  return (
+                    <div
+                      key={h.id}
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 14,
+                        padding: "12px 0",
+                        borderTop: "1px solid rgba(232,184,75,.1)",
+                      }}
+                    >
+                      <span
+                        style={{
+                          width: 52,
+                          flex: "none",
+                          textAlign: "center",
+                          font: "800 12px Inter",
+                          letterSpacing: ".5px",
+                          padding: "5px 0",
+                          borderRadius: 7,
+                          color: dc,
+                          background: tint,
+                          border: `1px solid ${ring}`,
+                        }}
+                      >
+                        {label}
+                      </span>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ font: "700 14px Inter", color: "#efe7fb" }}>{h.reason ?? "Ranked match"}</div>
+                        <div style={{ font: "400 12px Inter", color: "var(--ink2)", marginTop: 2 }}>{timeAgo(h.createdAt)}</div>
+                      </div>
+                      <span style={{ font: "800 15px 'JetBrains Mono',monospace", color: dc, flex: "none" }}>
+                        {positive ? "+" : ""}
+                        {h.amount}
+                      </span>
+                      <span style={{ width: 66, flex: "none", textAlign: "right", font: "600 12px 'JetBrains Mono',monospace", color: "var(--ink)" }}>
+                        🏆 {h.balance}
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
           </div>
 
-          {/* achievements — honest empty (no fabricated unlocks) */}
+          {/* achievements — honest empty (no achievements endpoint exists) */}
           <div className="frame" style={{ padding: 24 }}>
             <div className="ptitle">Achievements</div>
-            <div
-              style={{
-                textAlign: "center",
-                padding: "34px 12px",
-                color: "var(--ink2)",
-                font: "500 13px/1.6 Inter",
-              }}
-            >
+            <div style={{ textAlign: "center", padding: "34px 12px", color: "var(--ink2)", font: "500 13px/1.6 Inter" }}>
               No achievements unlocked yet.
               <br />
               Keep climbing the ranks to unlock more achievements.
@@ -354,7 +614,7 @@ export function ProfilePage() {
         </div>
       )}
 
-      {/* ── MATCH HISTORY — honest empty ── */}
+      {/* ── MATCH HISTORY — LIVE ── */}
       {tab === "history" && (
         <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
           <div className="frame" style={{ padding: 24 }}>
@@ -371,20 +631,120 @@ export function ProfilePage() {
               <div className="ptitle" style={{ marginBottom: 0 }}>
                 Match History
               </div>
+              <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                {HISTORY_FILTERS.map((hf) => {
+                  const active = historyFilter === hf.key;
+                  return (
+                    <button
+                      key={hf.key}
+                      onClick={() => setHistoryFilter(hf.key)}
+                      style={{
+                        cursor: "pointer",
+                        font: "700 12px Inter",
+                        padding: "7px 14px",
+                        borderRadius: 999,
+                        color: active ? "#1a0f2e" : "var(--ink2)",
+                        background: active ? "linear-gradient(180deg,#f7e2a0,#d5a63a)" : "rgba(0,0,0,.25)",
+                        border: active ? "1px solid rgba(255,240,200,.7)" : "1px solid rgba(232,184,75,.2)",
+                      }}
+                    >
+                      {hf.label}
+                    </button>
+                  );
+                })}
+              </div>
             </div>
-            <div style={{ font: "400 12px Inter", color: "var(--ink2)", marginBottom: 2 }}>0 matches</div>
-            <div
-              style={{
-                textAlign: "center",
-                padding: "38px 12px",
-                color: "var(--ink2)",
-                font: "500 13px/1.6 Inter",
-              }}
-            >
-              No matches here yet.
-              <br />
-              Finish a game and it will appear in your history automatically.
+
+            <div style={{ font: "400 12px Inter", color: "var(--ink2)", marginBottom: 2 }}>
+              {matches === null ? "Loading…" : `${matches.length} match${matches.length === 1 ? "" : "es"}`}
             </div>
+
+            {matches === null ? (
+              <div style={{ textAlign: "center", padding: "38px 12px", color: "var(--ink2)", font: "500 13px Inter" }}>
+                Loading match history…
+              </div>
+            ) : matches.length === 0 ? (
+              <div style={{ textAlign: "center", padding: "38px 12px", color: "var(--ink2)", font: "500 13px/1.6 Inter" }}>
+                {matchErr ? (
+                  matchErr
+                ) : (
+                  <>
+                    No matches here yet.
+                    <br />
+                    Finish a game and it will appear in your history automatically.
+                  </>
+                )}
+              </div>
+            ) : (
+              <div style={{ display: "flex", flexDirection: "column" }}>
+                {matches.map((m) => {
+                  const iAmRed = m.red?.id === me.id;
+                  const opponent = iAmRed ? m.blue : m.red;
+                  const oppName = opponent?.displayName ?? (m.mode === "AI" || m.mode === "LOCAL" ? "Computer" : "Opponent");
+                  const myDelta = iAmRed ? m.redTrophyDelta : m.blueTrophyDelta;
+                  const result: "win" | "loss" | "draw" =
+                    m.winner === "draw" || m.winner === null
+                      ? "draw"
+                      : (m.winner === "red") === iAmRed
+                        ? "win"
+                        : "loss";
+                  const rc =
+                    result === "win" ? "var(--green)" : result === "loss" ? "var(--red)" : "var(--ink2)";
+                  const tint =
+                    result === "win" ? "rgba(47,143,91,.14)" : result === "loss" ? "rgba(199,58,58,.14)" : "rgba(0,0,0,.25)";
+                  const ring =
+                    result === "win" ? "rgba(47,143,91,.4)" : result === "loss" ? "rgba(199,58,58,.4)" : "rgba(232,184,75,.2)";
+                  const resultLabel = result === "win" ? "WIN" : result === "loss" ? "LOSS" : "DRAW";
+                  const deltaStr = myDelta === null || myDelta === undefined ? "—" : `${myDelta > 0 ? "+" : ""}${myDelta}`;
+                  return (
+                    <button
+                      key={m.id}
+                      onClick={() => showToast("Match replay arrives with online play.")}
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 14,
+                        padding: "14px 0",
+                        borderTop: "1px solid rgba(232,184,75,.1)",
+                        background: "none",
+                        border: "none",
+                        borderTopStyle: "solid",
+                        cursor: "pointer",
+                        textAlign: "left",
+                        width: "100%",
+                      }}
+                    >
+                      <span
+                        style={{
+                          width: 52,
+                          flex: "none",
+                          textAlign: "center",
+                          font: "800 12px Inter",
+                          letterSpacing: ".5px",
+                          padding: "5px 0",
+                          borderRadius: 7,
+                          color: rc,
+                          background: tint,
+                          border: `1px solid ${ring}`,
+                        }}
+                      >
+                        {resultLabel}
+                      </span>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ font: "700 14px Inter", color: "#efe7fb" }}>vs {oppName}</div>
+                        <div style={{ font: "400 12px Inter", color: "var(--ink2)", marginTop: 2 }}>
+                          {MODE_LABEL[m.mode] ?? m.mode} · {timeAgo(m.startedAt)} · {duration(m.startedAt, m.endedAt)}
+                        </div>
+                      </div>
+                      <div style={{ textAlign: "right", flex: "none" }}>
+                        <div style={{ font: "700 13px 'JetBrains Mono',monospace", color: rc }}>{deltaStr}</div>
+                      </div>
+                      <span style={{ flex: "none", color: "var(--ink2)", fontSize: 20, lineHeight: 1 }}>›</span>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
           </div>
         </div>
       )}

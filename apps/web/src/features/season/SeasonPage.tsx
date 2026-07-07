@@ -23,9 +23,12 @@ import { useAuthStore } from "../../stores/authStore";
  * owned the footer shows an honest "Royal Pass Active" state.
  *
  * LOGGED OUT / no season: no personal claim is fabricated — the banner reads
- * Level 1 · 0 XP / Unranked and the Unlock-Pass footer prompts sign-in. The
- * Standings board stays populated (global discovery data, like the leaderboard),
- * with an honest "not yet ranked" YOU row.
+ * Level 1 · 0 XP / Unranked and the Unlock-Pass footer prompts sign-in.
+ *
+ * SEASON STANDINGS: fetched LIVE from GET /api/leaderboard?scope=global — real
+ * users ranked by trophies, with real rank tiers. The YOU row uses the real `me`
+ * entry the endpoint returns (honest "not yet ranked" when the player has no
+ * standing yet). No hardcoded/fake players.
  */
 
 // ── reward → display cell (icon + label) from the real reward payload ──
@@ -68,20 +71,15 @@ function endsInLabel(endsAt: string | undefined): string {
   return `${d}d ${String(h).padStart(2, "0")}h`;
 }
 
-// ── Season standings — global discovery data (like the leaderboard). Not "yours". ──
-type BoardRow = { name: string; tier: string; tierColor: string; rating: number };
-const BOARD: BoardRow[] = [
-  { name: "RajahSupreme", tier: "Alamat · Legend", tierColor: "#ff5d73", rating: 2412 },
-  { name: "DatuMaharlika", tier: "Alamat · Legend", tierColor: "#ff5d73", rating: 2388 },
-  { name: "LapuLegend", tier: "Star Guardian · Ascendant", tierColor: "#a06bff", rating: 2301 },
-  { name: "BayaniBlade", tier: "Star Guardian · Ascendant", tierColor: "#a06bff", rating: 2274 },
-  { name: "DamaDiwata", tier: "Star Guardian · Ascendant", tierColor: "#a06bff", rating: 2240 },
-  { name: "KingmakerKim", tier: "Datu · Warlord", tierColor: "#3fbf6f", rating: 2188 },
-  { name: "TahoTactician", tier: "Datu · Warlord", tierColor: "#3fbf6f", rating: 2151 },
-  { name: "SunoSultan", tier: "Datu · Warlord", tierColor: "#3fbf6f", rating: 2120 },
-  { name: "MandirigmaMax", tier: "Bayani · Champion", tierColor: "#e8b84b", rating: 2077 },
-  { name: "BanahawBoss", tier: "Bayani · Champion", tierColor: "#e8b84b", rating: 2044 },
-];
+// ── Season standings — LIVE from GET /api/leaderboard?scope=global ──
+type LbRow = {
+  rank: number;
+  userId: string;
+  displayName: string;
+  trophies: number;
+  rankTier: { key: string; label: string; sub: string; accent: string; img: string };
+};
+type LeaderboardData = { scope: string; rows: LbRow[]; me: LbRow | null };
 
 const MEDALS = ["/assets/medal-1.png", "/assets/medal-2.png", "/assets/medal-3.png"];
 
@@ -209,6 +207,10 @@ export function SeasonPage() {
   const [claimingTier, setClaimingTier] = useState<number | null>(null);
   const [buyingPass, setBuyingPass] = useState(false);
 
+  // Live season standings (real users, ranked by trophies).
+  const [board, setBoard] = useState<LeaderboardData | null>(null);
+  const [boardLoading, setBoardLoading] = useState(true);
+
   const load = useCallback(async () => {
     if (!me) return;
     try {
@@ -224,6 +226,31 @@ export function SeasonPage() {
   useEffect(() => {
     void load();
   }, [load]);
+
+  // Standings require an authenticated leaderboard read; skip when logged out.
+  useEffect(() => {
+    if (!me) {
+      setBoard(null);
+      setBoardLoading(false);
+      return;
+    }
+    let alive = true;
+    setBoardLoading(true);
+    api
+      .get<LeaderboardData>("/api/leaderboard?scope=global&limit=10")
+      .then((d) => {
+        if (alive) setBoard(d);
+      })
+      .catch(() => {
+        if (alive) setBoard(null);
+      })
+      .finally(() => {
+        if (alive) setBoardLoading(false);
+      });
+    return () => {
+      alive = false;
+    };
+  }, [me]);
 
   // Level = count of tiers whose xp gate is reached (min 1). XP shown is raw.
   const xp = data?.xp ?? 0;
@@ -544,93 +571,142 @@ export function SeasonPage() {
         </div>
       )}
 
-      {/* SEASON STANDINGS TAB */}
+      {/* SEASON STANDINGS TAB — live leaderboard (real users, ranked by trophies) */}
       {tab === "ranking" && (
         <div className="frame" style={{ padding: 22 }}>
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, marginBottom: 16, flexWrap: "wrap" }}>
             <span style={{ font: "800 19px Cinzel,serif", color: "var(--gold-lt)" }}>Season Standings</span>
-            <span style={{ font: "600 12px Inter", color: "var(--ink2)" }}>Ranked by rating</span>
+            <span style={{ font: "600 12px Inter", color: "var(--ink2)" }}>Ranked by trophies</span>
           </div>
-          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-            {BOARD.map((r, i) => {
-              const top3 = i < 3;
-              return (
-                <div
-                  key={r.name}
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    gap: 13,
-                    padding: "12px 14px",
-                    borderRadius: 12,
-                    border: "1px solid rgba(232,184,75,.1)",
-                    background: top3 ? "rgba(232,184,75,.06)" : "rgba(0,0,0,.2)",
-                  }}
-                >
-                  <div style={{ width: 34, flex: "none", display: "flex", justifyContent: "center", alignItems: "center" }}>
-                    {top3 ? (
-                      <img src={MEDALS[i]} alt={`Rank ${i + 1}`} style={{ width: 26, height: 26, objectFit: "contain" }} />
-                    ) : (
-                      <span style={{ font: "800 15px 'JetBrains Mono',monospace", color: "var(--ink2)" }}>{i + 1}</span>
-                    )}
-                  </div>
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ font: "700 15px Inter", color: "#f2e9d2" }}>{r.name}</div>
-                    <div style={{ font: "600 12px Inter", color: r.tierColor }}>{r.tier}</div>
-                  </div>
-                  <div style={{ font: "800 15px 'JetBrains Mono',monospace", color: "#f2d493", flex: "none" }}>{r.rating}</div>
-                </div>
-              );
-            })}
-          </div>
-          {/* Honest "you" row — not yet ranked (no fake personal placement) */}
-          <div
-            style={{
-              marginTop: 14,
-              display: "flex",
-              alignItems: "center",
-              gap: 13,
-              padding: "14px 16px",
-              borderRadius: 12,
-              background: "linear-gradient(135deg,rgba(232,184,75,.12),rgba(15,8,32,.1))",
-              border: "1px solid rgba(232,184,75,.35)",
-            }}
-          >
-            <div style={{ width: 34, flex: "none", textAlign: "center", font: "800 15px 'JetBrains Mono',monospace", color: "var(--ink2)" }}>—</div>
-            <div style={{ flex: 1, minWidth: 0 }}>
-              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                <span style={{ font: "800 15px Inter", color: "var(--gold-lt)" }}>You are not yet ranked</span>
-                <span
-                  style={{
-                    font: "800 9px Inter",
-                    letterSpacing: ".5px",
-                    color: "#1a0f2e",
-                    background: "linear-gradient(180deg,#f7e2a0,#d5a63a)",
-                    padding: "2px 8px",
-                    borderRadius: 100,
-                  }}
-                >
-                  YOU
-                </span>
-              </div>
-              <div style={{ font: "600 12px Inter", color: "var(--ink2)" }}>Play placement matches to earn your season rank.</div>
+          {!me ? (
+            <div style={{ padding: "28px 4px", textAlign: "center", font: "500 13px Inter", color: "var(--ink2)" }}>
+              Sign in to see the season standings.
             </div>
-            <button
-              onClick={() => navigate("/play")}
+          ) : boardLoading ? (
+            <div style={{ padding: "28px 4px", textAlign: "center", font: "500 13px Inter", color: "var(--ink2)" }}>
+              Loading standings…
+            </div>
+          ) : !board || board.rows.length === 0 ? (
+            <div style={{ padding: "28px 4px", textAlign: "center", font: "500 13px Inter", color: "var(--ink2)" }}>
+              No ranked players yet — be the first to climb the ladder.
+            </div>
+          ) : (
+            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+              {board.rows.map((r) => {
+                const top3 = r.rank <= 3;
+                const isMe = board.me?.userId === r.userId;
+                return (
+                  <div
+                    key={r.userId}
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 13,
+                      padding: "12px 14px",
+                      borderRadius: 12,
+                      border: isMe ? "1px solid var(--gold)" : "1px solid rgba(232,184,75,.1)",
+                      background: isMe
+                        ? "linear-gradient(135deg,rgba(232,184,75,.16),rgba(15,8,32,.1))"
+                        : top3
+                          ? "rgba(232,184,75,.06)"
+                          : "rgba(0,0,0,.2)",
+                    }}
+                  >
+                    <div style={{ width: 34, flex: "none", display: "flex", justifyContent: "center", alignItems: "center" }}>
+                      {top3 ? (
+                        <img src={MEDALS[r.rank - 1]} alt={`Rank ${r.rank}`} style={{ width: 26, height: 26, objectFit: "contain" }} />
+                      ) : (
+                        <span style={{ font: "800 15px 'JetBrains Mono',monospace", color: "var(--ink2)" }}>{r.rank}</span>
+                      )}
+                    </div>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                        <span style={{ font: "700 15px Inter", color: isMe ? "var(--gold-lt)" : "#f2e9d2" }}>{r.displayName}</span>
+                        {isMe && (
+                          <span
+                            style={{
+                              font: "800 9px Inter",
+                              letterSpacing: ".5px",
+                              color: "#1a0f2e",
+                              background: "linear-gradient(180deg,#f7e2a0,#d5a63a)",
+                              padding: "2px 8px",
+                              borderRadius: 100,
+                            }}
+                          >
+                            YOU
+                          </span>
+                        )}
+                      </div>
+                      <div style={{ font: "600 12px Inter", color: r.rankTier.accent }}>
+                        {r.rankTier.label} · {r.rankTier.sub}
+                      </div>
+                    </div>
+                    <div style={{ font: "800 15px 'JetBrains Mono',monospace", color: "#f2d493", flex: "none" }}>{r.trophies.toLocaleString()}</div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+          {/* Real YOU row when signed in but not in the visible top slice (or unranked) */}
+          {me && !boardLoading && board && !board.rows.some((r) => r.userId === board.me?.userId) && (
+            <div
               style={{
-                flex: "none",
-                padding: "9px 16px",
-                borderRadius: 8,
-                border: "1px solid rgba(232,184,75,.4)",
-                background: "rgba(232,184,75,.1)",
-                color: "var(--gold-lt)",
-                font: "700 12px Inter",
-                cursor: "pointer",
+                marginTop: 14,
+                display: "flex",
+                alignItems: "center",
+                gap: 13,
+                padding: "14px 16px",
+                borderRadius: 12,
+                background: "linear-gradient(135deg,rgba(232,184,75,.12),rgba(15,8,32,.1))",
+                border: "1px solid rgba(232,184,75,.35)",
               }}
             >
-              Play
-            </button>
-          </div>
+              <div style={{ width: 34, flex: "none", textAlign: "center", font: "800 15px 'JetBrains Mono',monospace", color: board.me ? "var(--gold-lt)" : "var(--ink2)" }}>
+                {board.me ? board.me.rank : "—"}
+              </div>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                  <span style={{ font: "800 15px Inter", color: "var(--gold-lt)" }}>
+                    {board.me ? board.me.displayName : "You are not yet ranked"}
+                  </span>
+                  <span
+                    style={{
+                      font: "800 9px Inter",
+                      letterSpacing: ".5px",
+                      color: "#1a0f2e",
+                      background: "linear-gradient(180deg,#f7e2a0,#d5a63a)",
+                      padding: "2px 8px",
+                      borderRadius: 100,
+                    }}
+                  >
+                    YOU
+                  </span>
+                </div>
+                <div style={{ font: "600 12px Inter", color: board.me ? board.me.rankTier.accent : "var(--ink2)" }}>
+                  {board.me ? `${board.me.rankTier.label} · ${board.me.rankTier.sub}` : "Play placement matches to earn your season rank."}
+                </div>
+              </div>
+              {board.me ? (
+                <div style={{ font: "800 15px 'JetBrains Mono',monospace", color: "#f2d493", flex: "none" }}>{board.me.trophies.toLocaleString()}</div>
+              ) : (
+                <button
+                  onClick={() => navigate("/play")}
+                  style={{
+                    flex: "none",
+                    padding: "9px 16px",
+                    borderRadius: 8,
+                    border: "1px solid rgba(232,184,75,.4)",
+                    background: "rgba(232,184,75,.1)",
+                    color: "var(--gold-lt)",
+                    font: "700 12px Inter",
+                    cursor: "pointer",
+                  }}
+                >
+                  Play
+                </button>
+              )}
+            </div>
+          )}
         </div>
       )}
     </div>

@@ -9,11 +9,12 @@ import { useAuthStore } from "../../stores/authStore";
  * Play vs AI, Play with a Friend) beside a right rail with a Mode Overview
  * frame and a Guild Hall frame.
  *
- * Behaviours: only "Play vs AI" has a real destination (/play/ai). The three
- * online/multiplayer modes have no backend yet, so they raise an honest
- * "arrives with online play" toast rather than pretending to matchmake. The
- * Mode Overview numbers are ambient big-platform stats (allowed to stay
- * populated per the stale-data exception).
+ * Behaviours (matching the prototype's per-card intent): "Play vs AI" goes to
+ * /play/ai; Quick/Ranked go to the online match screen; "Play with a Friend"
+ * opens the built private-room lobby (/rooms). The three online modes are
+ * login-gated (guests count as logged in) and send a logged-out visitor to
+ * sign in first. The Mode Overview numbers are ambient big-platform stats
+ * (allowed to stay populated per the stale-data exception).
  */
 
 const ASSET = "/assets";
@@ -128,7 +129,7 @@ export function PlayHubPage() {
       tagStyle: pmTag("#c9a6ff", "rgba(140,90,210,.2)"),
       desc: "Create a private room and invite a friend with a shareable code.",
       icon: <Medal src={`${ASSET}/mode-friend.webp`} size={62} />,
-      onSelect: () => showToast("Private rooms arrive with online play."),
+      onSelect: () => requireLogin("/rooms"),
     },
   ];
 

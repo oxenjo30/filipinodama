@@ -6,57 +6,47 @@ import { useAuthStore } from "../../stores/authStore";
 /**
  * StorePage — reproduced from the prototype's Store screen
  * (handoff/FilipinoDama Royal.dc.html, lines 1243-1358): a three-column layout
- * of Store Categories + Member Benefits (left), Featured Pack / filter tabs /
- * catalog grid / Daily Deals (center), and Your Cart + Seasonal Offer (right).
- * The visual layout is unchanged — it is now backed by real store data.
+ * of Store Categories + Member Benefits (left), Featured Pack banner / filter
+ * tabs / catalog grid (center), and Your Cart + Seasonal Offer (right).
  *
- * DATA WIRING:
- *   - GET /api/store/items → the real catalog. Any prototype catalog tile whose
- *     id maps to a real StoreItem (REAL_ID map) shows that item's real PRICE and,
- *     when owned, an "Owned" badge with a disabled Buy button.
- *   - Ownership comes from the authed user's inventory (read via
- *     GET /api/users/me/export → inventory[]) on load, plus anything just bought.
- *   - Buy on a real item → POST /api/store/purchase { itemId }; on success we
- *     update gold/diamond balances (auth store) and mark the item owned. Errors
- *     (insufficient funds, already owned) surface as a toast.
- *   - Catalog tiles with no backing StoreItem (frames, emotes, bundles that
- *     aren't seeded yet) keep the prototype's add-to-cart + honest "arrives with
- *     online play" toast — no fake purchase is fabricated.
- *   - Logged out: no fetch fires; Buy prompts sign-in; the screen still renders.
+ * FULLY LIVE-WIRED — there is NO hardcoded catalog:
+ *   - The catalog grid, category rail, filter tabs, prices, and currency are all
+ *     driven by GET /api/store/items. If the server seeds a new item, it appears
+ *     here automatically; nothing is faked.
+ *   - Ownership comes from the authed user's real inventory
+ *     (GET /api/users/me/export → inventory[]). Owned items show an "Owned"
+ *     badge and no Buy button.
+ *   - Buy → POST /api/store/purchase { itemId } (server-authoritative spend +
+ *     grant). On success we update the real gold/diamond balances in the auth
+ *     store and mark the item owned. Errors (insufficient funds, already owned)
+ *     surface as an honest toast.
+ *   - The cart is client-side, but every line's name/price/currency comes from a
+ *     real StoreItem — never a fabricated value.
+ *   - Logged out: catalog still renders (public); Buy prompts sign-in; owned
+ *     state is empty. The screen never crashes.
+ *   - The Featured Pack banner + Seasonal Offer are the prototype's decorative
+ *     marketing chrome; because no such bundle exists as a real StoreItem, their
+ *     buttons surface an honest "arrives with online play" toast rather than a
+ *     fake priced purchase.
  */
 
-/**
- * Maps a prototype catalog id → the seeded StoreItem id it represents. Only
- * these are really purchasable; everything else stays cart/toast-only.
- */
-const REAL_ID: Record<string, string> = {
-  ebony: "board-ebony",
-  marble: "board-marble",
-  classicwood: "board-wood",
-  obsidian: "board-obsidian",
-  jadeskin: "skin-jade",
-  obsidianskin: "skin-obsidian",
-  bagani: "skin-bagani",
-  mandirigma: "skin-mandirigma",
-  diwata: "skin-diwata",
-  ermitanyo: "skin-ermitanyo",
-  babaylan: "skin-babaylan",
-  seasonpass: "season-pass-s1",
-};
-
-// Real StoreItem shape from GET /api/store/items.
+// ── the real StoreItem shape from GET /api/store/items ──
 type StoreItemApi = {
   id: string;
-  type: string;
+  type: "BOARD" | "SKIN" | "AVATAR" | "FRAME" | "EMOTE" | "BUNDLE" | "SEASON_PASS";
   name: string;
+  description: string | null;
   priceGold: number | null;
   priceDiamonds: number | null;
+  assetKey: string;
+  previewKey: string | null;
   isPremium: boolean;
+  sortOrder: number;
 };
 
 const A = (n: string) => `/assets/${n}`;
 
-// ── currency helpers (prototype curEl / curColor, lines 3878-3879) ──
+// ── currency helpers (prototype curEl / curColor) ──
 type Cur = "gold" | "gem";
 const curColor = (c: Cur) => (c === "gem" ? "#ff9aa8" : "#f2d493");
 function CurIcon({ cur, size = 16 }: { cur: Cur; size?: number }) {
@@ -133,132 +123,84 @@ const Check = () => (
 );
 
 // ── thumbnails ──
-// Opaque avatar/portrait pngs must render inside a masked circle w/ brightness lift.
-function AvatarThumb({ file, size }: { file: string; size: number }) {
+// Board/season pngs render as contained images. Skin portraits are opaque, so
+// they render inside a masked circle with a brightness lift.
+function ImgThumb({ file, size }: { file: string; size: number }) {
+  return <img src={A(file)} alt="" style={{ width: size, height: size, objectFit: "contain", filter: "drop-shadow(0 6px 14px rgba(0,0,0,.5))" }} />;
+}
+function PortraitThumb({ file, size }: { file: string; size: number }) {
   return (
     <div style={{ width: size, height: size, borderRadius: "50%", overflow: "hidden", flex: "none", border: "1px solid rgba(232,184,75,.4)", background: "#0f0820" }}>
       <img src={A(file)} alt="" style={{ width: "100%", height: "100%", objectFit: "cover", filter: "brightness(1.25)" }} />
     </div>
   );
 }
-function ImgThumb({ file, size }: { file: string; size: number }) {
-  return <img src={A(file)} alt="" style={{ width: size, height: size, objectFit: "contain", filter: "drop-shadow(0 6px 14px rgba(0,0,0,.5))" }} />;
-}
-function EmoteThumb({ emoji, size }: { emoji: string; size: number }) {
-  return <span style={{ fontSize: size * 0.72, lineHeight: 1, filter: "drop-shadow(0 4px 10px rgba(0,0,0,.5))" }}>{emoji}</span>;
-}
 
-// ── thumb descriptor: which renderer + payload for a catalog entry ──
-type Thumb =
-  | { kind: "avatar"; file: string }
-  | { kind: "img"; file: string }
-  | { kind: "emote"; emoji: string };
+// ── presentation: how a real StoreItem renders (thumb + short sub-label) ──
+// Keyed by real StoreItem id → the asset file that exists under public/assets.
+// This is display metadata for the live catalog, NOT a stand-in catalog: every
+// price, currency, and purchasable item still comes from the API.
+type Thumb = { kind: "img"; file: string } | { kind: "portrait"; file: string };
 
+const ITEM_THUMB: Record<string, Thumb> = {
+  "board-marble": { kind: "img", file: "board-marble.png" },
+  "board-wood": { kind: "img", file: "board-wood.png" },
+  "board-obsidian": { kind: "img", file: "board-obsidian.png" },
+  "board-ebony": { kind: "img", file: "board-ebony.png" },
+  "skin-classic": { kind: "img", file: "crimson-king.png" },
+  "skin-jade": { kind: "img", file: "jade-king.png" },
+  "skin-obsidian": { kind: "img", file: "obsidian-king.png" },
+  "skin-babaylan": { kind: "portrait", file: "avatars/babaylan.png" },
+  "skin-bagani": { kind: "portrait", file: "avatars/bagani.png" },
+  "skin-mandirigma": { kind: "portrait", file: "avatars/mandirigma.png" },
+  "skin-diwata": { kind: "portrait", file: "avatars/diwata.png" },
+  "skin-ermitanyo": { kind: "portrait", file: "avatars/ermitanyo.png" },
+  "season-pass-s1": { kind: "img", file: "me-crown.png" },
+};
+
+// Fallback thumb per item type when an id is not individually mapped (so a
+// newly-seeded item still renders sensibly instead of a broken image).
+const TYPE_FALLBACK_THUMB: Record<StoreItemApi["type"], Thumb> = {
+  BOARD: { kind: "img", file: "board-marble.png" },
+  SKIN: { kind: "img", file: "crimson-king.png" },
+  AVATAR: { kind: "portrait", file: "avatars/sovereign.png" },
+  FRAME: { kind: "img", file: "frames/laurel.png" },
+  EMOTE: { kind: "img", file: "ic-chest.png" },
+  BUNDLE: { kind: "img", file: "ic-chest.png" },
+  SEASON_PASS: { kind: "img", file: "me-crown.png" },
+};
+
+function thumbFor(it: StoreItemApi): Thumb {
+  return ITEM_THUMB[it.id] ?? TYPE_FALLBACK_THUMB[it.type];
+}
 function renderThumb(t: Thumb, size: number): ReactNode {
-  if (t.kind === "avatar") return <AvatarThumb file={t.file} size={size} />;
-  if (t.kind === "emote") return <EmoteThumb emoji={t.emoji} size={size} />;
+  if (t.kind === "portrait") return <PortraitThumb file={t.file} size={size} />;
   return <ImgThumb file={t.file} size={size} />;
 }
 
-// ── catalog (prototype `catalog`, lines 3890-3916) ──
-// thumb paths remapped to assets that exist (flat filenames per assets.ts).
-type CatKey = "Board Themes" | "Piece Skins" | "Avatars" | "Profile Frames" | "Emotes" | "Bundles" | "Season Pass";
-interface Item {
-  id: string;
-  name: string;
-  cat: CatKey;
-  cur: Cur;
-  price: number;
-  tag?: string;
-  thumb: Thumb;
-}
-
-const subFor: Record<CatKey, string> = {
-  "Board Themes": "Board Theme",
-  "Piece Skins": "Piece Skin",
-  Avatars: "Avatar",
-  "Profile Frames": "Profile Frame",
-  Emotes: "Emote",
-  Bundles: "Bundle",
-  "Season Pass": "Season Pass",
+// ── per-type display metadata (label, sub-label, rail icon) ──
+const TYPE_META: Record<StoreItemApi["type"], { label: string; sub: string; icon: IconName }> = {
+  BOARD: { label: "Board Themes", sub: "Board Theme", icon: "shield" },
+  SKIN: { label: "Piece Skins", sub: "Piece Skin", icon: "target" },
+  AVATAR: { label: "Avatars", sub: "Avatar", icon: "users" },
+  FRAME: { label: "Profile Frames", sub: "Profile Frame", icon: "trophy" },
+  EMOTE: { label: "Emotes", sub: "Emote", icon: "bulb" },
+  BUNDLE: { label: "Bundles", sub: "Bundle", icon: "castle" },
+  SEASON_PASS: { label: "Season Pass", sub: "Season Pass", icon: "crown" },
 };
+// Rail/tab ordering when a type is present in the live catalog.
+const TYPE_ORDER: StoreItemApi["type"][] = ["BOARD", "SKIN", "AVATAR", "FRAME", "EMOTE", "BUNDLE", "SEASON_PASS"];
 
-const CATALOG: Item[] = [
-  { id: "ebony", name: "Imperial Ebony Board", cat: "Board Themes", cur: "gem", price: 480, tag: "NEW", thumb: { kind: "img", file: "board-ebony.png" } },
-  { id: "marble", name: "Marble Court Board", cat: "Board Themes", cur: "gold", price: 4200, thumb: { kind: "img", file: "board-marble.png" } },
-  { id: "classicwood", name: "Classic Wood Board", cat: "Board Themes", cur: "gold", price: 3200, thumb: { kind: "img", file: "board-wood.png" } },
-  { id: "obsidian", name: "Obsidian Court Board", cat: "Board Themes", cur: "gem", price: 520, tag: "PREMIUM", thumb: { kind: "img", file: "board-obsidian.png" } },
-  { id: "jadeskin", name: "Jade Dragon Pieces", cat: "Piece Skins", cur: "gem", price: 360, tag: "NEW", thumb: { kind: "img", file: "jade-king.png" } },
-  { id: "crimsonskin", name: "Crimson Legion Pieces", cat: "Piece Skins", cur: "gem", price: 380, thumb: { kind: "img", file: "crimson-king.png" } },
-  { id: "obsidianskin", name: "Obsidian Court Pieces", cat: "Piece Skins", cur: "gem", price: 420, tag: "PREMIUM", thumb: { kind: "img", file: "obsidian-king.png" } },
-  { id: "sovereign", name: "Royal Sovereign", cat: "Avatars", cur: "gem", price: 280, tag: "NEW", thumb: { kind: "avatar", file: "avatars/sovereign.png" } },
-  { id: "dayang", name: "Dayang Warrior", cat: "Avatars", cur: "gold", price: 2600, thumb: { kind: "avatar", file: "avatars/dayang.png" } },
-  { id: "priestess", name: "Jade Dragon Priestess", cat: "Avatars", cur: "gem", price: 320, tag: "PREMIUM", thumb: { kind: "avatar", file: "avatars/priestess.png" } },
-  { id: "champion", name: "Horned Champion", cat: "Avatars", cur: "gem", price: 300, thumb: { kind: "avatar", file: "avatars/champion.png" } },
-  { id: "sultan", name: "Golden Rajah", cat: "Avatars", cur: "gold", price: 3200, thumb: { kind: "avatar", file: "avatars/sultan.png" } },
-  { id: "strategist", name: "Bronze Strategist", cat: "Avatars", cur: "gold", price: 2400, thumb: { kind: "avatar", file: "avatars/strategist.png" } },
-  { id: "bagani", name: "Bagani Warrior", cat: "Avatars", cur: "gold", price: 2200, thumb: { kind: "avatar", file: "avatars/bagani.png" } },
-  { id: "mandirigma", name: "Mandirigma", cat: "Avatars", cur: "gold", price: 2200, thumb: { kind: "avatar", file: "avatars/mandirigma.png" } },
-  { id: "babaylan", name: "Babaylan Elder", cat: "Avatars", cur: "gold", price: 2000, thumb: { kind: "avatar", file: "avatars/babaylan.png" } },
-  { id: "diwata", name: "Diwata Spirit", cat: "Avatars", cur: "gem", price: 260, thumb: { kind: "avatar", file: "avatars/diwata.png" } },
-  { id: "ermitanyo", name: "Ermitaño Hermit", cat: "Avatars", cur: "gold", price: 1800, thumb: { kind: "avatar", file: "avatars/ermitanyo.png" } },
-  { id: "laurel", name: "Golden Laurel Frame", cat: "Profile Frames", cur: "gold", price: 2200, thumb: { kind: "img", file: "frames/laurel.png" } },
-  { id: "silver", name: "Silver Knight Frame", cat: "Profile Frames", cur: "gold", price: 1500, thumb: { kind: "img", file: "frames/silver.png" } },
-  { id: "obsidianf", name: "Obsidian Sovereign Frame", cat: "Profile Frames", cur: "gem", price: 340, tag: "PREMIUM", thumb: { kind: "img", file: "frames/obsidian.png" } },
-  { id: "victory", name: "Victory Royale", cat: "Emotes", cur: "gold", price: 1500, thumb: { kind: "emote", emoji: "👑" } },
-  { id: "focused", name: "Focused", cat: "Emotes", cur: "gold", price: 1200, thumb: { kind: "emote", emoji: "🎯" } },
-  { id: "resolve", name: "Warrior's Resolve", cat: "Emotes", cur: "gold", price: 0, thumb: { kind: "emote", emoji: "💪" } },
-  { id: "heritage", name: "Royal Heritage Pack", cat: "Bundles", cur: "gem", price: 1200, tag: "VALUE", thumb: { kind: "img", file: "ic-chest.png" } },
-  { id: "lunar", name: "Lunar New Year Bundle", cat: "Bundles", cur: "gem", price: 1080, tag: "-35%", thumb: { kind: "img", file: "ic-chest.png" } },
-  { id: "seasonpass", name: "Royal Season Pass", cat: "Season Pass", cur: "gem", price: 900, tag: "SEASON", thumb: { kind: "img", file: "ic-chest.png" } },
-];
+// A real item resolved for display: real price + currency straight from the API.
+type ShopItem = StoreItemApi & { cur: Cur; price: number; free: boolean; sub: string; thumb: Thumb };
 
-const FEATURED_IDS = ["ebony", "jadeskin", "sovereign", "laurel"];
-
-// ── category rail (prototype storeCats, line 3881) ──
-const CAT_ROWS: { label: string; tab: string; icon: IconName }[] = [
-  { label: "Featured", tab: "All", icon: "crown" },
-  { label: "Board Themes", tab: "Board Themes", icon: "shield" },
-  { label: "Piece Skins", tab: "Piece Skins", icon: "target" },
-  { label: "Avatars", tab: "Avatars", icon: "users" },
-  { label: "Profile Frames", tab: "Profile Frames", icon: "trophy" },
-  { label: "Emotes", tab: "Emotes", icon: "bulb" },
-  { label: "Bundles", tab: "Bundles", icon: "castle" },
-  { label: "Currency", tab: "Currency", icon: "coin" },
-  { label: "Season Pass", tab: "Season Pass", icon: "crown" },
-];
-
-// ── filter tabs (prototype storeFilters, line 3882) ──
-const FILTER_TABS: { label: string; tab: string }[] = [
-  { label: "All Items", tab: "All" },
-  { label: "Board Themes", tab: "Board Themes" },
-  { label: "Piece Skins", tab: "Piece Skins" },
-  { label: "Avatars", tab: "Avatars" },
-  { label: "Frames", tab: "Profile Frames" },
-  { label: "Emotes", tab: "Emotes" },
-  { label: "Bundles", tab: "Bundles" },
-];
-
-// ── daily deals (prototype storeDeals, lines 3925-3929) ──
-interface Deal {
-  id: string;
-  name: string;
-  sub: string;
-  cur: Cur;
-  price: string;
-  raw: number;
-  old: string;
-  off: string;
-  thumb: Thumb;
+function resolve(it: StoreItemApi): ShopItem {
+  const cur: Cur = it.priceDiamonds != null ? "gem" : "gold";
+  const price = it.priceDiamonds ?? it.priceGold ?? 0;
+  return { ...it, cur, price, free: price === 0, sub: TYPE_META[it.type].sub, thumb: thumbFor(it) };
 }
-const DEALS: Deal[] = [
-  { id: "d_classicwood", name: "Classic Wood Board", sub: "Board Theme", cur: "gold", price: "2,250", raw: 2250, old: "4,500", off: "-50%", thumb: { kind: "img", file: "board-wood.png" } },
-  { id: "d_dragon", name: "Crimson Legion Pieces", sub: "Piece Skin", cur: "gem", price: "180", raw: 180, old: "300", off: "-40%", thumb: { kind: "img", file: "crimson-king.png" } },
-  { id: "d_focused", name: "Focused", sub: "Emote", cur: "gold", price: "1,200", raw: 1200, old: "2,000", off: "-40%", thumb: { kind: "emote", emoji: "🎯" } },
-  { id: "d_silver", name: "Silver Knight Frame", sub: "Profile Frame", cur: "gold", price: "1,500", raw: 1500, old: "2,500", off: "-40%", thumb: { kind: "img", file: "frames/silver.png" } },
-];
 
-// local cart line
+// local cart line (name/price/currency all sourced from a real StoreItem)
 interface CartLine {
   id: string;
   name: string;
@@ -272,26 +214,28 @@ export function StorePage() {
   const me = useAuthStore((s) => s.me);
   const patchMe = useAuthStore((s) => s.patchMe);
   const showToast = useAppStore((s) => s.showToast);
+
   const [tab, setTab] = useState<string>("All");
   const [cart, setCart] = useState<CartLine[]>([]);
 
-  // Real catalog (by StoreItem id) + owned item ids + in-flight purchase id.
-  const [realItems, setRealItems] = useState<Record<string, StoreItemApi>>({});
+  const [items, setItems] = useState<ShopItem[] | null>(null); // null = loading
+  const [loadError, setLoadError] = useState(false);
   const [owned, setOwned] = useState<Set<string>>(new Set());
   const [buying, setBuying] = useState<string | null>(null);
 
-  // Load the real catalog (public) once; load ownership only when logged in.
+  // Load the real catalog (public) once.
   useEffect(() => {
     let alive = true;
     void (async () => {
       try {
         const data = await api.get<{ items: StoreItemApi[] }>("/api/store/items");
         if (!alive) return;
-        const map: Record<string, StoreItemApi> = {};
-        for (const it of data.items) map[it.id] = it;
-        setRealItems(map);
+        setItems(data.items.map(resolve));
       } catch {
-        /* catalog visuals still render from the prototype defaults */
+        if (alive) {
+          setItems([]);
+          setLoadError(true);
+        }
       }
     })();
     return () => {
@@ -299,6 +243,7 @@ export function StorePage() {
     };
   }, []);
 
+  // Load real ownership only when logged in.
   useEffect(() => {
     if (!me) {
       setOwned(new Set());
@@ -327,22 +272,22 @@ export function StorePage() {
   };
   const removeFromCart = (id: string) => setCart((c) => c.filter((x) => x.id !== id));
 
-  // Real, server-authoritative purchase for catalog tiles backed by a StoreItem.
-  const buyReal = useCallback(
-    async (realId: string, name: string) => {
+  // Server-authoritative purchase.
+  const buy = useCallback(
+    async (it: ShopItem) => {
       if (!me) {
         showToast("Sign in to buy items.");
         return;
       }
-      setBuying(realId);
+      setBuying(it.id);
       try {
         const res = await api.post<{ balances: { gold: number; diamonds: number; trophies: number } }>(
           "/api/store/purchase",
-          { itemId: realId },
+          { itemId: it.id },
         );
         patchMe({ gold: res.balances.gold, diamonds: res.balances.diamonds });
-        setOwned((s) => new Set(s).add(realId));
-        showToast(`${name} purchased!`);
+        setOwned((s) => new Set(s).add(it.id));
+        showToast(`${it.name} purchased!`);
       } catch (e) {
         showToast(e instanceof ApiError ? e.message : "Purchase failed.");
       } finally {
@@ -352,12 +297,20 @@ export function StorePage() {
     [me, patchMe, showToast],
   );
 
+  // Types actually present in the live catalog → drives rail + filter tabs.
+  const presentTypes = useMemo(() => {
+    if (!items) return [];
+    const set = new Set(items.map((i) => i.type));
+    return TYPE_ORDER.filter((t) => set.has(t));
+  }, [items]);
+
+  // Grid contents for the active tab. "All" = the whole live catalog.
   const grid = useMemo(() => {
-    if (tab === "All") return FEATURED_IDS.map((id) => CATALOG.find((it) => it.id === id)).filter(Boolean) as Item[];
-    return CATALOG.filter((it) => it.cat === tab);
-  }, [tab]);
-  const gridTitle = tab === "All" ? "Featured Items" : tab;
-  const showDeals = tab === "All";
+    if (!items) return [];
+    if (tab === "All") return items;
+    return items.filter((i) => TYPE_META[i.type].label === tab);
+  }, [items, tab]);
+  const gridTitle = tab === "All" ? "All Items" : tab;
 
   const cartGold = cart.filter((c) => c.cur === "gold").reduce((n, c) => n + c.price, 0);
   const cartGem = cart.filter((c) => c.cur === "gem").reduce((n, c) => n + c.price, 0);
@@ -388,27 +341,38 @@ export function StorePage() {
     whiteSpace: "nowrap",
   });
 
+  const loading = items === null;
+
   return (
     <div style={{ maxWidth: 1560, margin: "0 auto", padding: 26, display: "grid", gridTemplateColumns: "230px minmax(0,1fr) 320px", gap: 20, alignItems: "start" }}>
       {/* LEFT: categories */}
       <div style={{ display: "flex", flexDirection: "column", gap: 18 }}>
         <div className="frame" style={{ padding: "14px 12px" }}>
           <div className="ptitle">Store Categories</div>
-          {CAT_ROWS.map((c) => {
-            const active = c.tab === "Currency" ? false : tab === c.tab;
+          <button key="All" onClick={() => setTab("All")} style={catBtn(tab === "All")}>
+            <span style={{ color: tab === "All" ? "var(--gold-lt)" : "var(--gold)", display: "flex" }}>
+              <CatIcon name="crown" />
+            </span>
+            <span style={{ font: "600 13px Inter" }}>Featured</span>
+          </button>
+          {presentTypes.map((t) => {
+            const meta = TYPE_META[t];
+            const active = tab === meta.label;
             return (
-              <button
-                key={c.label}
-                onClick={() => (c.tab === "Currency" ? showToast("Diamond top-ups arrive with online play.") : setTab(c.tab))}
-                style={catBtn(active)}
-              >
+              <button key={t} onClick={() => setTab(meta.label)} style={catBtn(active)}>
                 <span style={{ color: active ? "var(--gold-lt)" : "var(--gold)", display: "flex" }}>
-                  <CatIcon name={c.icon} />
+                  <CatIcon name={meta.icon} />
                 </span>
-                <span style={{ font: "600 13px Inter" }}>{c.label}</span>
+                <span style={{ font: "600 13px Inter" }}>{meta.label}</span>
               </button>
             );
           })}
+          <button key="Currency" onClick={() => showToast("Diamond top-ups arrive with online play.")} style={catBtn(false)}>
+            <span style={{ color: "var(--gold)", display: "flex" }}>
+              <CatIcon name="coin" />
+            </span>
+            <span style={{ font: "600 13px Inter" }}>Currency</span>
+          </button>
         </div>
         <div className="frame" style={{ padding: 20, textAlign: "center" }}>
           <div className="ptitle">Member Benefits</div>
@@ -421,7 +385,7 @@ export function StorePage() {
 
       {/* CENTER */}
       <div style={{ display: "flex", flexDirection: "column", gap: 18 }}>
-        {/* FEATURED PACK */}
+        {/* FEATURED PACK (prototype marketing chrome — no real StoreItem backs it) */}
         <div className="frame" style={{ padding: 0, overflow: "hidden", display: "grid", gridTemplateColumns: "1.1fr .9fr" }}>
           <div style={{ padding: 28 }}>
             <div style={{ font: "700 11px Inter", letterSpacing: "2px", color: "var(--gold)" }}>✦ FEATURED COLLECTION ✦</div>
@@ -438,11 +402,7 @@ export function StorePage() {
               <span className="pill" style={{ color: "#ff9aa8" }}>
                 <CurIcon cur="gem" /> 1,200
               </span>
-              <button
-                className="btn btn-gold"
-                onClick={() => addToCart({ id: "heritage", name: "Royal Heritage Pack", sub: "Bundle", price: 1200, cur: "gem", thumb: { kind: "img", file: "ic-chest.png" } })}
-                style={{ padding: "13px 28px" }}
-              >
+              <button className="btn btn-gold" onClick={() => showToast("The Royal Heritage Pack arrives with online play.")} style={{ padding: "13px 28px" }}>
                 Add to Cart
               </button>
             </div>
@@ -452,16 +412,19 @@ export function StorePage() {
           </div>
         </div>
 
-        {/* FILTER TABS */}
+        {/* FILTER TABS (derived from the live catalog's item types) */}
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-          {FILTER_TABS.map((f) => (
-            <button key={f.label} onClick={() => setTab(f.tab)} style={filterBtn(tab === f.tab)}>
-              {f.label}
+          <button key="All" onClick={() => setTab("All")} style={filterBtn(tab === "All")}>
+            All Items
+          </button>
+          {presentTypes.map((t) => (
+            <button key={t} onClick={() => setTab(TYPE_META[t].label)} style={filterBtn(tab === TYPE_META[t].label)}>
+              {TYPE_META[t].label}
             </button>
           ))}
         </div>
 
-        {/* FEATURED ITEMS */}
+        {/* CATALOG GRID */}
         <div className="divider">
           <i />
           <span>
@@ -469,56 +432,53 @@ export function StorePage() {
           </span>
           <i />
         </div>
-        {grid.length === 0 ? (
+        {loading ? (
           <div className="frame" style={{ padding: 34, textAlign: "center", font: "500 13px Inter", color: "var(--ink2)" }}>
-            No items in this category yet — check back soon.
+            Loading the store…
+          </div>
+        ) : grid.length === 0 ? (
+          <div className="frame" style={{ padding: 34, textAlign: "center", font: "500 13px Inter", color: "var(--ink2)" }}>
+            {loadError ? "The store is unavailable right now — please try again soon." : "No items in this category yet — check back soon."}
           </div>
         ) : (
           <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 14 }}>
             {grid.map((it) => {
-              const isSkin = it.cat === "Piece Skins";
-              // Prefer the real StoreItem (price + currency + ownership) when this
-              // catalog tile is backed by one; otherwise use the prototype values.
-              const realId = REAL_ID[it.id];
-              const real = realId ? realItems[realId] : undefined;
-              const cur: Cur = real ? (real.priceDiamonds != null ? "gem" : "gold") : it.cur;
-              const price = real ? (real.priceDiamonds ?? real.priceGold ?? 0) : it.price;
-              const free = price === 0;
-              const isOwned = !!realId && owned.has(realId);
-              const isBuying = !!realId && buying === realId;
-              const line: CartLine = { id: it.id, name: it.name, sub: subFor[it.cat], price: it.price, cur: it.cur, thumb: it.thumb };
+              const isSkin = it.type === "SKIN";
+              const isOwned = owned.has(it.id);
+              const isBuying = buying === it.id;
+              const line: CartLine = { id: it.id, name: it.name, sub: it.sub, price: it.price, cur: it.cur, thumb: it.thumb };
               return (
                 <div key={it.id} className="frame" style={{ padding: "16px 14px", position: "relative", display: "flex", flexDirection: "column", gap: 10, alignItems: "center", textAlign: "center" }}>
                   {isOwned ? (
                     <span style={{ position: "absolute", top: 9, left: 9, font: "700 9px Inter", letterSpacing: "1px", padding: "3px 7px", borderRadius: 5, background: "#2f8f5b", color: "#fff", zIndex: 2 }}>OWNED</span>
-                  ) : it.tag ? (
-                    <span style={{ position: "absolute", top: 9, left: 9, font: "700 9px Inter", letterSpacing: "1px", padding: "3px 7px", borderRadius: 5, background: "#2f8f5b", color: "#fff", zIndex: 2 }}>{it.tag}</span>
+                  ) : it.isPremium ? (
+                    <span style={{ position: "absolute", top: 9, left: 9, font: "700 9px Inter", letterSpacing: "1px", padding: "3px 7px", borderRadius: 5, background: "#7a4fbf", color: "#fff", zIndex: 2 }}>PREMIUM</span>
                   ) : null}
                   <div onClick={() => showToast(`${it.name} preview arrives with online play.`)} title="Preview" style={{ height: 70, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", width: "100%" }}>
-                    {renderThumb(it.thumb, isSkin ? 52 : 64)}
+                    {renderThumb(it.thumb, isSkin && it.thumb.kind === "portrait" ? 56 : 64)}
                   </div>
                   <div>
                     <div style={{ font: "700 14px Inter", color: "#fff" }}>{it.name}</div>
-                    <div style={{ font: "500 11px Inter", color: "var(--ink2)", marginTop: 2 }}>{subFor[it.cat]}</div>
+                    <div style={{ font: "500 11px Inter", color: "var(--ink2)", marginTop: 2 }}>{it.sub}</div>
                   </div>
                   <button onClick={() => showToast(`${it.name} preview arrives with online play.`)} style={{ display: "inline-flex", alignItems: "center", gap: 5, background: "none", border: "none", padding: 0, color: "var(--gold)", font: "700 10px Inter", letterSpacing: ".8px", textTransform: "uppercase", cursor: "pointer" }}>
                     🔍 Preview
                   </button>
                   {isOwned ? (
-                    <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 5, width: "100%", marginTop: "auto", font: "700 13px Inter", color: "#7ee6a4" }}>✓ Owned</div>
-                  ) : free ? (
-                    <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 5, width: "100%", marginTop: "auto", font: "700 14px 'JetBrains Mono',monospace", color: "var(--ink)" }}>Free</div>
+                    <div style={{ width: "100%", marginTop: "auto", textAlign: "center", font: "700 11px Inter", letterSpacing: "1px", color: "#3fbf6f", border: "1px solid #3fbf6f", padding: 9, borderRadius: 7 }}>✓ OWNED</div>
+                  ) : it.free ? (
+                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, width: "100%", marginTop: "auto" }}>
+                      <span style={{ font: "700 14px 'JetBrains Mono',monospace", color: "var(--ink)" }}>Free</span>
+                      <button className="btn btn-purple" disabled={isBuying} onClick={() => buy(it)} style={{ padding: "8px 16px", fontSize: 11, opacity: isBuying ? 0.7 : 1 }}>
+                        {isBuying ? "…" : "Claim"}
+                      </button>
+                    </div>
                   ) : (
                     <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, width: "100%", marginTop: "auto" }}>
-                      <span style={{ display: "flex", alignItems: "center", gap: 5, font: "700 14px 'JetBrains Mono',monospace", color: curColor(cur) }}>
-                        <CurIcon cur={cur} /> {price.toLocaleString()}
+                      <span style={{ display: "flex", alignItems: "center", gap: 5, font: "700 14px 'JetBrains Mono',monospace", color: curColor(it.cur) }}>
+                        <CurIcon cur={it.cur} /> {it.price.toLocaleString()}
                       </span>
-                      <button
-                        className="btn btn-purple"
-                        disabled={isBuying}
-                        onClick={() => (realId ? buyReal(realId, it.name) : addToCart(line))}
-                        style={{ padding: "8px 16px", fontSize: 11, opacity: isBuying ? 0.7 : 1 }}
-                      >
+                      <button className="btn btn-purple" disabled={isBuying} onClick={() => buy(it)} style={{ padding: "8px 16px", fontSize: 11, opacity: isBuying ? 0.7 : 1 }}>
                         {isBuying ? "…" : "Buy"}
                       </button>
                     </div>
@@ -527,47 +487,6 @@ export function StorePage() {
               );
             })}
           </div>
-        )}
-
-        {/* DAILY DEALS */}
-        {showDeals && (
-          <>
-            <div className="divider">
-              <i />
-              <span>
-                <Diamond /> Daily Deals · Ends in 12:45:32 <Diamond />
-              </span>
-              <i />
-            </div>
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(2,1fr)", gap: 14 }}>
-              {DEALS.map((d) => (
-                <div key={d.id} className="frame" style={{ padding: 16, display: "flex", alignItems: "center", gap: 14, position: "relative" }}>
-                  <div onClick={() => showToast(`${d.name} preview arrives with online play.`)} title="Preview" style={{ flex: "none", display: "flex", alignItems: "center", justifyContent: "center", width: 60, cursor: "pointer" }}>
-                    {renderThumb(d.thumb, d.thumb.kind === "img" ? 58 : 42)}
-                  </div>
-                  <div style={{ flex: 1 }}>
-                    <div style={{ font: "700 14px Inter", color: "#fff" }}>{d.name}</div>
-                    <div style={{ font: "500 11px Inter", color: "var(--ink2)", margin: "2px 0 8px" }}>{d.sub}</div>
-                    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                      <span style={{ display: "flex", alignItems: "center", gap: 5, font: "700 14px 'JetBrains Mono',monospace", color: curColor(d.cur) }}>
-                        <CurIcon cur={d.cur} /> {d.price}
-                      </span>
-                      <span style={{ font: "500 12px 'JetBrains Mono',monospace", color: "var(--ink2)", textDecoration: "line-through" }}>{d.old}</span>
-                    </div>
-                    <div style={{ display: "flex", gap: 14, marginTop: 10 }}>
-                      <button onClick={() => showToast(`${d.name} preview arrives with online play.`)} style={{ background: "none", border: "none", padding: 0, color: "var(--gold)", font: "700 10px Inter", letterSpacing: ".8px", textTransform: "uppercase", cursor: "pointer" }}>
-                        🔍 Preview
-                      </button>
-                      <button onClick={() => addToCart({ id: d.id, name: d.name, sub: d.sub, price: d.raw, cur: d.cur, thumb: d.thumb })} style={{ background: "none", border: "none", padding: 0, color: "#c9a6ff", font: "700 10px Inter", letterSpacing: ".8px", textTransform: "uppercase", cursor: "pointer" }}>
-                        ＋ Add to Cart
-                      </button>
-                    </div>
-                  </div>
-                  <span style={{ position: "absolute", top: 12, right: 12, font: "700 11px Inter", padding: "4px 8px", borderRadius: 6, background: "#a83744", color: "#fff" }}>{d.off}</span>
-                </div>
-              ))}
-            </div>
-          </>
         )}
       </div>
 
@@ -580,7 +499,7 @@ export function StorePage() {
           ) : (
             cart.map((ci) => (
               <div key={ci.id} style={{ display: "flex", alignItems: "center", gap: 16, padding: "11px 0", borderTop: "1px solid rgba(232,184,75,.1)" }}>
-                <div style={{ width: 46, height: 46, flex: "none", marginRight: 2, display: "flex", alignItems: "center", justifyContent: "center" }}>{renderThumb(ci.thumb, ci.thumb.kind === "avatar" ? 46 : 40)}</div>
+                <div style={{ width: 46, height: 46, flex: "none", marginRight: 2, display: "flex", alignItems: "center", justifyContent: "center" }}>{renderThumb(ci.thumb, ci.thumb.kind === "portrait" ? 46 : 40)}</div>
                 <div style={{ flex: 1 }}>
                   <div style={{ font: "700 13px Inter", color: "#fff" }}>{ci.name}</div>
                   <div style={{ font: "500 11px Inter", color: "var(--ink2)" }}>{ci.sub}</div>
@@ -609,7 +528,29 @@ export function StorePage() {
               ) : null}
             </span>
           </div>
-          <button className="btn btn-gold" onClick={() => showToast(cart.length ? "Checkout arrives with online play." : "Your cart is empty.")} style={{ width: "100%", marginTop: 12 }}>
+          <button
+            className="btn btn-gold"
+            onClick={() => {
+              if (!cart.length) {
+                showToast("Your cart is empty.");
+                return;
+              }
+              if (!me) {
+                showToast("Sign in to check out.");
+                return;
+              }
+              // Buy every cart line through the real purchase endpoint, then clear.
+              void (async () => {
+                const lines = [...cart];
+                for (const line of lines) {
+                  const it = items?.find((i) => i.id === line.id);
+                  if (it) await buy(it);
+                }
+                setCart([]);
+              })();
+            }}
+            style={{ width: "100%", marginTop: 12 }}
+          >
             Proceed to Checkout
           </button>
         </div>
@@ -626,11 +567,7 @@ export function StorePage() {
             <span style={{ font: "500 13px 'JetBrains Mono',monospace", color: "var(--ink2)", textDecoration: "line-through" }}>1,680</span>
             <span style={{ font: "700 11px Inter", padding: "3px 8px", borderRadius: 6, background: "#a83744", color: "#fff" }}>-35%</span>
           </div>
-          <button
-            className="btn btn-red"
-            onClick={() => addToCart({ id: "bundle_lny", name: "Lunar New Year Bundle", sub: "Bundle", price: 1080, cur: "gem", thumb: { kind: "img", file: "ic-chest.png" } })}
-            style={{ width: "100%" }}
-          >
+          <button className="btn btn-red" onClick={() => showToast("The Lunar New Year Bundle arrives with online play.")} style={{ width: "100%" }}>
             View Bundle
           </button>
         </div>
