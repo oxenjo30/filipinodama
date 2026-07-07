@@ -22,6 +22,16 @@ model User {
   frameId       String?
   countryCode   String?
 
+  // admin / moderation (ADMIN_DASHBOARD.md §1) — null for normal players
+  adminRole AdminRole?
+  // moderation state
+  bannedUntil     DateTime?
+  mutedUntil      DateTime?
+  verifyToken     String?   @unique // email-verification token (nullable)
+  verifyExpires   DateTime?
+  resetToken      String?   @unique // password-reset token (nullable)
+  resetExpires    DateTime?
+
   // economy caches (authoritative source = LedgerEntry aggregates)
   trophies Int    @default(1000)
   gold     Int    @default(0)
@@ -363,4 +373,29 @@ model Notification {
   createdAt DateTime  @default(now())
 
   @@index([userId, readAt, createdAt])
+}
+
+// ─────────────── Admin & moderation (ADMIN_DASHBOARD.md §1) ───────────────
+enum AdminRole {
+  SUPPORT
+  MODERATOR
+  ECONOMY
+  SUPERADMIN
+}
+
+/// Append-only audit trail. Every admin mutation writes one row
+/// (who, what, target, before/after, reason). Visible to SUPERADMIN.
+model AuditLog {
+  id         String   @id @default(cuid())
+  actorId    String
+  action     String // e.g. "user.ban", "currency.grant", "store.item.update"
+  targetType String? // user | guild | match | item | payment
+  targetId   String?
+  before     Json?
+  after      Json?
+  reason     String?
+  createdAt  DateTime @default(now())
+
+  @@index([actorId, createdAt])
+  @@index([targetType, targetId])
 }

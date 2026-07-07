@@ -1,41 +1,46 @@
 import Fastify from "fastify";
 import cors from "@fastify/cors";
 import cookie from "@fastify/cookie";
+import { ZodError } from "zod";
 import { Server as IOServer } from "socket.io";
-import { PrismaClient } from "@prisma/client";
+import { env } from "./config/env.js";
+import { prisma } from "./db/client.js";
+import { ApiError, fail } from "./lib/errors.js";
+import { authRoutes } from "./auth/routes.js";
 import { registerRealtime } from "./realtime/index.js";
 
-export const prisma = new PrismaClient();
-const PORT = Number(process.env.PORT ?? 4000);
+export { prisma };
 
 async function main() {
   const app = Fastify({ logger: true });
-  await app.register(cors, { origin: process.env.CORS_ORIGIN ?? true, credentials: true });
+
+  await app.register(cors, { origin: env.CORS_ORIGIN, credentials: true });
   await app.register(cookie);
+
+  // Uniform error envelope: ApiError → its status; ZodError → 400; else 500.
+  app.setErrorHandler((error, _req, reply) => {
+    if (error instanceof ApiError) return reply.status(error.status).send(fail(error.code, error.message));
+    if (error instanceof ZodError)
+      return reply.status(400).send(fail("VALIDATION", error.issues.map((i) => i.message).join("; ")));
+    app.log.error(error);
+    return reply.status(500).send(fail("INTERNAL", "Something went wrong"));
+  });
 
   app.get("/health", async () => ({ ok: true, ts: Date.now() }));
 
-  // TODO: register module routes here as you build them (ROADMAP M2+)
-  // await app.register(authRoutes, { prefix: "/api/auth" });
-  // await app.register(storeRoutes, { prefix: "/api/store" });
-  // ...
+  // ── feature modules (REST) ──
+  await app.register(authRoutes, { prefix: "/api/auth" });
+  // more modules register here as they land (users, store, friends, guilds, …)
 
-  // Stripe webhook needs the RAW body — register with a content-type parser
-  // before the JSON parser. See modules/payments.
-  // app.post("/api/payments/webhook", { config: { rawBody: true } }, paymentsWebhook);
-
-  await app.listen({ port: PORT, host: "0.0.0.0" });
+  await app.listen({ port: env.PORT, host: "0.0.0.0" });
 
   const io = new IOServer(app.server, {
     path: "/rt",
-    cors: { origin: process.env.CORS_ORIGIN ?? true, credentials: true },
+    cors: { origin: env.CORS_ORIGIN, credentials: true },
   });
-  // In production attach the Redis adapter so multiple instances share rooms:
-  //   import { createAdapter } from "@socket.io/redis-adapter";
-  //   io.adapter(createAdapter(pub, sub));
   registerRealtime(io);
 
-  app.log.info(`FilipinoDama server listening on :${PORT}`);
+  app.log.info(`FilipinoDama server listening on :${env.PORT}`);
 }
 
 main().catch((e) => {
