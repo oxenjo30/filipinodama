@@ -70,6 +70,7 @@ function segStyle(selected: boolean): React.CSSProperties {
 function SettingRow({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <div
+      className="fd-setting-row"
       style={{
         display: "flex",
         alignItems: "center",
@@ -122,7 +123,17 @@ function CosmeticRow({
         disabled={busy}
         onClick={() => onSelect(c)}
         title={c.name}
-        style={{ ...segStyle(equippedId === c.id), opacity: busy ? 0.6 : 1, cursor: busy ? "wait" : "pointer" }}
+        style={{
+          ...segStyle(equippedId === c.id),
+          opacity: busy ? 0.6 : 1,
+          cursor: busy ? "wait" : "pointer",
+          // Keep segments even on phones: allow shrink + ellipsis so a long
+          // owned name never forces a ragged wrap into uneven rows.
+          minWidth: 0,
+          overflow: "hidden",
+          textOverflow: "ellipsis",
+          whiteSpace: "nowrap",
+        }}
       >
         {c.name}
       </button>
@@ -131,6 +142,7 @@ function CosmeticRow({
 
   return (
     <div
+      className="fd-setting-row"
       style={{
         display: "flex",
         alignItems: "center",
@@ -334,7 +346,7 @@ export function SettingsPage() {
   // ── Logged-out guard: honest sign-in prompt, never crash ──
   if (!me) {
     return (
-      <div style={{ maxWidth: 640, margin: "0 auto", padding: 26 }}>
+      <div className="fd-page-pad" style={{ maxWidth: 640, margin: "0 auto", padding: 26 }}>
         <div style={{ textAlign: "center", margin: "6px 0 24px" }}>
           <div
             style={{ font: "700 12px Inter", letterSpacing: 2, textTransform: "uppercase", color: "var(--gold)" }}
@@ -363,7 +375,7 @@ export function SettingsPage() {
 
   return (
     <>
-      <div data-screen-label="Settings" style={{ maxWidth: 640, margin: "0 auto", padding: 26 }}>
+      <div data-screen-label="Settings" className="fd-page-pad" style={{ maxWidth: 640, margin: "0 auto", padding: 26 }}>
         <div style={{ textAlign: "center", margin: "6px 0 24px" }}>
           <div
             style={{ font: "700 12px Inter", letterSpacing: 2, textTransform: "uppercase", color: "var(--gold)" }}
@@ -520,6 +532,7 @@ export function SettingsPage() {
       {deleteShow && (
         <div
           onClick={closeDelete}
+          className="fd-sheet-overlay"
           style={{
             position: "fixed",
             inset: 0,
@@ -534,6 +547,7 @@ export function SettingsPage() {
         >
           <div
             onClick={(e) => e.stopPropagation()}
+            className="fd-sheet"
             style={{
               width: "100%",
               maxWidth: 440,
@@ -605,6 +619,7 @@ export function SettingsPage() {
                   onChange={(e) => setDeleteConfirm(e.target.value)}
                   placeholder="DELETE"
                   disabled={deleting}
+                  className="fd-nozoom"
                   style={{
                     width: "100%",
                     boxSizing: "border-box",
@@ -620,7 +635,7 @@ export function SettingsPage() {
                   }}
                 />
               </div>
-              <div style={{ display: "flex", gap: 10 }}>
+              <div className="fd-sheet-actions" style={{ display: "flex", gap: 10 }}>
                 <button
                   type="button"
                   onClick={closeDelete}

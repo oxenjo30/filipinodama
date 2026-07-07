@@ -160,7 +160,7 @@ export function CheckoutModal({ open, cart, onCancel, onConfirm, onKeepShopping,
             </div>
           ))}
         </div>
-        <div style={{ display: "flex", gap: 10 }}>
+        <div className="fd-sheet-actions" style={{ display: "flex", gap: 10 }}>
           <button className="btn btn-purple" onClick={onKeepShopping} style={{ flex: 1 }}>
             Keep Shopping
           </button>
@@ -198,7 +198,7 @@ export function CheckoutModal({ open, cart, onCancel, onConfirm, onKeepShopping,
             {gem > 0 ? <TotalChip cur="gem" amount={gem} /> : null}
           </span>
         </div>
-        <div style={{ display: "flex", gap: 10, marginTop: 20 }}>
+        <div className="fd-sheet-actions" style={{ display: "flex", gap: 10, marginTop: 20 }}>
           <button className="btn btn-purple" onClick={onCancel} disabled={confirming} style={{ flex: 1, opacity: confirming ? 0.7 : 1 }}>
             Cancel
           </button>
@@ -211,8 +211,8 @@ export function CheckoutModal({ open, cart, onCancel, onConfirm, onKeepShopping,
   }
 
   return (
-    <div onClick={dismiss} style={overlay}>
-      <div className="frame" onClick={(e) => e.stopPropagation()} style={card}>
+    <div className="fd-sheet-overlay" onClick={dismiss} style={overlay}>
+      <div className="frame fd-sheet" onClick={(e) => e.stopPropagation()} style={card}>
         <button onClick={dismiss} aria-label="Close" style={closeBtn}>
           ✕
         </button>

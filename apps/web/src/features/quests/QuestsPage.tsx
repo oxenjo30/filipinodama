@@ -95,6 +95,7 @@ function QuestRow({ q, busy, onClaim }: { q: Quest; busy: boolean; onClaim: (id:
 
   return (
     <div
+      className="fd-social-row"
       style={{
         display: "flex",
         alignItems: "center",
@@ -131,13 +132,12 @@ function QuestRow({ q, busy, onClaim }: { q: Quest; busy: boolean; onClaim: (id:
         </div>
       </div>
       <div
+        className="fd-row-actions"
         style={{
           flex: "none",
           display: "flex",
-          flexDirection: "column",
-          alignItems: "flex-end",
-          gap: 8,
-          minWidth: 96,
+          alignItems: "center",
+          gap: 10,
         }}
       >
         <span
@@ -225,6 +225,7 @@ export function QuestsPage() {
   return (
     <div
       data-screen-label="Quests"
+      className="fd-page-pad"
       style={{
         maxWidth: 860,
         margin: "0 auto",
@@ -265,8 +266,9 @@ export function QuestsPage() {
       </div>
 
       {/* DAILY */}
-      <div className="frame" style={{ padding: "22px 22px 8px" }}>
+      <div className="frame fd-card-m" style={{ padding: "22px 22px 8px" }}>
         <div
+          className="fd-page-head"
           style={{
             display: "flex",
             alignItems: "center",
@@ -311,8 +313,9 @@ export function QuestsPage() {
       </div>
 
       {/* SEASONAL */}
-      <div className="frame" style={{ padding: "22px 22px 8px" }}>
+      <div className="frame fd-card-m" style={{ padding: "22px 22px 8px" }}>
         <div
+          className="fd-page-head"
           style={{
             display: "flex",
             alignItems: "center",

@@ -221,10 +221,10 @@ export function HomePage() {
   };
 
   return (
-    <div className="fd-home-grid" style={{ maxWidth: 1560, margin: "0 auto", padding: 26, display: "grid", gridTemplateColumns: "minmax(0,1fr) 340px", gap: 22, alignItems: "start" }}>
+    <div className="fd-home-grid fd-page-pad" style={{ maxWidth: 1560, margin: "0 auto", padding: 26, display: "grid", gridTemplateColumns: "minmax(0,1fr) 340px", gap: 22, alignItems: "start" }}>
       <div style={{ display: "flex", flexDirection: "column", gap: 22 }}>
         {/* HERO */}
-        <div className="frame" style={{ padding: 34, display: "grid", gridTemplateColumns: "1fr 1fr", gap: 24, alignItems: "center", overflow: "hidden" }}>
+        <div className="frame fd-collapse-2 fd-card-m" style={{ padding: 34, display: "grid", gridTemplateColumns: "1fr 1fr", gap: 24, alignItems: "center", overflow: "hidden" }}>
           <div>
             <div style={{ font: "700 12px Inter", letterSpacing: "3px", color: "var(--gold)", marginBottom: 16 }}>✦ STRATEGY · HERITAGE · VICTORY ✦</div>
             <h1 style={{ margin: 0, font: "800 clamp(28px,3vw,44px)/1.05 Cinzel,serif" }}>
@@ -235,7 +235,7 @@ export function HomePage() {
             <p style={{ font: "400 15px/1.6 Inter", color: "var(--ink)", maxWidth: 440, margin: "18px 0 26px" }}>
               Challenge real players, sharpen your strategy, and rise through the ranks in the timeless game of Filipino Dama.
             </p>
-            <div style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "center" }}>
+            <div className="fd-btn-stack" style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "center" }}>
               <button className="btn btn-red" onClick={() => navigate("/play/ai")} style={{ fontSize: 15, padding: "15px 26px" }}>🌐 Play Now</button>
               <button className="btn btn-purple" onClick={() => navigate("/learn")} style={{ fontSize: 15, padding: "15px 26px" }}>📖 Learn the Rules</button>
               <button onClick={() => navigate("/rooms")} style={{ display: "inline-flex", alignItems: "center", gap: 9, padding: "15px 22px", borderRadius: 8, border: "1px solid rgba(232,184,75,.4)", background: "rgba(15,8,32,.5)", color: "var(--gold-lt)", font: "700 13px Inter", letterSpacing: "1px", textTransform: "uppercase", cursor: "pointer" }}>👥 Private Room</button>
@@ -276,7 +276,7 @@ export function HomePage() {
             no active match → no card, Recent Updates fills the row full-width).
             When present, the two sit side-by-side as in the prototype. */}
         <div
-          className="fd-continue-grid"
+          className="fd-continue-grid fd-collapse-2"
           style={
             activeMatch
               ? { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 18 }
@@ -334,7 +334,7 @@ export function HomePage() {
 
         <div className="frame" style={{ padding: 20 }}>
           <div className="ptitle">Quick Stats</div>
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+          <div className="fd-stat-2" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
             {QUICK_STATS.map((q) => (
               <div key={q.label} style={{ display: "flex", alignItems: "center", gap: 10 }}>
                 <img src={SB(q.icon)} alt="" width={24} height={24} style={{ objectFit: "contain" }} />
@@ -535,9 +535,9 @@ function ContinuePlayingCard({
   return (
     <div className="frame" style={{ padding: 20 }}>
       <div className="ptitle" style={{ textAlign: "left", border: "none", margin: "0 0 14px" }}>Continue Playing</div>
-      <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 14, flexWrap: "wrap", justifyContent: "center" }}>
         <div style={{ width: 108, height: 108, flex: "none" }}>{miniBoard}</div>
-        <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", gap: 22 }}>
+        <div style={{ flex: "1 1 180px", display: "flex", alignItems: "center", justifyContent: "center", gap: 18 }}>
           {seat(mine, "You")}
           <span style={{ font: "800 14px Cinzel,serif", color: "var(--ink2)" }}>VS</span>
           {seat(other, "Opponent")}

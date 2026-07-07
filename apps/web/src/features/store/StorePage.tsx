@@ -629,9 +629,9 @@ export function StorePage() {
   const loading = items === null;
 
   return (
-    <div style={{ maxWidth: 1560, margin: "0 auto", padding: 26, display: "grid", gridTemplateColumns: "230px minmax(0,1fr) 320px", gap: 20, alignItems: "start" }}>
+    <div className="fd-stack fd-page-pad" style={{ maxWidth: 1560, margin: "0 auto", padding: 26, display: "grid", gridTemplateColumns: "230px minmax(0,1fr) 320px", gap: 20, alignItems: "start" }}>
       {/* LEFT: categories */}
-      <div style={{ display: "flex", flexDirection: "column", gap: 18 }}>
+      <div className="fd-order-last" style={{ display: "flex", flexDirection: "column", gap: 18 }}>
         <div className="frame" style={{ padding: "14px 12px" }}>
           <div className="ptitle">Store Categories</div>
           <button key="All" onClick={() => setTab("All")} style={catBtn(tab === "All")}>
@@ -669,14 +669,14 @@ export function StorePage() {
       </div>
 
       {/* CENTER */}
-      <div style={{ display: "flex", flexDirection: "column", gap: 18 }}>
+      <div className="fd-order-1" style={{ display: "flex", flexDirection: "column", gap: 18 }}>
         {/* FEATURED PACK (prototype marketing chrome — no real StoreItem backs it) */}
-        <div className="frame" style={{ padding: 0, overflow: "hidden", display: "grid", gridTemplateColumns: "1.1fr .9fr" }}>
+        <div className="frame fd-collapse-2" style={{ padding: 0, overflow: "hidden", display: "grid", gridTemplateColumns: "1.1fr .9fr" }}>
           <div style={{ padding: 28 }}>
             <div style={{ font: "700 11px Inter", letterSpacing: "2px", color: "var(--gold)" }}>✦ FEATURED COLLECTION ✦</div>
-            <h1 style={{ margin: "10px 0 6px", font: "800 34px Cinzel,serif", color: "var(--gold-lt)" }}>Royal Heritage Pack</h1>
+            <h1 style={{ margin: "10px 0 6px", font: "800 clamp(22px,6vw,34px) Cinzel,serif", color: "var(--gold-lt)" }}>Royal Heritage Pack</h1>
             <div style={{ font: "500 14px Inter", color: "#fff", marginBottom: 16 }}>Rule the board with timeless royalty.</div>
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "8px 16px", marginBottom: 20 }}>
+            <div className="fd-collapse-2" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "8px 16px", marginBottom: 20 }}>
               {["Exclusive Royal Board", "Royal Avatar & Frame", "Crown Piece Skins", "Victory Emotes"].map((w) => (
                 <span key={w} style={{ display: "flex", alignItems: "center", gap: 8, font: "500 13px Inter", color: "var(--ink)" }}>
                   <Check /> {w}
@@ -713,7 +713,7 @@ export function StorePage() {
         </div>
 
         {/* FILTER TABS (derived from the live catalog's item types) */}
-        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+        <div className="fd-chip-strip" style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
           <button key="All" onClick={() => setTab("All")} style={filterBtn(tab === "All")}>
             All Items
           </button>
@@ -741,7 +741,7 @@ export function StorePage() {
             {loadError ? "The store is unavailable right now — please try again soon." : "No items in this category yet — check back soon."}
           </div>
         ) : (
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 14 }}>
+          <div className="fd-grid-2up" style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", gap: 14 }}>
             {grid.map((it) => {
               const isSkin = it.type === "SKIN";
               const isOwned = owned.has(it.id);
@@ -760,7 +760,7 @@ export function StorePage() {
                     <div style={{ font: "700 14px Inter", color: "#fff" }}>{it.name}</div>
                     <div style={{ font: "500 11px Inter", color: "var(--ink2)", marginTop: 2 }}>{it.sub}</div>
                   </div>
-                  <button onClick={() => setPreview(it)} style={{ display: "inline-flex", alignItems: "center", gap: 5, background: "none", border: "none", padding: 0, color: "var(--gold)", font: "700 10px Inter", letterSpacing: ".8px", textTransform: "uppercase", cursor: "pointer" }}>
+                  <button className="fd-tap" onClick={() => setPreview(it)} style={{ display: "inline-flex", alignItems: "center", gap: 5, background: "none", border: "none", padding: 0, color: "var(--gold)", font: "700 10px Inter", letterSpacing: ".8px", textTransform: "uppercase", cursor: "pointer" }}>
                     🔍 Preview
                   </button>
                   {isOwned ? (
@@ -820,13 +820,14 @@ export function StorePage() {
                         <span style={{ font: "500 12px 'JetBrains Mono',monospace", color: "var(--ink2)", textDecoration: "line-through" }}>{it.origPrice.toLocaleString()}</span>
                       </div>
                       <div style={{ display: "flex", gap: 14, marginTop: 10 }}>
-                        <button onClick={() => setPreview(it)} style={{ background: "none", border: "none", padding: 0, color: "var(--gold)", font: "700 10px Inter", letterSpacing: ".8px", textTransform: "uppercase", cursor: "pointer" }}>
+                        <button className="fd-tap" onClick={() => setPreview(it)} style={{ background: "none", border: "none", padding: 0, color: "var(--gold)", font: "700 10px Inter", letterSpacing: ".8px", textTransform: "uppercase", cursor: "pointer" }}>
                           🔍 Preview
                         </button>
                         {isOwned ? (
                           <span style={{ font: "700 10px Inter", letterSpacing: ".8px", textTransform: "uppercase", color: "#3fbf6f" }}>✓ Owned</span>
                         ) : (
                           <button
+                            className="fd-tap"
                             disabled={isBuying}
                             onClick={() => addToCart(cartLineOf(it))}
                             style={{ background: "none", border: "none", padding: 0, color: "#c9a6ff", font: "700 10px Inter", letterSpacing: ".8px", textTransform: "uppercase", cursor: isBuying ? "default" : "pointer", opacity: isBuying ? 0.6 : 1 }}
@@ -846,7 +847,7 @@ export function StorePage() {
       </div>
 
       {/* RIGHT: cart + seasonal */}
-      <div style={{ display: "flex", flexDirection: "column", gap: 18 }}>
+      <div className="fd-order-2" style={{ display: "flex", flexDirection: "column", gap: 18 }}>
         <div className="frame" style={{ padding: 20 }}>
           <div className="ptitle">Your Cart</div>
           {cart.length === 0 ? (
@@ -862,7 +863,7 @@ export function StorePage() {
                     <CurIcon cur={ci.cur} size={14} /> {ci.price.toLocaleString()}
                   </div>
                 </div>
-                <button onClick={() => removeFromCart(ci.id)} style={{ width: 26, height: 26, flex: "none", borderRadius: 6, border: "1px solid rgba(232,184,75,.25)", background: "rgba(0,0,0,.3)", color: "var(--ink2)", cursor: "pointer" }}>
+                <button className="fd-tap" onClick={() => removeFromCart(ci.id)} style={{ width: 26, height: 26, flex: "none", borderRadius: 6, border: "1px solid rgba(232,184,75,.25)", background: "rgba(0,0,0,.3)", color: "var(--ink2)", cursor: "pointer" }}>
                   ✕
                 </button>
               </div>

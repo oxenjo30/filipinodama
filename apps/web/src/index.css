@@ -107,3 +107,147 @@ input:focus{outline:none;border-color:var(--gold)!important}
 @media(max-width:560px){
   .fd-modes-grid{grid-template-columns:1fr!important}
 }
+
+/* ══════════════════════════════════════════════════════════════════════════
+   MOBILE LAYOUT SYSTEM (target ~390–430px, safe to 360px)
+   Intentional mobile placement — not just collapse-to-one-column. Utilities
+   below are opt-in via className so pages reflow into a sensible phone order
+   with consistent gutters, spacing, tap targets, and stacked control rows.
+   ══════════════════════════════════════════════════════════════════════════ */
+
+/* ── page gutters: trim heavy desktop padding on phones. Inline padding on a
+   page root beats the global main>div rule, so pages add this class AND we win
+   here with !important. ── */
+@media(max-width:1000px){
+  .fd-page-pad{padding-left:16px!important;padding-right:16px!important}
+  .fd-page-pad-tight{padding:16px 14px!important}
+}
+
+/* ── reorderable rail layout: a collapsed multi-column page becomes an explicit
+   flex column; children carry fd-order-N so PRIMARY content leads and secondary
+   rails sink. ── */
+@media(max-width:1000px){
+  .fd-stack{display:flex!important;flex-direction:column!important;gap:16px!important}
+  .fd-order-1{order:1!important}.fd-order-2{order:2!important}.fd-order-3{order:3!important}
+  .fd-order-4{order:4!important}.fd-order-5{order:5!important}.fd-order-6{order:6!important}
+  .fd-order-last{order:99!important}
+}
+
+/* ── control rows ── */
+/* even 2-up button grid (Undo/Swap/Restart/Surrender, header actions) */
+@media(max-width:560px){
+  .fd-btn-grid-2{display:grid!important;grid-template-columns:1fr 1fr!important;gap:8px!important}
+  .fd-btn-grid-2>*{width:100%!important;min-height:44px!important;justify-content:center!important}
+  .fd-btn-grid-2>.fd-btn-wide{grid-column:1/-1!important}
+}
+/* full-width vertical stack (primary CTAs, Resign/Leave) */
+@media(max-width:560px){
+  .fd-btn-stack{display:flex!important;flex-direction:column!important;gap:10px!important}
+  .fd-btn-stack>*{width:100%!important;min-height:44px!important;justify-content:center!important}
+  /* primary on top, secondary/back below */
+  .fd-btn-stack-rev{flex-direction:column-reverse!important}
+}
+/* a single primary action forced full-width + tall on mobile */
+@media(max-width:560px){ .fd-cta-full{width:100%!important;min-height:44px!important;justify-content:center!important} }
+
+/* ── page header: title block + one primary CTA → stack, CTA full-width ── */
+@media(max-width:560px){
+  .fd-page-head{flex-direction:column!important;align-items:stretch!important;gap:12px!important}
+  .fd-page-head .fd-head-cta{width:100%!important;min-height:44px!important;justify-content:center!important}
+}
+
+/* ── promo/action banner (icon + text + trailing button) → column, full-width btn ── */
+@media(max-width:1000px){
+  .fd-cta-banner{flex-direction:column!important;align-items:stretch!important;text-align:center!important}
+  .fd-cta-banner .fd-banner-action{width:100%!important;min-height:44px!important;justify-content:center!important}
+}
+
+/* ── stat tiles: stay multi-column but shrink; drop to fewer cols at the low end ── */
+.fd-stat-3{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+.fd-stat-2{display:grid;grid-template-columns:repeat(2,1fr);gap:8px}
+@media(max-width:1000px){
+  .fd-stat-3{grid-template-columns:repeat(3,1fr)!important}
+  .fd-stat-2{grid-template-columns:repeat(2,1fr)!important}
+}
+@media(max-width:560px){ .fd-stat-3,.fd-stat-2{gap:8px} .fd-stat-3>*,.fd-stat-2>*{padding:12px 8px!important} }
+
+/* ── two-up grids the global collapser misses (literal "1fr 1fr", form fields) ── */
+@media(max-width:640px){ .fd-collapse-2{grid-template-columns:1fr!important} }
+
+/* ── keep a small card set 2-up (then 1-up very narrow) instead of a tall stack ── */
+@media(max-width:1000px){ .fd-grid-2up{grid-template-columns:repeat(2,1fr)!important} }
+@media(max-width:380px){ .fd-grid-2up{grid-template-columns:1fr!important} }
+
+/* ── horizontal chip / tab strip (filters, tiers) ── */
+@media(max-width:640px){
+  .fd-chip-strip{display:flex!important;flex-wrap:nowrap!important;overflow-x:auto!important;gap:8px!important;-webkit-overflow-scrolling:touch;scrollbar-width:none}
+  .fd-chip-strip::-webkit-scrollbar{display:none}
+  .fd-chip-strip>*{flex:none!important;white-space:nowrap!important;min-height:36px}
+}
+/* equal-width segmented control */
+@media(max-width:640px){
+  .fd-seg{display:flex!important;gap:8px!important;width:100%!important}
+  .fd-seg>*{flex:1!important;min-width:0!important;text-align:center!important;min-height:42px!important}
+}
+
+/* ── settings/label+control rows: stack label over a full-width control ── */
+@media(max-width:640px){
+  .fd-setting-row{flex-direction:column!important;align-items:stretch!important;gap:10px!important}
+  .fd-setting-row>*:last-child{width:100%!important;max-width:none!important;min-width:0!important;justify-content:flex-start!important}
+  .fd-setting-row>*:last-child>button{flex:1!important;min-height:44px!important}
+}
+
+/* ── social list row: avatar + identity + trailing actions → identity line then
+   full-width action line ── */
+@media(max-width:560px){
+  .fd-social-row{flex-wrap:wrap!important}
+  .fd-social-row .fd-row-actions{width:100%!important;display:flex!important;gap:8px!important}
+  .fd-social-row .fd-row-actions>*{flex:1!important;min-height:44px!important;justify-content:center!important}
+}
+
+/* ── leaderboard/standings: opt the fixed multi-col GRID out on mobile → flex card ── */
+@media(max-width:1000px){
+  .fd-ladder-grid{grid-template-columns:unset!important;display:flex!important;flex-direction:column!important;gap:2px}
+  .fd-ladder-head{display:none!important}
+  .fd-ladder-card{display:flex!important;flex-wrap:wrap!important;align-items:center!important;gap:8px 10px!important}
+  .fd-ladder-card .fd-ladder-stats{width:100%!important;display:flex!important;gap:14px!important;flex-wrap:wrap}
+}
+
+/* ── wide table → horizontal scroll with a min-width inner ── */
+.fd-table-scroll{width:100%;overflow-x:auto;-webkit-overflow-scrolling:touch}
+
+/* ── mobile card padding trim: reclaim width inside .frame on phones ── */
+@media(max-width:560px){ .fd-card-m{padding:16px!important} }
+
+/* ── bottom-sheet modal: fixed centered dialogs become thumb-reachable sheets ──
+   apply fd-sheet-overlay to the fixed backdrop and fd-sheet to the card. */
+@media(max-width:560px){
+  .fd-sheet-overlay{align-items:flex-end!important;padding:0!important}
+  .fd-sheet{width:100%!important;max-width:none!important;border-radius:18px 18px 0 0!important;max-height:92vh!important;overflow-y:auto!important;padding:22px 18px calc(20px + env(safe-area-inset-bottom))!important}
+  .fd-sheet-actions{display:flex!important;gap:10px!important}
+  .fd-sheet-actions>*{flex:1!important;min-height:46px!important;justify-content:center!important}
+}
+/* dialogs with inputs: anchor to top so the on-screen keyboard doesn't cover them */
+@media(max-width:560px){ .fd-dialog-top{align-items:flex-start!important;overflow-y:auto!important} }
+
+/* ── tap-target helper: raise small links/icon buttons to a real touch size ── */
+.fd-tap{min-height:40px;display:inline-flex;align-items:center;justify-content:center}
+
+/* ── prevent iOS focus-zoom: 16px inputs on phones ── */
+@media(max-width:560px){ .fd-nozoom,.fd-nozoom input,.fd-nozoom textarea{font-size:16px!important} }
+
+/* ── game screen: the single highest-impact fix — board leads, rails follow ──
+   GamePage/OnlineMatchPage add fd-game-left/center/right; on mobile the grid
+   becomes a column and the CENTER (board) is ordered first. ── */
+@media(max-width:1000px){
+  .fd-game-grid{display:flex!important;flex-direction:column!important;gap:14px!important}
+  .fd-game-center{order:1!important}
+  .fd-game-left{order:2!important}
+  .fd-game-right{order:3!important}
+}
+/* compact player/opponent panel on phones (smaller avatar/dots/padding) */
+@media(max-width:560px){
+  .fd-panel-compact{padding:12px!important}
+  .fd-panel-compact .fd-panel-avatar{width:44px!important;height:44px!important}
+  .fd-panel-compact .fd-capture-dot{width:14px!important;height:14px!important}
+}

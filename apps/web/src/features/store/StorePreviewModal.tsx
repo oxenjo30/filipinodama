@@ -153,7 +153,7 @@ function PreviewArt({ pv }: { pv: StorePreview }) {
     if (pv.portraitFile) return <AvatarToken file={pv.portraitFile} />;
     // The two animated 3D flipping coins (red + blue), soldier → king.
     return (
-      <div style={{ display: "flex", justifyContent: "center", gap: 52, flexWrap: "wrap" }}>
+      <div style={{ display: "flex", justifyContent: "center", gap: "clamp(16px, 6vw, 52px)", flexWrap: "wrap" }}>
         <SkinCoin color="red" skinArt={pv.skinArt} pieceSkin={pv.pieceSkin ?? "default"} label="Your Side · Soldier → King" labelColor="#ff9aa8" delay="0s" />
         <SkinCoin color="blue" skinArt={pv.skinArt} pieceSkin={pv.pieceSkin ?? "default"} label="Opponent · Soldier → King" labelColor="#9ac2ff" delay=".9s" />
       </div>
@@ -201,7 +201,7 @@ function PreviewArt({ pv }: { pv: StorePreview }) {
 
   // frame → avatar behind + frame overlay art (bobbing, prototype fdcoinbob 4.4s)
   return (
-    <div style={{ position: "relative", width: 230, height: 230, margin: "0 auto", animation: "fdcoinbob 4.4s ease-in-out infinite" }}>
+    <div style={{ position: "relative", width: "min(230px, 72vw)", aspectRatio: "1 / 1", margin: "0 auto", animation: "fdcoinbob 4.4s ease-in-out infinite" }}>
       <img
         src={A(pv.portraitFile ?? "avatars/sovereign.png")}
         alt=""
@@ -220,7 +220,7 @@ function PreviewArt({ pv }: { pv: StorePreview }) {
 function AvatarToken({ file }: { file: string }) {
   // Prototype: avatar bobs (fdcoinbob 3.4s) with a sheen sweep across it.
   return (
-    <div style={{ position: "relative", width: 196, height: 196, margin: "0 auto", animation: "fdcoinbob 3.4s ease-in-out infinite" }}>
+    <div style={{ position: "relative", width: "min(196px, 64vw)", aspectRatio: "1 / 1", margin: "0 auto", animation: "fdcoinbob 3.4s ease-in-out infinite" }}>
       <img
         src={A(file)}
         alt=""
@@ -247,15 +247,15 @@ export type StorePreviewModalProps = {
 export function StorePreviewModal({ pv, onClose, onBuy, buyLabel = "Add to Cart" }: StorePreviewModalProps) {
   if (!pv) return null;
   return (
-    <div onClick={onClose} style={overlay}>
-      <div className="frame" onClick={(e) => e.stopPropagation()} style={card}>
+    <div onClick={onClose} className="fd-sheet-overlay" style={overlay}>
+      <div className="frame fd-sheet" onClick={(e) => e.stopPropagation()} style={card}>
         <button onClick={onClose} aria-label="Close preview" style={closeBtn}>
           ✕
         </button>
         <div style={{ font: "700 11px Inter", letterSpacing: "3px", textTransform: "uppercase", color: "var(--gold)" }}>Item Preview</div>
         <h2 style={{ margin: "8px 0 3px", font: "800 28px Cinzel,serif", color: "var(--gold-lt)" }}>{pv.name}</h2>
         <div style={{ font: "600 11px Inter", letterSpacing: "1.5px", textTransform: "uppercase", color: "var(--ink2)" }}>{pv.sub}</div>
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "center", minHeight: 240, padding: "24px 0 8px" }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "center", minHeight: "clamp(180px, 45vw, 240px)", padding: "24px 0 8px" }}>
           <PreviewArt pv={pv} />
         </div>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 12, marginBottom: 18 }}>
@@ -268,9 +268,9 @@ export function StorePreviewModal({ pv, onClose, onBuy, buyLabel = "Add to Cart"
           </span>
         </div>
         {pv.owned ? (
-          <div style={ownedChip}>✓ Already Owned</div>
+          <div className="fd-cta-full" style={ownedChip}>✓ Already Owned</div>
         ) : (
-          <button onClick={onBuy} className="btn btn-gold" style={{ padding: "13px 32px" }}>
+          <button onClick={onBuy} className="btn btn-gold fd-cta-full" style={{ padding: "13px 32px" }}>
             {pv.free ? "Claim" : buyLabel}
           </button>
         )}

@@ -361,7 +361,7 @@ export function InventoryPage() {
   // ── logged-out: honest sign-in prompt (prototype chrome, never crash) ──
   if (!me) {
     return (
-      <div style={{ maxWidth: 1100, margin: "0 auto", padding: 26, display: "flex", flexDirection: "column", gap: 20 }}>
+      <div className="fd-page-pad" style={{ maxWidth: 1100, margin: "0 auto", padding: 26, display: "flex", flexDirection: "column", gap: 20 }}>
         {header(() => navigate("/store"))}
         <div className="frame" style={{ padding: 40, textAlign: "center" }}>
           <div style={{ font: "700 15px Inter", color: "var(--gold-lt)", marginBottom: 8 }}>Sign in to view your Inventory</div>
@@ -377,7 +377,7 @@ export function InventoryPage() {
   const loading = items === null;
 
   return (
-    <div style={{ maxWidth: 1100, margin: "0 auto", padding: 26, display: "flex", flexDirection: "column", gap: 20 }}>
+    <div className="fd-page-pad" style={{ maxWidth: 1100, margin: "0 auto", padding: 26, display: "flex", flexDirection: "column", gap: 20 }}>
       {header(() => navigate("/store"))}
 
       {loading ? (
@@ -401,7 +401,7 @@ export function InventoryPage() {
         </div>
       ) : (
         groups.map((g) => (
-          <div key={g.cat} className="frame" style={{ padding: 22 }}>
+          <div key={g.cat} className="frame fd-card-m" style={{ padding: 22 }}>
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 14 }}>
               <div className="ptitle" style={{ textAlign: "left", margin: 0, border: "none", padding: 0 }}>
                 {g.cat}
@@ -430,26 +430,28 @@ export function InventoryPage() {
                         <button
                           onClick={() => toggleEmote(it, !emoteEquipped)}
                           disabled={isBusy}
+                          className="fd-tap"
                           style={{ ...(emoteEquipped ? equippedToggleBtn : equipBtn), opacity: isBusy ? 0.7 : 1 }}
                         >
                           {isBusy ? "…" : emoteEquipped ? "✓ Equipped" : "Equip"}
                         </button>
                       ) : it.slot == null ? (
-                        <button disabled style={cosmeticBtn}>
+                        <button disabled className="fd-tap" style={cosmeticBtn}>
                           Collected
                         </button>
                       ) : equipped ? (
-                        <button disabled style={equippedBtn}>
+                        <button disabled className="fd-tap" style={equippedBtn}>
                           ✓ Equipped
                         </button>
                       ) : (
-                        <button onClick={() => equip(it)} disabled={isBusy} style={{ ...equipBtn, opacity: isBusy ? 0.7 : 1 }}>
+                        <button onClick={() => equip(it)} disabled={isBusy} className="fd-tap" style={{ ...equipBtn, opacity: isBusy ? 0.7 : 1 }}>
                           {isBusy ? "…" : "Equip"}
                         </button>
                       )}
                       {it.hasPreview && previewFor(it) != null && (
                         <button
                           onClick={() => setPreview(it)}
+                          className="fd-tap"
                           style={{ marginTop: 9, display: "inline-flex", alignItems: "center", gap: 5, background: "none", border: "none", padding: 0, color: "var(--gold)", font: "700 11px Inter", letterSpacing: ".6px", textTransform: "uppercase", cursor: "pointer" }}
                         >
                           ▶ Preview Animation
@@ -478,21 +480,27 @@ export function InventoryPage() {
 // ── header (eyebrow + title + blurb + "Go to Store") — shared by every state ──
 function header(goToStore: () => void) {
   return (
-    <div style={{ display: "flex", alignItems: "flex-end", justifyContent: "space-between", gap: 16, flexWrap: "wrap" }}>
+    <div className="fd-page-head" style={{ display: "flex", alignItems: "flex-end", justifyContent: "space-between", gap: 16, flexWrap: "wrap" }}>
       <div>
         <div style={{ font: "700 12px Inter", letterSpacing: "2px", textTransform: "uppercase", color: "var(--gold)" }}>Your Collection</div>
-        <h1 style={{ margin: "6px 0 0", font: "800 32px Cinzel,serif", color: "var(--gold-lt)" }}>Inventory</h1>
+        <h1 style={{ margin: "6px 0 0", font: "800 clamp(24px,7vw,32px) Cinzel,serif", color: "var(--gold-lt)" }}>Inventory</h1>
         <p style={{ margin: "8px 0 0", font: "400 13px Inter", color: "var(--ink2)" }}>Equip the cosmetics you own. Purchases from the Store land here.</p>
       </div>
-      <button onClick={goToStore} className="btn btn-purple" style={{ padding: "12px 22px" }}>
+      <button onClick={goToStore} className="btn btn-purple fd-head-cta" style={{ padding: "12px 22px" }}>
         Go to Store
       </button>
     </div>
   );
 }
 
+// In-card equip/collect controls. On phones these must clear a 44px tap target;
+// the shared `fd-tap` helper floors them at 40px, so we set minHeight here (inline
+// wins, no index.css edit) and center the label with inline-flex.
 const equipBtn: CSSProperties = {
-  display: "inline-block",
+  display: "inline-flex",
+  alignItems: "center",
+  justifyContent: "center",
+  minHeight: 44,
   padding: "8px 18px",
   borderRadius: 8,
   border: "1px solid var(--gold)",
@@ -503,7 +511,10 @@ const equipBtn: CSSProperties = {
   cursor: "pointer",
 };
 const equippedBtn: CSSProperties = {
-  display: "inline-block",
+  display: "inline-flex",
+  alignItems: "center",
+  justifyContent: "center",
+  minHeight: 44,
   padding: "8px 18px",
   borderRadius: 8,
   border: "1px solid #3fbf6f",
@@ -516,7 +527,10 @@ const equippedBtn: CSSProperties = {
 // Equipped emote: a live toggle (click to unequip) — green like equippedBtn but
 // interactive (pointer cursor), so the user can drop it from the loadout.
 const equippedToggleBtn: CSSProperties = {
-  display: "inline-block",
+  display: "inline-flex",
+  alignItems: "center",
+  justifyContent: "center",
+  minHeight: 44,
   padding: "8px 18px",
   borderRadius: 8,
   border: "1px solid #3fbf6f",
@@ -527,7 +541,10 @@ const equippedToggleBtn: CSSProperties = {
   cursor: "pointer",
 };
 const cosmeticBtn: CSSProperties = {
-  display: "inline-block",
+  display: "inline-flex",
+  alignItems: "center",
+  justifyContent: "center",
+  minHeight: 44,
   padding: "8px 18px",
   borderRadius: 8,
   border: "1px solid rgba(232,184,75,.25)",

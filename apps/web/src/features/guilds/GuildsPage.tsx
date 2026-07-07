@@ -507,14 +507,14 @@ export function GuildsPage() {
   const [guildChatOpen, setGuildChatOpen] = useState(false);
 
   return (
-    <div style={{ maxWidth: 940, margin: "0 auto", padding: 26, display: "flex", flexDirection: "column", gap: 20 }}>
+    <div className="fd-page-pad" style={{ maxWidth: 940, margin: "0 auto", padding: 26, display: "flex", flexDirection: "column", gap: 20 }}>
       {/* Header */}
-      <div style={{ display: "flex", alignItems: "flex-end", justifyContent: "space-between", gap: 16, flexWrap: "wrap" }}>
+      <div className="fd-page-head" style={{ display: "flex", alignItems: "flex-end", justifyContent: "space-between", gap: 16, flexWrap: "wrap" }}>
         <div>
           <div style={{ font: "700 12px Inter", letterSpacing: "2px", textTransform: "uppercase", color: "var(--gold)" }}>Alliances</div>
           <h1 style={{ margin: "6px 0 0", font: "800 32px Cinzel,serif", color: "var(--gold-lt)" }}>Guild Hall</h1>
         </div>
-        <button className="btn btn-purple" onClick={() => navigate("/")} style={{ padding: "12px 20px" }}>← Home</button>
+        <button className="btn btn-purple fd-head-cta" onClick={() => navigate("/")} style={{ padding: "12px 20px" }}>← Home</button>
       </div>
 
       {/* Logged-out prompt */}
@@ -525,7 +525,7 @@ export function GuildsPage() {
           <p style={{ margin: 0, font: "500 13.5px/1.5 Inter", color: "var(--ink2)", maxWidth: 460 }}>
             Guilds war together, share perks, and climb the ranks as one. Sign in to found or join a guild.
           </p>
-          <button className="btn btn-gold" onClick={() => navigate("/login")} style={{ padding: "12px 26px", marginTop: 4 }}>Sign In</button>
+          <button className="btn btn-gold fd-cta-full" onClick={() => navigate("/login")} style={{ padding: "12px 26px", marginTop: 4 }}>Sign In</button>
         </div>
       )}
 
@@ -543,7 +543,7 @@ export function GuildsPage() {
                 <span style={{ font: "700 13px 'JetBrains Mono',monospace", color: "var(--ink2)" }}>{detail.guild.tag}</span>
                 <span style={{ padding: "3px 10px", borderRadius: 100, border: "1px solid rgba(232,184,75,.3)", background: "rgba(15,8,32,.5)", font: "700 11px Inter", color: "var(--gold)" }}>Level {guildLevel(detail.guild.weeklyPoints)}</span>
               </div>
-              <div style={{ display: "flex", gap: 22, marginTop: 12, flexWrap: "wrap" }}>
+              <div className="fd-stat-2" style={{ display: "flex", gap: 22, marginTop: 12, flexWrap: "wrap" }}>
                 <div>
                   <div style={{ font: "800 18px 'JetBrains Mono',monospace", color: "#fff" }}>{globalRank !== null ? `#${globalRank}` : "—"}</div>
                   <div style={{ font: "500 11px Inter", color: "var(--ink2)" }}>Global Rank</div>
@@ -565,7 +565,7 @@ export function GuildsPage() {
                 <p style={{ margin: "12px 0 0", font: "500 13.5px Inter", lineHeight: 1.5, color: "var(--ink2)", maxWidth: 560 }}>{detail.guild.description}</p>
               )}
             </div>
-            <div style={{ display: "flex", flexDirection: "column", gap: 9, flex: "none" }}>
+            <div className="fd-btn-stack" style={{ display: "flex", flexDirection: "column", gap: 9, flex: "none" }}>
               <button className="btn btn-purple" onClick={() => setGuildChatOpen(true)} style={{ padding: "11px 20px" }}>💬 Guild Chat</button>
               {canManage && (
                 <button onClick={openEdit} style={{ padding: "10px 20px", borderRadius: 9, border: "1px solid rgba(232,184,75,.4)", background: "rgba(232,184,75,.1)", color: "var(--gold-lt)", font: "700 12px Inter", cursor: "pointer" }}>✎ Edit Guild</button>
@@ -575,7 +575,7 @@ export function GuildsPage() {
           </div>
 
           {/* Weekly war + your contribution */}
-          <div style={{ display: "grid", gridTemplateColumns: "1.4fr 1fr", gap: 16 }}>
+          <div className="fd-collapse-2" style={{ display: "grid", gridTemplateColumns: "1.4fr 1fr", gap: 16 }}>
             <div className="frame" style={{ padding: 22 }}>
               <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 14 }}>
                 <span className="ptitle" style={{ margin: 0 }}>Weekly Guild War</span>
@@ -600,7 +600,7 @@ export function GuildsPage() {
           {/* Perks (fixed guild game-mechanics) */}
           <div className="frame" style={{ padding: 22 }}>
             <div className="ptitle" style={{ textAlign: "left", marginBottom: 14 }}>Guild Perks</div>
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+            <div className="fd-collapse-2" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
               {GUILD_PERKS.map((p) => (
                 <div key={p.title} style={{ display: "flex", alignItems: "center", gap: 13, padding: 14, borderRadius: 12, border: "1px solid rgba(232,184,75,.14)", background: "rgba(0,0,0,.2)" }}>
                   <span style={{ fontSize: 26, flex: "none" }}>{p.icon}</span>
@@ -631,7 +631,7 @@ export function GuildsPage() {
                   // Can I manage this member? OFFICER+ and strictly higher rank than the target, not myself.
                   const manageable = !!canManage && !mine && ROLE_RANK[myRole ?? "MEMBER"] > ROLE_RANK[m.role];
                   return (
-                    <div key={m.userId} style={{ display: "flex", alignItems: "center", gap: 13, padding: 12, borderRadius: 12, border: mine ? "1px solid rgba(232,184,75,.35)" : "1px solid rgba(232,184,75,.12)", background: mine ? "rgba(232,184,75,.06)" : "rgba(0,0,0,.2)" }}>
+                    <div key={m.userId} className="fd-social-row" style={{ display: "flex", alignItems: "center", gap: 13, padding: 12, borderRadius: 12, border: mine ? "1px solid rgba(232,184,75,.35)" : "1px solid rgba(232,184,75,.12)", background: mine ? "rgba(232,184,75,.06)" : "rgba(0,0,0,.2)" }}>
                       <span style={{ font: "800 14px 'JetBrains Mono',monospace", color: "var(--ink2)", width: 20, flex: "none", textAlign: "center" }}>{i + 1}</span>
                       <Avatar src={m.user.avatarUrl ?? "champion"} frame={m.user.frameId ?? undefined} size={40} />
                       <div style={{ flex: 1, minWidth: 0 }}>
@@ -646,7 +646,7 @@ export function GuildsPage() {
                         <div style={{ font: "500 10px Inter", color: "var(--ink2)" }}>points</div>
                       </div>
                       {manageable && (
-                        <button onClick={() => setManage(m)} title="Manage member" style={{ flex: "none", width: 34, height: 34, borderRadius: 8, border: "1px solid rgba(232,184,75,.25)", background: "rgba(15,8,32,.5)", color: "var(--gold-lt)", font: "800 16px Inter", cursor: "pointer", lineHeight: 1 }}>⋯</button>
+                        <button onClick={() => setManage(m)} title="Manage member" className="fd-tap" style={{ flex: "none", width: 44, height: 44, borderRadius: 8, border: "1px solid rgba(232,184,75,.25)", background: "rgba(15,8,32,.5)", color: "var(--gold-lt)", font: "800 16px Inter", cursor: "pointer", lineHeight: 1 }}>⋯</button>
                       )}
                     </div>
                   );
@@ -663,7 +663,8 @@ export function GuildsPage() {
               )}
             </div>
             <div style={{ font: "500 12px Inter", color: "var(--ink2)", marginBottom: 16 }}>Each rank grants what a member can do in the guild. Leaders manage everyone; Officers manage Members.</div>
-            <div style={{ display: "grid", gridTemplateColumns: "1.6fr 1fr 1fr 1fr", gap: 0, border: "1px solid rgba(232,184,75,.14)", borderRadius: 12, overflow: "hidden" }}>
+            <div className="fd-table-scroll">
+            <div style={{ display: "grid", gridTemplateColumns: "1.6fr 1fr 1fr 1fr", gap: 0, minWidth: 460, border: "1px solid rgba(232,184,75,.14)", borderRadius: 12, overflow: "hidden" }}>
               <div style={{ padding: "11px 14px", background: "rgba(15,8,32,.5)", font: "700 11px Inter", letterSpacing: ".5px", textTransform: "uppercase", color: "var(--ink2)" }}>Permission</div>
               <div style={{ padding: "11px 8px", background: "rgba(240,194,75,.1)", textAlign: "center", font: "800 12px Cinzel,serif", color: "#f0c24b" }}>Leader</div>
               <div style={{ padding: "11px 8px", background: "rgba(201,166,255,.1)", textAlign: "center", font: "800 12px Cinzel,serif", color: "#c9a6ff" }}>Officer</div>
@@ -680,6 +681,7 @@ export function GuildsPage() {
                   </Fragment>
                 );
               })}
+            </div>
             </div>
             <div style={{ display: "flex", gap: 16, marginTop: 14, flexWrap: "wrap" }}>
               <span style={{ display: "flex", alignItems: "center", gap: 6, font: "600 11px Inter", color: "var(--ink2)" }}><span style={{ color: "#6ee0a0", fontSize: 13 }}>✓</span> Allowed</span>
@@ -708,7 +710,7 @@ export function GuildsPage() {
                   {requests.map((r) => {
                     const tb = tierBadge(r.user.trophies);
                     return (
-                      <div key={r.id} style={{ display: "flex", alignItems: "center", gap: 13, padding: 13, borderRadius: 12, border: "1px solid rgba(232,184,75,.14)", background: "rgba(15,8,32,.4)" }}>
+                      <div key={r.id} className="fd-social-row" style={{ display: "flex", alignItems: "center", gap: 13, padding: 13, borderRadius: 12, border: "1px solid rgba(232,184,75,.14)", background: "rgba(15,8,32,.4)" }}>
                         <Avatar src={r.user.avatarUrl ?? "champion"} size={44} />
                         <div style={{ flex: 1, minWidth: 0 }}>
                           <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
@@ -718,7 +720,7 @@ export function GuildsPage() {
                           </div>
                           <div style={{ display: "flex", alignItems: "center", gap: 4, font: "500 10px Inter", color: "var(--ink2)", marginTop: 3 }}><Trophy size={12} /> {r.user.trophies.toLocaleString()} · applied {statusFor(r.createdAt).label}</div>
                         </div>
-                        <div style={{ display: "flex", gap: 7, flex: "none" }}>
+                        <div className="fd-row-actions" style={{ display: "flex", gap: 7, flex: "none" }}>
                           <button onClick={() => reviewRequest(r, "decline")} disabled={busy} style={{ width: 38, height: 38, borderRadius: 9, border: "1px solid rgba(232,93,115,.35)", background: "rgba(232,93,115,.1)", color: "#ff8398", font: "700 16px Inter", cursor: busy ? "not-allowed" : "pointer" }} title="Decline">✕</button>
                           <button onClick={() => reviewRequest(r, "accept")} disabled={busy} style={{ width: 38, height: 38, borderRadius: 9, border: "1px solid rgba(95,212,138,.4)", background: "rgba(95,212,138,.12)", color: "#6ee0a0", font: "700 16px Inter", cursor: busy ? "not-allowed" : "pointer" }} title="Approve">✓</button>
                         </div>
@@ -742,8 +744,8 @@ export function GuildsPage() {
               Guilds are alliances of players who war together, share perks, and climb the ranks as one. Browse the guilds below to find your people — or found your own and lead the charge.
             </p>
           </div>
-          <div style={{ display: "flex", flexDirection: "column", gap: 9, flex: "none" }}>
-            <button onClick={openCreate} style={{ padding: "12px 22px", borderRadius: 9, border: "1px solid rgba(232,184,75,.4)", background: "rgba(232,184,75,.1)", color: "var(--gold-lt)", font: "700 12px Inter", letterSpacing: ".3px", cursor: "pointer", display: "flex", alignItems: "center", gap: 6 }}>＋ Create Guild</button>
+          <div className="fd-btn-stack" style={{ display: "flex", flexDirection: "column", gap: 9, flex: "none" }}>
+            <button onClick={openCreate} style={{ padding: "12px 22px", borderRadius: 9, border: "1px solid rgba(232,184,75,.4)", background: "rgba(232,184,75,.1)", color: "var(--gold-lt)", font: "700 12px Inter", letterSpacing: ".3px", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}>＋ Create Guild</button>
           </div>
         </div>
       )}
@@ -755,15 +757,16 @@ export function GuildsPage() {
 
       {/* ── DISCOVER / BROWSE (always, unless not in guild is shown; hidden while in guild? prototype shows browse to members too) ── */}
       <div className="frame" style={{ padding: 22 }}>
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 14, gap: 12, flexWrap: "wrap" }}>
+        <div className="fd-page-head" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 14, gap: 12, flexWrap: "wrap" }}>
           <div className="ptitle" style={{ textAlign: "left" }}>Discover Guilds</div>
-          <div style={{ display: "flex", alignItems: "center", gap: 10, flex: "none" }}>
+          <div className="fd-head-cta" style={{ display: "flex", alignItems: "center", gap: 10, flex: "none" }}>
             <input
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               onKeyDown={(e) => { if (e.key === "Enter") void loadBrowse(search); }}
               placeholder="Search guilds…"
-              style={{ padding: "8px 12px", borderRadius: 8, border: "1px solid rgba(232,184,75,.25)", background: "rgba(0,0,0,.3)", color: "#fff", font: "600 13px Inter", outline: "none", width: 160 }}
+              className="fd-nozoom"
+              style={{ padding: "8px 12px", borderRadius: 8, border: "1px solid rgba(232,184,75,.25)", background: "rgba(0,0,0,.3)", color: "#fff", font: "600 13px Inter", outline: "none", width: 160, flex: 1, minWidth: 0 }}
             />
             {!myGuildId && (
               <button onClick={openCreate} style={{ flex: "none", padding: "9px 16px", borderRadius: 8, border: "1px solid rgba(232,184,75,.4)", background: "rgba(232,184,75,.1)", color: "var(--gold-lt)", font: "700 12px Inter", letterSpacing: ".3px", cursor: "pointer", display: "flex", alignItems: "center", gap: 6 }}>＋ Create Guild</button>
@@ -787,7 +790,7 @@ export function GuildsPage() {
                   ? { flex: "none", padding: "9px 18px", borderRadius: 8, border: "1px solid rgba(95,212,138,.4)", background: "rgba(95,212,138,.12)", color: "#6ee0a0", font: "700 12px Inter", letterSpacing: ".3px", cursor: "pointer" }
                   : { flex: "none", padding: "9px 18px", borderRadius: 8, border: "1px solid rgba(232,184,75,.35)", background: "rgba(232,184,75,.1)", color: "var(--gold-lt)", font: "700 12px Inter", letterSpacing: ".3px", cursor: "pointer" };
               return (
-                <div key={g.id} style={{ display: "flex", alignItems: "center", gap: 14, padding: 12, borderRadius: 12, border: "1px solid rgba(232,184,75,.12)", background: "rgba(0,0,0,.2)" }}>
+                <div key={g.id} className="fd-social-row" style={{ display: "flex", alignItems: "center", gap: 14, padding: 12, borderRadius: 12, border: "1px solid rgba(232,184,75,.12)", background: "rgba(0,0,0,.2)" }}>
                   <Emblem crestKey={g.crestKey} seed={g.id} size={52} />
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
@@ -800,7 +803,9 @@ export function GuildsPage() {
                     </div>
                     <div style={{ font: "500 12px Inter", color: "var(--ink2)", marginTop: 3 }}>{g.memberCount} members · {g.weeklyPoints.toLocaleString()} pts</div>
                   </div>
-                  <button onClick={() => { if (!isMine) void onJoin(g); }} disabled={isMine || busy} style={joinStyle}>{isMine ? "Your Guild" : open ? "Join" : "Request"}</button>
+                  <div className="fd-row-actions" style={{ display: "flex", flex: "none" }}>
+                    <button onClick={() => { if (!isMine) void onJoin(g); }} disabled={isMine || busy} style={joinStyle}>{isMine ? "Your Guild" : open ? "Join" : "Request"}</button>
+                  </div>
                 </div>
               );
             })
@@ -810,8 +815,8 @@ export function GuildsPage() {
 
       {/* ── Manage member modal ── */}
       {manage && (
-        <div onClick={() => setManage(null)} style={{ position: "fixed", inset: 0, zIndex: 82, background: "rgba(8,4,18,.72)", backdropFilter: "blur(6px)", display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}>
-          <div onClick={(e) => e.stopPropagation()} style={{ width: "100%", maxWidth: 400, borderRadius: 18, border: "1px solid rgba(232,184,75,.35)", background: "linear-gradient(180deg,#1a0f30,#140a24)", boxShadow: "0 30px 80px rgba(0,0,0,.6)", overflow: "hidden" }}>
+        <div onClick={() => setManage(null)} className="fd-sheet-overlay" style={{ position: "fixed", inset: 0, zIndex: 82, background: "rgba(8,4,18,.72)", backdropFilter: "blur(6px)", display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}>
+          <div onClick={(e) => e.stopPropagation()} className="fd-sheet" style={{ width: "100%", maxWidth: 400, borderRadius: 18, border: "1px solid rgba(232,184,75,.35)", background: "linear-gradient(180deg,#1a0f30,#140a24)", boxShadow: "0 30px 80px rgba(0,0,0,.6)", overflow: "hidden" }}>
             <div style={{ padding: "22px 24px 18px", display: "flex", alignItems: "center", gap: 14, borderBottom: "1px solid rgba(232,184,75,.16)" }}>
               <Avatar src={manage.user.avatarUrl ?? "champion"} size={48} />
               <div style={{ flex: 1, minWidth: 0 }}>
@@ -854,8 +859,8 @@ export function GuildsPage() {
 
       {/* ── Create Guild modal ── */}
       {createShow && (
-        <div onClick={() => setCreateShow(false)} style={{ position: "fixed", inset: 0, zIndex: 80, background: "rgba(8,4,18,.72)", backdropFilter: "blur(6px)", display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}>
-          <div onClick={(e) => e.stopPropagation()} style={{ width: "100%", maxWidth: 440, maxHeight: "88vh", overflow: "auto", borderRadius: 18, border: "1px solid rgba(232,184,75,.35)", background: "linear-gradient(180deg,#1a0f30,#140a24)", boxShadow: "0 24px 70px rgba(0,0,0,.6)" }}>
+        <div onClick={() => setCreateShow(false)} className="fd-sheet-overlay" style={{ position: "fixed", inset: 0, zIndex: 80, background: "rgba(8,4,18,.72)", backdropFilter: "blur(6px)", display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}>
+          <div onClick={(e) => e.stopPropagation()} className="fd-sheet" style={{ width: "100%", maxWidth: 440, maxHeight: "88vh", overflow: "auto", borderRadius: 18, border: "1px solid rgba(232,184,75,.35)", background: "linear-gradient(180deg,#1a0f30,#140a24)", boxShadow: "0 24px 70px rgba(0,0,0,.6)" }}>
             <div style={{ padding: "22px 24px", borderBottom: "1px solid rgba(232,184,75,.14)", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
               <div style={{ font: "800 18px Cinzel,serif", color: "var(--gold-lt)", letterSpacing: ".5px" }}>Create a Guild</div>
               <button onClick={() => setCreateShow(false)} style={{ width: 32, height: 32, borderRadius: 8, border: "1px solid rgba(232,184,75,.2)", background: "rgba(0,0,0,.25)", color: "var(--ink2)", font: "700 16px Inter", cursor: "pointer" }}>✕</button>
@@ -880,15 +885,15 @@ export function GuildsPage() {
               </div>
               <div>
                 <label style={{ display: "block", font: "700 11px Inter", letterSpacing: "1.5px", textTransform: "uppercase", color: "var(--ink2)", marginBottom: 7 }}>Guild Name</label>
-                <input value={gcName} onChange={(e) => setGcName(e.target.value)} placeholder="e.g. Dama Legends" maxLength={24} style={{ width: "100%", boxSizing: "border-box", padding: "12px 14px", borderRadius: 10, border: "1px solid rgba(232,184,75,.25)", background: "rgba(0,0,0,.3)", color: "#fff", font: "600 15px Inter", outline: "none" }} />
+                <input value={gcName} onChange={(e) => setGcName(e.target.value)} placeholder="e.g. Dama Legends" maxLength={24} className="fd-nozoom" style={{ width: "100%", boxSizing: "border-box", padding: "12px 14px", borderRadius: 10, border: "1px solid rgba(232,184,75,.25)", background: "rgba(0,0,0,.3)", color: "#fff", font: "600 15px Inter", outline: "none" }} />
               </div>
               <div>
                 <label style={{ display: "block", font: "700 11px Inter", letterSpacing: "1.5px", textTransform: "uppercase", color: "var(--ink2)", marginBottom: 7 }}>Tag <span style={{ color: "var(--ink2)", opacity: 0.6 }}>(2–4 letters)</span></label>
-                <input value={gcTag} onChange={(e) => setGcTag(e.target.value)} placeholder="DL" maxLength={5} style={{ width: 120, boxSizing: "border-box", padding: "12px 14px", borderRadius: 10, border: "1px solid rgba(232,184,75,.25)", background: "rgba(0,0,0,.3)", color: "var(--gold-lt)", font: "700 15px 'JetBrains Mono',monospace", textTransform: "uppercase", outline: "none" }} />
+                <input value={gcTag} onChange={(e) => setGcTag(e.target.value)} placeholder="DL" maxLength={5} className="fd-nozoom" style={{ width: 120, boxSizing: "border-box", padding: "12px 14px", borderRadius: 10, border: "1px solid rgba(232,184,75,.25)", background: "rgba(0,0,0,.3)", color: "var(--gold-lt)", font: "700 15px 'JetBrains Mono',monospace", textTransform: "uppercase", outline: "none" }} />
               </div>
               <div>
                 <label style={{ display: "block", font: "700 11px Inter", letterSpacing: "1.5px", textTransform: "uppercase", color: "var(--ink2)", marginBottom: 7 }}>Description</label>
-                <textarea value={gcDesc} onChange={(e) => setGcDesc(e.target.value)} placeholder="What's your guild about?" rows={2} style={{ width: "100%", boxSizing: "border-box", padding: "12px 14px", borderRadius: 10, border: "1px solid rgba(232,184,75,.25)", background: "rgba(0,0,0,.3)", color: "#fff", font: "500 14px Inter", resize: "none", outline: "none" }} />
+                <textarea value={gcDesc} onChange={(e) => setGcDesc(e.target.value)} placeholder="What's your guild about?" rows={2} className="fd-nozoom" style={{ width: "100%", boxSizing: "border-box", padding: "12px 14px", borderRadius: 10, border: "1px solid rgba(232,184,75,.25)", background: "rgba(0,0,0,.3)", color: "#fff", font: "500 14px Inter", resize: "none", outline: "none" }} />
               </div>
               <div>
                 <label style={{ display: "block", font: "700 11px Inter", letterSpacing: "1.5px", textTransform: "uppercase", color: "var(--ink2)", marginBottom: 9 }}>Minimum Trophies to Join</label>
@@ -920,8 +925,8 @@ export function GuildsPage() {
 
       {/* ── Edit Guild modal ── */}
       {editShow && detail && (
-        <div onClick={() => setEditShow(false)} style={{ position: "fixed", inset: 0, zIndex: 80, background: "rgba(8,4,18,.72)", backdropFilter: "blur(6px)", display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}>
-          <div onClick={(e) => e.stopPropagation()} style={{ width: "100%", maxWidth: 460, maxHeight: "88vh", overflow: "auto", borderRadius: 18, border: "1px solid rgba(232,184,75,.35)", background: "linear-gradient(180deg,#1a0f30,#140a24)", boxShadow: "0 24px 70px rgba(0,0,0,.6)" }}>
+        <div onClick={() => setEditShow(false)} className="fd-sheet-overlay" style={{ position: "fixed", inset: 0, zIndex: 80, background: "rgba(8,4,18,.72)", backdropFilter: "blur(6px)", display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}>
+          <div onClick={(e) => e.stopPropagation()} className="fd-sheet" style={{ width: "100%", maxWidth: 460, maxHeight: "88vh", overflow: "auto", borderRadius: 18, border: "1px solid rgba(232,184,75,.35)", background: "linear-gradient(180deg,#1a0f30,#140a24)", boxShadow: "0 24px 70px rgba(0,0,0,.6)" }}>
             <div style={{ padding: "22px 24px", borderBottom: "1px solid rgba(232,184,75,.14)", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
               <div>
                 <div style={{ font: "800 18px Cinzel,serif", color: "var(--gold-lt)", letterSpacing: ".5px" }}>Edit Guild</div>
@@ -951,11 +956,11 @@ export function GuildsPage() {
               </div>
               <div>
                 <label style={{ display: "block", font: "700 11px Inter", letterSpacing: "1.5px", textTransform: "uppercase", color: "var(--ink2)", marginBottom: 7 }}>Guild Name</label>
-                <input value={geName} onChange={(e) => setGeName(e.target.value)} maxLength={24} style={{ width: "100%", boxSizing: "border-box", padding: "12px 14px", borderRadius: 10, border: "1px solid rgba(232,184,75,.25)", background: "rgba(0,0,0,.3)", color: "#fff", font: "600 15px Inter", outline: "none" }} />
+                <input value={geName} onChange={(e) => setGeName(e.target.value)} maxLength={24} className="fd-nozoom" style={{ width: "100%", boxSizing: "border-box", padding: "12px 14px", borderRadius: 10, border: "1px solid rgba(232,184,75,.25)", background: "rgba(0,0,0,.3)", color: "#fff", font: "600 15px Inter", outline: "none" }} />
               </div>
               <div>
                 <label style={{ display: "block", font: "700 11px Inter", letterSpacing: "1.5px", textTransform: "uppercase", color: "var(--ink2)", marginBottom: 7 }}>Description</label>
-                <textarea value={geDesc} onChange={(e) => setGeDesc(e.target.value)} maxLength={160} placeholder="What's your guild about?" rows={3} style={{ width: "100%", boxSizing: "border-box", padding: "12px 14px", borderRadius: 10, border: "1px solid rgba(232,184,75,.25)", background: "rgba(0,0,0,.3)", color: "#fff", font: "500 14px Inter", lineHeight: 1.5, resize: "none", outline: "none" }} />
+                <textarea value={geDesc} onChange={(e) => setGeDesc(e.target.value)} maxLength={160} placeholder="What's your guild about?" rows={3} className="fd-nozoom" style={{ width: "100%", boxSizing: "border-box", padding: "12px 14px", borderRadius: 10, border: "1px solid rgba(232,184,75,.25)", background: "rgba(0,0,0,.3)", color: "#fff", font: "500 14px Inter", lineHeight: 1.5, resize: "none", outline: "none" }} />
                 <div style={{ textAlign: "right", font: "600 11px Inter", color: "var(--ink2)", marginTop: 5 }}>{geDesc.length} / 160</div>
               </div>
               <div>
@@ -985,8 +990,8 @@ export function GuildsPage() {
 
       {/* ── Contribute modal ── */}
       {contribShow && detail && (
-        <div onClick={() => setContribShow(false)} style={{ position: "fixed", inset: 0, zIndex: 82, background: "rgba(8,4,18,.74)", backdropFilter: "blur(6px)", display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}>
-          <div onClick={(e) => e.stopPropagation()} style={{ width: "100%", maxWidth: 420, borderRadius: 18, border: "1px solid rgba(232,184,75,.35)", background: "linear-gradient(180deg,#1a0f30,#140a24)", boxShadow: "0 30px 80px rgba(0,0,0,.6)", overflow: "hidden" }}>
+        <div onClick={() => setContribShow(false)} className="fd-sheet-overlay" style={{ position: "fixed", inset: 0, zIndex: 82, background: "rgba(8,4,18,.74)", backdropFilter: "blur(6px)", display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}>
+          <div onClick={(e) => e.stopPropagation()} className="fd-sheet" style={{ width: "100%", maxWidth: 420, borderRadius: 18, border: "1px solid rgba(232,184,75,.35)", background: "linear-gradient(180deg,#1a0f30,#140a24)", boxShadow: "0 30px 80px rgba(0,0,0,.6)", overflow: "hidden" }}>
             <div style={{ padding: "22px 26px 18px", borderBottom: "1px solid rgba(232,184,75,.16)", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
               <div>
                 <div style={{ font: "800 19px Cinzel,serif", color: "var(--gold-lt)" }}>Contribute to the War</div>

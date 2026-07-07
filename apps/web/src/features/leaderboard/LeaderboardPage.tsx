@@ -210,16 +210,17 @@ export function LeaderboardPage() {
   }, [me, myTier, nextTier]);
 
   return (
-    <div className="fd-lb-grid" style={{ maxWidth: 1560, margin: "0 auto", padding: 26, display: "grid", gridTemplateColumns: "280px minmax(0,1fr) 300px", gap: 20, alignItems: "start" }}>
-      {/* LEFT RAIL */}
-      <div style={{ display: "flex", flexDirection: "column", gap: 18 }}>
-        <div className="frame" style={{ padding: 22, textAlign: "center" }}>
+    <div className="fd-lb-grid fd-stack fd-page-pad" style={{ maxWidth: 1560, margin: "0 auto", padding: 26, display: "grid", gridTemplateColumns: "280px minmax(0,1fr) 300px", gap: 20, alignItems: "start" }}>
+      {/* LEFT RAIL — sinks below center + personal rail on mobile; within it, the
+          marketing season-banner CTA drops to the very bottom (fd-order-last). */}
+      <div className="fd-order-3 fd-stack" style={{ display: "flex", flexDirection: "column", gap: 18 }}>
+        <div className="frame fd-card-m fd-order-last" style={{ padding: 22, textAlign: "center" }}>
           <img src={SB("me-banner.png")} alt="" style={{ width: 110, height: 130, objectFit: "contain", margin: "0 auto", display: "block", filter: "drop-shadow(0 8px 18px rgba(0,0,0,.5))" }} />
           <div style={{ font: "800 22px Cinzel,serif", color: "var(--gold-lt)", marginTop: 10 }}>{seasonLabel}</div>
           <div style={{ font: "400 12px/1.5 Inter", color: "var(--ink)", margin: "8px 0 14px" }}>Conquer the board.<br />Earn glory. Be the legend.</div>
           <button className="btn btn-purple" onClick={() => navigate("/season")} style={{ width: "100%" }}>📖 Season Overview</button>
         </div>
-        <div className="frame" style={{ padding: 20 }}>
+        <div className="frame fd-card-m" style={{ padding: 20 }}>
           <div className="ptitle">Season Stats</div>
           {(() => {
             // Honest aggregates derived from live data we actually have.
@@ -244,7 +245,7 @@ export function LeaderboardPage() {
             ));
           })()}
         </div>
-        <div className="frame" style={{ padding: 20 }}>
+        <div className="frame fd-card-m" style={{ padding: 20 }}>
           <div className="ptitle">Top Guilds</div>
           {guilds === null ? (
             <div style={{ padding: "14px 0", font: "500 12px Inter", color: "var(--ink2)" }}>Loading…</div>
@@ -263,10 +264,10 @@ export function LeaderboardPage() {
         </div>
       </div>
 
-      {/* CENTER */}
-      <div style={{ display: "flex", flexDirection: "column", gap: 18 }}>
+      {/* CENTER — leads on mobile (scope tabs → podium → table → your-rank row) */}
+      <div className="fd-order-1" style={{ display: "flex", flexDirection: "column", gap: 18 }}>
         <div style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "center" }}>
-          <div style={{ flex: 1, display: "flex", gap: 8, minWidth: 260 }}>
+          <div className="fd-seg" style={{ flex: 1, display: "flex", gap: 8, minWidth: 260 }}>
             {SCOPES.map((t) => {
               const active = scope === t.key;
               return (
@@ -384,8 +385,8 @@ export function LeaderboardPage() {
             </div>
 
             {/* TABLE */}
-            <div className="frame" style={{ padding: "10px 6px" }}>
-              <div style={{ display: "grid", gridTemplateColumns: GRID, gap: 8, padding: "12px 16px", font: "700 11px Inter", letterSpacing: "1px", textTransform: "uppercase", color: "var(--ink2)" }}>
+            <div className="frame fd-card-m" style={{ padding: "10px 6px" }}>
+              <div className="fd-ladder-head" style={{ display: "grid", gridTemplateColumns: GRID, gap: 8, padding: "12px 16px", font: "700 11px Inter", letterSpacing: "1px", textTransform: "uppercase", color: "var(--ink2)" }}>
                 <span>Rank</span><span>Player</span><span style={{ textAlign: "center" }}>🏆 Rating</span><span style={{ textAlign: "center" }}>Win Rate</span><span style={{ textAlign: "center" }}>Streak</span>
               </div>
               {tableRows.length === 0 ? (
@@ -394,11 +395,11 @@ export function LeaderboardPage() {
                 tableRows.map((r) => {
                   const isYou = r.userId === me?.id;
                   return (
-                    <div key={r.userId} style={{ display: "grid", gridTemplateColumns: GRID, gap: 8, alignItems: "center", padding: "11px 16px", borderTop: "1px solid rgba(232,184,75,.1)", background: isYou ? "rgba(232,184,75,.06)" : undefined }}>
+                    <div key={r.userId} className="fd-ladder-card" style={{ display: "grid", gridTemplateColumns: GRID, gap: 8, alignItems: "center", padding: "11px 16px", borderTop: "1px solid rgba(232,184,75,.1)", background: isYou ? "rgba(232,184,75,.06)" : undefined }}>
                       <span style={{ font: "800 15px 'JetBrains Mono',monospace", color: "var(--ink)" }}>{r.rank}</span>
-                      <span style={{ display: "flex", alignItems: "center", gap: 11 }}>
+                      <span style={{ display: "flex", alignItems: "center", gap: 11, flex: 1, minWidth: 0 }}>
                         <Avatar src={r.avatarUrl ?? "strategist"} frame={r.frameId ?? undefined} size={34} />
-                        <span>
+                        <span style={{ minWidth: 0 }}>
                           <span style={{ font: "600 14px Inter", display: "block" }}>{r.displayName}{isYou && <span style={{ color: "var(--gold)", fontWeight: 600 }}> (You)</span>}</span>
                           <span style={{ display: "inline-flex", alignItems: "center", gap: 5, marginTop: 4, padding: "2px 8px", borderRadius: 100, border: "1px solid rgba(232,184,75,.2)", background: "rgba(15,8,32,.5)" }}>
                             <span style={{ width: 9, height: 9, borderRadius: "50%", background: `radial-gradient(circle at 35% 30%,${r.rankTier.accent},rgba(0,0,0,.6))`, border: `1px solid ${r.rankTier.accent}` }} />
@@ -406,9 +407,13 @@ export function LeaderboardPage() {
                           </span>
                         </span>
                       </span>
-                      <span style={{ textAlign: "center", font: "700 14px 'JetBrains Mono',monospace", color: "var(--gold-lt)" }}>{r.trophies.toLocaleString()}</span>
-                      <span style={{ textAlign: "center", font: "600 13px 'JetBrains Mono',monospace", color: "var(--ink)" }}>{winRate(r.wins, r.losses)}</span>
-                      <span style={{ textAlign: "center", font: "600 13px Inter", color: r.streak > 0 ? "#ff9a5a" : "var(--ink2)" }}>{r.streak > 0 ? `🔥 ${r.streak}` : "—"}</span>
+                      {/* stats: on desktop `display:contents` lets these 3 spans sit in the
+                          5-col grid; on mobile fd-ladder-stats makes them one chip line */}
+                      <span className="fd-ladder-stats" style={{ display: "contents" }}>
+                        <span style={{ textAlign: "center", font: "700 14px 'JetBrains Mono',monospace", color: "var(--gold-lt)" }}>🏆 {r.trophies.toLocaleString()}</span>
+                        <span style={{ textAlign: "center", font: "600 13px 'JetBrains Mono',monospace", color: "var(--ink)" }}>{winRate(r.wins, r.losses)}</span>
+                        <span style={{ textAlign: "center", font: "600 13px Inter", color: r.streak > 0 ? "#ff9a5a" : "var(--ink2)" }}>{r.streak > 0 ? `🔥 ${r.streak}` : "—"}</span>
+                      </span>
                     </div>
                   );
                 })
@@ -419,12 +424,12 @@ export function LeaderboardPage() {
 
         {/* YOUR RANK — real when placed, honest unranked otherwise */}
         {me && (
-          <div className="frame" style={{ padding: "4px 6px", borderColor: "var(--gold)", boxShadow: "inset 0 0 0 4px rgba(15,8,32,.55),inset 0 0 0 5px rgba(232,184,75,.4),0 0 26px rgba(232,184,75,.2)" }}>
-            <div style={{ display: "grid", gridTemplateColumns: GRID, gap: 8, alignItems: "center", padding: "14px 16px" }}>
+          <div className="frame fd-card-m" style={{ padding: "4px 6px", borderColor: "var(--gold)", boxShadow: "inset 0 0 0 4px rgba(15,8,32,.55),inset 0 0 0 5px rgba(232,184,75,.4),0 0 26px rgba(232,184,75,.2)" }}>
+            <div className="fd-ladder-card" style={{ display: "grid", gridTemplateColumns: GRID, gap: 8, alignItems: "center", padding: "14px 16px" }}>
               <span style={{ font: "800 15px 'JetBrains Mono',monospace", color: "var(--gold-lt)" }}>{youRow ? youRow.rank : "—"}</span>
-              <span style={{ display: "flex", alignItems: "center", gap: 11 }}>
+              <span style={{ display: "flex", alignItems: "center", gap: 11, flex: 1, minWidth: 0 }}>
                 <Avatar src={me.avatarUrl ?? "champion"} frame={me.frameId ?? undefined} size={34} />
-                <span>
+                <span style={{ minWidth: 0 }}>
                   <span style={{ font: "700 14px Inter", display: "block" }}>
                     {me.displayName} <span style={{ color: "var(--gold)", fontWeight: 600 }}>(You)</span>
                   </span>
@@ -440,17 +445,19 @@ export function LeaderboardPage() {
                   )}
                 </span>
               </span>
-              <span style={{ textAlign: "center", font: "700 14px 'JetBrains Mono',monospace", color: youRow ? "var(--gold-lt)" : "var(--ink2)" }}>{youRow ? `🏆 ${youRow.trophies.toLocaleString()}` : "—"}</span>
-              <span style={{ textAlign: "center", font: "600 13px 'JetBrains Mono',monospace", color: "var(--ink)" }}>{youRow ? winRate(youRow.wins, youRow.losses) : "—"}</span>
-              <span style={{ textAlign: "center", font: "600 13px Inter", color: me.streak > 0 ? "#ff9a5a" : "var(--ink2)" }}>{me.streak > 0 ? `🔥 ${me.streak}` : "—"}</span>
+              <span className="fd-ladder-stats" style={{ display: "contents" }}>
+                <span style={{ textAlign: "center", font: "700 14px 'JetBrains Mono',monospace", color: youRow ? "var(--gold-lt)" : "var(--ink2)" }}>{youRow ? `🏆 ${youRow.trophies.toLocaleString()}` : "—"}</span>
+                <span style={{ textAlign: "center", font: "600 13px 'JetBrains Mono',monospace", color: "var(--ink)" }}>{youRow ? winRate(youRow.wins, youRow.losses) : "—"}</span>
+                <span style={{ textAlign: "center", font: "600 13px Inter", color: me.streak > 0 ? "#ff9a5a" : "var(--ink2)" }}>{me.streak > 0 ? `🔥 ${me.streak}` : "—"}</span>
+              </span>
             </div>
           </div>
         )}
       </div>
 
-      {/* RIGHT RAIL */}
-      <div style={{ display: "flex", flexDirection: "column", gap: 18 }}>
-        <div className="frame" style={{ padding: 22, textAlign: "center" }}>
+      {/* RIGHT RAIL — personal standing; sits right below center on mobile (order:2) */}
+      <div className="fd-order-2" style={{ display: "flex", flexDirection: "column", gap: 18 }}>
+        <div className="frame fd-card-m" style={{ padding: 22, textAlign: "center" }}>
           <div className="ptitle">Your Rank</div>
           {!me ? (
             <>
@@ -476,7 +483,7 @@ export function LeaderboardPage() {
           )}
         </div>
         {me && (
-          <div className="frame" style={{ padding: 20 }}>
+          <div className="frame fd-card-m" style={{ padding: 20 }}>
             <div className="ptitle">Rank Progress</div>
             <div style={{ height: 14, borderRadius: 100, background: "rgba(0,0,0,.4)", border: "1px solid rgba(232,184,75,.25)", overflow: "hidden" }}>
               <div style={{ width: `${rankProgress.pct}%`, height: "100%", background: "linear-gradient(90deg,#c99a2e,#f5d88a)" }} />
@@ -487,7 +494,7 @@ export function LeaderboardPage() {
             </div>
           </div>
         )}
-        <div className="frame" style={{ padding: 20 }}>
+        <div className="frame fd-card-m" style={{ padding: 20 }}>
           <div className="ptitle">Live Climbers</div>
           {climbers.length === 0 ? (
             <div style={{ padding: "14px 0", font: "500 12px Inter", color: "var(--ink2)" }}>No climbers yet.</div>

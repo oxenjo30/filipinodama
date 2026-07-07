@@ -143,6 +143,7 @@ function FriendRow({
   const dot = online ? "#3fbf6f" : "#6b6480";
   return (
     <div
+      className="fd-social-row"
       style={{
         display: "flex",
         alignItems: "center",
@@ -203,7 +204,7 @@ function FriendRow({
           {friend.trophies.toLocaleString()} 🏆
         </div>
       </div>
-      <div style={{ display: "flex", gap: 8, flex: "none", alignItems: "center" }}>
+      <div className="fd-row-actions" style={{ display: "flex", gap: 8, flex: "none", alignItems: "center" }}>
         <button
           onClick={onMessage}
           title="Message"
@@ -457,6 +458,7 @@ export function FriendsPage() {
   if (!me) {
     return (
       <div
+        className="fd-page-pad"
         style={{
           maxWidth: 900,
           margin: "0 auto",
@@ -500,6 +502,7 @@ export function FriendsPage() {
 
   return (
     <div
+      className="fd-page-pad"
       style={{
         maxWidth: 900,
         margin: "0 auto",
@@ -511,6 +514,7 @@ export function FriendsPage() {
     >
       {/* Header */}
       <div
+        className="fd-page-head"
         style={{
           display: "flex",
           alignItems: "flex-end",
@@ -534,13 +538,13 @@ export function FriendsPage() {
             Friends
           </h1>
         </div>
-        <button className="btn btn-gold" onClick={() => setAddOpen(true)} style={{ padding: "12px 20px" }}>
+        <button className="btn btn-gold fd-head-cta" onClick={() => setAddOpen(true)} style={{ padding: "12px 20px" }}>
           ＋ Add Friend
         </button>
       </div>
 
       {/* Summary tiles — real counts */}
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 14 }}>
+      <div className="fd-stat-3" style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 14 }}>
         {SUMMARY.map((c) => (
           <div key={c.k} className="frame" style={{ padding: 18, textAlign: "center" }}>
             <div style={{ font: "800 26px 'JetBrains Mono',monospace", color: c.c }}>{c.v}</div>
@@ -592,6 +596,7 @@ export function FriendsPage() {
                 {incoming.map((r) => (
                   <div
                     key={r.id}
+                    className="fd-social-row"
                     style={{
                       display: "flex",
                       alignItems: "center",
@@ -619,7 +624,7 @@ export function FriendsPage() {
                         {r.user.tag} · {tierOf(r.user).label}
                       </div>
                     </div>
-                    <div style={{ display: "flex", gap: 8, flex: "none" }}>
+                    <div className="fd-row-actions" style={{ display: "flex", gap: 8, flex: "none" }}>
                       <button
                         onClick={() => acceptRequest(r)}
                         disabled={busy[r.id]}
@@ -734,6 +739,7 @@ export function FriendsPage() {
                   return (
                     <div
                       key={s.id}
+                      className="fd-social-row"
                       style={{
                         display: "flex",
                         alignItems: "center",
@@ -777,7 +783,7 @@ export function FriendsPage() {
                           {s.trophies.toLocaleString()} 🏆
                         </div>
                       </div>
-                      <div style={{ display: "flex", gap: 8, flex: "none", alignItems: "center" }}>
+                      <div className="fd-row-actions" style={{ display: "flex", gap: 8, flex: "none", alignItems: "center" }}>
                         <button
                           onClick={() => addFriend(s)}
                           disabled={busy[s.id]}
@@ -807,6 +813,7 @@ export function FriendsPage() {
       {/* ===== Add Friend modal (by #tag → /friends/request-by-tag) ===== */}
       {addOpen && (
         <div
+          className="fd-dialog-top"
           onClick={() => !addBusy && setAddOpen(false)}
           style={{
             position: "fixed",
@@ -886,6 +893,7 @@ export function FriendsPage() {
                   }}
                   autoFocus
                   placeholder="#3947"
+                  className="fd-nozoom"
                   style={{
                     width: "100%",
                     boxSizing: "border-box",
@@ -925,6 +933,7 @@ export function FriendsPage() {
       {/* ===== Profile modal (GET /api/users/:id) ===== */}
       {profileId && (
         <div
+          className="fd-sheet-overlay"
           onClick={() => setProfileId(null)}
           style={{
             position: "fixed",
@@ -939,6 +948,7 @@ export function FriendsPage() {
           }}
         >
           <div
+            className="fd-sheet"
             onClick={(e) => e.stopPropagation()}
             style={{
               width: "100%",
@@ -1060,7 +1070,7 @@ export function FriendsPage() {
                 )}
 
                 {/* Stats grid — rank tier + record */}
-                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10 }}>
+                <div className="fd-stat-3" style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10 }}>
                   {[
                     { k: "Trophies", v: profile.trophies.toLocaleString(), c: "var(--gold-lt)" },
                     { k: "Wins", v: String(profile.wins), c: "#7ee6a4" },
@@ -1081,7 +1091,7 @@ export function FriendsPage() {
                   ))}
                 </div>
 
-                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+                <div className="fd-stat-2" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
                   {[
                     { k: "Draws", v: String(profile.draws), c: "var(--ink)" },
                     { k: "Streak", v: String(profile.streak), c: "var(--gold-lt)" },

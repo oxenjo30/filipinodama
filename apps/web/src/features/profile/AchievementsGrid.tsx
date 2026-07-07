@@ -60,9 +60,12 @@ export default function AchievementsGrid() {
   if (!me) return null;
 
   return (
-    <div className="frame" style={{ padding: 24 }}>
+    <div className="frame fd-card-m" style={{ padding: 24 }}>
       <div className="ptitle">Achievements</div>
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+      <div
+        className="fd-collapse-2"
+        style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}
+      >
         {ACHIEVEMENTS.map((a) => {
           const unlocked = a.unlocked(me);
           return (

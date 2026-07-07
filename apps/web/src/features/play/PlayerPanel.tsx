@@ -109,7 +109,7 @@ export function PlayerPanel({
           long player name inside the card. */}
       <StatusBanner active={active} thinking={thinking} />
       <div
-        className="frame"
+        className="frame fd-panel-compact"
         style={{
           padding: 16,
           backgroundColor: tint,
@@ -121,7 +121,7 @@ export function PlayerPanel({
         {/* Header: avatar + name + rating. The name now has the card's full width
             (no inline badge beside it), so long names wrap cleanly. */}
         <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-          <Avatar src={avatar} size={54} />
+          <Avatar src={avatar} size={54} className="fd-panel-avatar" />
           <div style={{ flex: 1, minWidth: 0 }}>
             <div
               style={{
@@ -169,6 +169,7 @@ export function PlayerPanel({
           {Array.from({ length: 12 }).map((_, i) => (
             <span
               key={i}
+              className="fd-capture-dot"
               style={{
                 width: 18,
                 height: 18,

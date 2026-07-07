@@ -143,7 +143,7 @@ export function OnlineMatchPage() {
     const oppTier = opponent ? rankTierFor(opponent.trophies) : myTier;
 
     return (
-      <div style={{ maxWidth: 920, margin: "0 auto", padding: "40px 26px 60px" }}>
+      <div className="fd-page-pad-tight" style={{ maxWidth: 920, margin: "0 auto", padding: "40px 26px 60px" }}>
         {/* header */}
         <div style={{ textAlign: "center", marginBottom: 26 }}>
           <div style={{ font: "700 12px Inter", letterSpacing: "3px", color: "var(--gold)" }}>✦ ONLINE MATCHMAKING ✦</div>
@@ -192,8 +192,8 @@ export function OnlineMatchPage() {
         </div>
 
         {/* VS arena */}
-        <div className="frame" style={{ padding: "34px 28px" }}>
-          <div style={{ display: "grid", gridTemplateColumns: "1fr auto 1fr", alignItems: "center", gap: 20 }}>
+        <div className="frame fd-card-m" style={{ padding: "34px 28px" }}>
+          <div className="fd-stack" style={{ display: "grid", gridTemplateColumns: "1fr auto 1fr", alignItems: "center", gap: 20 }}>
             {/* you */}
             <div style={{ textAlign: "center" }}>
               <div style={{ position: "relative", width: 112, height: 112, margin: "0 auto 12px" }}>
@@ -251,7 +251,7 @@ export function OnlineMatchPage() {
         {error && <p style={{ font: "600 13px Inter", color: "#ff8fae", textAlign: "center", marginTop: 16 }}>{error}</p>}
 
         {/* actions */}
-        <div style={{ display: "flex", gap: 12, justifyContent: "center", marginTop: 22 }}>
+        <div className="fd-btn-grid-2" style={{ display: "flex", gap: 12, justifyContent: "center", marginTop: 22 }}>
           <button className="btn btn-purple" onClick={() => { leaveQueue(); reset(); navigate("/play"); }} style={{ fontSize: 14 }}>
             Cancel Search
           </button>
@@ -283,13 +283,13 @@ export function OnlineMatchPage() {
   });
 
   return (
-    <div className="fd-game-grid" style={{ maxWidth: 1560, margin: "0 auto", padding: "22px 26px", display: "grid", gridTemplateColumns: "300px minmax(0,1fr) 300px", gap: 18, alignItems: "start" }}>
+    <div className="fd-game-grid fd-page-pad" style={{ maxWidth: 1560, margin: "0 auto", padding: "22px 26px", display: "grid", gridTemplateColumns: "300px minmax(0,1fr) 300px", gap: 18, alignItems: "start" }}>
       {/* LEFT: players + controls.
           NOTE: the prototype reuses one screen and shows the "Explore Game Modes"
           grid here too, but that navigation is not appropriate mid-match (it would
           abandon a live server match). We intentionally diverge: during an ACTIVE
           online match we keep only the player panels + Resign/Leave. Acceptable. */}
-      <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+      <div className="fd-game-left" style={{ display: "flex", flexDirection: "column", gap: 16 }}>
         <div className="frame" style={{ padding: 16, textAlign: "center" }}>
           <div style={{ font: "700 13px Cinzel,serif", color: "#8ce0ad" }}>
             {mode === "RANKED" ? "Ranked Match" : "Quick Match"}
@@ -297,26 +297,28 @@ export function OnlineMatchPage() {
           <div style={{ font: "500 11px Inter", color: "var(--ink2)" }}>Live · Online</div>
         </div>
 
-        <OpponentPanel name={blueName === (me?.displayName ?? "You") ? redName : blueName} sub="Opponent"
-          avatar={opponent?.avatarUrl ?? "champion"} active={!!state && state.turn !== myColor && !state.result} />
-
-        <div style={{ textAlign: "center", font: "800 12px Cinzel,serif", color: "var(--ink2)" }}>VS</div>
-
-        <OpponentPanel name={me?.displayName ?? "You"} sub={`You · ${myColor}`}
-          avatar={me?.avatarUrl ?? "strategist"} active={myTurn} you />
-
-        <button className="btn btn-red" onClick={resign} disabled={!!state.result} style={{ marginTop: 4 }}>
-          🏳 Resign
-        </button>
-        <button className="btn btn-purple" onClick={() => navigate("/play")}>
-          ← Leave
-        </button>
+        {/* Resign / Leave — on mobile these sink below the board (fd-game-left order),
+            and stack as an even 2-up control row via fd-btn-grid-2. */}
+        <div className="fd-btn-grid-2" style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+          <button className="btn btn-red" onClick={resign} disabled={!!state.result}>
+            🏳 Resign
+          </button>
+          <button className="btn btn-purple" onClick={() => navigate("/play")}>
+            ← Leave
+          </button>
+        </div>
         {error && <div style={{ font: "600 12px Inter", color: "#ff8fae", textAlign: "center" }}>{error}</div>}
       </div>
 
-      {/* CENTER: board */}
-      <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 14 }}>
+      {/* CENTER: opponent panel → turn banner → board → your panel.
+          The two player panels bracket the board so on mobile the opponent leads,
+          the board sits above the fold, and "you" sits directly under it. */}
+      <div className="fd-game-center" style={{ display: "flex", flexDirection: "column", alignItems: "stretch", gap: 14 }}>
+        <OpponentPanel name={blueName === (me?.displayName ?? "You") ? redName : blueName} sub="Opponent"
+          avatar={opponent?.avatarUrl ?? "champion"} active={!!state && state.turn !== myColor && !state.result} />
+
         <div style={{
+          alignSelf: "center",
           padding: "9px 18px", borderRadius: 100, border: "1px solid rgba(232,184,75,.5)",
           background: myTurn ? "rgba(50,150,100,.18)" : "rgba(15,8,32,.6)",
           color: myTurn ? "#8ce0ad" : "var(--ink)", font: "700 13px Inter",
@@ -324,7 +326,7 @@ export function OnlineMatchPage() {
           {myTurn ? (mustCapture ? "⚠ You must capture" : "● Your move") : "Opponent's move…"}
         </div>
 
-        <div style={{ width: "min(92vw,600px)", maxWidth: "100%" }}>
+        <div style={{ width: "min(92vw,600px)", maxWidth: "100%", margin: "0 auto" }}>
           <Board
             state={state}
             legalTargets={moveTargets}
@@ -335,6 +337,9 @@ export function OnlineMatchPage() {
             flip={flip}
           />
         </div>
+
+        <OpponentPanel name={me?.displayName ?? "You"} sub={`You · ${myColor}`}
+          avatar={me?.avatarUrl ?? "strategist"} active={myTurn} you />
       </div>
 
       {/* RIGHT: move history (real) + quick chat (honest) + tip of the day */}
@@ -499,7 +504,7 @@ export function OnlineMatchPage() {
         )}
 
         {/* Stat grid — Moves + per-side captures derived from the real final history. */}
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 10, marginBottom: 20 }}>
+        <div className="fd-stat-3" style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 10, marginBottom: 20 }}>
           <ResultStat value={state.history.length} label="Moves" color="var(--gold-lt)" />
           <ResultStat value={redCaps} label="Red caps" color="#f27a86" />
           <ResultStat value={blueCaps} label="Blue caps" color="#6fa8ff" />

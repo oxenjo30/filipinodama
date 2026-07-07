@@ -142,7 +142,7 @@ export function PlayHubPage() {
   ];
 
   return (
-    <div style={{ maxWidth: 1560, margin: "0 auto", padding: "36px 26px 60px" }}>
+    <div className="fd-page-pad" style={{ maxWidth: 1560, margin: "0 auto", padding: "36px 26px 60px" }}>
       <div style={{ textAlign: "center", marginBottom: 34 }}>
         <div style={{ font: "700 12px Inter", letterSpacing: 3, color: "var(--gold)" }}>
           ✦ CHOOSE YOUR BATTLE ✦
@@ -191,7 +191,7 @@ export function PlayHubPage() {
                     {pm.icon}
                   </div>
                   <div style={{ textAlign: "left", minWidth: 0 }}>
-                    <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 3 }}>
+                    <div style={{ display: "flex", alignItems: "center", flexWrap: "wrap", gap: 8, marginBottom: 3 }}>
                       <span style={{ font: "800 20px Cinzel,serif", color: "var(--gold-lt)" }}>
                         {pm.title}
                       </span>
@@ -214,6 +214,7 @@ export function PlayHubPage() {
           <div style={{ display: "flex", justifyContent: "center", marginTop: 24 }}>
             <button
               onClick={() => navigate("/")}
+              className="fd-cta-full"
               style={{
                 padding: "13px 26px",
                 borderRadius: 8,

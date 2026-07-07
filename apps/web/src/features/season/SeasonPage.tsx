@@ -440,6 +440,7 @@ export function SeasonPage() {
   return (
     <div
       data-screen-label="Season Pass"
+      className="fd-page-pad"
       style={{ maxWidth: 1080, margin: "0 auto", padding: 26, display: "flex", flexDirection: "column", gap: 20 }}
     >
       {/* Back + eyebrow */}
@@ -558,7 +559,7 @@ export function SeasonPage() {
       {/* Season-end rewards banner — shown once the season's endsAt has passed */}
       {seasonEnded && (
         <div
-          className="frame"
+          className="frame fd-cta-banner"
           style={{
             padding: "16px 20px",
             display: "flex",
@@ -579,6 +580,7 @@ export function SeasonPage() {
           <button
             type="button"
             onClick={() => setSeasonEndOpen(true)}
+            className="fd-banner-action"
             style={{
               flex: "none",
               padding: "11px 22px",
@@ -596,7 +598,7 @@ export function SeasonPage() {
       )}
 
       {/* Tabs */}
-      <div style={{ display: "flex", gap: 10 }}>
+      <div className="fd-seg" style={{ display: "flex", gap: 10 }}>
         <button onClick={() => setTab("rewards")} style={tabStyle(tab === "rewards")}>
           Reward Track
         </button>
@@ -611,7 +613,7 @@ export function SeasonPage() {
           {/* Royal Pass Active banner — shown above the Reward Track when the pass is owned */}
           {hasPass && (
             <div
-              className="frame"
+              className="frame fd-cta-banner"
               style={{
                 padding: "16px 22px",
                 display: "flex",
@@ -630,6 +632,7 @@ export function SeasonPage() {
                 </div>
               </div>
               <span
+                className="fd-banner-action"
                 style={{
                   padding: "7px 16px",
                   borderRadius: 100,
@@ -637,6 +640,7 @@ export function SeasonPage() {
                   border: "1px solid rgba(63,191,111,.4)",
                   font: "800 12px Inter",
                   color: "#7fe0a3",
+                  textAlign: "center",
                 }}
               >
                 ACTIVE
@@ -645,7 +649,7 @@ export function SeasonPage() {
           )}
 
           {/* Reward track */}
-          <div className="frame" style={{ padding: 22 }}>
+          <div className="frame fd-card-m" style={{ padding: 22 }}>
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, marginBottom: 16, flexWrap: "wrap" }}>
               <span style={{ font: "800 19px Cinzel,serif", color: "var(--gold-lt)" }}>Reward Track</span>
               {claimableCount > 0 && (
@@ -707,7 +711,7 @@ export function SeasonPage() {
 
           {/* Unlock pass footer — not owned (honest: no fake "Active" banner) */}
           <div
-            className="frame"
+            className="frame fd-cta-banner"
             style={{
               padding: "22px 24px",
               display: "flex",
@@ -731,10 +735,12 @@ export function SeasonPage() {
             </div>
             {hasPass ? (
               <span
+                className="fd-banner-action"
                 style={{
                   flex: "none",
                   display: "flex",
                   alignItems: "center",
+                  justifyContent: "center",
                   gap: 8,
                   padding: "13px 24px",
                   borderRadius: 11,
@@ -750,10 +756,12 @@ export function SeasonPage() {
               <button
                 onClick={onUnlockPass}
                 disabled={buyingPass}
+                className="fd-banner-action"
                 style={{
                   flex: "none",
                   display: "flex",
                   alignItems: "center",
+                  justifyContent: "center",
                   gap: 8,
                   padding: "13px 24px",
                   borderRadius: 11,
@@ -775,7 +783,7 @@ export function SeasonPage() {
 
       {/* SEASON STANDINGS TAB — live leaderboard (real users, ranked by trophies) */}
       {tab === "ranking" && (
-        <div className="frame" style={{ padding: 22 }}>
+        <div className="frame fd-card-m" style={{ padding: 22 }}>
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, marginBottom: 16, flexWrap: "wrap" }}>
             <span style={{ font: "800 19px Cinzel,serif", color: "var(--gold-lt)" }}>Season Standings</span>
             <span style={{ font: "600 12px Inter", color: "var(--ink2)" }}>Ranked by trophies</span>
@@ -916,6 +924,7 @@ export function SeasonPage() {
       {seasonEndOpen && (
         <div
           onClick={() => setSeasonEndOpen(false)}
+          className="fd-sheet-overlay"
           style={{
             position: "fixed",
             inset: 0,
@@ -930,7 +939,7 @@ export function SeasonPage() {
         >
           <div
             onClick={(e) => e.stopPropagation()}
-            className="frame"
+            className="frame fd-sheet"
             style={{
               width: 560,
               maxWidth: "100%",
@@ -997,7 +1006,7 @@ export function SeasonPage() {
 
             {/* Rewards grid — real earned rewards (no fabricated numbers) */}
             {seasonEndItems.length > 0 ? (
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 12, marginBottom: 24 }}>
+              <div className="fd-stat-3" style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 12, marginBottom: 24 }}>
                 {seasonEndItems.map((r, i) => (
                   <div
                     key={i}

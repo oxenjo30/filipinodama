@@ -307,7 +307,7 @@ export function ProfilePage() {
   const toNextLabel = nextTier ? `${Math.max(0, nextTier.min - trophies)} trophies to next tier` : "Top tier reached";
 
   return (
-    <div style={{ maxWidth: 900, margin: "0 auto", padding: 26, display: "flex", flexDirection: "column", gap: 20 }}>
+    <div className="fd-page-pad" style={{ maxWidth: 900, margin: "0 auto", padding: 26, display: "flex", flexDirection: "column", gap: 20 }}>
       {/* ── avatar picker (grid modal → PATCH /api/users/me) ── */}
       <AvatarPickerModal open={avatarPickerOpen} onClose={() => setAvatarPickerOpen(false)} />
 
@@ -322,7 +322,7 @@ export function ProfilePage() {
       <ReplayModal matchId={replayId} meId={me.id} onClose={() => setReplayId(null)} />
 
       {/* ── identity header ── */}
-      <div className="frame" style={{ padding: 28, display: "flex", alignItems: "center", gap: 22, flexWrap: "wrap" }}>
+      <div className="frame fd-card-m" style={{ padding: 28, display: "flex", alignItems: "center", gap: 22, flexWrap: "wrap" }}>
         <div style={{ position: "relative", flex: "none" }}>
           <Portrait src={avatarSrc(me.avatarUrl)} size={92} alt={displayName} />
           <button
@@ -350,7 +350,7 @@ export function ProfilePage() {
           </button>
         </div>
         <div style={{ flex: 1, minWidth: 200 }}>
-          <h1 style={{ margin: 0, font: "800 30px Cinzel,serif", color: "var(--gold-lt)" }}>
+          <h1 style={{ margin: 0, font: "800 clamp(22px,6vw,30px) Cinzel,serif", color: "var(--gold-lt)", wordBreak: "break-word" }}>
             {displayName}{" "}
             <span style={{ font: "800 18px 'JetBrains Mono',monospace", color: "var(--ink2)", verticalAlign: "middle" }}>
               {playerTag}
@@ -389,7 +389,7 @@ export function ProfilePage() {
               );
             })()}
         </div>
-        <div style={{ display: "flex", gap: 10, flexWrap: "wrap", width: "100%", justifyContent: "flex-end" }}>
+        <div className="fd-btn-grid-2" style={{ display: "flex", gap: 10, flexWrap: "wrap", width: "100%", justifyContent: "flex-end" }}>
           <button className="btn btn-gold" onClick={() => setEditOpen(true)} style={{ padding: "12px 22px" }}>
             Edit Profile
           </button>
@@ -419,7 +419,7 @@ export function ProfilePage() {
       {tab === "overview" && (
         <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
           {/* stat grid — real/zero */}
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 14 }}>
+          <div className="fd-stat-2" style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 14 }}>
             {STATS.map((p) => (
               <div key={p.k} className="frame" style={{ padding: "20px 12px", textAlign: "center" }}>
                 <div style={{ font: "800 28px 'JetBrains Mono',monospace", color: p.c }}>{p.v}</div>
@@ -429,7 +429,7 @@ export function ProfilePage() {
           </div>
 
           {/* rank tiers — from shared RANK_TIERS */}
-          <div className="frame" style={{ padding: 24 }}>
+          <div className="frame fd-card-m" style={{ padding: 24 }}>
             <div className="ptitle">Rank Tiers</div>
             <div
               style={{
@@ -527,7 +527,7 @@ export function ProfilePage() {
           </div>
 
           {/* trophy history — LIVE ledger */}
-          <div className="frame" style={{ padding: 24 }}>
+          <div className="frame fd-card-m" style={{ padding: 24 }}>
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 4 }}>
               <div className="ptitle" style={{ marginBottom: 0 }}>
                 Trophy History
@@ -626,8 +626,9 @@ export function ProfilePage() {
       {/* ── MATCH HISTORY — LIVE ── */}
       {tab === "history" && (
         <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
-          <div className="frame" style={{ padding: 24 }}>
+          <div className="frame fd-card-m" style={{ padding: 24 }}>
             <div
+              className="fd-page-head"
               style={{
                 display: "flex",
                 alignItems: "center",
@@ -640,7 +641,7 @@ export function ProfilePage() {
               <div className="ptitle" style={{ marginBottom: 0 }}>
                 Match History
               </div>
-              <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+              <div className="fd-chip-strip" style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
                 {HISTORY_FILTERS.map((hf) => {
                   const active = historyFilter === hf.key;
                   return (

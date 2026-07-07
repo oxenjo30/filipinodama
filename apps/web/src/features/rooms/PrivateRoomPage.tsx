@@ -313,7 +313,7 @@ export function PrivateRoomPage() {
   // ---- Logged-out prompt (never crash) ----
   if (!me) {
     return (
-      <div style={{ maxWidth: 960, margin: "0 auto", padding: "40px 26px 60px" }}>
+      <div className="fd-page-pad" style={{ maxWidth: 960, margin: "0 auto", padding: "40px 26px 60px" }}>
         <div style={{ textAlign: "center", marginBottom: 24 }}>
           <div style={{ font: "700 12px Inter", letterSpacing: 3, color: "var(--gold)" }}>
             ✦ PRIVATE MATCH ✦
@@ -353,7 +353,7 @@ export function PrivateRoomPage() {
   // ---- No room yet: Create or Join by code (real server flow) ----
   if (!inRoom) {
     return (
-      <div style={{ maxWidth: 720, margin: "0 auto", padding: "40px 26px 60px" }}>
+      <div className="fd-page-pad" style={{ maxWidth: 720, margin: "0 auto", padding: "40px 26px 60px" }}>
         <div style={{ textAlign: "center", marginBottom: 24 }}>
           <div style={{ font: "700 12px Inter", letterSpacing: 3, color: "var(--gold)" }}>
             ✦ PRIVATE MATCH ✦
@@ -384,7 +384,7 @@ export function PrivateRoomPage() {
           }}
         >
           {/* Create */}
-          <div className="frame" style={{ padding: 26, textAlign: "center" }}>
+          <div className="frame fd-card-m" style={{ padding: 26, textAlign: "center" }}>
             <div style={{ fontSize: 34, marginBottom: 8 }}>👑</div>
             <div className="ptitle" style={{ margin: "0 0 8px" }}>
               Host a Room
@@ -403,7 +403,7 @@ export function PrivateRoomPage() {
           </div>
 
           {/* Join */}
-          <div className="frame" style={{ padding: 26, textAlign: "center" }}>
+          <div className="frame fd-card-m" style={{ padding: 26, textAlign: "center" }}>
             <div style={{ fontSize: 34, marginBottom: 8 }}>🎟</div>
             <div className="ptitle" style={{ margin: "0 0 8px" }}>
               Join by Code
@@ -411,12 +411,17 @@ export function PrivateRoomPage() {
             <div style={{ font: "500 13px Inter", color: "var(--ink2)", marginBottom: 18 }}>
               Got a room code from a friend? Enter it to jump in.
             </div>
-            <form onSubmit={doJoin} style={{ display: "flex", gap: 8, justifyContent: "center" }}>
+            <form
+              onSubmit={doJoin}
+              className="fd-btn-stack"
+              style={{ display: "flex", gap: 8, justifyContent: "center" }}
+            >
               <input
                 value={joinInput}
                 onChange={(e) => setJoinInput(e.target.value.toUpperCase())}
                 placeholder="ABC123"
                 maxLength={6}
+                className="fd-nozoom"
                 style={{
                   flex: 1,
                   minWidth: 0,
@@ -449,7 +454,7 @@ export function PrivateRoomPage() {
   const started = !!matchId;
 
   return (
-    <div style={{ maxWidth: 960, margin: "0 auto", padding: "40px 26px 60px" }}>
+    <div className="fd-page-pad" style={{ maxWidth: 960, margin: "0 auto", padding: "40px 26px 60px" }}>
       {/* Header */}
       <div style={{ textAlign: "center", marginBottom: 24 }}>
         <div style={{ font: "700 12px Inter", letterSpacing: 3, color: "var(--gold)" }}>
@@ -475,6 +480,7 @@ export function PrivateRoomPage() {
       </div>
 
       <div
+        className="fd-stack"
         style={{
           display: "grid",
           gridTemplateColumns: narrow ? "minmax(0,1fr)" : "1fr 320px",
@@ -483,9 +489,9 @@ export function PrivateRoomPage() {
         }}
       >
         {/* LEFT: room code + players */}
-        <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
+        <div className="fd-order-1" style={{ display: "flex", flexDirection: "column", gap: 20 }}>
           {/* room code */}
-          <div className="frame" style={{ padding: 24, textAlign: "center" }}>
+          <div className="frame fd-card-m" style={{ padding: 24, textAlign: "center" }}>
             <div
               style={{
                 font: "700 12px Inter",
@@ -498,6 +504,7 @@ export function PrivateRoomPage() {
               Room Code
             </div>
             <div
+              className="fd-btn-stack"
               style={{
                 display: "flex",
                 alignItems: "center",
@@ -508,8 +515,8 @@ export function PrivateRoomPage() {
             >
               <div
                 style={{
-                  font: "800 34px 'JetBrains Mono',monospace",
-                  letterSpacing: 6,
+                  font: "800 clamp(26px,7vw,34px) 'JetBrains Mono',monospace",
+                  letterSpacing: 4,
                   color: "#fff",
                   padding: "12px 24px",
                   borderRadius: 12,
@@ -545,13 +552,13 @@ export function PrivateRoomPage() {
           </div>
 
           {/* players */}
-          <div className="frame" style={{ padding: 26 }}>
+          <div className="frame fd-card-m" style={{ padding: 26 }}>
             <div
               style={{
                 display: "grid",
                 gridTemplateColumns: "1fr auto 1fr",
                 alignItems: "center",
-                gap: 18,
+                gap: "clamp(8px,3vw,18px)",
               }}
             >
               {/* host (real member) */}
@@ -563,8 +570,9 @@ export function PrivateRoomPage() {
               />
               <div
                 style={{
-                  width: 56,
-                  height: 56,
+                  width: "clamp(44px,12vw,56px)",
+                  height: "clamp(44px,12vw,56px)",
+                  flex: "none",
                   borderRadius: "50%",
                   border: "1px solid rgba(232,184,75,.4)",
                   background: "rgba(15,8,32,.7)",
@@ -608,8 +616,8 @@ export function PrivateRoomPage() {
                 <div style={{ textAlign: "center" }}>
                   <div
                     style={{
-                      width: 96,
-                      height: 96,
+                      width: "clamp(68px,20vw,96px)",
+                      height: "clamp(68px,20vw,96px)",
                       margin: "0 auto 10px",
                       borderRadius: "50%",
                       border: "2px dashed rgba(232,184,75,.3)",
@@ -634,6 +642,7 @@ export function PrivateRoomPage() {
 
             {/* match settings */}
             <div
+              className="fd-collapse-2"
               style={{
                 marginTop: 22,
                 paddingTop: 20,
@@ -645,7 +654,7 @@ export function PrivateRoomPage() {
             >
               <div>
                 <div style={settingLabelStyle}>Game Mode</div>
-                <div style={{ display: "flex", gap: 8 }}>
+                <div className="fd-seg" style={{ display: "flex", gap: 8 }}>
                   {MODES.map((m) => (
                     <button
                       key={m.key}
@@ -660,7 +669,7 @@ export function PrivateRoomPage() {
               </div>
               <div>
                 <div style={settingLabelStyle}>Time Control</div>
-                <div style={{ display: "flex", gap: 8 }}>
+                <div className="fd-seg" style={{ display: "flex", gap: 8 }}>
                   {TIMES.map((t) => (
                     <button
                       key={t.key}
@@ -688,7 +697,7 @@ export function PrivateRoomPage() {
                   {moveTimer === "off" ? "No per-move limit" : `${moveTimer}s per move`}
                 </div>
               </div>
-              <div style={{ display: "flex", gap: 8 }}>
+              <div className="fd-seg" style={{ display: "flex", gap: 8 }}>
                 {MOVE_TIMERS.map((mt) => (
                   <button
                     key={mt.key}
@@ -709,7 +718,7 @@ export function PrivateRoomPage() {
           </div>
 
           {/* spectators — real chips from roomState.spectators[] */}
-          <div className="frame" style={{ padding: 20 }}>
+          <div className="frame fd-card-m" style={{ padding: 20 }}>
             <div
               style={{
                 display: "flex",
@@ -790,7 +799,10 @@ export function PrivateRoomPage() {
           </div>
 
           {/* actions */}
-          <div style={{ display: "flex", gap: 12, justifyContent: "center" }}>
+          <div
+            className="fd-btn-stack"
+            style={{ display: "flex", gap: 12, justifyContent: "center" }}
+          >
             {iAmHost && (
               <button
                 className="btn btn-red"
@@ -813,8 +825,8 @@ export function PrivateRoomPage() {
         </div>
 
         {/* RIGHT: invite friends + chat */}
-        <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
-          <div className="frame" style={{ padding: 20 }}>
+        <div className="fd-order-2 fd-stack" style={{ display: "flex", flexDirection: "column", gap: 20 }}>
+          <div className="frame fd-card-m fd-order-2" style={{ padding: 20 }}>
             <div className="ptitle" style={{ textAlign: "left", marginBottom: 14 }}>
               Invite Friends
             </div>
@@ -921,6 +933,7 @@ export function PrivateRoomPage() {
 
           {/* room chat — live over "room:chat" */}
           <RoomChat
+            className="fd-card-m fd-order-1"
             me={me.id}
             chat={chat}
             input={chatInput}
@@ -958,7 +971,11 @@ function PlayerCard({
   if (!member) return null;
   return (
     <div style={{ textAlign: "center" }}>
-      <Avatar src={member.avatarUrl ?? "champion"} size={96} style={{ margin: "0 auto 10px" }} />
+      <Avatar
+        src={member.avatarUrl ?? "champion"}
+        size={96}
+        style={{ margin: "0 auto 10px", width: "clamp(68px,20vw,96px)", height: "clamp(68px,20vw,96px)" }}
+      />
       <div style={{ font: "800 16px Cinzel,serif", color: "var(--gold-lt)" }}>
         {member.name}
         {isMe && <span style={{ font: "600 11px Inter", color: "var(--ink2)" }}> (You)</span>}
@@ -984,6 +1001,7 @@ function PlayerCard({
 
 /** Room chat panel — renders the live "room:chat" feed and sends new lines. */
 function RoomChat({
+  className,
   me,
   chat,
   input,
@@ -991,6 +1009,7 @@ function RoomChat({
   onSubmit,
   onEmote,
 }: {
+  className?: string;
   me: string;
   chat: { id: string; from: RoomMember; body: string; at: number }[];
   input: string;
@@ -1005,7 +1024,10 @@ function RoomChat({
   }, [chat.length]);
 
   return (
-    <div className="frame" style={{ padding: 20, display: "flex", flexDirection: "column" }}>
+    <div
+      className={`frame${className ? ` ${className}` : ""}`}
+      style={{ padding: 20, display: "flex", flexDirection: "column" }}
+    >
       <div
         style={{
           display: "flex",
@@ -1099,6 +1121,7 @@ function RoomChat({
           value={input}
           onChange={(e) => onInput(e.target.value)}
           placeholder="Message…"
+          className="fd-nozoom"
           style={{
             flex: 1,
             minWidth: 0,

@@ -288,6 +288,7 @@ export function LearnPage() {
   return (
     <div
       data-screen-label="Learn"
+      className="fd-stack fd-page-pad-tight"
       style={{
         maxWidth: 1560,
         margin: "0 auto",
@@ -299,7 +300,7 @@ export function LearnPage() {
       }}
     >
       {/* ── LEFT RAIL ── */}
-      <div style={{ display: "flex", flexDirection: "column", gap: 18 }}>
+      <div className="fd-order-2" style={{ display: "flex", flexDirection: "column", gap: 18 }}>
         {/* Your Learning Journey */}
         <div className="frame" style={{ padding: 22 }}>
           <div className="ptitle">Your Learning Journey</div>
@@ -344,6 +345,7 @@ export function LearnPage() {
             {learnPct}% complete
           </div>
           <div
+            className="fd-stat-3"
             style={{
               display: "grid",
               gridTemplateColumns: "repeat(3,1fr)",
@@ -445,7 +447,7 @@ export function LearnPage() {
               </div>
               <button
                 type="button"
-                className="btn btn-purple"
+                className="btn btn-purple fd-cta-full"
                 disabled={lessons.length === 0}
                 onClick={() => {
                   const target = resumeLesson ?? lessons[0];
@@ -552,7 +554,7 @@ export function LearnPage() {
       </div>
 
       {/* ── CENTER ── */}
-      <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
+      <div className="fd-order-1" style={{ display: "flex", flexDirection: "column", gap: 20 }}>
         <div style={{ textAlign: "center" }}>
           <h1
             style={{
@@ -573,7 +575,7 @@ export function LearnPage() {
         {/* How to Move & Capture */}
         <div className="frame" style={{ padding: 24 }}>
           <div className="ptitle">How to Move &amp; Capture</div>
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 20 }}>
+          <div className="fd-collapse-2" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 20 }}>
             <div style={{ display: "flex", gap: 14, alignItems: "flex-start" }}>
               <div style={{ width: 96, height: 96, flex: "none" }}>
                 <MiniBoard />
@@ -631,6 +633,7 @@ export function LearnPage() {
           <div style={{ display: "flex", gap: 8 }}>
             <input
               placeholder="Search rules, tactics, topics..."
+              className="fd-nozoom"
               onFocus={() => showToast("Lesson search arrives with online play.")}
               style={{
                 flex: 1,
@@ -649,7 +652,7 @@ export function LearnPage() {
         </div>
 
         {/* Topic cards */}
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 12 }}>
+        <div className="fd-grid-2up" style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 12 }}>
           {TOPICS.map((t) => (
             <div
               key={t.title}
@@ -686,7 +689,7 @@ export function LearnPage() {
               </div>
               <button
                 type="button"
-                className={`btn ${t.btn}`}
+                className={`btn ${t.btn} fd-cta-full`}
                 onClick={() => openLesson(t.lessonId)}
                 style={{ width: "100%", padding: 9, fontSize: 10 }}
               >
@@ -698,7 +701,7 @@ export function LearnPage() {
       </div>
 
       {/* ── RIGHT RAIL ── */}
-      <div style={{ display: "flex", flexDirection: "column", gap: 18 }}>
+      <div className="fd-order-3" style={{ display: "flex", flexDirection: "column", gap: 18 }}>
         {/* What You'll Learn */}
         <div className="frame" style={{ padding: 22 }}>
           <div className="ptitle">What You'll Learn</div>
@@ -737,6 +740,7 @@ export function LearnPage() {
             </span>
             <button
               type="button"
+              className="fd-tap"
               onClick={() => openLesson(VIDEO_LESSONS[0].lessonId)}
               style={{
                 font: "600 11px Inter",

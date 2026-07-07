@@ -130,6 +130,7 @@ export function ContactPage() {
 
   return (
     <div
+      className="fd-page-pad"
       style={{
         maxWidth: 1000,
         margin: "0 auto",
@@ -183,7 +184,7 @@ export function ContactPage() {
         {/* FORM / SUCCESS */}
         {sent ? (
           <div
-            className="frame"
+            className="frame fd-card-m"
             style={{
               padding: "40px 32px",
               textAlign: "center",
@@ -219,7 +220,7 @@ export function ContactPage() {
             </p>
             <button
               type="button"
-              className="btn btn-gold"
+              className="btn btn-gold fd-cta-full"
               onClick={resetForm}
               style={{ marginTop: 8, padding: "12px 26px" }}
             >
@@ -228,13 +229,14 @@ export function ContactPage() {
           </div>
         ) : (
         <div
-          className="frame"
+          className="frame fd-card-m"
           style={{ padding: "26px 28px", display: "flex", flexDirection: "column", gap: 16 }}
         >
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
+          <div className="fd-collapse-2" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
             <div>
               <label style={labelStyle}>Your Name</label>
               <input
+                className="fd-nozoom"
                 value={name}
                 onChange={(e) => setName(e.target.value)}
                 placeholder="Juan dela Cruz"
@@ -244,6 +246,7 @@ export function ContactPage() {
             <div>
               <label style={labelStyle}>Your Email</label>
               <input
+                className="fd-nozoom"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 placeholder="you@email.com"
@@ -269,6 +272,7 @@ export function ContactPage() {
           <div>
             <label style={labelStyle}>Subject</label>
             <input
+              className="fd-nozoom"
               value={subject}
               onChange={(e) => setSubject(e.target.value)}
               placeholder="Brief summary"
@@ -278,6 +282,7 @@ export function ContactPage() {
           <div>
             <label style={labelStyle}>Message</label>
             <textarea
+              className="fd-nozoom"
               value={message}
               onChange={(e) => {
                 setMessage(e.target.value);
@@ -304,7 +309,7 @@ export function ContactPage() {
           </div>
           <button
             type="button"
-            className="btn btn-gold"
+            className="btn btn-gold fd-cta-full"
             onClick={handleSend}
             style={{ width: "100%", padding: 14, fontSize: 13 }}
           >
@@ -331,7 +336,7 @@ export function ContactPage() {
 
         {/* SIDEBAR */}
         <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-          <div className="frame" style={{ padding: 20 }}>
+          <div className="frame fd-card-m" style={{ padding: 20 }}>
             <div className="ptitle" style={{ textAlign: "left" }}>
               Reach Us
             </div>
@@ -365,7 +370,7 @@ export function ContactPage() {
               </div>
             </div>
           </div>
-          <div className="frame" style={{ padding: 20 }}>
+          <div className="frame fd-card-m" style={{ padding: 20 }}>
             <div className="ptitle" style={{ textAlign: "left" }}>
               Before You Write
             </div>

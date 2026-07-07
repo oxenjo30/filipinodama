@@ -270,6 +270,7 @@ export function LegalLayout({ active }: { active: LegalKey }) {
   return (
     <div
       data-screen-label="Legal"
+      className="fd-stack fd-page-pad"
       style={{
         maxWidth: 1180,
         margin: "0 auto",
@@ -281,7 +282,7 @@ export function LegalLayout({ active }: { active: LegalKey }) {
       }}
     >
       {/* NAV */}
-      <div className="frame" style={{ padding: 16, position: "sticky", top: 88 }}>
+      <div className="frame fd-order-2" style={{ padding: 16, position: "sticky", top: 88 }}>
         <div className="ptitle" style={{ textAlign: "left" }}>
           Legal &amp; Policies
         </div>
@@ -295,6 +296,7 @@ export function LegalLayout({ active }: { active: LegalKey }) {
                 onClick={() => navigate(t.to)}
                 style={{
                   width: "100%",
+                  minHeight: 44,
                   display: "flex",
                   alignItems: "center",
                   gap: 11,
@@ -341,7 +343,7 @@ export function LegalLayout({ active }: { active: LegalKey }) {
       </div>
 
       {/* CONTENT */}
-      <div className="frame" style={{ padding: "32px 36px" }}>
+      <div className="frame fd-order-1 fd-card-m" style={{ padding: "32px 36px" }}>
         <span
           style={{
             display: "inline-block",

@@ -231,7 +231,7 @@ export function GamePage({ mode = "ai" }: { mode?: "ai" | "local" }) {
 
   return (
     <div
-      className="fd-game-grid"
+      className="fd-game-grid fd-page-pad"
       style={{
         maxWidth: 1560,
         margin: "0 auto",
@@ -242,7 +242,10 @@ export function GamePage({ mode = "ai" }: { mode?: "ai" | "local" }) {
         alignItems: "start",
       }}
     >
-      {/* LEFT: mode + players + actions */}
+      {/* LEFT: mode chip + more-actions nav + players-online.
+          The two PlayerPanels moved into the CENTER column so they bracket the
+          board (opponent above, human below) — this keeps the board leading on
+          mobile while the nav cluster sinks below via the fd-game-left order. */}
       <div className="fd-game-left" style={{ display: "flex", flexDirection: "column", gap: 16 }}>
         <div
           className="frame"
@@ -274,45 +277,7 @@ export function GamePage({ mode = "ai" }: { mode?: "ai" | "local" }) {
           )}
         </div>
 
-        {/* Top panel (blue): AI in vs-AI, Player 2 in local */}
-        <PlayerPanel
-          name={blueName}
-          rating={isLocal ? "—" : difficulty === "hard" ? 1600 : difficulty === "normal" ? 1200 : 800}
-          color={AI_COLOR}
-          avatar={isLocal ? "sovereign" : "strategist"}
-          active={blueToMove}
-          captured={blueCaptured}
-          thinking={aiThinking}
-        />
-
-        <div style={{ display: "flex", justifyContent: "center", margin: "-6px 0" }}>
-          <span
-            style={{
-              width: 36,
-              height: 36,
-              borderRadius: "50%",
-              background: "rgba(15,8,32,.9)",
-              border: "1px solid rgba(232,184,75,.5)",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              font: "800 12px Cinzel,serif",
-              color: "var(--gold)",
-            }}
-          >
-            VS
-          </span>
-        </div>
-
-        {/* Bottom panel (red): human in vs-AI, Player 1 in local */}
-        <PlayerPanel
-          name={redName}
-          rating={isLocal ? "—" : trophies}
-          color={HUMAN_COLOR}
-          avatar={isLocal ? "champion" : avatar}
-          active={redToMove}
-          captured={redCaptured}
-        />
+        <Divider style={{ width: "100%" }}>More</Divider>
 
         <Button variant="red" block onClick={() => goOnline("/play/online?mode=casual")}>
           🌐 Play Online
@@ -322,9 +287,6 @@ export function GamePage({ mode = "ai" }: { mode?: "ai" | "local" }) {
         </Button>
         <Button variant="purple" block onClick={() => (isLocal ? rematch() : navigate("/play/local"))}>
           👥 Local Match
-        </Button>
-        <Button variant="purple" block onClick={() => rematch()}>
-          ↻ New Board
         </Button>
         <div
           style={{
@@ -340,8 +302,21 @@ export function GamePage({ mode = "ai" }: { mode?: "ai" | "local" }) {
         </div>
       </div>
 
-      {/* CENTER: board + controls */}
-      <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 14 }}>
+      {/* CENTER: opponent panel + board + controls + human panel */}
+      <div className="fd-game-center" style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 14 }}>
+        {/* Opponent panel (blue): AI in vs-AI, Player 2 in local. Sits directly
+            above the turn banner so the opponent is always visible over the board. */}
+        <div style={{ width: "min(92vw,600px)", maxWidth: "100%" }}>
+          <PlayerPanel
+            name={blueName}
+            rating={isLocal ? "—" : difficulty === "hard" ? 1600 : difficulty === "normal" ? 1200 : 800}
+            color={AI_COLOR}
+            avatar={isLocal ? "sovereign" : "strategist"}
+            active={blueToMove}
+            captured={blueCaptured}
+            thinking={aiThinking}
+          />
+        </div>
         {/* Local pass-and-play: a clear whose-turn banner so players know who acts. */}
         {isLocal && !result && (
           <div
@@ -455,7 +430,10 @@ export function GamePage({ mode = "ai" }: { mode?: "ai" | "local" }) {
           />
         </div>
 
-        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", justifyContent: "center" }}>
+        <div
+          className="fd-btn-grid-2"
+          style={{ display: "flex", gap: 8, flexWrap: "wrap", justifyContent: "center", width: "min(92vw,600px)", maxWidth: "100%" }}
+        >
           <Button
             variant="purple"
             size="sm"
@@ -489,8 +467,21 @@ export function GamePage({ mode = "ai" }: { mode?: "ai" | "local" }) {
             ↻ Restart
           </Button>
           <Button variant="red" size="sm" onClick={() => surrender()} disabled={!!result}>
-            🏳 {isLocal ? `${redToMove ? P1_NAME : P2_NAME} Resigns` : "Surrender"}
+            🏳 {isLocal ? "Resign" : "Surrender"}
           </Button>
+        </div>
+
+        {/* Human panel (red): human in vs-AI, Player 1 in local. Sits directly
+            below the board + controls so YOUR seat is right under the action. */}
+        <div style={{ width: "min(92vw,600px)", maxWidth: "100%" }}>
+          <PlayerPanel
+            name={redName}
+            rating={isLocal ? "—" : trophies}
+            color={HUMAN_COLOR}
+            avatar={isLocal ? "champion" : avatar}
+            active={redToMove}
+            captured={redCaptured}
+          />
         </div>
 
         <Divider style={{ width: "100%", marginTop: 8 }}>Explore Game Modes</Divider>
@@ -657,7 +648,7 @@ export function GamePage({ mode = "ai" }: { mode?: "ai" | "local" }) {
         </h2>
         <p style={{ font: "400 14px Inter", color: "var(--ink)", margin: "0 0 22px" }}>{resultReason}</p>
 
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 10, marginBottom: 24 }}>
+        <div className="fd-stat-3" style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 10, marginBottom: 24 }}>
           <ResultStat value={state.history.length} label="Moves" color="var(--gold-lt)" />
           <ResultStat value={redCaptured} label={isLocal ? `${P1_NAME} took` : "You took"} color="#f27a86" />
           <ResultStat value={blueCaptured} label={isLocal ? `${P2_NAME} took` : "AI took"} color="#6fa8ff" />
@@ -667,7 +658,7 @@ export function GamePage({ mode = "ai" }: { mode?: "ai" | "local" }) {
           <Button variant="gold" block onClick={() => rematch()}>
             ↻ Rematch
           </Button>
-          <div style={{ display: "flex", gap: 9 }}>
+          <div className="fd-btn-grid-2" style={{ display: "flex", gap: 9 }}>
             <Button variant="purple" style={{ flex: 1 }} onClick={() => navigate(isLocal ? "/play" : "/play/ai")}>
               {isLocal ? "Game Modes" : "Change Difficulty"}
             </Button>
