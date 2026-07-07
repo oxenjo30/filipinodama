@@ -47,6 +47,8 @@ export const checkoutSchema = z.object({ packId: z.string() });
 
 // ── social / guild ──
 export const friendRequestSchema = z.object({ toUserId: z.string() });
+/** Add-by-tag: a #NNNN player tag (leading # optional, trimmed client-side). */
+export const friendRequestByTagSchema = z.object({ tag: z.string().min(1).max(16) });
 /** The heraldic crest a guild displays (mirrors the client's CRESTS registry). */
 export const GUILD_CREST_KEYS = ["vanguard", "crown", "swords", "citadel", "marksman", "banner"] as const;
 export const guildCrestKeySchema = z.enum(GUILD_CREST_KEYS);

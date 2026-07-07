@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { RANK_TIERS, rankTierFor } from "@dama/shared";
+import { rankTierFor } from "@dama/shared";
 import { Avatar } from "../../components";
 import { api, ApiError } from "../../lib/api";
 import { useAppStore } from "../../stores/appStore";
@@ -13,16 +13,24 @@ import { useAuthStore } from "../../stores/authStore";
  *   GET  /api/friends            → accepted friends
  *   GET  /api/friends/requests   → { incoming, outgoing } pending requests
  *   GET  /api/friends/suggested  → discovery candidates (real users)
- *   POST /api/friends/request                 { toUserId }   (Add)
+ *   GET  /api/users/:id          → public profile for the profile modal
+ *   POST /api/friends/request                 { toUserId }   (Add from list)
+ *   POST /api/friends/request-by-tag          { tag }        (Add Friend modal)
  *   POST /api/friends/request/:id/accept                     (Accept)
  *   POST /api/friends/request/:id/decline                    (Decline)
  *
- * Presence is NOT delivered over REST (the server reports presence:"unknown"),
- * so we do not invent an Online/Offline split — every accepted friend lives in
- * one honest "Friends" list, and the "Online Now" tile reads 0 until realtime
- * presence lands (owned by another task). Every section shows an honest EMPTY
- * state when there is nothing. Logged out: no fetch fires and we prompt sign-in.
+ * PRESENCE: there is no live presence broadcast yet (the presence:update socket
+ * is scaffolded but not firing), so we derive a best-effort "online" state from
+ * lastSeenAt within the last 2 minutes — truthful, never random. If everyone's
+ * lastSeenAt is stale, everyone honestly falls into the Offline section and the
+ * "Online Now" tile reads 0.
+ *
+ * DIRECT MESSAGES: there is no DM backend, so the 💬 button opens an honest
+ * "coming soon" toast. We deliberately render NO unread badge — inventing one
+ * would be fake data.
  */
+
+const ONLINE_WINDOW_MS = 2 * 60 * 1000; // lastSeenAt within 2 min ⇒ best-effort "online"
 
 /** publicFriend() shape the server returns for friends / requests / suggestions. */
 type FriendUser = {
@@ -39,11 +47,39 @@ type FriendUser = {
 };
 type FriendReq = { id: string; createdAt: string; user: FriendUser };
 
+/** publicProfile() shape from GET /api/users/:id (subset the modal renders). */
+type PublicProfile = {
+  id: string;
+  displayName: string;
+  tag: string;
+  bio: string | null;
+  avatarUrl: string | null;
+  frameId: string | null;
+  countryCode: string | null;
+  trophies: number;
+  tier: { key: string; label: string; sub: string; accent: string; img: string };
+  wins: number;
+  losses: number;
+  draws: number;
+  streak: number;
+  createdAt: string;
+  guild: { id: string; name: string; tag: string; role: string } | null;
+};
+
 /** Resolve a tier {label,color} — ALWAYS derived from trophies (the authoritative
  *  source); the stored rankTier column is a cache that can be stale. */
 function tierOf(u: FriendUser): { label: string; color: string } {
   const t = rankTierFor(u.trophies);
   return { label: t.label, color: t.accent };
+}
+
+/** Best-effort presence: lastSeenAt within the online window ⇒ online. Honest —
+ *  when lastSeenAt is missing/unparseable/stale the friend is Offline. */
+function isOnline(u: FriendUser): boolean {
+  if (!u.lastSeenAt) return false;
+  const t = new Date(u.lastSeenAt).getTime();
+  if (Number.isNaN(t)) return false;
+  return Date.now() - t < ONLINE_WINDOW_MS;
 }
 
 function summaryFor(friends: number, online: number, requests: number): { k: string; v: string; c: string }[] {
@@ -78,25 +114,57 @@ function EmptyPanel({ title, message }: { title: string; message: string }) {
   );
 }
 
-/** Identity block (avatar + name + tag + tier pill) — clicking opens the profile. */
-function UserIdentity({
-  user,
+/** A single friend row (used in both Online and Offline sections). */
+function FriendRow({
+  friend,
+  online,
   onOpen,
-  nameColor = "#fff",
+  onMessage,
+  onInvite,
 }: {
-  user: FriendUser;
+  friend: FriendUser;
+  online: boolean;
   onOpen: () => void;
-  nameColor?: string;
+  onMessage: () => void;
+  onInvite: () => void;
 }) {
-  const tier = tierOf(user);
+  const tier = tierOf(friend);
+  const dot = online ? "#3fbf6f" : "#6b6480";
   return (
-    <>
-      <Avatar src={user.avatarUrl ?? "champion"} size={44} frame={user.frameId ?? undefined} />
+    <div
+      style={{
+        display: "flex",
+        alignItems: "center",
+        gap: 14,
+        padding: 12,
+        borderRadius: 12,
+        border: online ? "1px solid rgba(232,184,75,.16)" : "1px solid rgba(232,184,75,.1)",
+        background: online ? "rgba(0,0,0,.2)" : "rgba(0,0,0,.14)",
+        opacity: online ? 1 : 0.72,
+      }}
+    >
+      <div style={{ position: "relative", flex: "none" }}>
+        <Avatar src={friend.avatarUrl ?? "champion"} size={44} frame={friend.frameId ?? undefined} />
+        <span
+          style={{
+            position: "absolute",
+            right: -1,
+            bottom: -1,
+            width: 13,
+            height: 13,
+            borderRadius: "50%",
+            background: dot,
+            border: "2px solid #150a24",
+          }}
+        />
+      </div>
       <div onClick={onOpen} style={{ flex: 1, minWidth: 0, cursor: "pointer" }}>
         <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-          <span style={{ font: "700 15px Inter", color: nameColor }}>{user.displayName}</span>
+          <span style={{ font: "700 15px Inter", color: online ? "#fff" : "#efe7fb" }}>
+            {friend.displayName}
+          </span>
           <span style={{ font: "700 11px 'JetBrains Mono',monospace", color: "var(--ink2)" }}>
-            {user.tag}
+            {friend.tag}
           </span>
           <span
             style={{
@@ -105,7 +173,7 @@ function UserIdentity({
               gap: 5,
               padding: "2px 8px",
               borderRadius: 100,
-              border: "1px solid rgba(232,184,75,.2)",
+              border: `1px solid rgba(232,184,75,${online ? ".2" : ".15"})`,
               background: "rgba(15,8,32,.5)",
             }}
           >
@@ -113,11 +181,51 @@ function UserIdentity({
             <span style={{ font: "600 10px Inter", color: tier.color }}>{tier.label}</span>
           </span>
         </div>
-        <div style={{ font: "500 12px Inter", color: "var(--ink2)", marginTop: 3 }}>
-          {user.trophies.toLocaleString()} 🏆
+        <div
+          style={{
+            font: "500 12px Inter",
+            color: online ? "#7ee6a4" : "var(--ink2)",
+            marginTop: 3,
+          }}
+        >
+          {online ? "Online now" : "Offline"} · {friend.trophies.toLocaleString()} 🏆
         </div>
       </div>
-    </>
+      <div style={{ display: "flex", gap: 8, flex: "none", alignItems: "center" }}>
+        <button
+          onClick={onMessage}
+          title="Message"
+          style={{
+            position: "relative",
+            flex: "none",
+            width: 38,
+            height: 38,
+            borderRadius: 8,
+            border: `1px solid rgba(232,184,75,${online ? ".25" : ".15"})`,
+            background: online ? "rgba(15,8,32,.5)" : "rgba(15,8,32,.4)",
+            color: online ? "var(--gold-lt)" : "var(--ink2)",
+            fontSize: 15,
+            cursor: "pointer",
+          }}
+        >
+          💬
+        </button>
+        <button
+          onClick={onInvite}
+          style={{
+            padding: "9px 16px",
+            borderRadius: 8,
+            border: "1px solid rgba(232,184,75,.4)",
+            background: "rgba(232,184,75,.1)",
+            color: "var(--gold-lt)",
+            font: "700 12px Inter",
+            cursor: "pointer",
+          }}
+        >
+          Invite
+        </button>
+      </div>
+    </div>
   );
 }
 
@@ -133,6 +241,17 @@ export function FriendsPage() {
   const [query, setQuery] = useState("");
   /** ids currently mid-request so their button disables (add/accept/decline). */
   const [busy, setBusy] = useState<Record<string, boolean>>({});
+
+  // Add Friend modal
+  const [addOpen, setAddOpen] = useState(false);
+  const [tagInput, setTagInput] = useState("");
+  const [addBusy, setAddBusy] = useState(false);
+
+  // Profile modal (loaded from GET /api/users/:id)
+  const [profileId, setProfileId] = useState<string | null>(null);
+  const [profile, setProfile] = useState<PublicProfile | null>(null);
+  const [profileLoading, setProfileLoading] = useState(false);
+  const [profileError, setProfileError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!me) {
@@ -168,8 +287,36 @@ export function FriendsPage() {
     };
   }, [me, showToast]);
 
-  const markBusy = (id: string, v: boolean) =>
-    setBusy((b) => ({ ...b, [id]: v }));
+  // Load the public profile whenever the modal target changes.
+  useEffect(() => {
+    if (!profileId) {
+      setProfile(null);
+      setProfileError(null);
+      return;
+    }
+    let alive = true;
+    setProfileLoading(true);
+    setProfileError(null);
+    setProfile(null);
+    void (async () => {
+      try {
+        const { user } = await api.get<{ user: PublicProfile }>(`/api/users/${profileId}`);
+        if (alive) setProfile(user);
+      } catch (e) {
+        if (alive) {
+          const msg = e instanceof ApiError ? e.message : "Couldn't load this profile.";
+          setProfileError(msg);
+        }
+      } finally {
+        if (alive) setProfileLoading(false);
+      }
+    })();
+    return () => {
+      alive = false;
+    };
+  }, [profileId]);
+
+  const markBusy = (id: string, v: boolean) => setBusy((b) => ({ ...b, [id]: v }));
 
   /** Add a suggested user → POST /api/friends/request; remove from suggestions. */
   async function addFriend(u: FriendUser) {
@@ -179,7 +326,6 @@ export function FriendsPage() {
       const res = await api.post<{ status: string }>("/api/friends/request", { toUserId: u.id });
       setSuggested((list) => list.filter((x) => x.id !== u.id));
       if (res.status === "accepted") {
-        // reverse request existed → now friends
         setFriends((list) => [u, ...list]);
         showToast(`You are now friends with ${u.displayName}.`);
       } else {
@@ -190,6 +336,40 @@ export function FriendsPage() {
       showToast(msg);
     } finally {
       markBusy(u.id, false);
+    }
+  }
+
+  /** Add Friend modal → POST /api/friends/request-by-tag { tag }. */
+  async function sendByTag() {
+    const raw = tagInput.trim();
+    if (!raw || addBusy) return;
+    setAddBusy(true);
+    try {
+      const res = await api.post<{ status: string }>("/api/friends/request-by-tag", { tag: raw });
+      if (res.status === "accepted") {
+        showToast("You are now friends! They had already requested you.");
+      } else {
+        showToast(`Friend request sent to ${raw.startsWith("#") ? raw : "#" + raw}.`);
+      }
+      setTagInput("");
+      setAddOpen(false);
+      // Refresh outgoing state indirectly: pull suggested again so an added user
+      // drops out of the discovery list (kept honest — no local guessing).
+      try {
+        const s = await api.get<{ suggested: FriendUser[] }>("/api/friends/suggested");
+        setSuggested(s.suggested);
+        if (res.status === "accepted") {
+          const f = await api.get<{ friends: FriendUser[] }>("/api/friends");
+          setFriends(f.friends);
+        }
+      } catch {
+        /* non-fatal refresh */
+      }
+    } catch (e) {
+      const msg = e instanceof ApiError ? e.message : "Couldn't send request. Check the tag and try again.";
+      showToast(msg);
+    } finally {
+      setAddBusy(false);
     }
   }
 
@@ -225,9 +405,8 @@ export function FriendsPage() {
     }
   }
 
-  // There is no public profile-by-id route yet; the leaderboard is the real
-  // place to view other players, so identity clicks route there (no dead 404).
-  const openProfile = (_id: string) => navigate("/leaderboard");
+  // 💬 Message: no DM backend yet — keep it honest, never a fake unread badge.
+  const messageFriend = () => showToast("Direct messages arrive soon — stay tuned.");
 
   /** Client-side filter over the real friends list (name / tag / tier). */
   const filteredFriends = useMemo(() => {
@@ -243,7 +422,16 @@ export function FriendsPage() {
     });
   }, [friends, query]);
 
-  const SUMMARY = summaryFor(friends.length, 0, incoming.length);
+  // Split filtered friends into online / offline by best-effort presence.
+  const { onlineFriends, offlineFriends } = useMemo(() => {
+    const on: FriendUser[] = [];
+    const off: FriendUser[] = [];
+    for (const f of filteredFriends) (isOnline(f) ? on : off).push(f);
+    return { onlineFriends: on, offlineFriends: off };
+  }, [filteredFriends]);
+
+  const onlineCount = useMemo(() => friends.filter(isOnline).length, [friends]);
+  const SUMMARY = summaryFor(friends.length, onlineCount, incoming.length);
 
   // ---- Logged-out prompt (never crash) ----
   if (!me) {
@@ -326,15 +514,7 @@ export function FriendsPage() {
             Friends
           </h1>
         </div>
-        <button
-          className="btn btn-gold"
-          onClick={() => {
-            const el = document.getElementById("fd-suggested");
-            if (el) el.scrollIntoView({ behavior: "smooth", block: "start" });
-            else showToast("No players to add right now — check back soon.");
-          }}
-          style={{ padding: "12px 20px" }}
-        >
+        <button className="btn btn-gold" onClick={() => setAddOpen(true)} style={{ padding: "12px 20px" }}>
           ＋ Add Friend
         </button>
       </div>
@@ -408,10 +588,13 @@ export function FriendsPage() {
                       frame={r.user.frameId ?? undefined}
                     />
                     <div
-                      onClick={() => openProfile(r.user.id)}
+                      onClick={() => setProfileId(r.user.id)}
                       style={{ flex: 1, minWidth: 0, cursor: "pointer" }}
                     >
                       <div style={{ font: "700 15px Inter", color: "#fff" }}>{r.user.displayName}</div>
+                      {/* Prototype's "mutual friends" subtext isn't available from the
+                          backend (no mutual-count endpoint), so we keep the honest
+                          tag · tier subtext instead — an accepted divergence. */}
                       <div style={{ font: "500 12px Inter", color: "var(--ink2)", marginTop: 2 }}>
                         {r.user.tag} · {tierOf(r.user).label}
                       </div>
@@ -456,30 +639,81 @@ export function FriendsPage() {
             </div>
           )}
 
-          {/* Friends — real accepted friends (presence unknown over REST → one list) */}
+          {/* Friends — real accepted friends, split Online / Offline by lastSeenAt */}
           {friends.length === 0 ? (
             <EmptyPanel title="Friends · 0" message="No friends yet — add some to play together." />
-          ) : (
+          ) : filteredFriends.length === 0 ? (
             <div className="frame" style={{ padding: 22 }}>
               <div className="ptitle" style={{ textAlign: "left", marginBottom: 14 }}>
                 Friends · {friends.length}
               </div>
-              {filteredFriends.length === 0 ? (
-                <div
-                  style={{
-                    padding: "22px 16px",
-                    textAlign: "center",
-                    color: "var(--ink2)",
-                    font: "500 14px Inter",
-                  }}
-                >
-                  No friends match “{query.trim()}”.
+              <div
+                style={{
+                  padding: "22px 16px",
+                  textAlign: "center",
+                  color: "var(--ink2)",
+                  font: "500 14px Inter",
+                }}
+              >
+                No friends match “{query.trim()}”.
+              </div>
+            </div>
+          ) : (
+            <>
+              {onlineFriends.length > 0 && (
+                <div className="frame" style={{ padding: 22 }}>
+                  <div className="ptitle" style={{ textAlign: "left", marginBottom: 14 }}>
+                    Online · {onlineFriends.length}
+                  </div>
+                  <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                    {onlineFriends.map((f) => (
+                      <FriendRow
+                        key={f.id}
+                        friend={f}
+                        online
+                        onOpen={() => setProfileId(f.id)}
+                        onMessage={messageFriend}
+                        onInvite={() => navigate("/play")}
+                      />
+                    ))}
+                  </div>
                 </div>
-              ) : (
-                <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-                  {filteredFriends.map((f) => (
+              )}
+
+              {offlineFriends.length > 0 && (
+                <div className="frame" style={{ padding: 22 }}>
+                  <div className="ptitle" style={{ textAlign: "left", marginBottom: 14 }}>
+                    Offline · {offlineFriends.length}
+                  </div>
+                  <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                    {offlineFriends.map((f) => (
+                      <FriendRow
+                        key={f.id}
+                        friend={f}
+                        online={false}
+                        onOpen={() => setProfileId(f.id)}
+                        onMessage={messageFriend}
+                        onInvite={() => navigate("/play")}
+                      />
+                    ))}
+                  </div>
+                </div>
+              )}
+            </>
+          )}
+
+          {/* Suggested Players — real discovery candidates from /friends/suggested */}
+          {suggested.length > 0 && (
+            <div id="fd-suggested" className="frame" style={{ padding: 22 }}>
+              <div className="ptitle" style={{ textAlign: "left", marginBottom: 14 }}>
+                Suggested Players
+              </div>
+              <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                {suggested.map((s) => {
+                  const tier = tierOf(s);
+                  return (
                     <div
-                      key={f.id}
+                      key={s.id}
                       style={{
                         display: "flex",
                         alignItems: "center",
@@ -490,75 +724,403 @@ export function FriendsPage() {
                         background: "rgba(0,0,0,.2)",
                       }}
                     >
-                      <UserIdentity user={f} onOpen={() => openProfile(f.id)} />
+                      <Avatar src={s.avatarUrl ?? "champion"} size={44} frame={s.frameId ?? undefined} />
+                      <div
+                        onClick={() => setProfileId(s.id)}
+                        style={{ flex: 1, minWidth: 0, cursor: "pointer" }}
+                      >
+                        <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                          <span style={{ font: "700 15px Inter", color: "#fff" }}>{s.displayName}</span>
+                          <span
+                            style={{ font: "700 11px 'JetBrains Mono',monospace", color: "var(--ink2)" }}
+                          >
+                            {s.tag}
+                          </span>
+                          <span
+                            style={{
+                              display: "inline-flex",
+                              alignItems: "center",
+                              gap: 5,
+                              padding: "2px 8px",
+                              borderRadius: 100,
+                              border: "1px solid rgba(232,184,75,.2)",
+                              background: "rgba(15,8,32,.5)",
+                            }}
+                          >
+                            <span
+                              style={{ width: 8, height: 8, borderRadius: "50%", background: tier.color }}
+                            />
+                            <span style={{ font: "600 10px Inter", color: tier.color }}>{tier.label}</span>
+                          </span>
+                        </div>
+                        <div style={{ font: "500 12px Inter", color: "var(--ink2)", marginTop: 3 }}>
+                          {s.trophies.toLocaleString()} 🏆
+                        </div>
+                      </div>
                       <div style={{ display: "flex", gap: 8, flex: "none", alignItems: "center" }}>
                         <button
-                          onClick={() => navigate("/play")}
+                          onClick={() => addFriend(s)}
+                          disabled={busy[s.id]}
                           style={{
                             padding: "9px 16px",
                             borderRadius: 8,
-                            border: "1px solid rgba(232,184,75,.4)",
-                            background: "rgba(232,184,75,.1)",
-                            color: "var(--gold-lt)",
+                            border: "1px solid rgba(63,191,111,.55)",
+                            background: "rgba(63,191,111,.16)",
+                            color: "#7ee6a4",
                             font: "700 12px Inter",
-                            cursor: "pointer",
+                            cursor: busy[s.id] ? "default" : "pointer",
+                            opacity: busy[s.id] ? 0.6 : 1,
                           }}
                         >
-                          Invite
+                          ＋ Add
                         </button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+        </>
+      )}
+
+      {/* ===== Add Friend modal (by #tag → /friends/request-by-tag) ===== */}
+      {addOpen && (
+        <div
+          onClick={() => !addBusy && setAddOpen(false)}
+          style={{
+            position: "fixed",
+            inset: 0,
+            zIndex: 82,
+            background: "rgba(8,4,18,.74)",
+            backdropFilter: "blur(6px)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            padding: 20,
+          }}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              width: "100%",
+              maxWidth: 420,
+              borderRadius: 18,
+              border: "1px solid rgba(232,184,75,.35)",
+              background: "linear-gradient(180deg,#1a0f30,#140a24)",
+              boxShadow: "0 30px 80px rgba(0,0,0,.6)",
+              overflow: "hidden",
+            }}
+          >
+            <div
+              style={{
+                padding: "22px 26px 18px",
+                borderBottom: "1px solid rgba(232,184,75,.16)",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+              }}
+            >
+              <div>
+                <div style={{ font: "800 19px Cinzel,serif", color: "var(--gold-lt)" }}>Add a Friend</div>
+                <div style={{ font: "600 11px Inter", color: "var(--ink2)", marginTop: 3 }}>
+                  Enter their player tag to send a request
+                </div>
+              </div>
+              <button
+                onClick={() => !addBusy && setAddOpen(false)}
+                style={{
+                  flex: "none",
+                  width: 34,
+                  height: 34,
+                  borderRadius: 9,
+                  border: "1px solid rgba(232,184,75,.2)",
+                  background: "transparent",
+                  color: "var(--ink2)",
+                  font: "700 17px Inter",
+                  cursor: "pointer",
+                }}
+              >
+                ✕
+              </button>
+            </div>
+            <div style={{ padding: "22px 26px", display: "flex", flexDirection: "column", gap: 16 }}>
+              <div>
+                <label
+                  style={{
+                    display: "block",
+                    font: "700 11px Inter",
+                    letterSpacing: 1,
+                    textTransform: "uppercase",
+                    color: "var(--ink2)",
+                    marginBottom: 8,
+                  }}
+                >
+                  Player Tag
+                </label>
+                <input
+                  value={tagInput}
+                  onChange={(e) => setTagInput(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") void sendByTag();
+                  }}
+                  autoFocus
+                  placeholder="#3947"
+                  style={{
+                    width: "100%",
+                    boxSizing: "border-box",
+                    padding: "12px 14px",
+                    borderRadius: 10,
+                    border: "1px solid rgba(232,184,75,.3)",
+                    background: "rgba(0,0,0,.3)",
+                    color: "#fff",
+                    font: "700 16px 'JetBrains Mono',monospace",
+                    letterSpacing: 1,
+                    outline: "none",
+                  }}
+                />
+                <div style={{ font: "500 11px Inter", color: "var(--ink2)", marginTop: 8 }}>
+                  A tag looks like <b style={{ color: "var(--gold-lt)" }}>#3947</b> — find it on a
+                  player’s profile.
+                </div>
+              </div>
+              <button
+                className="btn btn-gold"
+                onClick={() => void sendByTag()}
+                disabled={addBusy || !tagInput.trim()}
+                style={{
+                  width: "100%",
+                  padding: 14,
+                  opacity: addBusy || !tagInput.trim() ? 0.6 : 1,
+                  cursor: addBusy || !tagInput.trim() ? "default" : "pointer",
+                }}
+              >
+                {addBusy ? "Sending…" : "Send Request"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ===== Profile modal (GET /api/users/:id) ===== */}
+      {profileId && (
+        <div
+          onClick={() => setProfileId(null)}
+          style={{
+            position: "fixed",
+            inset: 0,
+            zIndex: 84,
+            background: "rgba(8,4,18,.74)",
+            backdropFilter: "blur(6px)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            padding: 20,
+          }}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              width: "100%",
+              maxWidth: 440,
+              maxHeight: "88vh",
+              overflow: "auto",
+              borderRadius: 18,
+              border: "1px solid rgba(232,184,75,.35)",
+              background: "linear-gradient(180deg,#1a0f30,#140a24)",
+              boxShadow: "0 30px 80px rgba(0,0,0,.6)",
+            }}
+          >
+            <div
+              style={{
+                padding: "18px 22px",
+                borderBottom: "1px solid rgba(232,184,75,.16)",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+              }}
+            >
+              <div style={{ font: "800 16px Cinzel,serif", color: "var(--gold-lt)" }}>Player Profile</div>
+              <button
+                onClick={() => setProfileId(null)}
+                style={{
+                  flex: "none",
+                  width: 34,
+                  height: 34,
+                  borderRadius: 9,
+                  border: "1px solid rgba(232,184,75,.2)",
+                  background: "transparent",
+                  color: "var(--ink2)",
+                  font: "700 17px Inter",
+                  cursor: "pointer",
+                }}
+              >
+                ✕
+              </button>
+            </div>
+
+            {profileLoading ? (
+              <div
+                style={{
+                  padding: 40,
+                  textAlign: "center",
+                  color: "var(--ink2)",
+                  font: "500 14px Inter",
+                }}
+              >
+                Loading profile…
+              </div>
+            ) : profileError ? (
+              <div
+                style={{
+                  padding: 40,
+                  textAlign: "center",
+                  color: "var(--ink2)",
+                  font: "500 14px Inter",
+                }}
+              >
+                {profileError}
+              </div>
+            ) : profile ? (
+              <div style={{ padding: 22, display: "flex", flexDirection: "column", gap: 18 }}>
+                {/* Identity */}
+                <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
+                  <Avatar
+                    src={profile.avatarUrl ?? "champion"}
+                    size={64}
+                    frame={profile.frameId ?? undefined}
+                  />
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ font: "800 20px Cinzel,serif", color: "#fff" }}>
+                      {profile.displayName}
+                    </div>
+                    <div
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 8,
+                        flexWrap: "wrap",
+                        marginTop: 5,
+                      }}
+                    >
+                      <span
+                        style={{ font: "700 11px 'JetBrains Mono',monospace", color: "var(--ink2)" }}
+                      >
+                        {profile.tag}
+                      </span>
+                      <span
+                        style={{
+                          display: "inline-flex",
+                          alignItems: "center",
+                          gap: 5,
+                          padding: "2px 8px",
+                          borderRadius: 100,
+                          border: "1px solid rgba(232,184,75,.2)",
+                          background: "rgba(15,8,32,.5)",
+                        }}
+                      >
+                        <span
+                          style={{
+                            width: 8,
+                            height: 8,
+                            borderRadius: "50%",
+                            background: profile.tier.accent,
+                          }}
+                        />
+                        <span style={{ font: "600 10px Inter", color: profile.tier.accent }}>
+                          {profile.tier.label}
+                        </span>
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
+                {profile.bio && (
+                  <div style={{ font: "500 13px/1.55 Inter", color: "var(--ink)" }}>{profile.bio}</div>
+                )}
+
+                {/* Stats grid — rank tier + record */}
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10 }}>
+                  {[
+                    { k: "Trophies", v: profile.trophies.toLocaleString(), c: "var(--gold-lt)" },
+                    { k: "Wins", v: String(profile.wins), c: "#7ee6a4" },
+                    { k: "Losses", v: String(profile.losses), c: "#ff9aa6" },
+                  ].map((s) => (
+                    <div
+                      key={s.k}
+                      className="frame"
+                      style={{ padding: 14, textAlign: "center" }}
+                    >
+                      <div style={{ font: "800 20px 'JetBrains Mono',monospace", color: s.c }}>
+                        {s.v}
+                      </div>
+                      <div style={{ font: "500 11px Inter", color: "var(--ink2)", marginTop: 2 }}>
+                        {s.k}
                       </div>
                     </div>
                   ))}
                 </div>
-              )}
-            </div>
-          )}
 
-          {/* Suggested Players — real discovery candidates from /friends/suggested */}
-          {suggested.length > 0 && (
-            <div id="fd-suggested" className="frame" style={{ padding: 22 }}>
-              <div className="ptitle" style={{ textAlign: "left", marginBottom: 14 }}>
-                Suggested Players
-              </div>
-              <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-                {suggested.map((s) => (
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+                  {[
+                    { k: "Draws", v: String(profile.draws), c: "var(--ink)" },
+                    { k: "Streak", v: String(profile.streak), c: "var(--gold-lt)" },
+                  ].map((s) => (
+                    <div key={s.k} className="frame" style={{ padding: 14, textAlign: "center" }}>
+                      <div style={{ font: "800 20px 'JetBrains Mono',monospace", color: s.c }}>
+                        {s.v}
+                      </div>
+                      <div style={{ font: "500 11px Inter", color: "var(--ink2)", marginTop: 2 }}>
+                        {s.k}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+
+                {/* Rank tier row */}
+                <div
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "space-between",
+                    padding: "12px 14px",
+                    borderRadius: 12,
+                    border: "1px solid rgba(232,184,75,.16)",
+                    background: "rgba(0,0,0,.2)",
+                  }}
+                >
+                  <span style={{ font: "600 12px Inter", color: "var(--ink2)" }}>Rank Tier</span>
+                  <span style={{ font: "700 13px Inter", color: profile.tier.accent }}>
+                    {profile.tier.label} · {profile.tier.sub}
+                  </span>
+                </div>
+
+                {profile.guild && (
                   <div
-                    key={s.id}
                     style={{
                       display: "flex",
                       alignItems: "center",
-                      gap: 14,
-                      padding: 12,
+                      justifyContent: "space-between",
+                      padding: "12px 14px",
                       borderRadius: 12,
                       border: "1px solid rgba(232,184,75,.16)",
                       background: "rgba(0,0,0,.2)",
                     }}
                   >
-                    <UserIdentity user={s} onOpen={() => openProfile(s.id)} />
-                    <div style={{ display: "flex", gap: 8, flex: "none", alignItems: "center" }}>
-                      <button
-                        onClick={() => addFriend(s)}
-                        disabled={busy[s.id]}
-                        style={{
-                          padding: "9px 16px",
-                          borderRadius: 8,
-                          border: "1px solid rgba(63,191,111,.55)",
-                          background: "rgba(63,191,111,.16)",
-                          color: "#7ee6a4",
-                          font: "700 12px Inter",
-                          cursor: busy[s.id] ? "default" : "pointer",
-                          opacity: busy[s.id] ? 0.6 : 1,
-                        }}
-                      >
-                        ＋ Add
-                      </button>
-                    </div>
+                    <span style={{ font: "600 12px Inter", color: "var(--ink2)" }}>Guild</span>
+                    <span style={{ font: "700 13px Inter", color: "var(--gold-lt)" }}>
+                      {profile.guild.name} [{profile.guild.tag}]
+                    </span>
                   </div>
-                ))}
+                )}
+
+                {/* NOTE: "recent form" is intentionally omitted — the public
+                    profile endpoint does not return a match-history summary, so
+                    showing one would be fabricated. */}
               </div>
-            </div>
-          )}
-        </>
+            ) : null}
+          </div>
+        </div>
       )}
     </div>
   );

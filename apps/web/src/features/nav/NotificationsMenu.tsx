@@ -14,6 +14,15 @@ import { api } from "../../lib/api";
 
 type NotifType = string;
 
+/** Shape of notification.data we care about. All fields optional/defensive. */
+type NotifData = {
+  requestId?: string;
+  fromUserId?: string;
+  byUserId?: string;
+  avatarUrl?: string | null;
+  status?: "accepted" | "declined";
+};
+
 type Notif = {
   id: string;
   type: NotifType;
@@ -23,6 +32,18 @@ type Notif = {
   readAt: string | null;
   createdAt: string;
 };
+
+/** A friend-request notification carries a real friend-request id to act on. */
+function isFriendType(type: NotifType): boolean {
+  return type.includes("friend");
+}
+
+/** Read notification.data defensively (server stores it as arbitrary JSON). */
+function notifData(n: Notif): NotifData {
+  return n.data && typeof n.data === "object" && !Array.isArray(n.data)
+    ? (n.data as NotifData)
+    : {};
+}
 
 type NotifResponse = {
   notifications: Notif[];
@@ -47,9 +68,8 @@ const GROUP_LABELS: Array<{ key: "today" | "yesterday" | "earlier"; label: strin
 
 /** Icon + wrapper gradient per notification type, matching the prototype. */
 function styleFor(type: NotifType): { icon: string; bg: string } {
+  if (isFriendType(type)) return { icon: "👥", bg: "linear-gradient(160deg,#5a3a8c,#3a2568)" };
   switch (type) {
-    case "friend":
-      return { icon: "👥", bg: "linear-gradient(160deg,#5a3a8c,#3a2568)" };
     case "achievement":
       return { icon: "🏆", bg: "linear-gradient(160deg,#c99a2e,#8a6410)" };
     case "event":
@@ -159,6 +179,54 @@ export function NotificationsMenu({ open, onClose, onUnreadChange }: Notificatio
     }
   }, [load, onUnreadChange]);
 
+  const dismiss = useCallback(
+    async (id: string) => {
+      // Optimistic removal; if a dismissed row was unread, drop the unread count.
+      setData((prev) => {
+        if (!prev) return prev;
+        const target = prev.notifications.find((n) => n.id === id);
+        if (!target) return prev;
+        const drop = (list: Notif[]) => list.filter((n) => n.id !== id);
+        const unreadCount = target.readAt ? prev.unreadCount : Math.max(0, prev.unreadCount - 1);
+        onUnreadChange?.(unreadCount);
+        return {
+          ...prev,
+          notifications: drop(prev.notifications),
+          groups: {
+            today: drop(prev.groups.today),
+            yesterday: drop(prev.groups.yesterday),
+            earlier: drop(prev.groups.earlier),
+          },
+          unreadCount,
+        };
+      });
+      try {
+        await api.post(`/api/notifications/${id}/dismiss`);
+      } catch {
+        load();
+      }
+    },
+    [load, onUnreadChange],
+  );
+
+  const resolveFriend = useCallback(
+    async (notif: Notif, action: "accept" | "decline") => {
+      const requestId = notifData(notif).requestId;
+      if (!requestId) return;
+      const status = action === "accept" ? "accepted" : "declined";
+      try {
+        // Act on the real friend request, then record the outcome on the notif.
+        await api.post(`/api/friends/request/${requestId}/${action}`);
+        await api.post(`/api/notifications/${notif.id}/resolve`, { status });
+      } catch {
+        // fall through to reload for server truth
+      } finally {
+        load();
+      }
+    },
+    [load],
+  );
+
   if (!open) return null;
 
   const unread = data?.unreadCount ?? 0;
@@ -234,21 +302,21 @@ export function NotificationsMenu({ open, onClose, onUnreadChange }: Notificatio
               </span>
             )}
           </div>
-          {unread > 0 && (
-            <button
-              onClick={markAll}
-              style={{
-                background: "none",
-                border: "none",
-                cursor: "pointer",
-                font: "600 12px Inter",
-                color: "var(--gold)",
-                padding: "2px 0",
-              }}
-            >
-              Mark all read
-            </button>
-          )}
+          <button
+            onClick={markAll}
+            disabled={unread === 0}
+            style={{
+              background: "none",
+              border: "none",
+              cursor: unread > 0 ? "pointer" : "default",
+              font: "600 12px Inter",
+              color: unread > 0 ? "var(--gold)" : "var(--ink2)",
+              opacity: unread > 0 ? 1 : 0.55,
+              padding: "2px 0",
+            }}
+          >
+            Mark all read
+          </button>
         </div>
 
         {/* body */}
@@ -282,7 +350,7 @@ export function NotificationsMenu({ open, onClose, onUnreadChange }: Notificatio
 
           {isEmpty && (
             <div style={{ padding: "44px 20px", textAlign: "center", color: "var(--ink2)" }}>
-              <div style={{ font: "700 14px Inter", color: "var(--ink)" }}>No notifications yet.</div>
+              <div style={{ font: "700 14px Inter", color: "var(--ink)" }}>You're all caught up</div>
               <div style={{ font: "400 12px Inter", marginTop: 5 }}>
                 New activity will show up here.
               </div>
@@ -311,6 +379,18 @@ export function NotificationsMenu({ open, onClose, onUnreadChange }: Notificatio
                   {items.map((n) => {
                     const s = styleFor(n.type);
                     const unreadRow = !n.readAt;
+                    const friend = isFriendType(n.type);
+                    const d = notifData(n);
+                    // A friend-request notif is actionable only while it still
+                    // carries a requestId and has no recorded outcome. friend_accept
+                    // notifs have no requestId, so they never show buttons.
+                    const isPending = friend && !!d.requestId && !d.status;
+                    const statusLabel =
+                      d.status === "accepted"
+                        ? "✓ Accepted"
+                        : d.status === "declined"
+                          ? "Declined"
+                          : "";
                     return (
                       <div
                         key={n.id}
@@ -325,21 +405,36 @@ export function NotificationsMenu({ open, onClose, onUnreadChange }: Notificatio
                           borderTop: "1px solid rgba(232,184,75,.07)",
                         }}
                       >
-                        <div
-                          style={{
-                            width: 42,
-                            height: 42,
-                            flex: "none",
-                            borderRadius: 11,
-                            display: "flex",
-                            alignItems: "center",
-                            justifyContent: "center",
-                            fontSize: 18,
-                            background: s.bg,
-                          }}
-                        >
-                          {s.icon}
-                        </div>
+                        {friend && d.avatarUrl ? (
+                          <img
+                            src={d.avatarUrl}
+                            alt=""
+                            style={{
+                              width: 42,
+                              height: 42,
+                              flex: "none",
+                              borderRadius: 11,
+                              objectFit: "cover",
+                              border: "1px solid rgba(232,184,75,.5)",
+                            }}
+                          />
+                        ) : (
+                          <div
+                            style={{
+                              width: 42,
+                              height: 42,
+                              flex: "none",
+                              borderRadius: 11,
+                              display: "flex",
+                              alignItems: "center",
+                              justifyContent: "center",
+                              fontSize: 18,
+                              background: s.bg,
+                            }}
+                          >
+                            {s.icon}
+                          </div>
+                        )}
                         <div style={{ flex: 1, minWidth: 0 }}>
                           <div style={{ display: "flex", alignItems: "center", gap: 7 }}>
                             {unreadRow && (
@@ -386,7 +481,87 @@ export function NotificationsMenu({ open, onClose, onUnreadChange }: Notificatio
                           >
                             {relativeTime(n.createdAt)}
                           </div>
+
+                          {isPending && (
+                            <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  resolveFriend(n, "accept");
+                                }}
+                                style={{
+                                  flex: 1,
+                                  padding: 8,
+                                  borderRadius: 7,
+                                  border: "1px solid rgba(255,240,200,.6)",
+                                  background: "linear-gradient(180deg,#f0cf72,#c99a2e)",
+                                  color: "#3a2405",
+                                  font: "700 11px Inter",
+                                  letterSpacing: ".5px",
+                                  textTransform: "uppercase",
+                                  cursor: "pointer",
+                                }}
+                              >
+                                Accept
+                              </button>
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  resolveFriend(n, "decline");
+                                }}
+                                style={{
+                                  flex: 1,
+                                  padding: 8,
+                                  borderRadius: 7,
+                                  border: "1px solid rgba(232,184,75,.3)",
+                                  background: "rgba(15,8,32,.5)",
+                                  color: "var(--ink)",
+                                  font: "700 11px Inter",
+                                  letterSpacing: ".5px",
+                                  textTransform: "uppercase",
+                                  cursor: "pointer",
+                                }}
+                              >
+                                Decline
+                              </button>
+                            </div>
+                          )}
+
+                          {statusLabel && (
+                            <div
+                              style={{
+                                marginTop: 8,
+                                font: "700 11px Inter",
+                                color: "var(--ink2)",
+                              }}
+                            >
+                              {statusLabel}
+                            </div>
+                          )}
                         </div>
+
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            dismiss(n.id);
+                          }}
+                          title="Dismiss"
+                          aria-label="Dismiss notification"
+                          style={{
+                            flex: "none",
+                            width: 24,
+                            height: 24,
+                            borderRadius: 6,
+                            border: "none",
+                            background: "none",
+                            color: "var(--ink2)",
+                            font: "400 15px Inter",
+                            lineHeight: 1,
+                            cursor: "pointer",
+                          }}
+                        >
+                          ✕
+                        </button>
                       </div>
                     );
                   })}

@@ -15,6 +15,10 @@ const listQuerySchema = z.object({
     .transform((v) => v === "true" || v === "1"),
 });
 
+const resolveBodySchema = z.object({
+  status: z.enum(["accepted", "declined"]),
+});
+
 /** Bucket a timestamp into a coarse date group for UI section headers. */
 function groupFor(date: Date, now: Date): "today" | "yesterday" | "earlier" {
   const startOfDay = (d: Date) => new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
@@ -35,7 +39,8 @@ export async function notificationRoutes(app: FastifyInstance) {
       const { cursor, limit, unread } = listQuerySchema.parse(req.query);
 
       const rows = await prisma.notification.findMany({
-        where: { userId: me, ...(unread ? { readAt: null } : {}) },
+        // Dismissed rows are hidden everywhere.
+        where: { userId: me, dismissedAt: null, ...(unread ? { readAt: null } : {}) },
         orderBy: { createdAt: "desc" },
         take: limit + 1,
         ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
@@ -63,7 +68,9 @@ export async function notificationRoutes(app: FastifyInstance) {
         createdAt: n.createdAt,
       });
 
-      const unreadCount = await prisma.notification.count({ where: { userId: me, readAt: null } });
+      const unreadCount = await prisma.notification.count({
+        where: { userId: me, readAt: null, dismissedAt: null },
+      });
 
       return ok({
         notifications: page.map(shape),
@@ -83,11 +90,60 @@ export async function notificationRoutes(app: FastifyInstance) {
   app.post("/notifications/read-all", { preHandler: requireAuth }, async (req) => {
     const me = req.userId!;
     const result = await prisma.notification.updateMany({
-      where: { userId: me, readAt: null },
+      where: { userId: me, readAt: null, dismissedAt: null },
       data: { readAt: new Date() },
     });
     return ok({ updated: result.count });
   });
+
+  // POST /api/notifications/:id/dismiss — soft-hide a row (sets dismissedAt=now).
+  // Dismissed rows are excluded from GET /notifications and the unread count.
+  app.post<{ Params: { id: string } }>(
+    "/notifications/:id/dismiss",
+    { preHandler: requireAuth },
+    async (req) => {
+      const me = req.userId!;
+      const notif = await prisma.notification.findUnique({ where: { id: req.params.id } });
+      if (!notif || notif.userId !== me) throw err.notFound("NOTIF_NOT_FOUND", "Notification not found");
+
+      if (!notif.dismissedAt) {
+        await prisma.notification.update({
+          where: { id: notif.id },
+          data: { dismissedAt: new Date() },
+        });
+      }
+      return ok({ dismissed: true });
+    },
+  );
+
+  // POST /api/notifications/:id/resolve  { status }
+  // Records the outcome of an actionable notification (e.g. a friend request that
+  // was accepted/declined) by merging `status` into data and marking it read, so
+  // the row can show "✓ Accepted" / "Declined" instead of Accept/Decline buttons.
+  app.post<{ Params: { id: string }; Body: unknown }>(
+    "/notifications/:id/resolve",
+    { preHandler: requireAuth },
+    async (req) => {
+      const me = req.userId!;
+      const { status } = resolveBodySchema.parse(req.body);
+      const notif = await prisma.notification.findUnique({ where: { id: req.params.id } });
+      if (!notif || notif.userId !== me) throw err.notFound("NOTIF_NOT_FOUND", "Notification not found");
+
+      const baseData =
+        notif.data && typeof notif.data === "object" && !Array.isArray(notif.data)
+          ? (notif.data as Record<string, unknown>)
+          : {};
+
+      await prisma.notification.update({
+        where: { id: notif.id },
+        data: {
+          data: { ...baseData, status },
+          readAt: notif.readAt ?? new Date(),
+        },
+      });
+      return ok({ status });
+    },
+  );
 
   // POST /api/notifications/:id/read
   app.post<{ Params: { id: string } }>(

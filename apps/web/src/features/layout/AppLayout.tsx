@@ -55,6 +55,12 @@ export function AppLayout() {
   const tier = rankTierFor(trophies);
   const isOn = (to: string) => (to === "/" ? pathname === "/" : pathname.startsWith(to));
 
+  // Unread direct-messages total, driven from a REAL source. There is no DM /
+  // chat backend yet, so this is honestly 0 and the badge stays hidden. When the
+  // DM backend lands, replace this with the live unread count and both the nav
+  // avatar badge and the mobile Profile-tab badge (below) light up automatically.
+  const unreadMessages = 0;
+
   async function signOut() {
     await logout();
     showToast("Signed out.");
@@ -67,7 +73,7 @@ export function AppLayout() {
     { icon: "👤", label: "View Profile", on: () => navigate("/profile") },
     { icon: "🛡️", label: "Guild Hall", on: () => navigate("/guilds") },
     { icon: "👥", label: "Friends", on: () => navigate("/friends") },
-    { icon: "🎒", label: "Inventory", on: () => navigate("/inventory") },
+    { icon: "🎒", label: "Locker", on: () => navigate("/inventory") },
     { icon: "🧾", label: "Purchase History", on: () => navigate("/orders") },
     { icon: "🎯", label: "Quests", on: () => navigate("/quests") },
     { icon: "✏️", label: "Edit Profile", on: () => navigate("/profile?edit=1") },
@@ -125,7 +131,16 @@ export function AppLayout() {
                   </button>
                   <div style={{ position: "relative" }}>
                     <div onClick={() => setAcctOpen((v) => !v)} style={{ display: "flex", alignItems: "center", gap: 10, paddingLeft: 6, cursor: "pointer" }}>
-                      {avatarToken}
+                      {/* nav avatar + unread-MESSAGES badge (prototype line 146). No DM
+                          backend yet → unreadMessages is 0 → badge stays hidden. */}
+                      <div style={{ position: "relative", flex: "none" }}>
+                        {avatarToken}
+                        {unreadMessages > 0 && (
+                          <span title="Unread messages" style={{ position: "absolute", top: -4, right: -4, minWidth: 18, height: 18, padding: "0 4px", borderRadius: 9, background: "linear-gradient(180deg,#e0555f,#a8202f)", color: "#fff", font: "800 10px Inter", display: "flex", alignItems: "center", justifyContent: "center", border: "2px solid #150a24", boxShadow: "0 2px 6px rgba(0,0,0,.5)" }}>
+                            {unreadMessages > 9 ? "9+" : unreadMessages}
+                          </span>
+                        )}
+                      </div>
                       <div className="fd-hide-narrow" style={{ flexDirection: "column", alignItems: "flex-start", gap: 1, lineHeight: 1.2 }}>
                         <div style={{ font: "700 14px Inter", color: "#fff", whiteSpace: "nowrap" }}>{displayName}</div>
                         <div style={{ font: "600 11px Inter", color: "var(--gold)", whiteSpace: "nowrap" }}>
@@ -199,7 +214,16 @@ export function AppLayout() {
               {n.mobileLabel ?? n.label}
             </button>
           ))}
-          <button className={`navlink ${isOn("/profile") ? "on" : ""}`} onClick={() => navigate("/profile")}>Profile</button>
+          {/* mobile Profile tab + unread-MESSAGES badge (prototype line 180). No DM
+              backend yet → unreadMessages is 0 → badge stays hidden. */}
+          <button className={`navlink ${isOn("/profile") ? "on" : ""}`} onClick={() => navigate("/profile")} style={{ position: "relative" }}>
+            Profile
+            {unreadMessages > 0 && (
+              <span title="Unread messages" style={{ position: "absolute", top: -3, right: -5, minWidth: 17, height: 17, padding: "0 4px", borderRadius: 9, background: "linear-gradient(180deg,#e0555f,#a8202f)", color: "#fff", font: "800 10px Inter", display: "inline-flex", alignItems: "center", justifyContent: "center", border: "2px solid #150a24", boxShadow: "0 2px 6px rgba(0,0,0,.5)" }}>
+                {unreadMessages > 9 ? "9+" : unreadMessages}
+              </span>
+            )}
+          </button>
         </nav>
 
         <main style={{ flex: 1 }}>

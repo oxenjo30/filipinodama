@@ -588,6 +588,22 @@ export function PrivateRoomPage() {
                     >
                       <div style={{ position: "relative", flex: "none" }}>
                         <Avatar src={fr.avatarUrl ?? "champion"} size={40} frame={fr.frameId ?? undefined} />
+                        {/* Presence dot: honest neutral. Live online/offline arrives
+                            over the presence:update socket — REST reports "unknown",
+                            so we render a neutral grey dot, never a fabricated green. */}
+                        <span
+                          title="Presence goes live with online play"
+                          style={{
+                            position: "absolute",
+                            right: -1,
+                            bottom: -1,
+                            width: 11,
+                            height: 11,
+                            borderRadius: "50%",
+                            background: "var(--ink2)",
+                            border: "2px solid #1a0f2e",
+                          }}
+                        />
                       </div>
                       <div style={{ flex: 1, minWidth: 0 }}>
                         <div

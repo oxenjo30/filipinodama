@@ -1,5 +1,5 @@
 import type { FastifyInstance } from "fastify";
-import { friendRequestSchema } from "@dama/shared";
+import { friendRequestSchema, friendRequestByTagSchema } from "@dama/shared";
 import { prisma } from "../db/client.js";
 import { ok, err } from "../lib/errors.js";
 import { requireAuth } from "../auth/guards.js";
@@ -44,6 +44,57 @@ const friendSelect = {
   lastSeenAt: true,
 } as const;
 
+/**
+ * Create (or auto-accept) a friend request from `me` → `toUserId`.
+ * Shared by POST /friends/request and POST /friends/request-by-tag so both
+ * enforce the same honest guards: no self-friend, target exists, not already
+ * friends, and a pending reverse request auto-accepts into a friendship.
+ */
+async function createFriendRequest(me: string, toUserId: string) {
+  if (toUserId === me) throw err.badRequest("SELF_FRIEND", "You cannot friend yourself");
+
+  const target = await prisma.user.findFirst({
+    where: { id: toUserId, deletedAt: null },
+    select: { id: true },
+  });
+  if (!target) throw err.notFound("USER_NOT_FOUND", "User not found");
+
+  // already friends?
+  const [aId, bId] = me < toUserId ? [me, toUserId] : [toUserId, me];
+  const existingFriendship = await prisma.friendship.findUnique({ where: { aId_bId: { aId, bId } } });
+  if (existingFriendship) throw err.conflict("ALREADY_FRIENDS", "You are already friends");
+
+  // reverse pending request? → auto-accept into a friendship
+  const reverse = await prisma.friendRequest.findUnique({
+    where: { fromId_toId: { fromId: toUserId, toId: me } },
+  });
+  if (reverse && reverse.status === "pending") {
+    await prisma.$transaction([
+      prisma.friendRequest.update({ where: { id: reverse.id }, data: { status: "accepted" } }),
+      prisma.friendship.create({ data: { aId, bId } }),
+    ]);
+    return { status: "accepted" as const };
+  }
+
+  // upsert my outgoing request (re-send if previously declined)
+  const request = await prisma.friendRequest.upsert({
+    where: { fromId_toId: { fromId: me, toId: toUserId } },
+    update: { status: "pending", createdAt: new Date() },
+    create: { fromId: me, toId: toUserId, status: "pending" },
+  });
+
+  await prisma.notification.create({
+    data: {
+      userId: toUserId,
+      type: "friend_request",
+      title: "New friend request",
+      data: { requestId: request.id, fromUserId: me },
+    },
+  });
+
+  return { status: "pending" as const, requestId: request.id };
+}
+
 export async function friendRoutes(app: FastifyInstance) {
   // GET /api/friends — accepted friends (presence unknown over REST)
   app.get("/friends", { preHandler: requireAuth }, async (req) => {
@@ -85,45 +136,29 @@ export async function friendRoutes(app: FastifyInstance) {
   app.post("/friends/request", { preHandler: requireAuth }, async (req) => {
     const me = req.userId!;
     const { toUserId } = friendRequestSchema.parse(req.body);
-    if (toUserId === me) throw err.badRequest("SELF_FRIEND", "You cannot friend yourself");
+    return ok(await createFriendRequest(me, toUserId));
+  });
 
-    const target = await prisma.user.findUnique({ where: { id: toUserId }, select: { id: true } });
-    if (!target) throw err.notFound("USER_NOT_FOUND", "User not found");
+  // POST /api/friends/request-by-tag  { tag }
+  // Resolve a #NNNN player tag → userId, then create the request. Honest errors:
+  // empty/malformed tag → 400, no such tag → 404, self / already-friends bubble
+  // up from createFriendRequest with their own honest codes.
+  app.post("/friends/request-by-tag", { preHandler: requireAuth }, async (req) => {
+    const me = req.userId!;
+    const { tag } = friendRequestByTagSchema.parse(req.body);
+    // Normalize: trim, strip a single leading '#', re-add it so lookup matches
+    // the stored "#NNNN" format regardless of whether the user typed the hash.
+    const bare = tag.trim().replace(/^#/, "");
+    if (!bare) throw err.badRequest("INVALID_TAG", "Enter a player tag like #3947");
+    const normalized = `#${bare}`;
 
-    // already friends?
-    const [aId, bId] = me < toUserId ? [me, toUserId] : [toUserId, me];
-    const existingFriendship = await prisma.friendship.findUnique({ where: { aId_bId: { aId, bId } } });
-    if (existingFriendship) throw err.conflict("ALREADY_FRIENDS", "You are already friends");
-
-    // reverse pending request? → auto-accept into a friendship
-    const reverse = await prisma.friendRequest.findUnique({
-      where: { fromId_toId: { fromId: toUserId, toId: me } },
+    const target = await prisma.user.findFirst({
+      where: { tag: normalized, deletedAt: null },
+      select: { id: true },
     });
-    if (reverse && reverse.status === "pending") {
-      await prisma.$transaction([
-        prisma.friendRequest.update({ where: { id: reverse.id }, data: { status: "accepted" } }),
-        prisma.friendship.create({ data: { aId, bId } }),
-      ]);
-      return ok({ status: "accepted" });
-    }
+    if (!target) throw err.notFound("USER_NOT_FOUND", "No player found with that tag");
 
-    // upsert my outgoing request (re-send if previously declined)
-    const request = await prisma.friendRequest.upsert({
-      where: { fromId_toId: { fromId: me, toId: toUserId } },
-      update: { status: "pending", createdAt: new Date() },
-      create: { fromId: me, toId: toUserId, status: "pending" },
-    });
-
-    await prisma.notification.create({
-      data: {
-        userId: toUserId,
-        type: "friend_request",
-        title: "New friend request",
-        data: { requestId: request.id, fromUserId: me },
-      },
-    });
-
-    return ok({ status: "pending", requestId: request.id });
+    return ok(await createFriendRequest(me, target.id));
   });
 
   // POST /api/friends/request/:id/accept
