@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { RANK_TIERS, rankTierFor } from "@dama/shared";
 import { Avatar } from "../../components";
 import { api } from "../../lib/api";
+import { guildCrest } from "../../lib/assets";
 import { useAuthStore } from "../../stores/authStore";
 
 /**
@@ -43,7 +44,7 @@ type LbRow = {
 };
 type LbResponse = { scope: string; season: string | null; rows: LbRow[]; me: LbRow | null };
 
-type GuildRow = { id: string; name: string; tag: string; weeklyPoints: number; memberCount: number };
+type GuildRow = { id: string; name: string; tag: string; crestKey: string | null; weeklyPoints: number; memberCount: number };
 type SeasonInfo = { season: { id: string; name: string; startsAt: string; endsAt: string } };
 
 const SB = (n: string) => `/assets/${n}`;
@@ -255,7 +256,15 @@ export function LeaderboardPage() {
             guilds.slice(0, 3).map((g, i) => (
               <div key={g.id} style={{ display: "flex", alignItems: "center", gap: 11, padding: "9px 0", borderTop: "1px solid rgba(232,184,75,.1)" }}>
                 <span style={{ font: "800 14px 'JetBrains Mono',monospace", color: "var(--gold)", width: 16 }}>{i + 1}</span>
-                <span style={{ width: 30, height: 30, borderRadius: 8, background: "rgba(232,184,75,.12)", border: "1px solid rgba(232,184,75,.3)", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--gold-lt)" }}>🛡</span>
+                {/* Real guild crest art (matches the Guild page's Emblem) — resolves
+                    the guild's crestKey, with a stable per-guild fallback. Never an emoji. */}
+                <img
+                  src={guildCrest(g.crestKey, g.id).src}
+                  alt=""
+                  width={30}
+                  height={30}
+                  style={{ width: 30, height: 30, flex: "none", objectFit: "contain", filter: "drop-shadow(0 4px 10px rgba(0,0,0,.5))" }}
+                />
                 <span style={{ flex: 1, font: "600 13px Inter" }}>{g.name}</span>
                 <span style={{ font: "700 12px 'JetBrains Mono',monospace", color: "var(--gold)" }}>🏆 {g.weeklyPoints.toLocaleString()}</span>
               </div>
