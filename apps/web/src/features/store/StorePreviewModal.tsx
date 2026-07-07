@@ -28,7 +28,7 @@ import type { PieceSkin } from "../../lib/assets";
 
 const A = (n: string) => `/assets/${n}`;
 
-export type PreviewKind = "board" | "skin" | "avatar" | "frame";
+export type PreviewKind = "board" | "skin" | "avatar" | "frame" | "emote" | "bundle" | "season";
 
 export type StorePreview = {
   kind: PreviewKind;
@@ -49,6 +49,10 @@ export type StorePreview = {
   portraitFile?: string;
   /** frame overlay file (e.g. "frames/laurel.png") — for kind==="frame" */
   frameFile?: string;
+  /** emote emoji — for kind==="emote" */
+  emoji?: string;
+  /** the items a bundle/season pass includes — for kind==="bundle"/"season" */
+  bundleItems?: { name: string; sub: string }[];
 };
 
 const curColor = (c: "gold" | "gem") => (c === "gem" ? "#ff9aa8" : "#f2d493");
@@ -158,6 +162,41 @@ function PreviewArt({ pv }: { pv: StorePreview }) {
 
   if (pv.kind === "avatar") {
     return <AvatarToken file={pv.portraitFile ?? "avatars/sovereign.png"} />;
+  }
+
+  if (pv.kind === "emote") {
+    // Big emoji in a radial-glow circle (prototype: 200px, fdcoinbob 2.4s).
+    return (
+      <div style={{ width: 200, height: 200, borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 112, background: "radial-gradient(circle at 50% 42%,rgba(232,184,75,.22),transparent 70%)", animation: "fdcoinbob 2.4s ease-in-out infinite" }}>
+        {pv.emoji ?? "👑"}
+      </div>
+    );
+  }
+
+  if (pv.kind === "bundle" || pv.kind === "season") {
+    // Small bobbing banner (120px) + the list of items included (prototype).
+    const items = pv.bundleItems ?? [];
+    return (
+      <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 16, width: "100%" }}>
+        <img src={A("me-banner.png")} alt="" style={{ width: 120, animation: "fdcoinbob 3.4s ease-in-out infinite", filter: "drop-shadow(0 14px 26px rgba(0,0,0,.5))" }} />
+        {items.length > 0 && (
+          <div style={{ width: "100%", maxWidth: 360, display: "flex", flexDirection: "column", gap: 8 }}>
+            <div style={{ font: "700 11px Inter", letterSpacing: "2px", textTransform: "uppercase", color: "#e8b84b", textAlign: "center", marginBottom: 2 }}>
+              Includes {items.length} items
+            </div>
+            {items.map((it, i) => (
+              <div key={i} style={{ display: "flex", alignItems: "center", gap: 10, padding: "9px 12px", borderRadius: 9, background: "rgba(0,0,0,.28)", border: "1px solid rgba(232,184,75,.18)" }}>
+                <span style={{ color: "#7fe0a3", font: "700 13px Inter" }}>✓</span>
+                <div style={{ textAlign: "left" }}>
+                  <div style={{ font: "700 13px Inter", color: "#fff" }}>{it.name}</div>
+                  <div style={{ font: "500 11px Inter", color: "#b7a6d6" }}>{it.sub}</div>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    );
   }
 
   // frame → avatar behind + frame overlay art (bobbing, prototype fdcoinbob 4.4s)

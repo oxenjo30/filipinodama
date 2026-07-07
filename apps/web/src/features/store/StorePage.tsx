@@ -251,11 +251,47 @@ function previewFor(it: ShopItem, owned: boolean): StorePreview {
   if (it.type === "FRAME") {
     return { ...base, kind: "frame", frameFile: thumb.kind === "img" ? thumb.file : `frames/${it.assetKey}` };
   }
-  // SEASON_PASS / EMOTE / BUNDLE → fall back to the board-style big art of the thumb.
+  if (it.type === "EMOTE") {
+    return { ...base, kind: "emote", emoji: EMOTE_EMOJI[it.id] ?? "👑" };
+  }
+  if (it.type === "BUNDLE") {
+    return { ...base, kind: "bundle", bundleItems: BUNDLE_CONTENTS[it.id] ?? [] };
+  }
+  if (it.type === "SEASON_PASS") {
+    return { ...base, kind: "season", bundleItems: BUNDLE_CONTENTS.seasonpass ?? [] };
+  }
+  // safe fallback
   if (thumb.kind === "portrait") return { ...base, kind: "avatar", portraitFile: thumb.file };
   if (thumb.kind === "disc") return { ...base, kind: "skin", skinArt: undefined, pieceSkin: "default" };
   return { ...base, kind: "board", boardFile: thumb.file };
 }
+
+/** Emote emoji per item (prototype pv.emoji). */
+const EMOTE_EMOJI: Record<string, string> = {
+  victory: "👑",
+  focused: "🎯",
+  "emote-resolve": "💪",
+};
+
+/** Bundle contents (prototype _bundleContents): the items each bundle includes. */
+const BUNDLE_CONTENTS: Record<string, { name: string; sub: string }[]> = {
+  heritage: [
+    { name: "Imperial Ebony Board", sub: "Board Theme" },
+    { name: "Crimson Legion Pieces", sub: "Piece Skin" },
+    { name: "Golden Laurel Frame", sub: "Profile Frame" },
+    { name: "Victory Royale", sub: "Emote" },
+  ],
+  lunar: [
+    { name: "Jade Dragon Pieces", sub: "Piece Skin" },
+    { name: "Marble Court Board", sub: "Board Theme" },
+    { name: "Focused", sub: "Emote" },
+  ],
+  seasonpass: [
+    { name: "30 Tiers of Rewards", sub: "Gold, Diamonds & Cosmetics" },
+    { name: "Exclusive Season Skin", sub: "Premium Track" },
+    { name: "Bonus XP Boost", sub: "Season-long" },
+  ],
+};
 
 // local cart line (name/price/currency all sourced from a real StoreItem)
 interface CartLine {
