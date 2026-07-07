@@ -1,4 +1,5 @@
 import type { PrismaClient, Currency } from "@prisma/client";
+import { rankTierFor } from "@dama/shared";
 
 type Grant = { userId: string; currency: Currency; amount: number; reason: string; refType?: string; refId?: string };
 
@@ -23,7 +24,11 @@ export async function applyLedger(prisma: PrismaClient, g: Grant) {
     if (g.currency !== "TROPHIES" && balance < 0) {
       throw new Error(`INSUFFICIENT_${g.currency}`);
     }
-    await tx.user.update({ where: { id: g.userId }, data: { [col]: balance } as any });
+    // When trophies change, keep the denormalized rankTier cache in sync so it
+    // never drifts from the authoritative trophy count.
+    const extra =
+      g.currency === "TROPHIES" ? { rankTier: rankTierFor(balance).key } : {};
+    await tx.user.update({ where: { id: g.userId }, data: { [col]: balance, ...extra } as any });
     await tx.ledgerEntry.create({
       data: {
         userId: g.userId,

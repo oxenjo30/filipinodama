@@ -39,9 +39,10 @@ type FriendUser = {
 };
 type FriendReq = { id: string; createdAt: string; user: FriendUser };
 
-/** Resolve a tier {label,color} from the server's rankTier key (fallback: trophies). */
+/** Resolve a tier {label,color} — ALWAYS derived from trophies (the authoritative
+ *  source); the stored rankTier column is a cache that can be stale. */
 function tierOf(u: FriendUser): { label: string; color: string } {
-  const t = RANK_TIERS.find((x) => x.key === u.rankTier) ?? rankTierFor(u.trophies);
+  const t = rankTierFor(u.trophies);
   return { label: t.label, color: t.accent };
 }
 

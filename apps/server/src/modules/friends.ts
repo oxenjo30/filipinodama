@@ -228,6 +228,7 @@ export async function friendRoutes(app: FastifyInstance) {
         id: { notIn: [...exclude] },
         isGuest: false,
         deletedAt: null,
+        adminRole: null, // never suggest admin/staff accounts
       },
       select: friendSelect,
       orderBy: { trophies: "desc" },

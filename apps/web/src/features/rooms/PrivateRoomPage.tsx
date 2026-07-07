@@ -71,9 +71,9 @@ function makeRoomCode(): string {
   return out;
 }
 
-/** Resolve a tier {label,color} for a friend from rankTier (fallback: trophies). */
+/** Resolve a tier {label,color} — always derived from trophies (authoritative). */
 function tierOf(u: FriendUser): { label: string; color: string } {
-  const t = RANK_TIERS.find((x) => x.key === u.rankTier) ?? rankTierFor(u.trophies);
+  const t = rankTierFor(u.trophies);
   return { label: t.label, color: t.accent };
 }
 
@@ -210,7 +210,7 @@ export function PrivateRoomPage() {
     );
   }
 
-  const tier = RANK_TIERS.find((x) => x.key === me.rankTier) ?? rankTierFor(me.trophies);
+  const tier = rankTierFor(me.trophies);
 
   return (
     <div style={{ maxWidth: 960, margin: "0 auto", padding: "40px 26px 60px" }}>
