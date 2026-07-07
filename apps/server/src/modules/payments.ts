@@ -5,7 +5,7 @@ import { prisma } from "../db/client.js";
 import { ok, err } from "../lib/errors.js";
 import { env, features } from "../config/env.js";
 import { requireAuth } from "../auth/guards.js";
-import { applyLedger } from "../economy/ledger.js";
+import { applyLedger, applyLedgerTx } from "../economy/ledger.js";
 
 /**
  * PayMongo payments — the ONLY path that credits Diamonds is the
@@ -126,24 +126,30 @@ export async function paymentRoutes(app: FastifyInstance) {
     if (type === "checkout_session.payment.paid") {
       const meta = evt.data.attributes.data.attributes.metadata ?? {};
       const paymentId = meta.paymentId;
-      // Idempotency: the eventId is unique; refuse to credit the same event twice.
-      const already = await prisma.ledgerEntry.findFirst({ where: { refType: "payment", refId: eventId } });
-      if (already) return reply.send({ ok: true, note: "already-credited" });
 
       if (paymentId) {
         const payment = await prisma.payment.findUnique({ where: { id: paymentId } });
-        if (payment && payment.status !== "settled") {
+        if (payment) {
+          // Settle + credit in ONE transaction, gated by a conditional
+          // compare-and-swap on the Payment status. PayMongo retries and may
+          // deliver the same event concurrently; only the ONE delivery that
+          // actually flips pending→settled (count===1) credits diamonds — the
+          // status column is the idempotency key, so no double-credit is
+          // possible even without a DB-level ledger uniqueness constraint.
           await prisma.$transaction(async (tx) => {
-            await tx.payment.update({ where: { id: payment.id }, data: { status: "settled", settledAt: new Date() } });
-          });
-          // Credit diamonds through the ledger, keyed on the eventId for idempotency.
-          await applyLedger(prisma, {
-            userId: payment.userId,
-            currency: "DIAMONDS",
-            amount: payment.diamonds,
-            reason: "purchase",
-            refType: "payment",
-            refId: eventId,
+            const flip = await tx.payment.updateMany({
+              where: { id: payment.id, status: { not: "settled" } },
+              data: { status: "settled", settledAt: new Date() },
+            });
+            if (flip.count === 0) return; // already settled by another delivery
+            await applyLedgerTx(tx, {
+              userId: payment.userId,
+              currency: "DIAMONDS",
+              amount: payment.diamonds,
+              reason: "purchase",
+              refType: "payment",
+              refId: eventId,
+            });
           });
         }
       }

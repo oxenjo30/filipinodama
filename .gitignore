@@ -11,5 +11,9 @@ coverage/
 apps/server/prisma/migrations/dev.db*
 apps/web/dev-dist/
 
+# Large design source bundle — never commit (98MB); design truth lives in handoff/
+*.zip
+FilipinoDama Web Game Design.zip
+
 # TS build info
 *.tsbuildinfo

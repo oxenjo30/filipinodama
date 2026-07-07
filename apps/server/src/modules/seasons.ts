@@ -2,8 +2,8 @@ import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { prisma } from "../db/client.js";
 import { ok, err } from "../lib/errors.js";
-import { applyLedger } from "../economy/ledger.js";
-import { requireAuth } from "../auth/guards.js";
+import { applyLedger, applyLedgerTx } from "../economy/ledger.js";
+import { requireAuth, attachUser } from "../auth/guards.js";
 
 /**
  * Progression: seasons / battle pass.
@@ -17,8 +17,9 @@ import { requireAuth } from "../auth/guards.js";
  * Claimed tiers are tracked in SeasonProgress.claimed (Int[]).
  */
 
-// Cost of the premium pass, sourced from the seeded SEASON_PASS store item.
-const PASS_ITEM_ID = "season-pass-s1";
+// Cost of the premium pass, sourced from the seeded SEASON_PASS store item
+// (seed id "seasonpass"). Fallback price only applies if that row is missing.
+const PASS_ITEM_ID = "seasonpass";
 
 const claimSchema = z.object({ tier: z.number().int().min(1) });
 
@@ -61,14 +62,20 @@ async function grantReward(userId: string, reward: Reward | undefined, seasonId:
 
 export async function seasonRoutes(app: FastifyInstance) {
   // GET /api/season/current — tiers + my progress + hasPass
-  app.get("/season/current", { preHandler: requireAuth }, async (req) => {
-    const userId = req.userId!;
+  //
+  // PUBLIC read: signed-out visitors get the season shell (name, dates, tiers)
+  // with an empty progress (xp 0, nothing claimed, no pass) so the leaderboard's
+  // season rail renders. Signed-in users get their real progress.
+  app.get("/season/current", { preHandler: attachUser }, async (req) => {
+    const userId = req.userId ?? null;
     const season = await currentSeason();
     if (!season) throw err.notFound("NO_SEASON", "No season is configured");
 
-    const progress = await prisma.seasonProgress.findUnique({
-      where: { userId_seasonId: { userId, seasonId: season.id } },
-    });
+    const progress = userId
+      ? await prisma.seasonProgress.findUnique({
+          where: { userId_seasonId: { userId, seasonId: season.id } },
+        })
+      : null;
     const tiers = (season.tiers as unknown as Tier[]) ?? [];
     const xp = progress?.xp ?? 0;
     const claimed = progress?.claimed ?? [];
@@ -109,12 +116,32 @@ export async function seasonRoutes(app: FastifyInstance) {
     if (xp < def.xp) throw err.badRequest("TIER_LOCKED", "Not enough season XP for this tier");
     if (claimed.includes(tier)) throw err.conflict("TIER_ALREADY_CLAIMED", "Tier already claimed");
 
-    // Mark claimed atomically first so a concurrent duplicate can't double-grant.
-    await prisma.seasonProgress.upsert({
-      where: { userId_seasonId: { userId, seasonId: season.id } },
-      update: { claimed: { push: tier } },
-      create: { userId, seasonId: season.id, xp, hasPass, claimed: [tier] },
-    });
+    // Concurrency gate: a CONDITIONAL push (only where `claimed` does NOT already
+    // contain this tier) is the mutual exclusion. Exactly one of two racing
+    // claims flips the row (count===1) and is allowed to grant; the loser sees
+    // count===0 and 409s. This prevents the double-grant the plain upsert had.
+    if (progress) {
+      const flipped = await prisma.seasonProgress.updateMany({
+        where: { userId, seasonId: season.id, NOT: { claimed: { has: tier } } },
+        data: { claimed: { push: tier } },
+      });
+      if (flipped.count === 0) throw err.conflict("TIER_ALREADY_CLAIMED", "Tier already claimed");
+    } else {
+      // No row yet → create it with this tier claimed. A unique (userId,seasonId)
+      // makes a concurrent create throw P2002, which we treat as "already claimed".
+      try {
+        await prisma.seasonProgress.create({
+          data: { userId, seasonId: season.id, xp, hasPass, claimed: [tier] },
+        });
+      } catch {
+        // lost the create race — re-check and gate the same way
+        const flipped = await prisma.seasonProgress.updateMany({
+          where: { userId, seasonId: season.id, NOT: { claimed: { has: tier } } },
+          data: { claimed: { push: tier } },
+        });
+        if (flipped.count === 0) throw err.conflict("TIER_ALREADY_CLAIMED", "Tier already claimed");
+      }
+    }
 
     await grantReward(userId, def.freeReward, season.id, tier);
     if (hasPass) await grantReward(userId, def.premiumReward, season.id, tier);
@@ -140,32 +167,42 @@ export async function seasonRoutes(app: FastifyInstance) {
     if (progress?.hasPass) throw err.conflict("PASS_ALREADY_OWNED", "You already own the season pass");
 
     const passItem = await prisma.storeItem.findUnique({ where: { id: PASS_ITEM_ID } });
-    const price = passItem?.priceDiamonds ?? 400;
+    const price = passItem?.priceDiamonds ?? 900;
 
-    // Flip hasPass first (idempotency guard), then spend. applyLedger throws on
-    // insufficient diamonds and rolls back its own tx; we revert the flag if so.
-    const updated = await prisma.seasonProgress.upsert({
-      where: { userId_seasonId: { userId, seasonId: season.id } },
-      update: { hasPass: true },
-      create: { userId, seasonId: season.id, hasPass: true },
-    });
-
+    // Flip hasPass and spend in ONE transaction, gated by a conditional flip so
+    // only one concurrent request can win (count===1) and charge. This closes
+    // the read-then-act double-charge race: two clicks can't both debit.
     let diamondBalance: number;
     try {
-      diamondBalance = await applyLedger(prisma, {
-        userId,
-        currency: "DIAMONDS",
-        amount: -price,
-        reason: "season_pass",
-        refType: "season_pass",
-        refId: season.id,
+      diamondBalance = await prisma.$transaction(async (tx) => {
+        // Ensure a row exists (idempotent create; ignore if another racer made it).
+        if (!progress) {
+          try {
+            await tx.seasonProgress.create({ data: { userId, seasonId: season.id } });
+          } catch {
+            /* P2002 — a concurrent create won; fall through to the flip */
+          }
+        }
+        const flip = await tx.seasonProgress.updateMany({
+          where: { userId, seasonId: season.id, hasPass: false },
+          data: { hasPass: true },
+        });
+        if (flip.count === 0) throw new Error("PASS_ALREADY_OWNED");
+        return applyLedgerTx(tx, {
+          userId,
+          currency: "DIAMONDS",
+          amount: -price,
+          reason: "season_pass",
+          refType: "season_pass",
+          refId: season.id,
+        });
       });
     } catch (e) {
-      await prisma.seasonProgress.update({
-        where: { id: updated.id },
-        data: { hasPass: progress?.hasPass ?? false },
-      });
+      if (e instanceof Error && e.message === "PASS_ALREADY_OWNED") {
+        throw err.conflict("PASS_ALREADY_OWNED", "You already own the season pass");
+      }
       if (e instanceof Error && e.message.startsWith("INSUFFICIENT")) {
+        // tx rolled back → hasPass flip is undone automatically, no manual revert.
         throw err.badRequest("INSUFFICIENT_DIAMONDS", "Not enough diamonds for the season pass");
       }
       throw e;

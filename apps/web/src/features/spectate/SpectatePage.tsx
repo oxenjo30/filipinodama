@@ -143,7 +143,7 @@ export function SpectatePage() {
               </button>
               <button
                 className="btn btn-purple"
-                onClick={() => showToast("Live spectating arrives with online play.")}
+                onClick={() => showToast("No live matches to watch right now.")}
               >
                 ↻ Refresh
               </button>

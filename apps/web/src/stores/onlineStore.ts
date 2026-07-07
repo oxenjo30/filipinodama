@@ -125,8 +125,8 @@ export const useOnlineStore = create<OnlineStore>((set, get) => {
     const mine = state.turn === myColor && !state.result;
     const all = legalMoves(state);
     const mustCapture = all.some((m) => m.captures.length > 0);
-    let moveTargets: Square[] = [];
-    let captureTargets: Square[] = [];
+    const moveTargets: Square[] = [];
+    const captureTargets: Square[] = [];
     if (mine && selected) {
       for (const m of all.filter((mv) => sameSquare(mv.from, selected))) {
         if (m.captures.length > 0) captureTargets.push(landing(m));

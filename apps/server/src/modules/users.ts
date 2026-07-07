@@ -95,16 +95,25 @@ export async function userRoutes(app: FastifyInstance) {
     const input = equipSchema.parse(req.body);
     const userId = req.userId!;
 
-    // Every referenced item id must be owned by the user (InventoryItem).
-    const wanted = [input.board, input.skin, input.frame].filter((x): x is string => !!x);
+    // Every referenced item id must be owned by the user (InventoryItem) AND
+    // its ItemType must match the slot it's being equipped into — otherwise a
+    // SKIN id could be dropped into the board slot (type confusion).
+    const slotType: Record<string, "BOARD" | "SKIN" | "FRAME"> = {};
+    if (input.board !== undefined && input.board) slotType[input.board] = "BOARD";
+    if (input.skin !== undefined && input.skin) slotType[input.skin] = "SKIN";
+    if (input.frame !== undefined && input.frame) slotType[input.frame] = "FRAME";
+    const wanted = Object.keys(slotType);
     if (wanted.length) {
       const owned = await prisma.inventoryItem.findMany({
         where: { userId, itemId: { in: wanted } },
-        select: { itemId: true },
+        select: { itemId: true, item: { select: { type: true } } },
       });
-      const ownedSet = new Set(owned.map((o) => o.itemId));
-      const missing = wanted.filter((id) => !ownedSet.has(id));
+      const ownedMap = new Map(owned.map((o) => [o.itemId, o.item.type]));
+      const missing = wanted.filter((id) => !ownedMap.has(id));
       if (missing.length) throw err.forbidden("NOT_OWNED", `Item(s) not owned: ${missing.join(", ")}`);
+      const mistyped = wanted.filter((id) => ownedMap.get(id) !== slotType[id]);
+      if (mistyped.length)
+        throw err.badRequest("WRONG_SLOT", `Item(s) wrong type for slot: ${mistyped.join(", ")}`);
     }
 
     const user = await prisma.user.update({
@@ -125,7 +134,12 @@ export async function userRoutes(app: FastifyInstance) {
     const userId = req.userId!;
     const existing = await prisma.user.findUnique({ where: { id: userId } });
     if (!existing || existing.deletedAt) throw err.notFound("USER_NOT_FOUND", "User not found");
-    await prisma.user.update({ where: { id: userId }, data: { deletedAt: new Date() } });
+    // Soft-delete AND kill every refresh session so existing tokens can't be
+    // rotated back into access after the account is gone.
+    await prisma.$transaction([
+      prisma.user.update({ where: { id: userId }, data: { deletedAt: new Date() } }),
+      prisma.session.deleteMany({ where: { userId } }),
+    ]);
     return ok({ deleted: true, deletedAt: new Date().toISOString() });
   });
 

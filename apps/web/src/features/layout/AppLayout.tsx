@@ -5,6 +5,8 @@ import { useAppStore } from "../../stores/appStore";
 import { useAuthStore } from "../../stores/authStore";
 import { ICONS, BRAND, avatar as avatarUrl } from "../../lib/assets";
 import { Toasts } from "../shared/Toasts";
+import { TopUpModal } from "../store/TopUpModal";
+import { NotificationsMenu } from "../nav/NotificationsMenu";
 import { Footer } from "./Footer";
 
 /**
@@ -37,6 +39,9 @@ export function AppLayout() {
   const logout = useAuthStore((s) => s.logout);
   const showToast = useAppStore((s) => s.showToast);
   const [acctOpen, setAcctOpen] = useState(false);
+  const [topUpOpen, setTopUpOpen] = useState(false);
+  const [notifOpen, setNotifOpen] = useState(false);
+  const [notifUnread, setNotifUnread] = useState(0);
 
   const isGuest = !!me?.isGuest;
   const registered = !!me && !me.isGuest; // a real (non-guest) account
@@ -108,10 +113,15 @@ export function AppLayout() {
                   </span>
                   <span className="pill fd-hide-narrow" style={{ color: "#ff9aa8", gap: 6, paddingRight: 5 }} title="Diamonds — premium currency. Top up with real money.">
                     <Icon src={ICONS.gem} alt="Diamonds" /> {diamonds.toLocaleString()}
-                    <button onClick={() => showToast("Diamond top-up arrives with payments.")} title="Top up Diamonds" style={{ width: 22, height: 22, flex: "none", borderRadius: "50%", border: "none", background: "linear-gradient(180deg,#f0cf72,#c99a2e)", color: "#3a2405", font: "800 15px Inter", lineHeight: 1, cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}>+</button>
+                    <button onClick={() => setTopUpOpen(true)} title="Top up Diamonds" style={{ width: 22, height: 22, flex: "none", borderRadius: "50%", border: "none", background: "linear-gradient(180deg,#f0cf72,#c99a2e)", color: "#3a2405", font: "800 15px Inter", lineHeight: 1, cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}>+</button>
                   </span>
-                  <button onClick={() => showToast("Notifications arrive with online play.")} title="Notifications" style={{ position: "relative", width: 40, height: 40, borderRadius: 10, border: "1px solid rgba(232,184,75,.35)", background: "rgba(15,8,32,.6)", color: "var(--gold-lt)", cursor: "pointer", fontSize: 18 }}>
+                  <button onClick={() => setNotifOpen((o) => !o)} title="Notifications" style={{ position: "relative", width: 40, height: 40, borderRadius: 10, border: "1px solid rgba(232,184,75,.35)", background: "rgba(15,8,32,.6)", color: "var(--gold-lt)", cursor: "pointer", fontSize: 18 }}>
                     🔔
+                    {notifUnread > 0 && (
+                      <span style={{ position: "absolute", top: -5, right: -5, minWidth: 17, height: 17, padding: "0 4px", borderRadius: 9, background: "linear-gradient(180deg,#e0555f,#a8202f)", color: "#fff", font: "800 10px Inter", display: "flex", alignItems: "center", justifyContent: "center", border: "2px solid #150a24", boxShadow: "0 2px 6px rgba(0,0,0,.5)" }}>
+                        {notifUnread > 9 ? "9+" : notifUnread}
+                      </span>
+                    )}
                   </button>
                   <div style={{ position: "relative" }}>
                     <div onClick={() => setAcctOpen((v) => !v)} style={{ display: "flex", alignItems: "center", gap: 10, paddingLeft: 6, cursor: "pointer" }}>
@@ -198,6 +208,8 @@ export function AppLayout() {
         <Footer />
       </div>
       <Toasts />
+      <TopUpModal open={topUpOpen} onClose={() => setTopUpOpen(false)} />
+      <NotificationsMenu open={notifOpen} onClose={() => setNotifOpen(false)} onUnreadChange={setNotifUnread} />
     </>
   );
 }

@@ -24,6 +24,7 @@ const DIAMOND_PACKS = [
 function purchaseError(e: unknown): never {
   const msg = e instanceof Error ? e.message : String(e);
   if (msg === "ALREADY_OWNED") throw err.conflict("ALREADY_OWNED", "You already own this item");
+  if (msg === "NOT_PURCHASABLE") throw err.badRequest("NOT_PURCHASABLE", "This item can't be bought here");
   if (msg.startsWith("INSUFFICIENT_")) {
     const cur = msg.slice("INSUFFICIENT_".length).toLowerCase();
     throw err.badRequest("INSUFFICIENT_FUNDS", `Not enough ${cur}`);

@@ -19,6 +19,8 @@ a{color:inherit;text-decoration:none}
 @keyframes fdcoinbob{0%,100%{transform:translateY(0)}50%{transform:translateY(-12px)}}
 @keyframes fdshadowpulse{0%,100%{transform:scaleX(1);opacity:.5}50%{transform:scaleX(.72);opacity:.28}}
 @keyframes fdsheen{0%,100%{opacity:0;transform:translateX(-120%) skewX(-18deg)}12%{opacity:.7}30%{opacity:0;transform:translateX(220%) skewX(-18deg)}}
+/* slow Ken-Burns drift for the loading-screen background image */
+@keyframes fdkenburns{from{transform:scale(1.06) translate3d(0,0,0)}to{transform:scale(1.14) translate3d(-1.5%,-1.5%,0)}}
 @keyframes fdckring{0%{stroke-dashoffset:166;opacity:.2}100%{stroke-dashoffset:0;opacity:1}}
 @keyframes fdckdraw{0%{stroke-dashoffset:48}100%{stroke-dashoffset:0}}
 @keyframes fdckpop{0%{transform:scale(0);opacity:0}55%{transform:scale(1.14)}72%{transform:scale(.94)}100%{transform:scale(1);opacity:1}}
@@ -75,6 +77,15 @@ input:focus{outline:none;border-color:var(--gold)!important}
   .fd-two-col{grid-template-columns:1fr!important}
   .fd-game-grid{grid-template-columns:1fr!important}
   .fd-lb-grid{grid-template-columns:1fr!important}
+}
+/* The 3-column game screen (players | board | history+chat) needs ~1240px to
+   fit all three side-by-side. Between 1000–1240px, drop the right rail (move
+   history / quick chat / tip) below the board so it is never clipped off the
+   right edge, keeping the players+actions rail beside the board. */
+@media(max-width:1240px) and (min-width:1001px){
+  .fd-game-grid{grid-template-columns:300px minmax(0,1fr)!important}
+  .fd-game-right{grid-column:1 / -1!important;flex-direction:row!important;flex-wrap:wrap!important}
+  .fd-game-right>*{flex:1 1 260px!important}
 }
 @media(max-width:560px){
   .fd-modes-grid{grid-template-columns:1fr!important}

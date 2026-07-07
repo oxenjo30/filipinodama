@@ -73,13 +73,23 @@ export async function questRoutes(app: FastifyInstance) {
     if (value < quest.goal) throw err.badRequest("QUEST_INCOMPLETE", "Quest not completed yet");
     if (progress?.claimed) throw err.conflict("QUEST_ALREADY_CLAIMED", "Reward already claimed");
 
-    // Flip claimed atomically before granting so a double request can't double-pay.
-    // upsert covers the (rare) case where the completing row was never written.
-    const claim = await prisma.questProgress.upsert({
-      where: { userId_questId_periodKey: { userId, questId: quest.id, periodKey } },
-      update: { claimed: true },
-      create: { userId, questId: quest.id, periodKey, value, claimed: true },
+    // Atomic claim: a CONDITIONAL updateMany (claimed:false → true) is the
+    // concurrency gate — only the request that actually flips the row (count===1)
+    // is allowed to grant the reward, so two concurrent claims can't double-pay.
+    // If the completing row was never written, create it already-claimed.
+    const flipped = await prisma.questProgress.updateMany({
+      where: { userId, questId: quest.id, periodKey, claimed: false },
+      data: { claimed: true },
     });
+    if (flipped.count === 0) {
+      if (!progress) {
+        // no row existed → create it claimed (the completer of this claim)
+        await prisma.questProgress.create({ data: { userId, questId: quest.id, periodKey, value, claimed: true } });
+      } else {
+        // someone else already claimed it in a race
+        throw err.conflict("QUEST_ALREADY_CLAIMED", "Reward already claimed");
+      }
+    }
 
     let balance = 0;
     if (quest.rewardGold > 0) {
@@ -89,9 +99,9 @@ export async function questRoutes(app: FastifyInstance) {
         amount: quest.rewardGold,
         reason: "quest",
         refType: "quest",
-        refId: quest.id,
+        refId: `${quest.id}:${periodKey}`,
       });
     }
-    return ok({ claimed: true, rewardGold: quest.rewardGold, goldBalance: balance, questId: quest.id, value: claim.value });
+    return ok({ claimed: true, rewardGold: quest.rewardGold, goldBalance: balance, questId: quest.id, value });
   });
 }

@@ -49,6 +49,11 @@ export const EV = {
   chatRead: "chat:read",
   chatUnread: "chat:unread",
   chatNotify: "chat:notify",
+  // guild chat (server broadcasts to a `guild:<guildId>` room; clients join on
+  // opening their guild's chat and get live messages from guildmates)
+  guildChatJoin: "guild:chat:join",
+  guildChatLeave: "guild:chat:leave",
+  guildChatMessage: "guild:chat:message",
 
   // notifications
   notifNew: "notif:new",

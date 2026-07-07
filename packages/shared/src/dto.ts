@@ -14,7 +14,14 @@ export const loginSchema = z.object({ email: z.string().email(), password: z.str
 export const updateProfileSchema = z.object({
   displayName: z.string().min(1).max(24).optional(),
   bio: z.string().max(LIMITS.bioMax).optional(),
-  avatarUrl: z.string().url().optional(),
+  // Either a bare avatar key ("champion"), an app-relative asset path
+  // ("/assets/avatars/champion.png"), or a full URL — but NOT an origin-baked
+  // absolute URL we'd have to store forever. Bare keys are the portable form.
+  avatarUrl: z
+    .string()
+    .max(200)
+    .regex(/^([a-z0-9-]+|\/assets\/[\w./-]+|https?:\/\/[\w./:-]+)$/i, "invalid avatar reference")
+    .optional(),
   countryCode: z.string().length(2).optional(),
 });
 export const equipSchema = z.object({
@@ -40,19 +47,26 @@ export const checkoutSchema = z.object({ packId: z.string() });
 
 // ── social / guild ──
 export const friendRequestSchema = z.object({ toUserId: z.string() });
+/** The heraldic crest a guild displays (mirrors the client's CRESTS registry). */
+export const GUILD_CREST_KEYS = ["vanguard", "crown", "swords", "citadel", "marksman", "banner"] as const;
+export const guildCrestKeySchema = z.enum(GUILD_CREST_KEYS);
 export const createGuildSchema = z.object({
   name: z.string().min(3).max(LIMITS.guildNameMax),
   tag: z.string().min(2).max(5),
   description: z.string().max(LIMITS.guildDescMax).optional(),
+  crestKey: guildCrestKeySchema.optional(),
 });
 export const updateGuildSchema = z.object({
   name: z.string().min(3).max(LIMITS.guildNameMax).optional(),
   description: z.string().max(LIMITS.guildDescMax).optional(),
   minTrophies: z.number().int().min(0).max(5000).optional(),
+  crestKey: guildCrestKeySchema.optional(),
 });
 
 // ── chat ──
 export const chatSendSchema = z.object({ channelId: z.string(), body: z.string().min(1).max(500) });
+/** Post a message to a guild's chat channel (the guild is identified in the URL). */
+export const guildChatSendSchema = z.object({ body: z.string().trim().min(1).max(LIMITS.chatBodyMax) });
 
 // ── account ──
 export const deleteAccountSchema = z.object({ confirm: z.literal("DELETE") });

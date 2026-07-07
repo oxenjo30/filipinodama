@@ -82,8 +82,8 @@ function capturedCounts(state: GameState): { red: number; blue: number } {
 /** Derive the highlight/selection slice for a freshly-set state + selection. */
 function derive(state: GameState, selected: Square | null) {
   const mustCapture = anyCapture(state);
-  let moveTargets: Square[] = [];
-  let captureTargets: Square[] = [];
+  const moveTargets: Square[] = [];
+  const captureTargets: Square[] = [];
   if (selected) {
     for (const m of movesFrom(state, selected)) {
       if (m.captures.length > 0) captureTargets.push(landing(m));

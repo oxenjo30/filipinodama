@@ -4,6 +4,7 @@ import { useAppStore } from "../../stores/appStore";
 import { useAuthStore } from "../../stores/authStore";
 import { Piece } from "../../components/Piece";
 import { StorePreviewModal, type StorePreview } from "./StorePreviewModal";
+import { TopUpModal } from "./TopUpModal";
 
 /**
  * StorePage — reproduced from the prototype's Store screen
@@ -26,10 +27,11 @@ import { StorePreviewModal, type StorePreview } from "./StorePreviewModal";
  *     real StoreItem — never a fabricated value.
  *   - Logged out: catalog still renders (public); Buy prompts sign-in; owned
  *     state is empty. The screen never crashes.
- *   - The Featured Pack banner + Seasonal Offer are the prototype's decorative
- *     marketing chrome; because no such bundle exists as a real StoreItem, their
- *     buttons surface an honest "arrives with online play" toast rather than a
- *     fake priced purchase.
+ *   - The Featured Pack banner + Seasonal Offer are backed by real BUNDLE
+ *     StoreItems (id "heritage" / "lunar"). "Add to Cart" adds the Royal Heritage
+ *     Pack to the same client cart the tiles use; "View Bundle" opens the real
+ *     StorePreviewModal (kind bundle) for the Lunar New Year Bundle, whose Buy
+ *     action runs POST /api/store/purchase { itemId } like any other item.
  */
 
 // ── the real StoreItem shape from GET /api/store/items ──
@@ -151,7 +153,27 @@ function PortraitThumb({ file, size }: { file: string; size: number }) {
 // ── thumbnails ── derived from the item's real assetKey (set from the prototype
 // catalog in the DB seed), so every item shows its true art. NOT a stand-in
 // catalog — price/currency/tag all come from the live API.
-type Thumb = { kind: "img"; file: string } | { kind: "portrait"; file: string } | { kind: "disc" };
+type Thumb =
+  | { kind: "img"; file: string }
+  | { kind: "portrait"; file: string }
+  | { kind: "disc" }
+  | { kind: "emoji"; glyph: string };
+
+/**
+ * The emote's emoji — the prototype renders emotes as emoji glyphs, not images
+ * (there is NO emote art file in the handoff). The seed stores it on the item as
+ * previewKey "emote:<glyph>"; we read that first (single source of truth), and
+ * fall back to a per-id map only if an older seed lacks it.
+ */
+const EMOTE_EMOJI: Record<string, string> = {
+  victory: "👑",
+  focused: "🎯",
+  "emote-resolve": "💪",
+};
+function emoteGlyph(it: StoreItemApi): string {
+  if (it.previewKey?.startsWith("emote:")) return it.previewKey.slice("emote:".length);
+  return EMOTE_EMOJI[it.id] ?? "👑";
+}
 
 /** Resolve the thumbnail from the item's real type + assetKey. */
 function thumbFor(it: StoreItemApi): Thumb {
@@ -174,7 +196,9 @@ function thumbFor(it: StoreItemApi): Thumb {
       // assetKey like "laurel.png" or "frames/silver.png"
       return { kind: "img", file: a.includes("/") ? a : a };
     case "EMOTE":
-      return { kind: "img", file: "ic-chest.png" };
+      // Emotes are emoji, not images — render the item's own glyph (💪/👑/🎯),
+      // never a shared placeholder chest.
+      return { kind: "emoji", glyph: emoteGlyph(it) };
     case "BUNDLE":
       return { kind: "img", file: a.endsWith(".png") ? a : "me-banner.png" };
     case "SEASON_PASS":
@@ -189,6 +213,25 @@ function renderThumb(t: Thumb, size: number): ReactNode {
     return (
       <div style={{ position: "relative", width: size, height: size }}>
         <Piece color="red" king />
+      </div>
+    );
+  if (t.kind === "emoji")
+    // Big emoji glyph in a soft gold radial glow — matches the prototype's emote
+    // thumbnail (fontSize ≈ size × 0.8).
+    return (
+      <div
+        style={{
+          width: size,
+          height: size,
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          fontSize: Math.round(size * 0.8),
+          lineHeight: 1,
+          background: "radial-gradient(circle at 50% 45%,rgba(232,184,75,.18),transparent 70%)",
+        }}
+      >
+        {t.glyph}
       </div>
     );
   return <ImgThumb file={t.file} size={size} />;
@@ -252,7 +295,7 @@ function previewFor(it: ShopItem, owned: boolean): StorePreview {
     return { ...base, kind: "frame", frameFile: thumb.kind === "img" ? thumb.file : `frames/${it.assetKey}` };
   }
   if (it.type === "EMOTE") {
-    return { ...base, kind: "emote", emoji: EMOTE_EMOJI[it.id] ?? "👑" };
+    return { ...base, kind: "emote", emoji: emoteGlyph(it) };
   }
   if (it.type === "BUNDLE") {
     return { ...base, kind: "bundle", bundleItems: BUNDLE_CONTENTS[it.id] ?? [] };
@@ -263,15 +306,9 @@ function previewFor(it: ShopItem, owned: boolean): StorePreview {
   // safe fallback
   if (thumb.kind === "portrait") return { ...base, kind: "avatar", portraitFile: thumb.file };
   if (thumb.kind === "disc") return { ...base, kind: "skin", skinArt: undefined, pieceSkin: "default" };
+  if (thumb.kind === "emoji") return { ...base, kind: "emote", emoji: thumb.glyph };
   return { ...base, kind: "board", boardFile: thumb.file };
 }
-
-/** Emote emoji per item (prototype pv.emoji). */
-const EMOTE_EMOJI: Record<string, string> = {
-  victory: "👑",
-  focused: "🎯",
-  "emote-resolve": "💪",
-};
 
 /** Bundle contents (prototype _bundleContents): the items each bundle includes. */
 const BUNDLE_CONTENTS: Record<string, { name: string; sub: string }[]> = {
@@ -316,6 +353,7 @@ export function StorePage() {
   const [owned, setOwned] = useState<Set<string>>(new Set());
   const [buying, setBuying] = useState<string | null>(null);
   const [preview, setPreview] = useState<ShopItem | null>(null); // open preview modal
+  const [topUpOpen, setTopUpOpen] = useState(false); // open Diamond top-up modal
 
   // Load the real catalog (public) once.
   useEffect(() => {
@@ -366,12 +404,21 @@ export function StorePage() {
   };
   const removeFromCart = (id: string) => setCart((c) => c.filter((x) => x.id !== id));
 
-  // Server-authoritative purchase.
+  // A real StoreItem → a cart line (name/price/currency all straight from the API).
+  const cartLineOf = (it: ShopItem): CartLine => ({ id: it.id, name: it.name, sub: it.sub, price: it.price, cur: it.cur, thumb: it.thumb });
+
+  // Look up a live catalog item by id (used by the Featured Pack / Seasonal Offer
+  // marketing banners, which are backed by real BUNDLE items "heritage"/"lunar").
+  const itemById = useCallback((id: string) => items?.find((i) => i.id === id) ?? null, [items]);
+
+  // Server-authoritative purchase. Returns true on success, false on failure, so
+  // callers (e.g. cart checkout) can react to a partial failure instead of
+  // assuming every line succeeded.
   const buy = useCallback(
-    async (it: ShopItem) => {
+    async (it: ShopItem): Promise<boolean> => {
       if (!me) {
         showToast("Sign in to buy items.");
-        return;
+        return false;
       }
       setBuying(it.id);
       try {
@@ -382,8 +429,10 @@ export function StorePage() {
         patchMe({ gold: res.balances.gold, diamonds: res.balances.diamonds });
         setOwned((s) => new Set(s).add(it.id));
         showToast(`${it.name} purchased!`);
+        return true;
       } catch (e) {
         showToast(e instanceof ApiError ? e.message : "Purchase failed.");
+        return false;
       } finally {
         setBuying(null);
       }
@@ -461,7 +510,7 @@ export function StorePage() {
               </button>
             );
           })}
-          <button key="Currency" onClick={() => showToast("Diamond top-ups arrive with online play.")} style={catBtn(false)}>
+          <button key="Currency" onClick={() => setTopUpOpen(true)} style={catBtn(false)}>
             <span style={{ color: "var(--gold)", display: "flex" }}>
               <CatIcon name="coin" />
             </span>
@@ -496,7 +545,22 @@ export function StorePage() {
               <span className="pill" style={{ color: "#ff9aa8" }}>
                 <CurIcon cur="gem" /> 1,200
               </span>
-              <button className="btn btn-gold" onClick={() => showToast("The Royal Heritage Pack arrives with online play.")} style={{ padding: "13px 28px" }}>
+              <button
+                className="btn btn-gold"
+                onClick={() => {
+                  const heritage = itemById("heritage");
+                  if (!heritage) {
+                    showToast("The Royal Heritage Pack is unavailable right now.");
+                    return;
+                  }
+                  if (owned.has(heritage.id)) {
+                    showToast("You already own the Royal Heritage Pack.");
+                    return;
+                  }
+                  addToCart(cartLineOf(heritage));
+                }}
+                style={{ padding: "13px 28px" }}
+              >
                 Add to Cart
               </button>
             </div>
@@ -632,14 +696,24 @@ export function StorePage() {
                 showToast("Sign in to check out.");
                 return;
               }
-              // Buy every cart line through the real purchase endpoint, then clear.
+              // Buy every cart line through the real purchase endpoint. Keep any
+              // line that FAILS (e.g. insufficient funds) in the cart, and stop
+              // at the first failure so the buyer isn't charged past what they can
+              // afford — only successfully-purchased lines are removed.
               void (async () => {
                 const lines = [...cart];
-                for (const line of lines) {
-                  const it = items?.find((i) => i.id === line.id);
-                  if (it) await buy(it);
+                const failed: typeof lines = [];
+                for (let i = 0; i < lines.length; i++) {
+                  const line = lines[i];
+                  const it = items?.find((x) => x.id === line.id);
+                  const okBuy = it ? await buy(it) : false;
+                  if (!okBuy) {
+                    // this line + all remaining lines stay in the cart
+                    failed.push(...lines.slice(i));
+                    break;
+                  }
                 }
-                setCart([]);
+                setCart(failed);
               })();
             }}
             style={{ width: "100%", marginTop: 12 }}
@@ -660,7 +734,18 @@ export function StorePage() {
             <span style={{ font: "500 13px 'JetBrains Mono',monospace", color: "var(--ink2)", textDecoration: "line-through" }}>1,680</span>
             <span style={{ font: "700 11px Inter", padding: "3px 8px", borderRadius: 6, background: "#a83744", color: "#fff" }}>-35%</span>
           </div>
-          <button className="btn btn-red" onClick={() => showToast("The Lunar New Year Bundle arrives with online play.")} style={{ width: "100%" }}>
+          <button
+            className="btn btn-red"
+            onClick={() => {
+              const lunar = itemById("lunar");
+              if (!lunar) {
+                showToast("The Lunar New Year Bundle is unavailable right now.");
+                return;
+              }
+              setPreview(lunar);
+            }}
+            style={{ width: "100%" }}
+          >
             View Bundle
           </button>
         </div>
@@ -679,6 +764,9 @@ export function StorePage() {
           }
         }}
       />
+
+      {/* Diamond top-up modal — opens from the "Currency" category button. */}
+      <TopUpModal open={topUpOpen} onClose={() => setTopUpOpen(false)} />
     </div>
   );
 }

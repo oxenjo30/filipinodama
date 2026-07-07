@@ -3,8 +3,8 @@ import type { Prisma } from "@prisma/client";
 import { z } from "zod";
 import { rankTierFor } from "@dama/shared";
 import { prisma } from "../db/client.js";
-import { ok } from "../lib/errors.js";
-import { requireAuth } from "../auth/guards.js";
+import { ok, err } from "../lib/errors.js";
+import { attachUser } from "../auth/guards.js";
 
 const querySchema = z.object({
   scope: z.enum(["global", "friends", "guild"]).default("global"),
@@ -49,9 +49,16 @@ const SELECT = {
 
 export async function leaderboardRoutes(app: FastifyInstance) {
   // GET /api/leaderboard?scope=global|friends|guild&season=&limit=
-  app.get("/leaderboard", { preHandler: requireAuth }, async (req) => {
+  //
+  // The GLOBAL board is PUBLIC: anyone (signed out included) can view the ladder.
+  // `friends`/`guild` scopes are inherently identity-scoped and still require a
+  // signed-in user. We use attachUser (never rejects) so anonymous callers get
+  // the global board and, when a session cookie is present, `me` is populated.
+  app.get("/leaderboard", { preHandler: attachUser }, async (req) => {
     const { scope, season, limit } = querySchema.parse(req.query);
-    const meId = req.userId!;
+    const meId = req.userId ?? null;
+
+    if (scope !== "global" && !meId) throw err.unauthorized();
 
     // Optional season validation (trophy ladder is global standing; season is
     // accepted for the current/active season and echoed back).
@@ -64,17 +71,19 @@ export async function leaderboardRoutes(app: FastifyInstance) {
     // Resolve the candidate user-id set for the requested scope.
     let userIds: string[] | null = null; // null = unrestricted (global)
 
+    // meId is guaranteed non-null here: the scope !== "global" guard above rejects
+    // anonymous callers before we reach the identity-scoped branches.
     if (scope === "friends") {
       const friendships = await prisma.friendship.findMany({
-        where: { OR: [{ aId: meId }, { bId: meId }] },
+        where: { OR: [{ aId: meId! }, { bId: meId! }] },
         select: { aId: true, bId: true },
       });
-      const ids = new Set<string>([meId]);
+      const ids = new Set<string>([meId!]);
       for (const f of friendships) ids.add(f.aId === meId ? f.bId : f.aId);
       userIds = [...ids];
     } else if (scope === "guild") {
       const me = await prisma.guildMember.findUnique({
-        where: { userId: meId },
+        where: { userId: meId! },
         select: { guildId: true },
       });
       if (!me) return ok({ scope, season: seasonId, rows: [], me: null });

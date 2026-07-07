@@ -61,9 +61,19 @@ export function PlayerPanel({
               color: "#fff",
             }}
           >
-            <span style={{ color: "var(--gold)", fontSize: 12 }}>✦</span>
+            <span style={{ color: "var(--gold)", fontSize: 12, flex: "none" }}>✦</span>
             <span
-              style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}
+              style={{
+                // Allow the name up to two lines so long names (e.g. "Tactician
+                // Bot", "Grandmaster Bot", long usernames) are never clipped to
+                // an ellipsis; only clamp beyond two lines.
+                display: "-webkit-box",
+                WebkitBoxOrient: "vertical",
+                WebkitLineClamp: 2,
+                overflow: "hidden",
+                lineHeight: 1.15,
+                wordBreak: "break-word",
+              }}
             >
               {name}
             </span>
@@ -74,6 +84,7 @@ export function PlayerPanel({
         </div>
         <div
           style={{
+            flex: "none",
             display: "flex",
             alignItems: "center",
             gap: 6,

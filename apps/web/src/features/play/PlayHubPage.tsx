@@ -87,10 +87,11 @@ export function PlayHubPage() {
   const showToast = useAppStore((s) => s.showToast);
   const me = useAuthStore((s) => s.me);
 
-  // Online modes require an account. A logged-out visitor is sent to sign in
-  // first (and returned to the game afterwards). Guests count as logged in.
-  const requireLogin = (next: string) => {
-    if (me) {
+  // Online modes require a session. Casual/private allow guests; Ranked requires
+  // a real (non-guest) account per owner mandate. A visitor who fails the gate is
+  // sent to sign in first (and returned to the game afterwards).
+  const requireLogin = (next: string, requireAccount = false) => {
+    if (me && (!requireAccount || !me.isGuest)) {
       navigate(next);
     } else {
       showToast("Sign in to play online.");
@@ -113,7 +114,7 @@ export function PlayHubPage() {
       tagStyle: pmTag("#ff9aa6", "rgba(180,60,70,.18)"),
       desc: "Compete on the ladder. Win for +25 trophies to climb the rankings.",
       icon: <Medal src={`${ASSET}/mode-ranked.webp`} size={62} />,
-      onSelect: () => requireLogin("/play/online?mode=ranked"),
+      onSelect: () => requireLogin("/play/online?mode=ranked", true),
     },
     {
       title: "Play vs AI",

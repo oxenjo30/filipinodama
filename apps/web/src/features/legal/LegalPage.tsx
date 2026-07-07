@@ -262,8 +262,18 @@ const TABS: { key: LegalKey; label: string; icon: string }[] = [
   { key: "data", label: "Data & Account", icon: "🗂️" },
 ];
 
-export function LegalPage() {
-  const [legalTab, setLegalTab] = useState<LegalKey>("privacy");
+const LEGAL_KEYS: LegalKey[] = ["privacy", "terms", "community", "data"];
+function isLegalKey(v: string | undefined): v is LegalKey {
+  return !!v && (LEGAL_KEYS as string[]).includes(v);
+}
+
+/**
+ * `doc` selects which policy document opens first. It comes from the URL — the
+ * footer links to /privacy, /terms, /community, /data (and /legal → privacy),
+ * so each footer entry deep-links to its document rather than 404ing.
+ */
+export function LegalPage({ doc = "privacy" }: { doc?: LegalKey } = {}) {
+  const [legalTab, setLegalTab] = useState<LegalKey>(isLegalKey(doc) ? doc : "privacy");
   const legalDoc = LEGAL_DATA[legalTab];
 
   return (

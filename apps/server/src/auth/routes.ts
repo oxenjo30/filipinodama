@@ -5,7 +5,7 @@ import { prisma } from "../db/client.js";
 import { ok, ApiError, fail } from "../lib/errors.js";
 import { features } from "../config/env.js";
 import { attachUser, requireAuth } from "./guards.js";
-import { signAccess, COOKIE, cookieOpts, ttlToMs } from "./tokens.js";
+import { signAccess, COOKIE, cookieOpts, clearCookieOpts, ttlToMs } from "./tokens.js";
 import { env } from "../config/env.js";
 import * as svc from "./service.js";
 import { type OAuthProvider, isConfigured, makeState, consumeState, authUrl, fetchProfile, findOrCreateOAuthUser } from "./oauth.js";
@@ -26,9 +26,18 @@ async function issueSession(reply: any, req: any, user: any) {
     .setCookie(COOKIE.refresh, refresh, cookieOpts(refreshMs));
 }
 
+/**
+ * Strict per-route throttle for credential/abuse-prone endpoints, keyed by IP.
+ * Layered ON TOP of the global 300/min limit registered in index.ts. Brute-force
+ * on login, account/guest creation spam, and reset-email flooding are the risks.
+ */
+const strictLimit = (max: number, timeWindow: string) => ({
+  config: { rateLimit: { max, timeWindow } },
+});
+
 export async function authRoutes(app: FastifyInstance) {
   // POST /api/auth/register
-  app.post("/register", async (req, reply) => {
+  app.post("/register", strictLimit(10, "10 minutes"), async (req, reply) => {
     const input = registerSchema.parse(req.body);
     const user = await svc.register(prisma, input);
     await issueSession(reply, req, user);
@@ -42,16 +51,16 @@ export async function authRoutes(app: FastifyInstance) {
     return ok({ user: svc.publicUser(user) });
   });
 
-  // POST /api/auth/login
-  app.post("/login", async (req, reply) => {
+  // POST /api/auth/login — tight limit: online password guessing defense.
+  app.post("/login", strictLimit(10, "5 minutes"), async (req, reply) => {
     const input = loginSchema.parse(req.body);
     const user = await svc.login(prisma, input);
     await issueSession(reply, req, user);
     return ok({ user: svc.publicUser(user) });
   });
 
-  // POST /api/auth/guest
-  app.post("/guest", async (req, reply) => {
+  // POST /api/auth/guest — cap mass guest-account creation from one IP.
+  app.post("/guest", strictLimit(20, "10 minutes"), async (req, reply) => {
     const user = await svc.createGuest(prisma);
     await issueSession(reply, req, user);
     return ok({ user: svc.publicUser(user) });
@@ -71,37 +80,50 @@ export async function authRoutes(app: FastifyInstance) {
   // POST /api/auth/logout
   app.post("/logout", async (req, reply) => {
     await svc.endSession(prisma, (req.cookies as any)?.[COOKIE.refresh]);
-    reply.clearCookie(COOKIE.access, { path: "/" }).clearCookie(COOKIE.refresh, { path: "/" });
+    reply.clearCookie(COOKIE.access, clearCookieOpts()).clearCookie(COOKIE.refresh, clearCookieOpts());
     return ok({ loggedOut: true });
   });
 
-  // POST /api/auth/password/forgot
-  app.post("/password/forgot", async (req) => {
+  // POST /api/auth/password/forgot — cap reset-email flooding (Resend cost + inbox abuse).
+  app.post("/password/forgot", strictLimit(5, "15 minutes"), async (req) => {
     const { email } = forgotSchema.parse(req.body);
     await svc.requestPasswordReset(prisma, email);
     return ok({ sent: true }); // always ok (no email enumeration)
   });
 
-  // POST /api/auth/password/reset
-  app.post("/password/reset", async (req) => {
+  // POST /api/auth/password/reset — cap token-guessing.
+  app.post("/password/reset", strictLimit(10, "15 minutes"), async (req) => {
     const { token, password } = resetSchema.parse(req.body);
     await svc.resetPassword(prisma, token, password);
     return ok({ reset: true });
   });
 
-  // GET /api/auth/me
-  app.get("/me", { preHandler: requireAuth }, async (req) => {
-    const user = await prisma.user.findUnique({ where: { id: req.userId! } });
-    if (!user) return fail("NOT_FOUND", "User not found");
+  // GET /api/auth/me — the app's boot "who am I" probe.
+  //
+  // Optional auth: a signed-in caller gets their user; an anonymous caller gets
+  // { user: null } with 200 (NOT a 401). This is deliberate — the client calls
+  // this on every load to hydrate the session, and a logged-out visit is a normal
+  // state, not an error. Returning 401 here made the browser log a console error
+  // (and triggered a needless refresh attempt) on every logged-out page load,
+  // violating the "no console errors" bar.
+  app.get("/me", { preHandler: attachUser }, async (req) => {
+    if (!req.userId) return ok({ user: null });
+    const user = await prisma.user.findUnique({ where: { id: req.userId } });
+    if (!user || user.deletedAt) return ok({ user: null });
     return ok({ user: svc.publicUser(user) });
   });
 
+  // Only allow returning to a same-origin relative path (guards against an
+  // open redirect via a crafted ?next=). Anything else falls back to home.
+  const safeNext = (n: unknown): string =>
+    typeof n === "string" && n.startsWith("/") && !n.startsWith("//") ? n : "/";
+
   // GET /api/auth/oauth/:provider → redirect to the provider's consent screen
-  app.get<{ Params: { provider: string } }>("/oauth/:provider", async (req, reply) => {
+  app.get<{ Params: { provider: string }; Querystring: { next?: string } }>("/oauth/:provider", async (req, reply) => {
     const p = req.params.provider as OAuthProvider;
     if (p !== "google" && p !== "facebook") throw new ApiError(404, "UNKNOWN_PROVIDER", "Unknown provider");
     if (!isConfigured(p)) throw new ApiError(503, "NOT_CONFIGURED", `${p} sign-in is not configured yet`);
-    const state = makeState();
+    const state = makeState(safeNext(req.query.next));
     reply.redirect(authUrl(p, state));
   });
 
@@ -115,12 +137,14 @@ export async function authRoutes(app: FastifyInstance) {
       if (p !== "google" && p !== "facebook") return fail("Unknown provider");
       if (!isConfigured(p)) return fail(`${p} sign-in is not configured`);
       if (error) return fail("Sign-in was cancelled");
-      if (!code || !state || !consumeState(state)) return fail("Sign-in expired, please try again");
+      // consumeState returns the stored `next` path (or null if invalid/expired).
+      const next = code && state ? consumeState(state) : null;
+      if (!code || !state || next === null) return fail("Sign-in expired, please try again");
       try {
         const profile = await fetchProfile(p, code);
         const user = await findOrCreateOAuthUser(p, profile);
         await issueSession(reply, req, user);
-        return reply.redirect(`${env.WEB_ORIGIN}/`);
+        return reply.redirect(`${env.WEB_ORIGIN}${safeNext(next)}`);
       } catch {
         return fail("Sign-in failed, please try again");
       }
@@ -129,7 +153,7 @@ export async function authRoutes(app: FastifyInstance) {
 
   // expose which login methods are live so the client can enable/disable buttons
   app.get("/providers", async (req) => {
-    attachUser(req);
+    await attachUser(req);
     return ok({
       email: true,
       guest: true,

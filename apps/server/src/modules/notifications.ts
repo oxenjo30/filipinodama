@@ -7,7 +7,12 @@ import { requireAuth } from "../auth/guards.js";
 const listQuerySchema = z.object({
   cursor: z.string().optional(),
   limit: z.coerce.number().int().min(1).max(50).optional().default(20),
-  unread: z.coerce.boolean().optional(),
+  // NB: z.coerce.boolean() is wrong for query strings — it Boolean()-coerces, so
+  // "false" → true. Match the literal string instead: only "true"/"1" mean true.
+  unread: z
+    .enum(["true", "false", "1", "0"])
+    .optional()
+    .transform((v) => v === "true" || v === "1"),
 });
 
 /** Bucket a timestamp into a coarse date group for UI section headers. */

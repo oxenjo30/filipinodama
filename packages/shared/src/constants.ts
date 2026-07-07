@@ -10,6 +10,7 @@ export const ECONOMY = {
 
 export const LIMITS = {
   chatPerMinute: 20,
+  chatBodyMax: 500,
   usernameMin: 3,
   usernameMax: 16,
   bioMax: 240,

@@ -8,7 +8,11 @@ import { useAppStore } from "../../stores/appStore";
 import { useAuthStore } from "../../stores/authStore";
 import { PlayerPanel } from "./PlayerPanel";
 import { Modal } from "../shared/Modal";
+import { LoadingScreen } from "../shared/LoadingScreen";
 import { emblem } from "../../lib/emblems";
+
+/** How long the pre-match loader shows before the board appears (handoff: 3.4s). */
+const LOADER_MS = 3400;
 
 const DIFF_LABEL: Record<AiDifficulty, string> = {
   easy: "Easy",
@@ -16,11 +20,11 @@ const DIFF_LABEL: Record<AiDifficulty, string> = {
   hard: "Hard",
 };
 
-/** AI opponent's display name per difficulty (flavour). */
+/** AI opponent's display name per difficulty (short, single-line flavour). */
 const AI_NAME: Record<AiDifficulty, string> = {
-  easy: "Apprentice Bot",
-  normal: "Tactician Bot",
-  hard: "Grandmaster Bot",
+  easy: "Apprentice",
+  normal: "Tactician",
+  hard: "Master",
 };
 
 /** Quick-chat emotes from the prototype. */
@@ -69,8 +73,8 @@ export function GamePage() {
   const skin = useSettingsStore((s) => s.skin);
   const showToast = useAppStore((s) => s.showToast);
 
-  // Human panel reflects the REAL signed-in account (or a guest session) — never
-  // a fake identity. Falls back to a neutral "Guest" with a zeroed rating when
+  // Human panel reflects the REAL signed-in account (or guest session) — never a
+  // fake identity. Falls back to a neutral "Guest" with a zeroed rating when
   // nobody is logged in, matching the nav's convention (see AppLayout).
   const me = useAuthStore((s) => s.me);
   const displayName = me?.displayName ?? "Guest";
@@ -93,10 +97,16 @@ export function GamePage() {
   } = useGameStore();
 
   const [chatDraft, setChatDraft] = useState("");
+  // Pre-match loader (handoff `playWithLoader`): show the themed loading screen,
+  // then start a fresh match. Offline vs-AI uses the "default" context.
+  const [loading, setLoading] = useState(true);
 
-  // Start a fresh match for the chosen difficulty when the screen mounts.
   useEffect(() => {
-    newGame(difficulty);
+    const t = window.setTimeout(() => {
+      newGame(difficulty);
+      setLoading(false);
+    }, LOADER_MS);
+    return () => window.clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -106,6 +116,18 @@ export function GamePage() {
 
   const rows = toRows(state.history);
 
+  // Online-play gate (mirrors PlayHubPage.requireLogin). A logged-out visitor is
+  // sent to sign in first and returned to the match afterwards. Casual allows
+  // guests; Ranked requires a real (non-guest) account per owner mandate.
+  const goOnline = (next: string, requireAccount = false) => {
+    if (me && (!requireAccount || !me.isGuest)) {
+      navigate(next);
+    } else {
+      showToast("Sign in to play online.");
+      navigate(`/login?next=${encodeURIComponent(next)}`);
+    }
+  };
+
   function sendChat() {
     const msg = chatDraft.trim();
     if (!msg) return;
@@ -113,10 +135,10 @@ export function GamePage() {
     showToast("In-game chat arrives with online play.");
   }
 
-  // "Explore Game Modes" cards → honest destinations (only Play vs AI is built).
+  // "Explore Game Modes" cards → real destinations where built.
   function onMode(title: string) {
     if (title === "Play vs AI" || title === "Classic Mode") navigate("/play/ai");
-    else if (title === "Ranked Mode") showToast("Ranked matchmaking arrives with online play.");
+    else if (title === "Ranked Mode") goOnline("/play/online?mode=ranked", true);
     else showToast("Kingdom Mode is coming soon.");
   }
 
@@ -160,6 +182,10 @@ export function GamePage() {
         ? "linear-gradient(180deg,#f0cf72,#c99a2e)"
         : "linear-gradient(180deg,#a83744,#6e1b24)";
 
+  // Themed pre-match loader (offline vs-AI → "default" context). The background
+  // art mirrors the equipped piece skin so the loader previews your cosmetics.
+  if (loading) return <LoadingScreen context="default" skin={skin} />;
+
   return (
     <div
       className="fd-game-grid"
@@ -168,7 +194,7 @@ export function GamePage() {
         margin: "0 auto",
         padding: "22px 26px",
         display: "grid",
-        gridTemplateColumns: "270px minmax(0,1fr) 300px",
+        gridTemplateColumns: "300px minmax(0,1fr) 300px",
         gap: 18,
         alignItems: "start",
       }}
@@ -239,7 +265,7 @@ export function GamePage() {
           captured={redCaptured}
         />
 
-        <Button variant="red" block onClick={() => showToast("Online play arrives soon.")}>
+        <Button variant="red" block onClick={() => goOnline("/play/online?mode=casual")}>
           🌐 Play Online
         </Button>
         <Button variant="purple" block onClick={() => rematch()}>

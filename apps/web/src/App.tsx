@@ -27,7 +27,7 @@ import { OrdersPage } from "./features/orders/OrdersPage";
 import { useAuthStore } from "./stores/authStore";
 
 /**
- * App â€” router + shared layout.
+ * App — router + shared layout.
  *
  * Fully built: Home (/), Play hub (/play), AI setup (/play/ai) and the playable
  * VS-AI game (/play/ai/game). Auth screens live at /login and /register. Every
@@ -64,7 +64,7 @@ export function App() {
           letterSpacing: "2px",
         }}
       >
-        <span style={{ opacity: 0.7 }}>Loadingâ€¦</span>
+        <span style={{ opacity: 0.7 }}>Loading…</span>
       </div>
     );
   }
@@ -72,12 +72,12 @@ export function App() {
   return (
     <BrowserRouter>
       <Routes>
-        {/* â”€â”€ auth (no AppLayout chrome â€” full-screen) â”€â”€ */}
+        {/* ── auth (no AppLayout chrome — full-screen) ── */}
         <Route path="/login" element={<AuthPage initialMode="signin" />} />
         <Route path="/register" element={<AuthPage initialMode="signup" />} />
 
         <Route element={<AppLayout />}>
-          {/* â”€â”€ fully built â”€â”€ */}
+          {/* ── fully built ── */}
           <Route path="/" element={<HomePage />} />
           <Route path="/play" element={<PlayHubPage />} />
           <Route path="/play/ai" element={<AiSetupPage />} />
@@ -86,7 +86,7 @@ export function App() {
           <Route path="/spectate" element={<SpectatePage />} />
           <Route path="/rooms" element={<PrivateRoomPage />} />
 
-          {/* â”€â”€ styled placeholders (no dead links) â”€â”€ */}
+          {/* ── styled placeholders (no dead links) ── */}
           <Route path="/leaderboard" element={<LeaderboardPage />} />
           <Route path="/learn" element={<LearnPage />} />
           <Route path="/learn/:id" element={<LessonPage />} />
@@ -100,11 +100,16 @@ export function App() {
           <Route path="/season" element={<SeasonPage />} />
           <Route path="/settings" element={<SettingsPage />} />
           <Route path="/legal" element={<LegalPage />} />
+          {/* Per-document legal deep-links (footer menu targets these). */}
+          <Route path="/privacy" element={<LegalPage doc="privacy" />} />
+          <Route path="/terms" element={<LegalPage doc="terms" />} />
+          <Route path="/community" element={<LegalPage doc="community" />} />
+          <Route path="/data" element={<LegalPage doc="data" />} />
           <Route path="/contact" element={<ContactPage />} />
           <Route path="/matchmaking" element={<ComingSoon title="Matchmaking" />} />
 
-          {/* â”€â”€ catch-all â”€â”€ */}
-          <Route path="*" element={<ComingSoon title="Not Found" eyebrow="âœ¦ Off the Map âœ¦" blurb="This page doesn't exist yet. Head back and pick a battle." />} />
+          {/* ── catch-all ── */}
+          <Route path="*" element={<ComingSoon title="Not Found" eyebrow="✦ Off the Map ✦" blurb="This page doesn't exist yet. Head back and pick a battle." />} />
         </Route>
       </Routes>
     </BrowserRouter>

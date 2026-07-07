@@ -87,3 +87,109 @@ export function frameArt(key: FrameKey | (string & {})): string {
 export const BRAND = {
   logoSun: `${BASE}/logo-sun.png`,
 } as const;
+
+/**
+ * Guild crests — the ornate heraldic emblem art a guild displays on its banner,
+ * in the roster/browser, and in the create/edit crest picker. These are real
+ * PNG renders (flat filenames, `me-*.png`), ported from the handoff's `_GEMBLEMS`
+ * list. `crestKey` (the value stored per-guild on the server) is a key of this
+ * map; `guildCrest()` resolves it, falling back to a stable per-guild pick.
+ */
+export const CRESTS = {
+  vanguard: { src: `${BASE}/me-guild.png`, name: "Vanguard Star" },
+  crown: { src: `${BASE}/me-crown.png`, name: "Sovereign Crown" },
+  swords: { src: `${BASE}/me-swords.png`, name: "Crossed Blades" },
+  citadel: { src: `${BASE}/me-castle.png`, name: "Iron Citadel" },
+  marksman: { src: `${BASE}/me-target.png`, name: "Marksman" },
+  banner: { src: `${BASE}/me-banner.png`, name: "Royal Banner" },
+} as const;
+export type CrestKey = keyof typeof CRESTS;
+export const CREST_KEYS = Object.keys(CRESTS) as CrestKey[];
+
+/**
+ * Resolve a guild's crest art. If `crestKey` names a known crest, use it;
+ * otherwise deterministically pick one from `seed` (the guild id) so every guild
+ * gets a stable crest even before one is chosen. Guarantees a real image — never
+ * an emoji.
+ */
+export function guildCrest(
+  crestKey: string | null | undefined,
+  seed = "",
+): { key: CrestKey; src: string; name: string } {
+  if (crestKey && crestKey in CRESTS) {
+    const key = crestKey as CrestKey;
+    return { key, ...CRESTS[key] };
+  }
+  let h = 0;
+  for (let i = 0; i < seed.length; i++) h = (h * 31 + seed.charCodeAt(i)) >>> 0;
+  const key = CREST_KEYS[h % CREST_KEYS.length];
+  return { key, ...CRESTS[key] };
+}
+
+/**
+ * Pre-match loading-screen backgrounds (in the loading/ subfolder, per ASSETS.md).
+ *
+ * Each art set ships a landscape image plus a `-portrait` variant for tall
+ * viewports. The handoff's loader is driven by a `loadingCtx` of "matchmaking",
+ * "ranked", or "default" (see `playWithLoader`); the "default" (offline vs-AI /
+ * local) board additionally reflects the player's equipped piece skin so the
+ * loader previews the cosmetics they're about to play with:
+ *
+ *   matchmaking      → load-matchmaking  (casual online pairing)
+ *   ranked           → load-throne       (the arena / ranked ladder)
+ *   default + crimson→ load-crimson
+ *   default + jade   → load-jade
+ *   default + obsidian→ load-obsidian
+ *   default + classic→ load-throne       (no skin equipped)
+ *
+ * (`load-victory` is reserved for the post-match win screen, not the loader.)
+ */
+const LOADING_STEMS = [
+  "matchmaking",
+  "throne",
+  "victory",
+  "crimson",
+  "jade",
+  "obsidian",
+] as const;
+export type LoadingArtStem = (typeof LOADING_STEMS)[number];
+
+/** Landscape + portrait URLs for a loading-art set. */
+export type LoadingArt = { landscape: string; portrait: string };
+
+export const LOADING: Record<LoadingArtStem, LoadingArt> = Object.fromEntries(
+  LOADING_STEMS.map((stem) => [
+    stem,
+    {
+      landscape: `${BASE}/loading/load-${stem}.webp`,
+      portrait: `${BASE}/loading/load-${stem}-portrait.webp`,
+    },
+  ]),
+) as Record<LoadingArtStem, LoadingArt>;
+
+/** The loader contexts the app actually passes (mirrors the handoff's loadingCtx). */
+export type LoadingContext = "matchmaking" | "ranked" | "default";
+
+/**
+ * Resolve the background art for a loading context. For the offline/default
+ * context the equipped piece `skin` selects a skin-themed backdrop; "classic"
+ * (no skin) and the online contexts fall back to their fixed art.
+ */
+export function loadingArt(
+  context: LoadingContext,
+  skin: PieceSkin = "default",
+): LoadingArt {
+  if (context === "matchmaking") return LOADING.matchmaking;
+  if (context === "ranked") return LOADING.throne;
+  // "default" → mirror the equipped skin (throne for classic/none).
+  switch (skin) {
+    case "crimson":
+      return LOADING.crimson;
+    case "jade":
+      return LOADING.jade;
+    case "obsidian":
+      return LOADING.obsidian;
+    default:
+      return LOADING.throne;
+  }
+}

@@ -3,7 +3,6 @@ import { useNavigate } from "react-router-dom";
 import { RANK_TIERS, rankTierFor } from "@dama/shared";
 import { Avatar } from "../../components";
 import { api } from "../../lib/api";
-import { useAppStore } from "../../stores/appStore";
 import { useAuthStore } from "../../stores/authStore";
 
 /**
@@ -21,7 +20,11 @@ import { useAuthStore } from "../../stores/authStore";
  * (server returns `me`), we show their true rank/trophies/streak; otherwise we
  * show an HONEST unranked state — never a fabricated #37 / Top 1%.
  * Friends/Guild scopes with no roster render an honest empty state.
- * Logged out (me === null): a sign-in prompt, no fetch, no crash.
+ *
+ * PUBLIC by default: the GLOBAL ladder, Top Guilds rail and season timer are
+ * shown to everyone, signed in or not. Only the identity-scoped surfaces —
+ * the Friends/Guild tabs and the personal "Your Rank" / "Rank Progress" cards —
+ * require sign-in, and prompt for it inline rather than gating the whole page.
  */
 
 type TierInfo = { key: string; label: string; sub: string; accent: string; img: string };
@@ -76,9 +79,7 @@ function countdown(ms: number): string {
 
 export function LeaderboardPage() {
   const navigate = useNavigate();
-  const showToast = useAppStore((s) => s.showToast);
   const me = useAuthStore((s) => s.me);
-  const ready = useAuthStore((s) => s.ready);
 
   const [scope, setScope] = useState<Scope>("global");
   const [data, setData] = useState<LbResponse | null>(null);
@@ -95,9 +96,17 @@ export function LeaderboardPage() {
     return () => clearInterval(t);
   }, []);
 
-  // Ladder for the active scope.
+  // Friends/Guild ladders are identity-scoped; they need a signed-in user.
+  const needsAuth = (scope === "friends" || scope === "guild") && !me;
+
+  // Ladder for the active scope. Global is public; friends/guild need auth
+  // (we skip the fetch when signed out and prompt for sign-in inline instead).
   useEffect(() => {
-    if (!me) return;
+    if (needsAuth) {
+      setData(null);
+      setLoading(false);
+      return;
+    }
     let cancelled = false;
     setLoading(true);
     setError(null);
@@ -115,11 +124,11 @@ export function LeaderboardPage() {
     return () => {
       cancelled = true;
     };
-  }, [scope, me]);
+  }, [scope, me, needsAuth]);
 
-  // Ambient rails (real): top guilds + current season. Fetched once.
+  // Ambient rails (real): top guilds + current season. Public — fetched once
+  // for everyone, signed in or not.
   useEffect(() => {
-    if (!me) return;
     let cancelled = false;
     api
       .get<{ guilds: GuildRow[] }>("/api/guilds")
@@ -140,7 +149,7 @@ export function LeaderboardPage() {
     return () => {
       cancelled = true;
     };
-  }, [me]);
+  }, []);
 
   const rows = data?.rows ?? [];
   const podium = rows.slice(0, 3);
@@ -155,7 +164,6 @@ export function LeaderboardPage() {
   // Live Climbers: the real top movers on the GLOBAL board (honest — no fake deltas).
   const [climbers, setClimbers] = useState<LbRow[]>([]);
   useEffect(() => {
-    if (!me) return;
     if (scope === "global" && rows.length) {
       setClimbers(rows.slice(0, 5));
       return;
@@ -172,7 +180,7 @@ export function LeaderboardPage() {
     return () => {
       cancelled = true;
     };
-  }, [scope, rows, me]);
+  }, [scope, rows]);
 
   // Your-rank surfaces: real when placed, honest unranked otherwise.
   const myTier = me ? rankTierFor(me.trophies) : null;
@@ -187,24 +195,6 @@ export function LeaderboardPage() {
     const into = me.trophies - myTier.min;
     return { cur: into, max: span, pct: Math.max(0, Math.min(100, (into / span) * 100)) };
   }, [me, myTier, nextTier]);
-
-  // ---- Logged-out guard ---------------------------------------------------
-  if (ready && !me) {
-    return (
-      <div style={{ maxWidth: 560, margin: "80px auto", padding: 26 }}>
-        <div className="frame" style={{ padding: 34, textAlign: "center" }}>
-          <div style={{ fontSize: 40, marginBottom: 12 }}>🏆</div>
-          <div style={{ font: "800 22px Cinzel,serif", color: "var(--gold-lt)" }}>Sign in to see the ladder</div>
-          <div style={{ font: "400 13px Inter", color: "var(--ink)", margin: "10px 0 20px" }}>
-            The leaderboard shows real players ranked by trophies. Sign in to view your standing.
-          </div>
-          <button className="btn btn-purple" onClick={() => navigate("/login")}>
-            Sign In
-          </button>
-        </div>
-      </div>
-    );
-  }
 
   return (
     <div className="fd-lb-grid" style={{ maxWidth: 1560, margin: "0 auto", padding: 26, display: "grid", gridTemplateColumns: "280px minmax(0,1fr) 300px", gap: 20, alignItems: "start" }}>
@@ -224,8 +214,13 @@ export function LeaderboardPage() {
             const stats = [
               { k: "Ranked Players", v: (scope === "global" ? rows.length : climbers.length).toLocaleString() },
               { k: "Top Rating", v: (global[0]?.trophies ?? 0).toLocaleString() },
-              { k: "Your Trophies", v: (me?.trophies ?? 0).toLocaleString() },
-              { k: "Your Wins", v: (me?.wins ?? 0).toLocaleString() },
+              // Personal rows only when signed in — never imply "0" for anonymous visitors.
+              ...(me
+                ? [
+                    { k: "Your Trophies", v: me.trophies.toLocaleString() },
+                    { k: "Your Wins", v: me.wins.toLocaleString() },
+                  ]
+                : []),
               { k: "Days Left", v: season ? String(Math.max(0, Math.floor((new Date(season.endsAt).getTime() - now) / 86400000))) : "—" },
             ];
             return stats.map((st) => (
@@ -282,7 +277,21 @@ export function LeaderboardPage() {
           <span style={{ display: "inline-flex", alignItems: "center", gap: 7, font: "600 12px Inter", color: "var(--ink)" }}>⏳ {endsText}</span>
         </div>
 
-        {loading ? (
+        {needsAuth ? (
+          <div className="frame" style={{ padding: "44px 20px", textAlign: "center" }}>
+            <div style={{ fontSize: 34, marginBottom: 10 }}>{scope === "friends" ? "🤝" : "🛡"}</div>
+            <div style={{ font: "700 16px Cinzel,serif", color: "var(--gold-lt)" }}>
+              Sign in to see the {scope === "friends" ? "friends" : "guild"} ladder
+            </div>
+            <div style={{ font: "400 13px Inter", color: "var(--ink)", margin: "8px 0 18px" }}>
+              The Global ladder is open to everyone — sign in to compare against your{" "}
+              {scope === "friends" ? "friends" : "guild"}.
+            </div>
+            <button className="btn btn-purple" onClick={() => navigate("/login")}>
+              Sign In
+            </button>
+          </div>
+        ) : loading ? (
           <div className="frame" style={{ padding: "44px 20px", textAlign: "center", color: "var(--ink2)", font: "600 14px Inter" }}>Loading the ladder…</div>
         ) : error ? (
           <div className="frame" style={{ padding: "44px 20px", textAlign: "center" }}>
@@ -393,7 +402,14 @@ export function LeaderboardPage() {
       <div style={{ display: "flex", flexDirection: "column", gap: 18 }}>
         <div className="frame" style={{ padding: 22, textAlign: "center" }}>
           <div className="ptitle">Your Rank</div>
-          {youRow ? (
+          {!me ? (
+            <>
+              <img src={SB("medal-3.png")} alt="" style={{ width: 72, height: 72, objectFit: "contain", margin: "0 auto", display: "block", opacity: 0.5, filter: "grayscale(.6)" }} />
+              <div style={{ font: "800 22px 'JetBrains Mono',monospace", color: "var(--ink2)", marginTop: 6 }}>Sign in</div>
+              <div style={{ font: "600 12px Inter", color: "var(--ink2)" }}>Sign in to track your standing</div>
+              <button className="btn btn-purple" onClick={() => navigate("/login")} style={{ width: "100%", marginTop: 14 }}>Sign In</button>
+            </>
+          ) : youRow ? (
             <>
               <img src={SB(MEDALS[Math.min(youRow.rank, 3) - 1] ?? "medal-3.png")} alt="" style={{ width: 72, height: 72, objectFit: "contain", margin: "0 auto", display: "block" }} />
               <div style={{ font: "800 34px 'JetBrains Mono',monospace", color: "var(--gold-lt)", marginTop: 6 }}>#{youRow.rank}</div>
@@ -405,20 +421,22 @@ export function LeaderboardPage() {
               <img src={SB("medal-3.png")} alt="" style={{ width: 72, height: 72, objectFit: "contain", margin: "0 auto", display: "block", opacity: 0.5, filter: "grayscale(.6)" }} />
               <div style={{ font: "800 22px 'JetBrains Mono',monospace", color: "var(--ink2)", marginTop: 6 }}>Unranked</div>
               <div style={{ font: "600 12px Inter", color: "var(--ink2)" }}>Play ranked to get placed</div>
-              <button className="btn btn-red" onClick={() => showToast("Ranked matchmaking arrives with online play.")} style={{ width: "100%", marginTop: 14 }}>Play Ranked</button>
+              <button className="btn btn-red" onClick={() => navigate(me && !me.isGuest ? "/play/online?mode=ranked" : "/login?next=/play/online?mode=ranked")} style={{ width: "100%", marginTop: 14 }}>Play Ranked</button>
             </>
           )}
         </div>
-        <div className="frame" style={{ padding: 20 }}>
-          <div className="ptitle">Rank Progress</div>
-          <div style={{ height: 14, borderRadius: 100, background: "rgba(0,0,0,.4)", border: "1px solid rgba(232,184,75,.25)", overflow: "hidden" }}>
-            <div style={{ width: `${rankProgress.pct}%`, height: "100%", background: "linear-gradient(90deg,#c99a2e,#f5d88a)" }} />
+        {me && (
+          <div className="frame" style={{ padding: 20 }}>
+            <div className="ptitle">Rank Progress</div>
+            <div style={{ height: 14, borderRadius: 100, background: "rgba(0,0,0,.4)", border: "1px solid rgba(232,184,75,.25)", overflow: "hidden" }}>
+              <div style={{ width: `${rankProgress.pct}%`, height: "100%", background: "linear-gradient(90deg,#c99a2e,#f5d88a)" }} />
+            </div>
+            <div style={{ display: "flex", justifyContent: "space-between", marginTop: 7 }}>
+              <span style={{ font: "700 12px 'JetBrains Mono',monospace", color: "var(--ink)" }}>{rankProgress.cur} / {rankProgress.max}</span>
+              <span style={{ font: "500 11px Inter", color: "var(--ink2)" }}>{nextTier ? `To ${nextTier.label}` : "Max tier reached"}</span>
+            </div>
           </div>
-          <div style={{ display: "flex", justifyContent: "space-between", marginTop: 7 }}>
-            <span style={{ font: "700 12px 'JetBrains Mono',monospace", color: "var(--ink)" }}>{rankProgress.cur} / {rankProgress.max}</span>
-            <span style={{ font: "500 11px Inter", color: "var(--ink2)" }}>{nextTier ? `To ${nextTier.label}` : "Max tier reached"}</span>
-          </div>
-        </div>
+        )}
         <div className="frame" style={{ padding: 20 }}>
           <div className="ptitle">Live Climbers</div>
           {climbers.length === 0 ? (

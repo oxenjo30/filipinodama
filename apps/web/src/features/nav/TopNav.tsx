@@ -1,8 +1,10 @@
+import { useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { CurrencyPill, Avatar } from "../../components";
 import { BRAND } from "../../lib/assets";
 import { useAppStore } from "../../stores/appStore";
 import { NAV_LINKS, isNavActive } from "./navLinks";
+import { NotificationsMenu } from "./NotificationsMenu";
 
 /**
  * TopNav — the sticky desktop header from the prototype: brand lockup (logo +
@@ -13,8 +15,9 @@ import { NAV_LINKS, isNavActive } from "./navLinks";
 export function TopNav() {
   const navigate = useNavigate();
   const { pathname } = useLocation();
-  const { displayName, playerTag, avatar, gold, diamonds, trophies, showToast } =
-    useAppStore();
+  const { displayName, playerTag, avatar, gold, diamonds, trophies } = useAppStore();
+  const [notifOpen, setNotifOpen] = useState(false);
+  const [notifUnread, setNotifUnread] = useState(0);
 
   return (
     <header
@@ -124,10 +127,11 @@ export function TopNav() {
             </div>
           </div>
           <button
-            onClick={() => showToast("Notifications are coming soon.")}
+            onClick={() => setNotifOpen((o) => !o)}
             title="Notifications"
             className="fd-hide-narrow"
             style={{
+              position: "relative",
               width: 40,
               height: 40,
               borderRadius: 10,
@@ -139,9 +143,37 @@ export function TopNav() {
             }}
           >
             🔔
+            {notifUnread > 0 && (
+              <span
+                style={{
+                  position: "absolute",
+                  top: -5,
+                  right: -5,
+                  minWidth: 17,
+                  height: 17,
+                  padding: "0 4px",
+                  borderRadius: 9,
+                  background: "linear-gradient(180deg,#e0555f,#a8202f)",
+                  color: "#fff",
+                  font: "800 10px Inter",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  border: "2px solid #150a24",
+                  boxShadow: "0 2px 6px rgba(0,0,0,.5)",
+                }}
+              >
+                {notifUnread > 9 ? "9+" : notifUnread}
+              </span>
+            )}
           </button>
         </div>
       </div>
+      <NotificationsMenu
+        open={notifOpen}
+        onClose={() => setNotifOpen(false)}
+        onUnreadChange={setNotifUnread}
+      />
     </header>
   );
 }

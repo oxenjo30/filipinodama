@@ -153,6 +153,13 @@ export async function startSession(prisma: PrismaClient, userId: string, userAge
 export async function rotateSession(prisma: PrismaClient, oldToken: string, userAgent?: string) {
   const session = await prisma.session.findUnique({ where: { refreshToken: oldToken }, include: { user: true } });
   if (!session || session.expiresAt < new Date()) throw err.unauthorized("BAD_REFRESH", "Session expired");
+  // A ban/delete after login must stop refresh from minting fresh access tokens.
+  if (session.user.deletedAt) {
+    await prisma.session.deleteMany({ where: { userId: session.userId } });
+    throw err.unauthorized("ACCOUNT_GONE", "This account no longer exists");
+  }
+  if (session.user.bannedUntil && session.user.bannedUntil > new Date())
+    throw err.forbidden("BANNED", "This account is suspended");
   await prisma.session.delete({ where: { id: session.id } });
   const refreshToken = await startSession(prisma, session.userId, userAgent);
   return { user: session.user, refreshToken };

@@ -22,17 +22,21 @@ type Profile = { providerId: string; email: string | null; name: string | null; 
 
 const CALLBACK = (p: OAuthProvider) => `${env.OAUTH_CALLBACK_BASE}/api/auth/oauth/${p}/callback`;
 
-// Ephemeral CSRF state store (in-memory; fine for single instance). state → expiry.
-const stateStore = new Map<string, number>();
-export function makeState(): string {
+// Ephemeral CSRF state store (in-memory; fine for single instance). Each state
+// carries its expiry and the post-login `next` path the user was headed to, so
+// the callback can return them there instead of always landing on home.
+type StateEntry = { exp: number; next: string };
+const stateStore = new Map<string, StateEntry>();
+export function makeState(next = "/"): string {
   const s = randomBytes(16).toString("hex");
-  stateStore.set(s, Date.now() + 10 * 60 * 1000);
+  stateStore.set(s, { exp: Date.now() + 10 * 60 * 1000, next });
   return s;
 }
-export function consumeState(s: string): boolean {
-  const exp = stateStore.get(s);
+/** Validate + consume a state; returns the stored `next` path, or null if invalid. */
+export function consumeState(s: string): string | null {
+  const entry = stateStore.get(s);
   stateStore.delete(s);
-  return !!exp && exp > Date.now();
+  return entry && entry.exp > Date.now() ? entry.next : null;
 }
 
 export function isConfigured(p: OAuthProvider): boolean {

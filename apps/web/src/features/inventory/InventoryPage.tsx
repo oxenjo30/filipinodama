@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { api, ApiError } from "../../lib/api";
 import { useAppStore } from "../../stores/appStore";
 import { useAuthStore } from "../../stores/authStore";
+import { StorePreviewModal, type StorePreview } from "../store/StorePreviewModal";
 
 /**
  * InventoryPage — reproduced verbatim from the prototype's Inventory / Locker
@@ -62,25 +63,6 @@ function renderThumb(t: Thumb, size: number): ReactNode {
   return <ImgThumb file={t.file} size={size} />;
 }
 
-// Display metadata keyed by real StoreItem id → the asset file that exists under
-// public/assets. This is presentation only; every owned item still comes from
-// the API. Mirrors the StorePage mapping so the Locker matches the shop.
-const ITEM_THUMB: Record<string, Thumb> = {
-  "board-marble": { kind: "img", file: "board-marble.png" },
-  "board-wood": { kind: "img", file: "board-wood.png" },
-  "board-obsidian": { kind: "img", file: "board-obsidian.png" },
-  "board-ebony": { kind: "img", file: "board-ebony.png" },
-  "skin-classic": { kind: "img", file: "crimson-king.png" },
-  "skin-jade": { kind: "img", file: "jade-king.png" },
-  "skin-obsidian": { kind: "img", file: "obsidian-king.png" },
-  "skin-babaylan": { kind: "portrait", file: "avatars/babaylan.png" },
-  "skin-bagani": { kind: "portrait", file: "avatars/bagani.png" },
-  "skin-mandirigma": { kind: "portrait", file: "avatars/mandirigma.png" },
-  "skin-diwata": { kind: "portrait", file: "avatars/diwata.png" },
-  "skin-ermitanyo": { kind: "portrait", file: "avatars/ermitanyo.png" },
-  "season-pass-s1": { kind: "img", file: "me-crown.png" },
-};
-
 const TYPE_FALLBACK_THUMB: Record<StoreItemApi["type"], Thumb> = {
   BOARD: { kind: "img", file: "board-marble.png" },
   SKIN: { kind: "img", file: "crimson-king.png" },
@@ -91,8 +73,37 @@ const TYPE_FALLBACK_THUMB: Record<StoreItemApi["type"], Thumb> = {
   SEASON_PASS: { kind: "img", file: "me-crown.png" },
 };
 
+/**
+ * Resolve the thumbnail from the item's real type + assetKey — the SAME derivation
+ * the Store uses (StorePage.thumbFor), so the Locker can never drift from the DB
+ * seed. Keyed on assetKey (not the item id), which is the single source of truth.
+ * The Inventory renderer only knows img|portrait, so the classic skin (a CSS disc
+ * in the store) and emotes (emoji glyphs) fall back to a representative image here.
+ */
 function thumbFor(it: StoreItemApi): Thumb {
-  return ITEM_THUMB[it.id] ?? TYPE_FALLBACK_THUMB[it.type];
+  const a = it.assetKey;
+  switch (it.type) {
+    case "BOARD":
+      return { kind: "img", file: a.endsWith(".png") ? a : `board-${a}.png` };
+    case "SKIN":
+      // Premium skins have coin art at pieces/skins/<skin>/red-king.png; the
+      // default "classic" skin has no art file → show the classic crimson coin.
+      return a === "classic"
+        ? { kind: "img", file: "crimson-king.png" }
+        : { kind: "img", file: `pieces/skins/${a}/red-king.png` };
+    case "AVATAR":
+      return { kind: "portrait", file: a.startsWith("avatars/") ? a : `avatars/${a}` };
+    case "FRAME":
+      return { kind: "img", file: a.includes("/") ? a : a };
+    case "EMOTE":
+      return TYPE_FALLBACK_THUMB.EMOTE;
+    case "BUNDLE":
+      return { kind: "img", file: a.endsWith(".png") ? a : "me-banner.png" };
+    case "SEASON_PASS":
+      return { kind: "img", file: "me-crown.png" };
+    default:
+      return TYPE_FALLBACK_THUMB[it.type] ?? { kind: "img", file: "ic-chest.png" };
+  }
 }
 
 // per-type display metadata (group heading label + per-item sub-label)
@@ -120,10 +131,71 @@ type OwnedItem = {
   type: StoreItemApi["type"];
   name: string;
   sub: string;
+  assetKey: string;
+  previewKey: string | null;
   thumb: Thumb;
   slot: "board" | "skin" | "frame" | null;
   hasPreview: boolean;
 };
+
+// ── preview resolution ──
+// Map an owned item to the live StorePreviewModal's shape. Everything visual is
+// derived from the item's real type + assetKey (the same derivation the Store
+// uses), so it can never drift from the DB seed. Owned inventory items are, by
+// definition, already owned, so the modal shows the "✓ Already Owned" chip.
+
+/** The premium skin coin-art folder for a skin, from its assetKey (undefined = default). */
+const SKIN_FOLDERS = new Set(["crimson", "jade", "obsidian"]);
+function skinArtOf(assetKey: string): "crimson" | "jade" | "obsidian" | undefined {
+  return SKIN_FOLDERS.has(assetKey) ? (assetKey as "crimson" | "jade" | "obsidian") : undefined;
+}
+
+/** Emote emoji fallback per item id; the seed's previewKey "emote:<glyph>" wins. */
+const EMOTE_EMOJI: Record<string, string> = {
+  victory: "👑",
+  focused: "🎯",
+  "emote-resolve": "💪",
+};
+function emoteGlyph(it: OwnedItem): string {
+  if (it.previewKey?.startsWith("emote:")) return it.previewKey.slice("emote:".length);
+  return EMOTE_EMOJI[it.id] ?? "👑";
+}
+
+/**
+ * Build a StorePreview for an owned inventory item. Returns null only when the
+ * item genuinely can't map to a preview kind (kept honest — the caller then
+ * hides the preview link). Cosmetics (boards/skins/frames/emotes/avatars) always
+ * map, so they always preview.
+ */
+function previewFor(it: OwnedItem): StorePreview | null {
+  const base = { name: it.name, sub: it.sub, cur: "gold" as const, price: 0, free: false, owned: true };
+
+  if (it.type === "BOARD") {
+    return { ...base, kind: "board", boardFile: it.thumb.kind === "img" ? it.thumb.file : "board-marble.png" };
+  }
+  if (it.type === "SKIN") {
+    // Portrait-style "skins" (babaylan etc.) render as an animated avatar token.
+    if (it.thumb.kind === "portrait") return { ...base, kind: "skin", portraitFile: it.thumb.file, pieceSkin: "default" };
+    // Premium skin → its real coin art (from assetKey); default "Classic" → CSS disc.
+    return { ...base, kind: "skin", skinArt: skinArtOf(it.assetKey), pieceSkin: "default" };
+  }
+  if (it.type === "AVATAR") {
+    return { ...base, kind: "avatar", portraitFile: it.thumb.kind === "portrait" ? it.thumb.file : "avatars/sovereign.png" };
+  }
+  if (it.type === "FRAME") {
+    return { ...base, kind: "frame", frameFile: it.thumb.kind === "img" ? it.thumb.file : "frames/laurel.png" };
+  }
+  if (it.type === "EMOTE") {
+    return { ...base, kind: "emote", emoji: emoteGlyph(it) };
+  }
+  if (it.type === "BUNDLE") {
+    return { ...base, kind: "bundle", bundleItems: [] };
+  }
+  if (it.type === "SEASON_PASS") {
+    return { ...base, kind: "season", bundleItems: [] };
+  }
+  return null;
+}
 
 export function InventoryPage() {
   const me = useAuthStore((s) => s.me);
@@ -135,6 +207,7 @@ export function InventoryPage() {
   const [items, setItems] = useState<OwnedItem[] | null>(null);
   const [loadError, setLoadError] = useState(false);
   const [equipping, setEquipping] = useState<string | null>(null);
+  const [preview, setPreview] = useState<OwnedItem | null>(null); // open preview modal
 
   // Load the real catalog (for metadata) + the user's real inventory, then join.
   useEffect(() => {
@@ -161,13 +234,15 @@ export function InventoryPage() {
               type: it.type,
               name: it.name,
               sub: TYPE_META[it.type].sub,
+              assetKey: it.assetKey,
+              previewKey: it.previewKey,
               thumb: thumbFor(it),
               slot: EQUIP_SLOT[it.type] ?? null,
               hasPreview: !!it.previewKey,
             };
           }
           // Item no longer in the catalog — still render it honestly rather than drop it.
-          return { id: line.itemId, type: "EMOTE", name: line.itemId, sub: "Item", thumb: TYPE_FALLBACK_THUMB.EMOTE, slot: null, hasPreview: false };
+          return { id: line.itemId, type: "EMOTE", name: line.itemId, sub: "Item", assetKey: "", previewKey: null, thumb: TYPE_FALLBACK_THUMB.EMOTE, slot: null, hasPreview: false };
         });
         setItems(owned);
       } catch {
@@ -307,9 +382,9 @@ export function InventoryPage() {
                           {isEquipping ? "…" : "Equip"}
                         </button>
                       )}
-                      {it.hasPreview && (
+                      {it.hasPreview && previewFor(it) != null && (
                         <button
-                          onClick={() => showToast(`${it.name} preview arrives with online play.`)}
+                          onClick={() => setPreview(it)}
                           style={{ marginTop: 9, display: "inline-flex", alignItems: "center", gap: 5, background: "none", border: "none", padding: 0, color: "var(--gold)", font: "700 11px Inter", letterSpacing: ".6px", textTransform: "uppercase", cursor: "pointer" }}
                         >
                           ▶ Preview Animation
@@ -323,6 +398,14 @@ export function InventoryPage() {
           </div>
         ))
       )}
+
+      {/* Inventory item preview modal — opens on a card's "▶ Preview Animation".
+          Owned items always show the "✓ Already Owned" chip (no Buy button). */}
+      <StorePreviewModal
+        pv={preview ? previewFor(preview) : null}
+        onClose={() => setPreview(null)}
+        onBuy={() => setPreview(null)}
+      />
     </div>
   );
 }

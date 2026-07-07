@@ -43,9 +43,12 @@ export function OnlineMatchPage() {
   // an ambient queue indicator (same big-platform exception as players-online).
   const queueCount = 1200 + ((elapsed * 7) % 180) + (mode === "RANKED" ? 84 : 0);
 
-  // Must be logged in (guest is fine) to matchmake.
+  // Must be logged in to matchmake. Casual allows guests; Ranked requires a real
+  // (non-guest) account per owner mandate, so guests/logged-out are sent to sign
+  // in first and returned to the match afterwards. This is the authoritative gate
+  // on the ranked destination (covers direct URLs, not just nav entry points).
   useEffect(() => {
-    if (!me) {
+    if (!me || (mode === "RANKED" && me.isGuest)) {
       navigate(`/login?next=${encodeURIComponent(`/play/online?mode=${mode.toLowerCase()}`)}`);
       return;
     }
@@ -89,7 +92,19 @@ export function OnlineMatchPage() {
             return (
               <button
                 key={m}
-                onClick={() => { if (m !== mode) { leaveQueue(); reset(); navigate(`/play/online?mode=${m.toLowerCase()}`); } }}
+                onClick={() => {
+                  if (m === mode) return;
+                  // Ranked requires a non-guest account; a guest switching to it is
+                  // sent to sign in first (mirrors the entry-point gate).
+                  if (m === "RANKED" && me?.isGuest) {
+                    showToast("Sign in with an account to play Ranked.");
+                    navigate(`/login?next=${encodeURIComponent("/play/online?mode=ranked")}`);
+                    return;
+                  }
+                  leaveQueue();
+                  reset();
+                  navigate(`/play/online?mode=${m.toLowerCase()}`);
+                }}
                 style={{
                   padding: "9px 20px", borderRadius: 100, cursor: "pointer",
                   font: "700 12px Inter", letterSpacing: "1px", textTransform: "uppercase",
@@ -168,7 +183,7 @@ export function OnlineMatchPage() {
           <button className="btn btn-purple" onClick={() => { leaveQueue(); reset(); navigate("/play"); }} style={{ fontSize: 14 }}>
             Cancel Search
           </button>
-          <button onClick={() => { leaveQueue(); reset(); showToast("Private rooms arrive soon."); navigate("/play"); }} style={{ display: "inline-flex", alignItems: "center", gap: 9, padding: "13px 22px", borderRadius: 8, border: "1px solid rgba(232,184,75,.4)", background: "rgba(15,8,32,.5)", color: "var(--gold-lt)", font: "700 13px Inter", letterSpacing: "1px", textTransform: "uppercase", cursor: "pointer" }}>
+          <button onClick={() => { leaveQueue(); reset(); navigate("/rooms"); }} style={{ display: "inline-flex", alignItems: "center", gap: 9, padding: "13px 22px", borderRadius: 8, border: "1px solid rgba(232,184,75,.4)", background: "rgba(15,8,32,.5)", color: "var(--gold-lt)", font: "700 13px Inter", letterSpacing: "1px", textTransform: "uppercase", cursor: "pointer" }}>
             👥 Play with a Friend
           </button>
         </div>

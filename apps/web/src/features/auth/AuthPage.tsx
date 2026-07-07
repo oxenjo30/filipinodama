@@ -7,9 +7,16 @@ import { BRAND } from "../../lib/assets";
  * AuthPage — Login / Register / Guest, reproduced faithfully from the prototype's
  * Login screen (handoff/FilipinoDama Royal.dc.html, lines 2682-2738) using the
  * approved global classes (.frame/.btn/.btn-gold). Wires to the real authStore
- * actions; on success navigates to "/". Google/Facebook buttons are disabled with
- * a "not configured" hint whenever providers.google/facebook are false.
+ * actions; on success navigates to "/".
+ *
+ * Google is the only social provider (Facebook removed). Its button is enabled
+ * only when providers.google is true, and clicking it hands off to the backend
+ * OAuth start route which redirects to Google's consent screen. A Terms &
+ * Conditions checkbox must be accepted before any account is created / signed in.
  */
+
+/** Where the API (and its OAuth start routes) live — mirrors lib/api.ts. */
+const API_BASE = (import.meta.env.VITE_API_URL as string) || "http://localhost:4000";
 
 type Mode = "signin" | "signup";
 
@@ -61,6 +68,7 @@ export function AuthPage({ initialMode = "signin" }: { initialMode?: Mode }) {
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [pass, setPass] = useState("");
+  const [agreed, setAgreed] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -72,15 +80,47 @@ export function AuthPage({ initialMode = "signin" }: { initialMode?: Mode }) {
     setError(null);
   }
 
+  /** Every path that creates or enters an account first requires accepting Terms. */
+  function requireTerms(): boolean {
+    if (agreed) return true;
+    setError("Please accept the Terms & Conditions to continue.");
+    return false;
+  }
+
+  /** Hand off to the backend OAuth start route (full-page redirect to Google). */
+  function startOAuth(provider: "google") {
+    if (!requireTerms()) return;
+    // Preserve where the user was headed so the callback can return them there.
+    const url = `${API_BASE}/api/auth/oauth/${provider}?next=${encodeURIComponent(next)}`;
+    window.location.assign(url);
+  }
+
   async function submit() {
+    if (!requireTerms()) return;
     setError(null);
+    // Normalize the email (lowercase + trim) so a stray capital or space from
+    // autocorrect/autofill can't cause a false "wrong password". Trim the
+    // password of surrounding whitespace only (never alter the middle).
+    const cleanEmail = email.trim().toLowerCase();
+    const cleanPass = pass.trim();
+
+    // Client-side validation: show a friendly message for empty/invalid input
+    // instead of firing a request that 400s (and logs a console error).
+    if (isSignup && !name.trim()) {
+      setError("Please choose a username.");
+      return;
+    }
+    if (!cleanEmail || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(cleanEmail)) {
+      setError("Please enter a valid email address.");
+      return;
+    }
+    if (!cleanPass) {
+      setError("Please enter your password.");
+      return;
+    }
+
     setBusy(true);
     try {
-      // Normalize the email (lowercase + trim) so a stray capital or space from
-      // autocorrect/autofill can't cause a false "wrong password". Trim the
-      // password of surrounding whitespace only (never alter the middle).
-      const cleanEmail = email.trim().toLowerCase();
-      const cleanPass = pass.trim();
       if (isSignup) {
         await register({ email: cleanEmail, password: cleanPass, username: name.trim() });
       } else {
@@ -95,6 +135,7 @@ export function AuthPage({ initialMode = "signin" }: { initialMode?: Mode }) {
   }
 
   async function playAsGuest() {
+    if (!requireTerms()) return;
     setError(null);
     setBusy(true);
     try {
@@ -107,10 +148,8 @@ export function AuthPage({ initialMode = "signin" }: { initialMode?: Mode }) {
     }
   }
 
-  const socials: { key: "google" | "facebook"; label: string; glyph: string; glyphColor: string; on: boolean }[] = [
-    { key: "google", label: "Google", glyph: "G", glyphColor: "#e8b84b", on: providers.google },
-    { key: "facebook", label: "Facebook", glyph: "f", glyphColor: "#5a8bff", on: providers.facebook },
-  ];
+  // Google is the only social provider (Facebook removed per product decision).
+  const googleOn = providers.google;
 
   return (
     <div
@@ -250,35 +289,34 @@ export function AuthPage({ initialMode = "signin" }: { initialMode?: Mode }) {
           <span style={{ font: "600 11px Inter", color: "var(--ink2)" }}>or continue with</span>
           <div style={{ flex: 1, height: 1, background: "rgba(232,184,75,.16)" }} />
         </div>
-        <div style={{ display: "flex", gap: 10 }}>
-          {socials.map((so) => (
-            <button
-              key={so.key}
-              type="button"
-              disabled={!so.on}
-              title={so.on ? `Continue with ${so.label}` : `${so.label} sign-in is not configured yet.`}
-              onClick={() => {
-                if (!so.on) setError(`${so.label} sign-in is not configured yet.`);
-              }}
-              style={{
-                flex: 1,
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                gap: 8,
-                padding: 12,
-                borderRadius: 11,
-                border: "1px solid rgba(232,184,75,.22)",
-                background: "rgba(0,0,0,.3)",
-                cursor: so.on ? "pointer" : "not-allowed",
-                opacity: so.on ? 1 : 0.45,
-              }}
-            >
-              <span style={{ font: "900 16px Inter", color: so.glyphColor }}>{so.glyph}</span>
-              <span style={{ font: "700 13px Inter", color: "#efe7fb" }}>{so.label}</span>
-            </button>
-          ))}
-        </div>
+        <button
+          type="button"
+          disabled={!googleOn}
+          title={googleOn ? "Continue with Google" : "Google sign-in is not configured yet."}
+          onClick={() => {
+            if (!googleOn) {
+              setError("Google sign-in is not configured yet.");
+              return;
+            }
+            startOAuth("google");
+          }}
+          style={{
+            width: "100%",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            gap: 9,
+            padding: 13,
+            borderRadius: 11,
+            border: "1px solid rgba(232,184,75,.22)",
+            background: "rgba(0,0,0,.3)",
+            cursor: googleOn ? "pointer" : "not-allowed",
+            opacity: googleOn ? 1 : 0.45,
+          }}
+        >
+          <span style={{ font: "900 16px Inter", color: "#e8b84b" }}>G</span>
+          <span style={{ font: "700 13px Inter", color: "#efe7fb" }}>Continue with Google</span>
+        </button>
 
         <button
           type="button"
@@ -299,18 +337,56 @@ export function AuthPage({ initialMode = "signin" }: { initialMode?: Mode }) {
         >
           Play as Guest
         </button>
-        <p
+        <label
           style={{
+            display: "flex",
+            alignItems: "flex-start",
+            gap: 9,
             margin: "18px 0 0",
-            textAlign: "center",
-            font: "400 10.5px Inter",
+            font: "400 11px Inter",
             color: "var(--ink2)",
             lineHeight: 1.5,
+            cursor: "pointer",
           }}
         >
-          By continuing you agree to our <b style={{ color: "var(--gold-lt)" }}>Terms</b> &amp;{" "}
-          <b style={{ color: "var(--gold-lt)" }}>Privacy Policy</b>.
-        </p>
+          <input
+            type="checkbox"
+            checked={agreed}
+            onChange={(e) => {
+              setAgreed(e.target.checked);
+              if (e.target.checked) setError(null);
+            }}
+            style={{
+              width: 16,
+              height: 16,
+              marginTop: 1,
+              flex: "none",
+              accentColor: "#c99a2e",
+              cursor: "pointer",
+            }}
+          />
+          <span>
+            I agree to the{" "}
+            <a
+              href="/legal"
+              target="_blank"
+              rel="noopener noreferrer"
+              style={{ color: "var(--gold-lt)", fontWeight: 700, textDecoration: "underline" }}
+            >
+              Terms &amp; Conditions
+            </a>{" "}
+            and{" "}
+            <a
+              href="/legal"
+              target="_blank"
+              rel="noopener noreferrer"
+              style={{ color: "var(--gold-lt)", fontWeight: 700, textDecoration: "underline" }}
+            >
+              Privacy Policy
+            </a>
+            .
+          </span>
+        </label>
       </div>
     </div>
   );

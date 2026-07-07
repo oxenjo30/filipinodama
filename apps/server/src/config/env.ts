@@ -17,6 +17,9 @@ const schema = z.object({
   JWT_ACCESS_TTL: z.string().default("15m"),
   JWT_REFRESH_TTL: z.string().default("30d"),
   CORS_ORIGIN: z.string().default("http://localhost:5173"),
+  // Parent domain the auth cookies are scoped to, so the SPA (filipinodama.com)
+  // and API (api.filipinodama.com) share them. Leave empty for same-origin/local.
+  COOKIE_DOMAIN: z.string().default(""),
 
   // oauth (empty ⇒ that provider is disabled, returns "not configured")
   GOOGLE_CLIENT_ID: z.string().default(""),
@@ -46,6 +49,37 @@ const schema = z.object({
 export const env = schema.parse(process.env);
 
 export const isProd = env.NODE_ENV === "production";
+
+/**
+ * PRODUCTION SAFETY GATE. The JWT secrets and CORS origin have dev-friendly
+ * defaults so local dev "just works" — but those defaults are published in this
+ * repo, so booting production with them would let anyone forge a valid (even
+ * admin) token and would open CORS to localhost. Refuse to start in production
+ * unless real, non-default, sufficiently-strong values are supplied.
+ */
+const DEV_ACCESS_SECRET = "dev-access-secret-change-me";
+const DEV_REFRESH_SECRET = "dev-refresh-secret-change-me";
+const LOCALHOST_ORIGIN = "http://localhost:5173";
+if (isProd) {
+  const problems: string[] = [];
+  if (env.JWT_ACCESS_SECRET === DEV_ACCESS_SECRET || env.JWT_ACCESS_SECRET.length < 32)
+    problems.push("JWT_ACCESS_SECRET must be set to a strong value (>=32 chars), not the dev default");
+  if (env.JWT_REFRESH_SECRET === DEV_REFRESH_SECRET || env.JWT_REFRESH_SECRET.length < 32)
+    problems.push("JWT_REFRESH_SECRET must be set to a strong value (>=32 chars), not the dev default");
+  if (env.JWT_ACCESS_SECRET === env.JWT_REFRESH_SECRET)
+    problems.push("JWT_ACCESS_SECRET and JWT_REFRESH_SECRET must differ");
+  if (!env.CORS_ORIGIN || env.CORS_ORIGIN === LOCALHOST_ORIGIN)
+    problems.push("CORS_ORIGIN must be set to the production web origin, not localhost");
+  if (!env.WEB_ORIGIN || env.WEB_ORIGIN === LOCALHOST_ORIGIN)
+    problems.push("WEB_ORIGIN must be set to the production web origin, not localhost");
+  if (problems.length) {
+    // Fail fast and loud — never boot an insecure production server.
+    throw new Error(
+      "FATAL: insecure production configuration:\n  - " + problems.join("\n  - ") +
+        "\nSet these in the Railway service variables before deploying.",
+    );
+  }
+}
 /** Which optional integrations are configured (drives "not configured" responses). */
 export const features = {
   googleOAuth: !!(env.GOOGLE_CLIENT_ID && env.GOOGLE_CLIENT_SECRET),

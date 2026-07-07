@@ -1,8 +1,11 @@
 import type { Server as IOServer, Socket } from "socket.io";
 import { EV } from "@dama/shared";
 import { verifyAccess, COOKIE } from "../auth/tokens.js";
+import { prisma } from "../db/client.js";
 import { registerMatchmaking } from "./matchmaking.js";
 import { registerMatch } from "./match.js";
+import { registerGuildChat } from "./guild-chat.js";
+import { setIO } from "./io.js";
 
 /**
  * Realtime entrypoint. Each ROADMAP feature registers its handlers here:
@@ -31,36 +34,57 @@ function accessTokenFromCookieHeader(header: string | undefined): string | undef
   return undefined;
 }
 
-/** Resolve + verify the authed user id from the handshake, or null. */
-function authenticate(socket: Socket): string | null {
+/**
+ * Resolve + verify the authed user id from the handshake, then confirm the
+ * account is still live (not deleted, not currently banned). A valid JWT alone
+ * is not enough — a ban/delete after connect-time must keep the user out of
+ * matchmaking and live play. Returns the userId or null.
+ */
+async function authenticate(socket: Socket): Promise<string | null> {
   const cookieToken = accessTokenFromCookieHeader(socket.handshake.headers.cookie);
   const authToken =
     typeof socket.handshake.auth?.token === "string" ? socket.handshake.auth.token : undefined;
   const token = cookieToken ?? authToken;
   if (!token) return null;
+  let userId: string;
   try {
-    return verifyAccess(token).sub;
+    userId = verifyAccess(token).sub;
   } catch {
     return null;
   }
+  const user = await prisma.user.findUnique({
+    where: { id: userId },
+    select: { id: true, deletedAt: true, bannedUntil: true },
+  });
+  if (!user || user.deletedAt) return null;
+  if (user.bannedUntil && user.bannedUntil > new Date()) return null;
+  return user.id;
 }
 
 export function registerRealtime(io: IOServer) {
-  // Reject unauthenticated handshakes before any event handler is wired.
+  // Expose the io instance so REST handlers (e.g. guild chat POST) can broadcast.
+  setIO(io);
+
+  // Reject unauthenticated / banned / deleted handshakes before any event
+  // handler is wired.
   io.use((socket, next) => {
-    const userId = authenticate(socket);
-    if (!userId) {
-      next(new Error("unauthorized"));
-      return;
-    }
-    socket.data.userId = userId;
-    next();
+    authenticate(socket)
+      .then((userId) => {
+        if (!userId) {
+          next(new Error("unauthorized"));
+          return;
+        }
+        socket.data.userId = userId;
+        next();
+      })
+      .catch(() => next(new Error("unauthorized")));
   });
 
   io.on("connection", (socket: Socket) => {
     // socket.data.userId is guaranteed set by the io.use() guard above.
     registerMatchmaking(io, socket);
     registerMatch(io, socket);
+    registerGuildChat(io, socket);
 
     socket.on(EV.presencePing, () => {
       // refresh presence:<userId> TTL in redis, broadcast presence:update to friends

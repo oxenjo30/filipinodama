@@ -1,9 +1,11 @@
-import { useCallback, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { RANK_TIERS, rankTierFor, type RankTier } from "@dama/shared";
 import { api, ApiError } from "../../lib/api";
-import { useAppStore } from "../../stores/appStore";
 import { useAuthStore } from "../../stores/authStore";
+import { AvatarPickerModal } from "./AvatarPickerModal";
+import { EditProfileModal } from "./EditProfileModal";
+import { ReplayModal } from "./ReplayModal";
 
 /**
  * ProfilePage — /profile
@@ -15,7 +17,7 @@ import { useAuthStore } from "../../stores/authStore";
  *   • Rank ladder is RANK_TIERS from @dama/shared; current tier via rankTierFor().
  *   • Trophy History  → GET /api/users/me/ledger?currency=TROPHIES.
  *   • Match History   → GET /api/matches?userId=<me>&result=<filter>.
- *   • Edit Profile    → PATCH /api/users/me (inline display-name edit).
+ *   • Edit Profile    → EditProfileModal → PATCH /api/users/me { displayName, bio }.
  * Each async section shows an honest loading state while pending and an honest
  * empty state when there is nothing to show.
  */
@@ -137,20 +139,19 @@ export function ProfilePage() {
   const navigate = useNavigate();
   const me = useAuthStore((s) => s.me);
   const ready = useAuthStore((s) => s.ready);
-  const patchMe = useAuthStore((s) => s.patchMe);
-  const showToast = useAppStore((s) => s.showToast);
 
   const [tab, setTab] = useState<"overview" | "history">("overview");
 
-  // ── Edit Profile (inline display-name edit → PATCH /api/users/me) ──
-  const [editing, setEditing] = useState(false);
-  const [nameDraft, setNameDraft] = useState("");
-  const [saving, setSaving] = useState(false);
+  // ── Avatar picker (grid modal → PATCH /api/users/me { avatarUrl }) ──
+  const [avatarPickerOpen, setAvatarPickerOpen] = useState(false);
 
-  // Open directly into edit mode when arriving via ?edit=1 (account menu "Edit Profile").
+  // ── Edit Profile (modal → PATCH /api/users/me { displayName, bio }) ──
+  const [editOpen, setEditOpen] = useState(false);
+
+  // Open the Edit Profile modal when arriving via ?edit=1 (account menu "Edit Profile").
   useEffect(() => {
     const p = new URLSearchParams(window.location.search);
-    if (p.get("edit") === "1") setEditing(true);
+    if (p.get("edit") === "1") setEditOpen(true);
   }, []);
 
   // ── Trophy History (live ledger) ──
@@ -161,6 +162,9 @@ export function ProfilePage() {
   const [historyFilter, setHistoryFilter] = useState<HistoryFilter>("all");
   const [matches, setMatches] = useState<MatchRow[] | null>(null);
   const [matchErr, setMatchErr] = useState<string | null>(null);
+
+  // ── Match Replay (row → GET /api/matches/:id → engine replay) ──
+  const [replayId, setReplayId] = useState<string | null>(null);
 
   const meId = me?.id ?? null;
 
@@ -215,28 +219,6 @@ export function ProfilePage() {
       cancelled = true;
     };
   }, [meId, historyFilter]);
-
-  const saveName = useCallback(async () => {
-    const next = nameDraft.trim();
-    if (!next || next === me?.displayName) {
-      setEditing(false);
-      return;
-    }
-    setSaving(true);
-    try {
-      const res = await api.patch<{ user: { displayName: string; tag: string; avatarUrl: string | null } }>(
-        "/api/users/me",
-        { displayName: next },
-      );
-      patchMe({ displayName: res.user.displayName });
-      showToast("Profile updated.");
-      setEditing(false);
-    } catch (e) {
-      showToast(e instanceof ApiError ? e.message : "Could not update profile.");
-    } finally {
-      setSaving(false);
-    }
-  }, [nameDraft, me?.displayName, patchMe, showToast]);
 
   const tabStyle = (active: boolean): React.CSSProperties => ({
     background: "none",
@@ -303,12 +285,25 @@ export function ProfilePage() {
 
   return (
     <div style={{ maxWidth: 900, margin: "0 auto", padding: 26, display: "flex", flexDirection: "column", gap: 20 }}>
+      {/* ── avatar picker (grid modal → PATCH /api/users/me) ── */}
+      <AvatarPickerModal open={avatarPickerOpen} onClose={() => setAvatarPickerOpen(false)} />
+
+      {/* ── edit profile (modal → PATCH /api/users/me { displayName, bio }) ── */}
+      <EditProfileModal
+        open={editOpen}
+        onClose={() => setEditOpen(false)}
+        onChangeAvatar={() => setAvatarPickerOpen(true)}
+      />
+
+      {/* ── match replay (row → GET /api/matches/:id → engine replay) ── */}
+      <ReplayModal matchId={replayId} meId={me.id} onClose={() => setReplayId(null)} />
+
       {/* ── identity header ── */}
       <div className="frame" style={{ padding: 28, display: "flex", alignItems: "center", gap: 22, flexWrap: "wrap" }}>
         <div style={{ position: "relative", flex: "none" }}>
           <Portrait src={avatarSrc(me.avatarUrl)} size={92} alt={displayName} />
           <button
-            onClick={() => showToast("Avatar customization arrives with online play.")}
+            onClick={() => setAvatarPickerOpen(true)}
             title="Change avatar"
             style={{
               position: "absolute",
@@ -332,55 +327,18 @@ export function ProfilePage() {
           </button>
         </div>
         <div style={{ flex: 1, minWidth: 200 }}>
-          {editing ? (
-            <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
-              <input
-                autoFocus
-                value={nameDraft}
-                maxLength={24}
-                onChange={(e) => setNameDraft(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") saveName();
-                  if (e.key === "Escape") setEditing(false);
-                }}
-                style={{
-                  font: "800 24px Cinzel,serif",
-                  color: "var(--gold-lt)",
-                  background: "rgba(0,0,0,.35)",
-                  border: "1px solid rgba(232,184,75,.4)",
-                  borderRadius: 10,
-                  padding: "6px 12px",
-                  minWidth: 220,
-                }}
-              />
-              <button className="btn btn-gold" disabled={saving} onClick={saveName} style={{ padding: "8px 16px" }}>
-                {saving ? "Saving…" : "Save"}
-              </button>
-              <button className="btn btn-purple" disabled={saving} onClick={() => setEditing(false)} style={{ padding: "8px 16px" }}>
-                Cancel
-              </button>
-            </div>
-          ) : (
-            <h1 style={{ margin: 0, font: "800 30px Cinzel,serif", color: "var(--gold-lt)" }}>
-              {displayName}{" "}
-              <span style={{ font: "800 18px 'JetBrains Mono',monospace", color: "var(--ink2)", verticalAlign: "middle" }}>
-                {playerTag}
-              </span>
-            </h1>
-          )}
+          <h1 style={{ margin: 0, font: "800 30px Cinzel,serif", color: "var(--gold-lt)" }}>
+            {displayName}{" "}
+            <span style={{ font: "800 18px 'JetBrains Mono',monospace", color: "var(--ink2)", verticalAlign: "middle" }}>
+              {playerTag}
+            </span>
+          </h1>
           <div style={{ font: "600 13px Inter", color: "var(--gold)", margin: "4px 0 12px" }}>
             {tierNow.label} · 🏆 {trophies.toLocaleString()}
           </div>
         </div>
         <div style={{ display: "flex", gap: 10, flexWrap: "wrap", width: "100%", justifyContent: "flex-end" }}>
-          <button
-            className="btn btn-gold"
-            onClick={() => {
-              setNameDraft(me.displayName);
-              setEditing(true);
-            }}
-            style={{ padding: "12px 22px" }}
-          >
+          <button className="btn btn-gold" onClick={() => setEditOpen(true)} style={{ padding: "12px 22px" }}>
             Edit Profile
           </button>
           <button className="btn btn-purple" onClick={() => navigate("/friends")} style={{ padding: "12px 22px" }}>
@@ -705,7 +663,7 @@ export function ProfilePage() {
                   return (
                     <button
                       key={m.id}
-                      onClick={() => showToast("Match replay arrives with online play.")}
+                      onClick={() => setReplayId(m.id)}
                       style={{
                         display: "flex",
                         alignItems: "center",

@@ -4,6 +4,7 @@ import { createInitialState, legalMoves, applyMove } from "@dama/game-engine";
 import { DEFAULT_SETTINGS } from "@dama/shared";
 import { Board } from "../../components";
 import { useAppStore } from "../../stores/appStore";
+import { useAuthStore } from "../../stores/authStore";
 import { ICONS } from "../../lib/assets";
 
 /**
@@ -38,6 +39,7 @@ const QUICK_STATS = [
 export function HomePage() {
   const navigate = useNavigate();
   const showToast = useAppStore((s) => s.showToast);
+  const me = useAuthStore((s) => s.me);
 
   // hero board — a real GameState after a few opening moves, for a lived-in look.
   const heroState = useMemo(() => {
@@ -52,8 +54,10 @@ export function HomePage() {
 
   const onMode = (title: string) => {
     if (title === "Play vs AI" || title === "Classic Mode") navigate("/play/ai");
-    else if (title === "Ranked Mode") showToast("Ranked matchmaking arrives with online play.");
-    else showToast("Kingdom Mode is coming soon.");
+    else if (title === "Ranked Mode") {
+      if (me && !me.isGuest) navigate("/play/online?mode=ranked");
+      else navigate(`/login?next=${encodeURIComponent("/play/online?mode=ranked")}`);
+    } else showToast("Kingdom Mode is coming soon.");
   };
 
   return (
@@ -74,7 +78,7 @@ export function HomePage() {
             <div style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "center" }}>
               <button className="btn btn-red" onClick={() => navigate("/play/ai")} style={{ fontSize: 15, padding: "15px 26px" }}>🌐 Play Now</button>
               <button className="btn btn-purple" onClick={() => navigate("/learn")} style={{ fontSize: 15, padding: "15px 26px" }}>📖 Learn the Rules</button>
-              <button onClick={() => showToast("Private rooms arrive with online play.")} style={{ display: "inline-flex", alignItems: "center", gap: 9, padding: "15px 22px", borderRadius: 8, border: "1px solid rgba(232,184,75,.4)", background: "rgba(15,8,32,.5)", color: "var(--gold-lt)", font: "700 13px Inter", letterSpacing: "1px", textTransform: "uppercase", cursor: "pointer" }}>👥 Private Room</button>
+              <button onClick={() => navigate("/rooms")} style={{ display: "inline-flex", alignItems: "center", gap: 9, padding: "15px 22px", borderRadius: 8, border: "1px solid rgba(232,184,75,.4)", background: "rgba(15,8,32,.5)", color: "var(--gold-lt)", font: "700 13px Inter", letterSpacing: "1px", textTransform: "uppercase", cursor: "pointer" }}>👥 Private Room</button>
             </div>
             <div style={{ display: "inline-flex", alignItems: "center", gap: 10, marginTop: 22, padding: "8px 14px", borderRadius: 100, border: "1px solid rgba(232,184,75,.25)", background: "rgba(15,8,32,.5)" }}>
               <div style={{ display: "flex" }}>
@@ -176,7 +180,7 @@ export function HomePage() {
             </div>
             <div style={{ textAlign: "center", flex: 1 }}><PlayerChip name="Taktikero" trophies="1720" av="sovereign" size={56} /></div>
           </div>
-          <button className="btn btn-red" onClick={() => showToast("Live spectating arrives with online play.")} style={{ width: "100%", marginTop: 16 }}>Watch Live</button>
+          <button className="btn btn-red" onClick={() => navigate("/spectate")} style={{ width: "100%", marginTop: 16 }}>Watch Live</button>
         </div>
       </div>
     </div>

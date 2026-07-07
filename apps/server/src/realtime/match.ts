@@ -76,6 +76,64 @@ function userIdForColor(lm: LiveMatch, color: PieceColor): string | null {
  * apply trophy + gold deltas through the ledger (never by writing balances
  * directly). Ranked matches move trophies; every non-LOCAL win banks gold.
  */
+/** Daily quest period key (must match modules/quests.ts periodKeyFor). */
+function questPeriodKey(scope: "daily" | "seasonal"): string {
+  return scope === "daily" ? `daily:${new Date().toISOString().slice(0, 10)}` : "seasonal:current";
+}
+
+/**
+ * Advance a quest's progress by `by`, capped at the quest goal, without ever
+ * touching an already-claimed row. Upsert makes the first event create the row.
+ */
+async function advanceQuest(userId: string, questId: string, scope: "daily" | "seasonal", by: number) {
+  if (by <= 0) return;
+  const quest = await prisma.quest.findUnique({ where: { id: questId } });
+  if (!quest || !quest.active) return;
+  const periodKey = questPeriodKey(scope);
+  const existing = await prisma.questProgress.findUnique({
+    where: { userId_questId_periodKey: { userId, questId, periodKey } },
+  });
+  if (existing?.claimed) return; // don't reset/relift a claimed reward
+  const value = Math.min(quest.goal, (existing?.value ?? 0) + by);
+  await prisma.questProgress.upsert({
+    where: { userId_questId_periodKey: { userId, questId, periodKey } },
+    update: { value },
+    create: { userId, questId, periodKey, value },
+  });
+}
+
+/**
+ * Post-settlement side effects for a real (non-bot) player: win/loss/draw
+ * record, win streak, and quest progress. Best-effort — a failure here must not
+ * break match settlement, so each player is wrapped independently by the caller.
+ */
+async function recordPlayerOutcome(
+  userId: string,
+  won: boolean,
+  drew: boolean,
+  captures: number,
+  isRanked: boolean,
+): Promise<void> {
+  // Stats: increment the right counter and maintain the streak (reset on a
+  // non-win). Done as a single atomic update.
+  await prisma.user.update({
+    where: { id: userId },
+    data: won
+      ? { wins: { increment: 1 }, streak: { increment: 1 } }
+      : drew
+        ? { draws: { increment: 1 }, streak: 0 }
+        : { losses: { increment: 1 }, streak: 0 },
+  });
+
+  // Quests: play/win/capture dailies + the seasonal ranked-win.
+  await Promise.allSettled([
+    advanceQuest(userId, "daily-play5", "daily", 1),
+    won ? advanceQuest(userId, "daily-win3", "daily", 1) : Promise.resolve(),
+    captures > 0 ? advanceQuest(userId, "daily-capture20", "daily", captures) : Promise.resolve(),
+    won && isRanked ? advanceQuest(userId, "season-win50", "seasonal", 1) : Promise.resolve(),
+  ]);
+}
+
 async function settleMatch(io: IOServer, lm: LiveMatch): Promise<void> {
   if (lm.settled) return;
   const result = lm.state.result;
@@ -171,6 +229,34 @@ async function settleMatch(io: IOServer, lm: LiveMatch): Promise<void> {
     );
   }
   await Promise.all(grants);
+
+  // Player records + quest progress for each REAL player (skip bot/null seats).
+  // Captures are attributed by move parity: red opens the game (even indices),
+  // blue replies (odd indices).
+  let redCaptures = 0;
+  let blueCaptures = 0;
+  lm.state.history.forEach((mv, i) => {
+    const n = mv.captures.length;
+    if (i % 2 === 0) redCaptures += n;
+    else blueCaptures += n;
+  });
+  const drew = winnerColor === null;
+  const outcomes: Promise<unknown>[] = [];
+  if (lm.redId) {
+    outcomes.push(
+      recordPlayerOutcome(lm.redId, winnerColor === "red", drew, redCaptures, isRanked).catch((e) =>
+        console.error("[match] red outcome failed", e),
+      ),
+    );
+  }
+  if (lm.blueId) {
+    outcomes.push(
+      recordPlayerOutcome(lm.blueId, winnerColor === "blue", drew, blueCaptures, isRanked).catch((e) =>
+        console.error("[match] blue outcome failed", e),
+      ),
+    );
+  }
+  await Promise.all(outcomes);
 
   io.to(lm.matchId).emit(EV.matchEnded, {
     matchId: lm.matchId,

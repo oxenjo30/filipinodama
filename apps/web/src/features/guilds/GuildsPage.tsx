@@ -3,8 +3,10 @@ import { useNavigate } from "react-router-dom";
 import { rankTierFor } from "@dama/shared";
 import { api, ApiError } from "../../lib/api";
 import { Avatar } from "../../components";
+import { CRESTS, CREST_KEYS, guildCrest, ICONS, type CrestKey } from "../../lib/assets";
 import { useAppStore } from "../../stores/appStore";
 import { useAuthStore } from "../../stores/authStore";
+import { GuildChatPanel } from "./GuildChatPanel";
 
 /**
  * GuildsPage — Guild Hall, ported from the prototype (handoff/FilipinoDama Royal.dc.html,
@@ -87,45 +89,58 @@ const ROLE_RANK: Record<Role, number> = { MEMBER: 1, OFFICER: 2, LEADER: 3 };
 const ROLE_LABEL: Record<Role, string> = { LEADER: "Leader", OFFICER: "Officer", MEMBER: "Member" };
 const ROLE_COLOR: Record<Role, string> = { LEADER: "#f0c24b", OFFICER: "#c9a6ff", MEMBER: "var(--ink)" };
 
-// Emblem glyph/tint rotation for real guilds (no per-guild crest art exists yet).
-const GLYPHS = ["👑", "⚔️", "🛡️", "🌞", "🔥", "🦅", "🎯"];
-const TINTS = [
-  "rgba(122,75,191,.35)",
-  "rgba(160,48,58,.35)",
-  "rgba(46,107,198,.35)",
-  "rgba(47,143,91,.35)",
-  "rgba(201,154,46,.35)",
-];
-function glyphFor(seed: string): { glyph: string; tint: string } {
-  let h = 0;
-  for (let i = 0; i < seed.length; i++) h = (h * 31 + seed.charCodeAt(i)) >>> 0;
-  return { glyph: GLYPHS[h % GLYPHS.length], tint: TINTS[h % TINTS.length] };
-}
-
-// Masked circular emblem badge for a guild (gradient + glyph).
-function Emblem({ glyph, size = 56, tint }: { glyph: string; size?: number; tint: string }) {
+/**
+ * Emblem — a guild's heraldic crest. Renders the real crest art (transparent PNG
+ * render) so every guild shows its ornate emblem, matching the handoff — never an
+ * emoji. Pass a guild's `crestKey` (+ `seed` = guild id for a stable fallback),
+ * or a resolved `src` directly (for the live create/edit picker preview).
+ */
+function Emblem({
+  crestKey,
+  seed = "",
+  src,
+  size = 56,
+}: {
+  crestKey?: string | null;
+  seed?: string;
+  src?: string;
+  size?: number;
+}) {
+  const url = src ?? guildCrest(crestKey, seed).src;
   return (
-    <div
+    <img
+      src={url}
+      alt=""
+      width={size}
+      height={size}
       style={{
         width: size,
         height: size,
-        borderRadius: 14,
         flex: "none",
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        fontSize: size * 0.5,
-        background: `linear-gradient(135deg,${tint},rgba(15,8,32,.4))`,
-        border: "1px solid rgba(232,184,75,.3)",
-        boxShadow: "inset 0 1px 0 rgba(255,255,255,.08)",
+        objectFit: "contain",
+        filter: "drop-shadow(0 6px 14px rgba(0,0,0,.55))",
       }}
-    >
-      {glyph}
-    </div>
+    />
   );
 }
 
-const GC_EMBLEMS = ["👑", "⚔️", "🛡️", "🌞", "🔥", "🦅"];
+/**
+ * Trophy — the real gold trophy icon image (ICONS.trophy). Used in place of the
+ * 🏆 emoji so it always renders as the app's crest-gold trophy (the emoji does
+ * not render consistently across platforms/headless).
+ */
+function Trophy({ size = 16 }: { size?: number }) {
+  return (
+    <img
+      src={ICONS.trophy}
+      alt="Trophies"
+      width={size}
+      height={size}
+      style={{ width: size, height: size, objectFit: "contain", flex: "none", verticalAlign: "-2px" }}
+    />
+  );
+}
+
 const GC_POLICIES: { key: string; label: string }[] = [
   { key: "open", label: "Open" },
   { key: "request", label: "Request" },
@@ -284,7 +299,7 @@ export function GuildsPage() {
 
   // ── create modal ─────────────────────────────────────────────────────────
   const [createShow, setCreateShow] = useState(false);
-  const [gcEmblem, setGcEmblem] = useState(GC_EMBLEMS[0]);
+  const [gcCrest, setGcCrest] = useState<CrestKey>(CREST_KEYS[0]);
   const [gcName, setGcName] = useState("");
   const [gcTag, setGcTag] = useState("");
   const [gcDesc, setGcDesc] = useState("");
@@ -305,6 +320,7 @@ export function GuildsPage() {
       const { guild } = await api.post<{ guild: ApiGuildCard }>("/api/guilds", {
         name: gcName.trim(),
         tag: gcTag.trim().toUpperCase(),
+        crestKey: gcCrest,
         ...(gcDesc.trim() ? { description: gcDesc.trim() } : {}),
       });
       setCreateShow(false);
@@ -354,6 +370,7 @@ export function GuildsPage() {
   // ── leave ─────────────────────────────────────────────────────────────────
   const onLeave = async () => {
     if (!me || !myGuildId || busy) return;
+    if (!window.confirm("Leave this guild? You'll lose your membership and role.")) return;
     setBusy(true);
     try {
       await api.del(`/api/guilds/${myGuildId}/members/${me.id}`);
@@ -387,6 +404,7 @@ export function GuildsPage() {
   };
   const kickMember = async (target: ApiMember) => {
     if (!myGuildId || busy) return;
+    if (!window.confirm(`Remove ${target.user.displayName} from the guild?`)) return;
     setBusy(true);
     try {
       await api.del(`/api/guilds/${myGuildId}/members/${target.userId}`);
@@ -421,11 +439,13 @@ export function GuildsPage() {
   const [geName, setGeName] = useState("");
   const [geDesc, setGeDesc] = useState("");
   const [geMin, setGeMin] = useState(0);
+  const [geCrest, setGeCrest] = useState<CrestKey>(CREST_KEYS[0]);
   const openEdit = () => {
     if (!detail) return;
     setGeName(detail.guild.name);
     setGeDesc(detail.guild.description ?? "");
     setGeMin(detail.guild.minTrophies);
+    setGeCrest(guildCrest(detail.guild.crestKey, detail.guild.id).key);
     setEditShow(true);
   };
   const saveEdit = async () => {
@@ -436,6 +456,7 @@ export function GuildsPage() {
         name: geName.trim(),
         description: geDesc.trim(),
         minTrophies: geMin,
+        crestKey: geCrest,
       });
       showToast("Guild updated.");
       setEditShow(false);
@@ -450,8 +471,7 @@ export function GuildsPage() {
 
   // ── contribute modal ────────────────────────────────────────────────────────
   const [contribShow, setContribShow] = useState(false);
-
-  const headerEmblem = detail ? glyphFor(detail.guild.id) : glyphFor("x");
+  const [guildChatOpen, setGuildChatOpen] = useState(false);
 
   return (
     <div style={{ maxWidth: 940, margin: "0 auto", padding: 26, display: "flex", flexDirection: "column", gap: 20 }}>
@@ -482,7 +502,7 @@ export function GuildsPage() {
           {/* Banner */}
           <div className="frame" style={{ padding: 26, display: "flex", gap: 22, alignItems: "center", flexWrap: "wrap", background: "linear-gradient(135deg,rgba(122,75,191,.22),rgba(15,8,32,.1))" }}>
             <div style={{ flex: "none" }}>
-              <Emblem glyph={headerEmblem.glyph} tint={headerEmblem.tint} size={72} />
+              <Emblem crestKey={detail.guild.crestKey} seed={detail.guild.id} size={92} />
             </div>
             <div style={{ flex: 1, minWidth: 220 }}>
               <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
@@ -499,7 +519,7 @@ export function GuildsPage() {
                   <div style={{ font: "500 11px Inter", color: "var(--ink2)" }}>Weekly Points</div>
                 </div>
                 <div>
-                  <div style={{ display: "flex", alignItems: "center", gap: 5, font: "800 18px 'JetBrains Mono',monospace", color: "#fff" }}>🏆 {detail.guild.minTrophies.toLocaleString()}</div>
+                  <div style={{ display: "flex", alignItems: "center", gap: 5, font: "800 18px 'JetBrains Mono',monospace", color: "#fff" }}><Trophy size={18} /> {detail.guild.minTrophies.toLocaleString()}</div>
                   <div style={{ font: "500 11px Inter", color: "var(--ink2)" }}>Min. to Join</div>
                 </div>
               </div>
@@ -508,7 +528,7 @@ export function GuildsPage() {
               )}
             </div>
             <div style={{ display: "flex", flexDirection: "column", gap: 9, flex: "none" }}>
-              <button className="btn btn-purple" onClick={() => showToast("Guild chat arrives with online play.")} style={{ padding: "11px 20px" }}>💬 Guild Chat</button>
+              <button className="btn btn-purple" onClick={() => setGuildChatOpen(true)} style={{ padding: "11px 20px" }}>💬 Guild Chat</button>
               {canManage && (
                 <button onClick={openEdit} style={{ padding: "10px 20px", borderRadius: 9, border: "1px solid rgba(232,184,75,.4)", background: "rgba(232,184,75,.1)", color: "var(--gold-lt)", font: "700 12px Inter", cursor: "pointer" }}>✎ Edit Guild</button>
               )}
@@ -658,7 +678,7 @@ export function GuildsPage() {
                             <span style={{ font: "700 10px 'JetBrains Mono',monospace", color: "var(--ink2)" }}>{r.user.tag}</span>
                             <span style={{ padding: "2px 8px", borderRadius: 100, border: `1px solid ${tb.border}`, font: "700 10px Inter", color: tb.color }}>{tb.label}</span>
                           </div>
-                          <div style={{ font: "500 10px Inter", color: "var(--ink2)", marginTop: 3 }}>🏆 {r.user.trophies.toLocaleString()} · applied {statusFor(r.createdAt).label}</div>
+                          <div style={{ display: "flex", alignItems: "center", gap: 4, font: "500 10px Inter", color: "var(--ink2)", marginTop: 3 }}><Trophy size={12} /> {r.user.trophies.toLocaleString()} · applied {statusFor(r.createdAt).label}</div>
                         </div>
                         <div style={{ display: "flex", gap: 7, flex: "none" }}>
                           <button onClick={() => reviewRequest(r, "decline")} disabled={busy} style={{ width: 38, height: 38, borderRadius: 9, border: "1px solid rgba(232,93,115,.35)", background: "rgba(232,93,115,.1)", color: "#ff8398", font: "700 16px Inter", cursor: busy ? "not-allowed" : "pointer" }} title="Decline">✕</button>
@@ -721,7 +741,6 @@ export function GuildsPage() {
             </div>
           ) : (
             browse.map((g) => {
-              const em = glyphFor(g.id);
               const open = g.minTrophies <= 0;
               const isMine = g.id === myGuildId;
               const joinStyle: React.CSSProperties = isMine
@@ -731,13 +750,13 @@ export function GuildsPage() {
                   : { flex: "none", padding: "9px 18px", borderRadius: 8, border: "1px solid rgba(232,184,75,.35)", background: "rgba(232,184,75,.1)", color: "var(--gold-lt)", font: "700 12px Inter", letterSpacing: ".3px", cursor: "pointer" };
               return (
                 <div key={g.id} style={{ display: "flex", alignItems: "center", gap: 14, padding: 12, borderRadius: 12, border: "1px solid rgba(232,184,75,.12)", background: "rgba(0,0,0,.2)" }}>
-                  <Emblem glyph={em.glyph} tint={em.tint} size={48} />
+                  <Emblem crestKey={g.crestKey} seed={g.id} size={52} />
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
                       <span style={{ font: "700 15px Inter", color: "#fff" }}>{g.name}</span>
                       <span style={{ font: "700 11px 'JetBrains Mono',monospace", color: "var(--ink2)" }}>{g.tag}</span>
                       {g.minTrophies > 0 && (
-                        <span style={{ padding: "2px 8px", borderRadius: 100, border: "1px solid rgba(232,184,75,.2)", background: "rgba(15,8,32,.5)", font: "600 10px Inter", color: "var(--gold)" }}>🏆 {g.minTrophies.toLocaleString()}+</span>
+                        <span style={{ display: "inline-flex", alignItems: "center", gap: 4, padding: "2px 8px", borderRadius: 100, border: "1px solid rgba(232,184,75,.2)", background: "rgba(15,8,32,.5)", font: "600 10px Inter", color: "var(--gold)" }}><Trophy size={11} /> {g.minTrophies.toLocaleString()}+</span>
                       )}
                     </div>
                     <div style={{ font: "500 12px Inter", color: "var(--ink2)", marginTop: 3 }}>{g.memberCount} members · {g.weeklyPoints.toLocaleString()} pts</div>
@@ -804,14 +823,17 @@ export function GuildsPage() {
             </div>
             <div style={{ padding: "22px 24px", display: "flex", flexDirection: "column", gap: 18 }}>
               <div style={{ display: "flex", gap: 14, alignItems: "center" }}>
-                <Emblem glyph={gcEmblem} tint="rgba(122,75,191,.35)" size={56} />
+                <Emblem src={CRESTS[gcCrest].src} size={62} />
                 <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ font: "700 12px Inter", color: "var(--ink)", marginBottom: 8 }}>Emblem</div>
+                  <div style={{ font: "700 12px Inter", color: "var(--ink)", marginBottom: 2 }}>Guild Crest</div>
+                  <div style={{ font: "700 13px Cinzel,serif", color: "var(--gold-lt)", marginBottom: 8 }}>{CRESTS[gcCrest].name}</div>
                   <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                    {GC_EMBLEMS.map((e) => {
-                      const on = e === gcEmblem;
+                    {CREST_KEYS.map((k) => {
+                      const on = k === gcCrest;
                       return (
-                        <button key={e} onClick={() => setGcEmblem(e)} style={{ width: 42, height: 42, borderRadius: 10, fontSize: 20, cursor: "pointer", border: on ? "1px solid var(--gold)" : "1px solid rgba(232,184,75,.2)", background: on ? "rgba(232,184,75,.16)" : "rgba(0,0,0,.3)" }}>{e}</button>
+                        <button key={k} onClick={() => setGcCrest(k)} title={CRESTS[k].name} style={{ width: 48, height: 48, padding: 4, borderRadius: 10, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", border: on ? "2px solid var(--gold)" : "2px solid rgba(232,184,75,.15)", background: on ? "rgba(232,184,75,.16)" : "rgba(0,0,0,.3)" }}>
+                          <img src={CRESTS[k].src} alt="" style={{ width: "100%", height: "100%", objectFit: "contain" }} />
+                        </button>
                       );
                     })}
                   </div>
@@ -863,6 +885,25 @@ export function GuildsPage() {
             </div>
             <div style={{ padding: "22px 24px", display: "flex", flexDirection: "column", gap: 18 }}>
               <div>
+                <label style={{ display: "block", font: "700 11px Inter", letterSpacing: "1.5px", textTransform: "uppercase", color: "var(--ink2)", marginBottom: 9 }}>Guild Crest</label>
+                <div style={{ display: "flex", gap: 14, alignItems: "center" }}>
+                  <Emblem src={CRESTS[geCrest].src} size={62} />
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ font: "700 13px Cinzel,serif", color: "var(--gold-lt)", marginBottom: 8 }}>{CRESTS[geCrest].name}</div>
+                    <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                      {CREST_KEYS.map((k) => {
+                        const on = k === geCrest;
+                        return (
+                          <button key={k} onClick={() => setGeCrest(k)} title={CRESTS[k].name} style={{ width: 48, height: 48, padding: 4, borderRadius: 10, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", border: on ? "2px solid var(--gold)" : "2px solid rgba(232,184,75,.15)", background: on ? "rgba(232,184,75,.16)" : "rgba(0,0,0,.3)" }}>
+                            <img src={CRESTS[k].src} alt="" style={{ width: "100%", height: "100%", objectFit: "contain" }} />
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                </div>
+              </div>
+              <div>
                 <label style={{ display: "block", font: "700 11px Inter", letterSpacing: "1.5px", textTransform: "uppercase", color: "var(--ink2)", marginBottom: 7 }}>Guild Name</label>
                 <input value={geName} onChange={(e) => setGeName(e.target.value)} maxLength={24} style={{ width: "100%", boxSizing: "border-box", padding: "12px 14px", borderRadius: 10, border: "1px solid rgba(232,184,75,.25)", background: "rgba(0,0,0,.3)", color: "#fff", font: "600 15px Inter", outline: "none" }} />
               </div>
@@ -874,7 +915,7 @@ export function GuildsPage() {
               <div>
                 <label style={{ display: "block", font: "700 11px Inter", letterSpacing: "1.5px", textTransform: "uppercase", color: "var(--ink2)", marginBottom: 9 }}>Minimum Trophies to Join</label>
                 <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
-                  <span style={{ font: "800 22px 'JetBrains Mono',monospace", color: "var(--gold-lt)", minWidth: 104 }}>🏆 {geMin.toLocaleString()}</span>
+                  <span style={{ display: "inline-flex", alignItems: "center", gap: 7, font: "800 22px 'JetBrains Mono',monospace", color: "var(--gold-lt)", minWidth: 104 }}><Trophy size={22} /> {geMin.toLocaleString()}</span>
                   <input type="range" min={0} max={5000} step={100} value={geMin} onChange={(e) => setGeMin(Number(e.target.value))} style={{ flex: 1, accentColor: "#f0c24b" }} />
                 </div>
                 <div style={{ font: "500 11.5px Inter", color: "var(--ink2)", marginTop: 8 }}>Applicants below this trophy count can't request to join.</div>
@@ -919,6 +960,17 @@ export function GuildsPage() {
             </div>
           </div>
         </div>
+      )}
+
+      {/* Guild Chat drawer — local optimistic chat until the socket lands */}
+      {detail && (
+        <GuildChatPanel
+          open={guildChatOpen}
+          onClose={() => setGuildChatOpen(false)}
+          guildId={detail.guild.id}
+          guildName={detail.guild.name}
+          crestKey={detail.guild.crestKey}
+        />
       )}
     </div>
   );

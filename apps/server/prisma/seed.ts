@@ -60,10 +60,12 @@ const STORE = [
 
   // ── Bundles ──
   { id: "heritage", type: "BUNDLE", name: "Royal Heritage Pack", assetKey: "me-banner.png", previewKey: "bundle:heritage", priceDiamonds: 1200, tag: "VALUE", isPremium: true, bundleItems: ["ebony", "crimsonskin", "laurel", "victory"], sortOrder: 70 },
-  { id: "lunar", type: "BUNDLE", name: "Lunar New Year Bundle", assetKey: "ic-chest.png", previewKey: "bundle:lunar", priceDiamonds: 1080, tag: "-35%", isPremium: true, bundleItems: ["jadeskin", "marble", "focused"], sortOrder: 71 },
+  { id: "lunar", type: "BUNDLE", name: "Lunar New Year Bundle", assetKey: "me-banner.png", previewKey: "bundle:lunar", priceDiamonds: 1080, tag: "-35%", isPremium: true, bundleItems: ["jadeskin", "marble", "focused"], sortOrder: 71 },
 
-  // ── Season Pass ──
-  { id: "seasonpass", type: "SEASON_PASS", name: "Royal Season Pass", assetKey: "me-crown.png", previewKey: "bundle:season", priceDiamonds: 900, tag: "SEASON", isPremium: true, sortOrder: 80 },
+  // ── Season Pass ── active:false so it is NOT sold via the generic /store/purchase
+  // path (which wouldn't set hasPass). It exists only as the price source for
+  // POST /api/season/pass; the Season page is the sole purchase entry point.
+  { id: "seasonpass", type: "SEASON_PASS", name: "Royal Season Pass", assetKey: "me-crown.png", previewKey: "bundle:season", priceDiamonds: 900, tag: "SEASON", isPremium: true, active: false, sortOrder: 80 },
 ] as const;
 
 const QUESTS = [
@@ -97,18 +99,28 @@ async function main() {
     },
   });
 
-  // demo bots across rank tiers to populate leaderboard + matchmaking
+  // demo bots across rank tiers to populate leaderboard + matchmaking. Each bot
+  // gets a DISTINCT hero portrait (avatar key → /assets/avatars/<key>.png) so the
+  // ladder doesn't render every player with the same default face. Keys are drawn
+  // from AVATARS in apps/web/src/lib/assets.ts; the mapping fits each mythic name.
   const bots = [
-    ["Lakan", 2740], ["Mayari", 2410], ["Amihan", 2180], ["Tala", 1950], ["Bathala", 1620], ["Dumakulem", 1180],
+    ["Lakan", 2740, "sultan"],
+    ["Mayari", 2410, "diwata"],
+    ["Amihan", 2180, "babaylan"],
+    ["Tala", 1950, "dayang"],
+    ["Bathala", 1620, "sovereign"],
+    ["Dumakulem", 1180, "bagani"],
   ] as const;
-  for (const [name, trophies] of bots) {
+  for (const [name, trophies, avatar] of bots) {
     await prisma.user.upsert({
       where: { username: name.toLowerCase() },
-      update: {},
+      // backfill the avatar on existing rows too, so re-seeding fixes the ladder.
+      update: { avatarUrl: avatar },
       create: {
         username: name.toLowerCase(),
         displayName: name,
         tag: `#${1000 + trophies}`,
+        avatarUrl: avatar,
         trophies,
         isGuest: false,
         wins: Math.floor(trophies / 20),

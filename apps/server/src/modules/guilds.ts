@@ -1,10 +1,13 @@
 import type { FastifyInstance } from "fastify";
 import type { GuildRole } from "@prisma/client";
 import { z } from "zod";
-import { createGuildSchema, updateGuildSchema } from "@dama/shared";
+import { createGuildSchema, updateGuildSchema, guildChatSendSchema } from "@dama/shared";
 import { prisma } from "../db/client.js";
 import { ok, err } from "../lib/errors.js";
-import { requireAuth } from "../auth/guards.js";
+import { requireAuth, attachUser } from "../auth/guards.js";
+import { EV } from "@dama/shared";
+import { getIO } from "../realtime/io.js";
+import { loadGuildHistory, postGuildMessage, guildRoom } from "./guild-chat-service.js";
 
 const ROLE_RANK: Record<GuildRole, number> = { MEMBER: 1, OFFICER: 2, LEADER: 3 };
 const roleSchema = z.object({ role: z.enum(["OFFICER", "MEMBER"]) });
@@ -63,10 +66,11 @@ async function requireGuildRole(userId: string, guildId: string, min: GuildRole)
 }
 
 export async function guildRoutes(app: FastifyInstance) {
-  // GET /api/guilds?search= — browse
+  // GET /api/guilds?search= — browse (PUBLIC: the Top Guilds rail is read-only
+  // and shown to signed-out visitors on the leaderboard).
   app.get<{ Querystring: { search?: string } }>(
     "/guilds",
-    { preHandler: requireAuth },
+    { preHandler: attachUser },
     async (req) => {
       const search = req.query.search?.trim();
       const where = search
@@ -123,6 +127,7 @@ export async function guildRoutes(app: FastifyInstance) {
         name: input.name,
         tag: input.tag,
         description: input.description,
+        crestKey: input.crestKey,
         members: { create: { userId: me, role: "LEADER" } },
       },
       include: { _count: { select: { members: true } } },
@@ -203,6 +208,7 @@ export async function guildRoutes(app: FastifyInstance) {
           name: input.name,
           description: input.description,
           minTrophies: input.minTrophies,
+          crestKey: input.crestKey,
         },
       });
       return ok({
@@ -217,6 +223,39 @@ export async function guildRoutes(app: FastifyInstance) {
           createdAt: guild.createdAt,
         },
       });
+    },
+  );
+
+  // GET /api/guilds/:id/chat — recent chat history (members only)
+  app.get<{ Params: { id: string } }>(
+    "/guilds/:id/chat",
+    { preHandler: requireAuth },
+    async (req) => {
+      const me = req.userId!;
+      const guildId = req.params.id;
+      await requireGuildRole(me, guildId, "MEMBER");
+      const messages = await loadGuildHistory(guildId, 50);
+      return ok({ messages });
+    },
+  );
+
+  // POST /api/guilds/:id/chat — send a message (members only). Persists it, then
+  // broadcasts live to every guildmate in the `guild:<id>` socket room.
+  app.post<{ Params: { id: string } }>(
+    "/guilds/:id/chat",
+    { preHandler: requireAuth },
+    async (req) => {
+      const me = req.userId!;
+      const guildId = req.params.id;
+      const membership = await requireGuildRole(me, guildId, "MEMBER");
+      const { body } = guildChatSendSchema.parse(req.body);
+
+      const message = await postGuildMessage(guildId, me, body, membership.role);
+
+      // live fan-out to online guildmates (skip silently if sockets not up yet)
+      getIO()?.to(guildRoom(guildId)).emit(EV.guildChatMessage, message);
+
+      return ok({ message });
     },
   );
 

@@ -47,12 +47,28 @@ export const COOKIE = {
   refresh: "fd_refresh",
 } as const;
 
+const isProd = env.NODE_ENV === "production";
+
 export function cookieOpts(maxAgeMs: number) {
   return {
     httpOnly: true,
-    sameSite: "lax" as const,
-    secure: env.NODE_ENV === "production",
+    // In prod the SPA and API are on different subdomains (filipinodama.com ↔
+    // api.filipinodama.com), so the auth cookie must be SameSite=None+Secure to
+    // ride cross-site XHR — and scoped to the shared parent domain if set. Locally
+    // everything is same-origin, so Lax (no Secure) works over plain http.
+    sameSite: (isProd ? "none" : "lax") as "none" | "lax",
+    secure: isProd,
+    ...(isProd && env.COOKIE_DOMAIN ? { domain: env.COOKIE_DOMAIN } : {}),
     path: "/",
     maxAge: Math.floor(maxAgeMs / 1000),
+  };
+}
+
+/** Attributes for clearing an auth cookie — must match how it was set (domain
+ * + path), or the browser keeps the cookie. */
+export function clearCookieOpts() {
+  return {
+    path: "/",
+    ...(isProd && env.COOKIE_DOMAIN ? { domain: env.COOKIE_DOMAIN } : {}),
   };
 }

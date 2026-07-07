@@ -1,9 +1,11 @@
 import Fastify from "fastify";
 import cors from "@fastify/cors";
 import cookie from "@fastify/cookie";
+import helmet from "@fastify/helmet";
+import rateLimit from "@fastify/rate-limit";
 import { ZodError } from "zod";
 import { Server as IOServer } from "socket.io";
-import { env } from "./config/env.js";
+import { env, isProd } from "./config/env.js";
 import { prisma } from "./db/client.js";
 import { ApiError, fail } from "./lib/errors.js";
 import { authRoutes } from "./auth/routes.js";
@@ -25,8 +27,27 @@ export { prisma };
 async function main() {
   const app = Fastify({ logger: true });
 
+  // Security headers. This is a JSON API (no first-party HTML), so the default
+  // CSP is unnecessary and would only complicate the separately-served SPA;
+  // HSTS is enabled only in production (behind Railway TLS).
+  await app.register(helmet, {
+    contentSecurityPolicy: false,
+    hsts: isProd ? { maxAge: 15552000, includeSubDomains: true } : false,
+    crossOriginResourcePolicy: { policy: "cross-origin" },
+  });
+
   await app.register(cors, { origin: env.CORS_ORIGIN, credentials: true });
   await app.register(cookie);
+
+  // Global rate limit — a sane ceiling on every route (keyed by client IP).
+  // Auth routes add their own stricter per-route limits via config in routes.ts.
+  await app.register(rateLimit, {
+    global: true,
+    max: 300,
+    timeWindow: "1 minute",
+    // The PayMongo webhook must never be throttled (their retries are legitimate).
+    allowList: (req) => req.url.startsWith("/api/payments/webhook"),
+  });
 
   // Uniform error envelope: ApiError → its status; ZodError → 400; else 500.
   app.setErrorHandler((error, _req, reply) => {
