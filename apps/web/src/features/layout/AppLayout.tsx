@@ -4,6 +4,7 @@ import { rankTierFor } from "@dama/shared";
 import { useAppStore } from "../../stores/appStore";
 import { useAuthStore } from "../../stores/authStore";
 import { usePresenceStore } from "../../stores/presenceStore";
+import { useDmStore } from "../../stores/dmStore";
 import { ICONS, BRAND, avatar as avatarUrl } from "../../lib/assets";
 import { Toasts } from "../shared/Toasts";
 import { TopUpModal } from "../store/TopUpModal";
@@ -41,6 +42,8 @@ export function AppLayout() {
   const showToast = useAppStore((s) => s.showToast);
   const startPresence = usePresenceStore((s) => s.start);
   const stopPresence = usePresenceStore((s) => s.stop);
+  const dmUnread = useDmStore((s) => s.unread);
+  const refreshDmUnread = useDmStore((s) => s.unreadTotal);
   const [acctOpen, setAcctOpen] = useState(false);
 
   // Start live presence once signed in (guests included) so friends' online
@@ -49,6 +52,12 @@ export function AppLayout() {
     if (me) void startPresence();
     else stopPresence();
   }, [me, startPresence, stopPresence]);
+
+  // Keep the DM unread badge fresh: fetch on sign-in, and refresh on route
+  // changes (cheap) so it reflects reads/new messages without extra plumbing.
+  useEffect(() => {
+    if (me && !me.isGuest) void refreshDmUnread();
+  }, [me, pathname, refreshDmUnread]);
   const [topUpOpen, setTopUpOpen] = useState(false);
   const [notifOpen, setNotifOpen] = useState(false);
   const [notifUnread, setNotifUnread] = useState(0);
@@ -65,11 +74,10 @@ export function AppLayout() {
   const tier = rankTierFor(trophies);
   const isOn = (to: string) => (to === "/" ? pathname === "/" : pathname.startsWith(to));
 
-  // Unread direct-messages total, driven from a REAL source. There is no DM /
-  // chat backend yet, so this is honestly 0 and the badge stays hidden. When the
-  // DM backend lands, replace this with the live unread count and both the nav
-  // avatar badge and the mobile Profile-tab badge (below) light up automatically.
-  const unreadMessages = 0;
+  // Unread direct-messages total — LIVE from the DM store (GET /api/dm/unread-total,
+  // refreshed on sign-in + route change). Lights up the nav avatar badge and the
+  // mobile Profile-tab badge when > 0. Real count, never fabricated.
+  const unreadMessages = registered ? dmUnread : 0;
 
   async function signOut() {
     await logout();

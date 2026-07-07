@@ -62,12 +62,18 @@ export function registerPresence(io: IOServer, socket: Socket) {
     void broadcastToFriends(io, userId, "online");
   }
 
-  // On request, send the caller the set of their friends who are currently online.
+  // On request, send the caller the set of their friends who are currently
+  // online. Wrapped so a DB error can never become an unhandled rejection that
+  // crashes the process.
   socket.on(EV.presencePing, async () => {
-    prisma.user.update({ where: { id: userId }, data: { lastSeenAt: new Date() } }).catch(() => {});
-    const ids = await friendIds(userId);
-    const onlineFriends = ids.filter((id) => isOnline(id));
-    socket.emit(EV.presenceUpdate, { snapshot: onlineFriends, at: Date.now() });
+    try {
+      prisma.user.update({ where: { id: userId }, data: { lastSeenAt: new Date() } }).catch(() => {});
+      const ids = await friendIds(userId);
+      const onlineFriends = ids.filter((id) => isOnline(id));
+      socket.emit(EV.presenceUpdate, { snapshot: onlineFriends, at: Date.now() });
+    } catch {
+      /* presence is best-effort; a lookup failure just means no snapshot */
+    }
   });
 
   socket.on("disconnect", () => {

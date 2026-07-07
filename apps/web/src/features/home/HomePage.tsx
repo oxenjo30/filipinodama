@@ -6,6 +6,7 @@ import { Board } from "../../components";
 import { api, ApiError, type Me } from "../../lib/api";
 import { useAppStore } from "../../stores/appStore";
 import { useAuthStore } from "../../stores/authStore";
+import { useOnlineStore } from "../../stores/onlineStore";
 import { ICONS } from "../../lib/assets";
 
 /**
@@ -30,6 +31,12 @@ const UPDATES = [
   { tag: "NEW", tagbg: "#2f8f5b", title: "Kingdom Mode is Here!", body: "Build your kingdom, conquer rivals, and earn exclusive rewards.", time: "2 days ago", bg: "rgba(74,45,122,.5)", glyph: "🏰" },
   { tag: "UPDATE", tagbg: "#2f5da8", title: "Ranked Season 12", body: "New season has begun! Climb the ranks and earn epic rewards.", time: "5 days ago", bg: "rgba(160,48,58,.4)", glyph: "🏆" },
 ];
+// Ambient PLATFORM-WIDE stats (not the user's personal data). These are the
+// documented "big-platform numbers" exception to the no-mock rule — the same
+// class as the players-online pill and global-leaderboard ambience. They are
+// community-scale figures, NEVER presented as the signed-in user's own stats
+// (personal stats live on the Profile page and are 100% real per-user). When a
+// real aggregate-metrics endpoint lands, swap these for its values.
 const QUICK_STATS = [
   { value: "128,945", label: "Active Players", icon: "sb-players.png" },
   { value: "4.2M", label: "Matches Played", icon: "sb-matches.png" },
@@ -281,7 +288,13 @@ export function HomePage() {
               match={activeMatch}
               meId={me?.id ?? null}
               miniBoard={<Board state={miniState} boardTheme="marble" />}
-              onResume={() => navigate("/play/online")}
+              onResume={() => {
+                // Seed the online store with this in-progress match so /play/online
+                // RESYNCS into it instead of starting a fresh casual search (CC-2).
+                const myColor = activeMatch.red?.id === me?.id ? "red" : "blue";
+                useOnlineStore.setState({ status: "playing", matchId: activeMatch.id, myColor, state: null, end: null });
+                navigate("/play/online");
+              }}
             />
           ) : null}
 

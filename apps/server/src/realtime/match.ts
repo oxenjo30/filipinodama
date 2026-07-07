@@ -12,6 +12,7 @@ import { createInitialState, isLegal, applyMove } from "@dama/game-engine";
 import type { MatchMode as PrismaMatchMode } from "@prisma/client";
 import { prisma } from "../db/client.js";
 import { applyLedger } from "../economy/ledger.js";
+import { allow } from "./rate-limit.js";
 
 /**
  * SERVER-AUTHORITATIVE match loop.
@@ -52,12 +53,28 @@ type RematchOffer = {
 };
 const rematchOffers: Map<string, RematchOffer> = new Map();
 const REMATCH_TTL_MS = 60_000;
+// Periodic sweep so abandoned end-of-match offers are reclaimed even if no new
+// offer event ever fires (opportunistic pruning alone would leak them). unref()
+// so this timer never keeps the process alive on shutdown.
+const rematchSweep = setInterval(() => {
+  const now = Date.now();
+  for (const [id, o] of rematchOffers) if (o.expires < now) rematchOffers.delete(id);
+}, 30_000);
+rematchSweep.unref?.();
 
 /**
  * Seed a live match. Called by matchmaking (and any room-start flow) the moment
  * two players are paired. The engine builds the opening position; the same
  * `settings` are persisted on the Match row so replays are exact.
  */
+/**
+ * Drop a live match's in-memory state without settling it (e.g. the private-room
+ * host abandoned the lobby before/after start). Safe to call for an unknown id.
+ */
+export function endLiveMatch(matchId: string): void {
+  live.delete(matchId);
+}
+
 export function createLiveMatch(
   matchId: string,
   redId: string | null,
@@ -288,12 +305,13 @@ async function settleMatch(io: IOServer, lm: LiveMatch): Promise<void> {
   });
 
   // Remember this pairing so either player can offer a rematch (both-human only).
+  // Carry the FINISHED match's real settings into the rematch (not DEFAULT).
   if (lm.redId && lm.blueId) {
     rematchOffers.set(lm.matchId, {
       redId: lm.redId,
       blueId: lm.blueId,
       mode: lm.mode,
-      settings: { ...DEFAULT_SETTINGS },
+      settings: { ...lm.state.settings },
       offeredBy: new Set(),
       expires: Date.now() + REMATCH_TTL_MS,
     });
@@ -405,6 +423,7 @@ export function registerMatch(io: IOServer, socket: Socket) {
   // ── In-match quick chat / emote — relay to the match room (persisted lightly
   // via the match room; no separate channel needed for ephemeral match chat). ──
   socket.on(EV.matchChat, (payload: { matchId?: unknown; body?: unknown; emote?: unknown } = {}) => {
+    if (!allow(socket, "match:chat", 8, 4000)) return; // anti-flood
     const matchId = typeof payload?.matchId === "string" ? payload.matchId : null;
     if (!matchId) return;
     const lm = live.get(matchId);
@@ -425,6 +444,7 @@ export function registerMatch(io: IOServer, socket: Socket) {
 
   // ── Rematch: either finished-match player offers; both offers → new match. ──
   socket.on(EV.matchRematchOffer, async (payload: { matchId?: unknown } = {}) => {
+    if (!allow(socket, "rematch", 5, 5000)) return; // anti-flood
     pruneRematchOffers();
     const matchId = typeof payload?.matchId === "string" ? payload.matchId : null;
     if (!matchId) return;

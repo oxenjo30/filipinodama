@@ -170,10 +170,27 @@ export const useRoomStore = create<RoomStore>((set, get) => {
       // The server has already seeded a real match and joined our socket to its
       // room. Hand it to the onlineStore (which owns live match rendering) so the
       // online match view resyncs into it, then flag the page to navigate.
+      // Carry the REAL opponent identity from the room state so the match view
+      // shows the actual player, not a generic "Opponent". yourColor red ⇒ host,
+      // so the opponent is the guest (and vice-versa).
+      const rs = get();
+      const opp = p.yourColor === "red" ? rs.guest : rs.host;
+      const opponent = opp
+        ? {
+            id: opp.userId,
+            username: opp.name,
+            displayName: opp.name,
+            tag: opp.tag,
+            avatarUrl: opp.avatarUrl,
+            trophies: 0,
+            rankTier: "squire",
+          }
+        : null;
       useOnlineStore.setState({
         status: "playing",
         matchId: p.matchId,
         myColor: p.yourColor,
+        opponent,
         state: null,
         selected: null,
         moveTargets: [],

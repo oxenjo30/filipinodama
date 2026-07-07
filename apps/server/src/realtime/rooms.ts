@@ -2,7 +2,29 @@ import type { Server as IOServer, Socket } from "socket.io";
 import { EV, DEFAULT_SETTINGS, type GameSettings } from "@dama/shared";
 import type { MatchMode as PrismaMatchMode } from "@prisma/client";
 import { prisma } from "../db/client.js";
-import { createLiveMatch } from "./match.js";
+import { createLiveMatch, endLiveMatch } from "./match.js";
+import { allow } from "./rate-limit.js";
+
+/**
+ * Sanitize a client-proposed settings patch into a SAFE GameSettings — bounded
+ * so a malicious host can't inject a negative/huge drawMoveLimit or junk keys
+ * that would break the engine. Only the three known fields are accepted, each
+ * clamped to sane ranges; anything else is ignored and DEFAULT is the floor.
+ */
+function sanitizeSettings(base: GameSettings, patch: unknown): GameSettings {
+  const p = (patch ?? {}) as Record<string, unknown>;
+  const clampInt = (v: unknown, min: number, max: number, fallback: number): number => {
+    const n = typeof v === "number" && Number.isFinite(v) ? Math.round(v) : fallback;
+    return Math.min(max, Math.max(min, n));
+  };
+  return {
+    forcedMaxCapture: typeof p.forcedMaxCapture === "boolean" ? p.forcedMaxCapture : base.forcedMaxCapture,
+    drawMoveLimit: clampInt(p.drawMoveLimit, 10, 200, base.drawMoveLimit),
+    ...(p.moveTimerSec !== undefined || base.moveTimerSec !== undefined
+      ? { moveTimerSec: clampInt(p.moveTimerSec, 5, 600, base.moveTimerSec ?? 60) }
+      : {}),
+  };
+}
 
 /**
  * Private rooms — in-memory (single-instance), like live matches. A host creates
@@ -12,7 +34,9 @@ import { createLiveMatch } from "./match.js";
  * Rooms are ephemeral: they vanish on server restart or when the host leaves.
  */
 
-type Member = { userId: string; socketId: string; name: string; avatarUrl: string | null; tag: string };
+// A member tracks ALL of a user's sockets in this room (multi-tab), so one tab
+// closing doesn't evict a user who is still connected on another.
+type Member = { userId: string; sockets: Set<string>; name: string; avatarUrl: string | null; tag: string };
 type Room = {
   code: string;
   hostId: string;
@@ -42,7 +66,19 @@ async function memberFor(userId: string, socketId: string): Promise<Member> {
     where: { id: userId },
     select: { displayName: true, avatarUrl: true, tag: true },
   });
-  return { userId, socketId, name: u?.displayName ?? "Player", avatarUrl: u?.avatarUrl ?? null, tag: u?.tag ?? "" };
+  return { userId, sockets: new Set([socketId]), name: u?.displayName ?? "Player", avatarUrl: u?.avatarUrl ?? null, tag: u?.tag ?? "" };
+}
+
+/** Find a user's member record in a room (host/guest/spectator), or null. */
+function memberIn(room: Room, userId: string): Member | null {
+  if (room.host.userId === userId) return room.host;
+  if (room.guest?.userId === userId) return room.guest;
+  return room.spectators.get(userId) ?? null;
+}
+
+/** Force every one of a user's sockets to leave the room's socket-room. */
+function detachSockets(io: IOServer, room: Room, member: Member) {
+  for (const sid of member.sockets) io.sockets.sockets.get(sid)?.leave(ROOM_PREFIX(room.code));
 }
 
 /** The wire-safe room snapshot broadcast to everyone in the room. */
@@ -66,17 +102,24 @@ function emitState(io: IOServer, room: Room) {
   io.to(ROOM_PREFIX(room.code)).emit(EV.roomState, roomState(room));
 }
 
-/** Remove a user from whatever room they're in; tear the room down if host left. */
-function leaveRoom(io: IOServer, userId: string, socket?: Socket) {
+/**
+ * Fully remove a user from THEIR current room (all their sockets), tearing the
+ * room down if they were the host. Intended for an explicit leave/kick/ban.
+ */
+function removeMember(io: IOServer, userId: string) {
   const code = userRoom.get(userId);
   if (!code) return;
   const room = rooms.get(code);
   userRoom.delete(userId);
   if (!room) return;
-  if (socket) void socket.leave(ROOM_PREFIX(code));
+  const member = memberIn(room, userId);
+  if (member) detachSockets(io, room, member);
 
   if (room.hostId === userId) {
-    // Host left → close the room for everyone.
+    // Host left → close the room for everyone (and clean up a started match's
+    // in-memory state so it doesn't leak — the match is abandoned when the host
+    // who created the lobby leaves).
+    if (room.matchId) endLiveMatch(room.matchId);
     io.to(ROOM_PREFIX(code)).emit(EV.roomState, { code, closed: true });
     for (const m of [room.guest, ...room.spectators.values()]) if (m) userRoom.delete(m.userId);
     rooms.delete(code);
@@ -87,13 +130,39 @@ function leaveRoom(io: IOServer, userId: string, socket?: Socket) {
   emitState(io, room);
 }
 
+/**
+ * Handle ONE socket disconnecting. Only actually removes the user from the room
+ * when that was their LAST socket in the room (multi-tab safe) — a user with
+ * another open tab keeps their seat.
+ */
+function socketLeft(io: IOServer, userId: string, socketId: string) {
+  const code = userRoom.get(userId);
+  const room = code ? rooms.get(code) : null;
+  if (!room) return;
+  const member = memberIn(room, userId);
+  if (!member) return;
+  member.sockets.delete(socketId);
+  if (member.sockets.size === 0) removeMember(io, userId);
+}
+
 export function registerRooms(io: IOServer, socket: Socket) {
   const userId = socket.data.userId as string;
   // Deterministic-enough code generator (Math.random is fine for room codes).
   const rng = Math.random;
 
   socket.on(EV.roomCreate, async (payload: { mode?: unknown } = {}) => {
-    leaveRoom(io, userId, socket); // one room at a time
+    if (!allow(socket, "room:create", 5, 10_000)) return; // anti-spam
+    // If the host already hosts a room, a second tab re-attaches instead of
+    // orphaning the first room.
+    const existingCode = userRoom.get(userId);
+    const existingRoom = existingCode ? rooms.get(existingCode) : null;
+    if (existingRoom && existingRoom.hostId === userId) {
+      existingRoom.host.sockets.add(socket.id);
+      void socket.join(ROOM_PREFIX(existingCode!));
+      socket.emit(EV.roomState, roomState(existingRoom));
+      return;
+    }
+    removeMember(io, userId); // one room at a time (explicit leave of any prior room)
     const code = makeCode(rng);
     const host = await memberFor(userId, socket.id);
     const mode = (payload?.mode === "RANKED" ? "RANKED" : "PRIVATE") as PrismaMatchMode;
@@ -115,6 +184,7 @@ export function registerRooms(io: IOServer, socket: Socket) {
   });
 
   socket.on(EV.roomJoin, async (payload: { code?: unknown } = {}) => {
+    if (!allow(socket, "room:join", 15, 10_000)) return; // anti-brute-force on codes
     const code = typeof payload?.code === "string" ? payload.code.trim().toUpperCase() : null;
     if (!code) return;
     const room = rooms.get(code);
@@ -126,13 +196,19 @@ export function registerRooms(io: IOServer, socket: Socket) {
       socket.emit(EV.roomState, { code, error: "banned" });
       return;
     }
-    leaveRoom(io, userId, socket);
-    const member = await memberFor(userId, socket.id);
     void socket.join(ROOM_PREFIX(code));
-    userRoom.set(userId, code);
-    // First non-host joiner takes the guest seat; otherwise they spectate.
-    if (!room.guest && room.hostId !== userId) room.guest = member;
-    else if (room.hostId !== userId) room.spectators.set(userId, member);
+    // Multi-tab: if already in THIS room, just attach the new socket to the same
+    // member (keep their seat); otherwise leave any prior room and take a slot.
+    const existing = userRoom.get(userId) === code ? memberIn(room, userId) : null;
+    if (existing) {
+      existing.sockets.add(socket.id);
+    } else {
+      removeMember(io, userId);
+      const member = await memberFor(userId, socket.id);
+      userRoom.set(userId, code);
+      if (!room.guest && room.hostId !== userId) room.guest = member;
+      else if (room.hostId !== userId) room.spectators.set(userId, member);
+    }
     emitState(io, room);
   });
 
@@ -140,11 +216,16 @@ export function registerRooms(io: IOServer, socket: Socket) {
     const code = typeof payload?.code === "string" ? payload.code.trim().toUpperCase() : null;
     const room = code ? rooms.get(code) : null;
     if (!room || room.banned.has(userId)) return;
-    leaveRoom(io, userId, socket);
-    const member = await memberFor(userId, socket.id);
     void socket.join(ROOM_PREFIX(code!));
-    userRoom.set(userId, code!);
-    room.spectators.set(userId, member);
+    const existing = userRoom.get(userId) === code ? memberIn(room, userId) : null;
+    if (existing) {
+      existing.sockets.add(socket.id);
+    } else {
+      removeMember(io, userId);
+      const member = await memberFor(userId, socket.id);
+      userRoom.set(userId, code!);
+      room.spectators.set(userId, member);
+    }
     emitState(io, room);
   });
 
@@ -152,7 +233,7 @@ export function registerRooms(io: IOServer, socket: Socket) {
     const code = userRoom.get(userId);
     const room = code ? rooms.get(code) : null;
     if (!room || room.hostId !== userId) return; // host only
-    if (payload.settings) room.settings = { ...room.settings, ...payload.settings };
+    if (payload.settings) room.settings = sanitizeSettings(room.settings, payload.settings);
     emitState(io, room);
   });
 
@@ -160,9 +241,12 @@ export function registerRooms(io: IOServer, socket: Socket) {
     const code = userRoom.get(userId);
     const room = code ? rooms.get(code) : null;
     const target = typeof payload?.userId === "string" ? payload.userId : null;
+    // Host only, AND the target must actually be in THIS room (scoped — a host of
+    // one room cannot kick a user out of a different room).
     if (!room || room.hostId !== userId || !target || target === userId) return;
+    if (userRoom.get(target) !== code || !memberIn(room, target)) return;
     io.to(`presence:${target}`).emit(EV.roomState, { code, kicked: target });
-    leaveRoom(io, target);
+    removeMember(io, target); // detaches their sockets from the room too
   });
 
   socket.on(EV.roomBan, (payload: { userId?: unknown } = {}) => {
@@ -170,9 +254,10 @@ export function registerRooms(io: IOServer, socket: Socket) {
     const room = code ? rooms.get(code) : null;
     const target = typeof payload?.userId === "string" ? payload.userId : null;
     if (!room || room.hostId !== userId || !target || target === userId) return;
+    if (userRoom.get(target) !== code || !memberIn(room, target)) return;
     room.banned.add(target);
     io.to(`presence:${target}`).emit(EV.roomState, { code, banned: target });
-    leaveRoom(io, target);
+    removeMember(io, target);
   });
 
   socket.on(EV.roomStart, async () => {
@@ -212,6 +297,7 @@ export function registerRooms(io: IOServer, socket: Socket) {
   });
 
   socket.on("room:chat", (payload: { body?: unknown } = {}) => {
+    if (!allow(socket, "room:chat", 8, 4000)) return; // anti-flood
     const code = userRoom.get(userId);
     const room = code ? rooms.get(code) : null;
     if (!room) return;
@@ -225,6 +311,6 @@ export function registerRooms(io: IOServer, socket: Socket) {
     });
   });
 
-  socket.on(EV.roomLeave, () => leaveRoom(io, userId, socket));
-  socket.on("disconnect", () => leaveRoom(io, userId, socket));
+  socket.on(EV.roomLeave, () => removeMember(io, userId));
+  socket.on("disconnect", () => socketLeft(io, userId, socket.id));
 }

@@ -91,9 +91,19 @@ export async function loadHistory(channelId: string, limit = 50): Promise<WireMe
 }
 
 /** Persist a message and return its wire shape. */
+// C0 control chars (0x00–0x1F) + DEL (0x7F). Unicode escapes, no literal bytes.
+const CONTROL_CHARS = new RegExp("[" + "\u0000-\u001F\u007F" + "]", "g");
+/** Server-side normalization: strip control chars, trim, hard-cap length — defense
+ * in depth so a client bypassing its own cap can't store an unbounded /
+ * control-char-laden message in the @db.Text column. */
+function normalizeBody(raw: string): string {
+  return raw.replace(CONTROL_CHARS, "").trim().slice(0, 1000);
+}
+
 export async function postMessage(channelId: string, authorId: string, body: string): Promise<WireMessage> {
+  const clean = normalizeBody(body);
   const msg = await prisma.message.create({
-    data: { channelId, authorId, body },
+    data: { channelId, authorId, body: clean },
     include: { author: { select: authorSelect } },
   });
   return toWire(msg);

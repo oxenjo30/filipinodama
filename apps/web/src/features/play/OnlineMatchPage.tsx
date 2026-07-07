@@ -65,7 +65,7 @@ export function OnlineMatchPage() {
     status, matchId, myColor, opponent, state,
     selected, moveTargets, captureTargets, mustCapture, end, error,
     chat, offeredByMe, offeredByOpponent, rematchDeclined,
-    joinQueue, leaveQueue, onSquareClick, resign, reset,
+    joinQueue, leaveQueue, resync, onSquareClick, resign, reset,
     sendChat: sendMatchChat, sendEmote, offerRematch, acceptRematch, declineRematch,
   } = useOnlineStore();
 
@@ -95,7 +95,16 @@ export function OnlineMatchPage() {
       navigate(`/login?next=${encodeURIComponent(`/play/online?mode=${mode.toLowerCase()}`)}`);
       return;
     }
-    joinQueue(mode);
+    // If we arrived ALREADY in a match — a private-room Start or a Continue-Playing
+    // resume seeds onlineStore with { status:"playing"/"found", matchId } before
+    // navigating here — do NOT re-queue (that would clobber the match into casual
+    // matchmaking, orphaning the real game). Resync into the existing match instead.
+    const st = useOnlineStore.getState();
+    if (st.matchId && (st.status === "playing" || st.status === "found")) {
+      resync();
+    } else {
+      joinQueue(mode);
+    }
     return () => {
       leaveQueue();
       reset();

@@ -69,6 +69,9 @@ export type OnlineStore = {
 
   joinQueue: (mode: "CASUAL" | "RANKED") => Promise<void>;
   leaveQueue: () => void;
+  /** Re-attach to the current matchId (used when arriving already in a match:
+   *  a private-room start or a Continue-Playing resume) instead of re-queuing. */
+  resync: () => Promise<void>;
   onSquareClick: (sq: Square) => void;
   resign: () => void;
   reset: () => void;
@@ -269,6 +272,18 @@ export const useOnlineStore = create<OnlineStore>((set, get) => {
         /* ignore */
       }
       set({ status: "idle" });
+    },
+
+    resync: async () => {
+      const id = get().matchId;
+      if (!id) return;
+      try {
+        await connectSocket();
+        wire();
+        getSocket().emit(EV.matchResync, { matchId: id });
+      } catch {
+        /* the server will resend match:state; if offline the board stays as-is */
+      }
     },
 
     onSquareClick: (sq) => {

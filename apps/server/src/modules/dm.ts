@@ -104,21 +104,31 @@ export async function dmRoutes(app: FastifyInstance) {
     const message = await postMessage(channelId, me, body);
     await markRead(channelId, me); // my own send counts as read for me
 
-    // Live-deliver to the recipient's sessions (open thread + unread badge).
+    // Live-deliver to the recipient's sessions (open thread + unread badge) AND
+    // echo to the SENDER's own other tabs so an open thread on another device
+    // updates too (the client dedupes by message id, so no double-render).
     const io = getIO();
     if (io) {
       io.to(`presence:${other}`).emit(EV.chatMessage, { channelId, message, kind: "dm", from: me });
       io.to(`presence:${other}`).emit(EV.chatNotify, { kind: "dm", from: me });
+      io.to(`presence:${me}`).emit(EV.chatMessage, { channelId, message, kind: "dm", from: me });
     }
     return ok({ message });
   });
 
-  // POST /api/dm/:channelId/read — mark a DM channel read (clears my unread).
+  // POST /api/dm-channel/:channelId/read — mark a DM channel read (clears my
+  // unread). Guarded: you may only mark a channel you are a member of (no IDOR).
   app.post<{ Params: { channelId: string } }>(
     "/dm-channel/:channelId/read",
     { preHandler: requireAuth },
     async (req) => {
-      await markRead(req.params.channelId, req.userId!);
+      const me = req.userId!;
+      const member = await prisma.channelMember.findFirst({
+        where: { channelId: req.params.channelId, userId: me },
+        select: { id: true },
+      });
+      if (!member) throw err.forbidden("NOT_A_MEMBER", "Not your channel");
+      await markRead(req.params.channelId, me);
       return ok({ read: true });
     },
   );
