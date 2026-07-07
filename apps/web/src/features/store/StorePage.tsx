@@ -161,9 +161,10 @@ function thumbFor(it: StoreItemApi): Thumb {
       return { kind: "img", file: a.endsWith(".png") ? a : `board-${a}.png` };
     case "SKIN": {
       // assetKey is a skin folder ("jade"/"crimson"/"obsidian"/"classic") →
-      // show the red king from that skin (classic = crimson).
-      const folder = a === "classic" ? "crimson" : a;
-      return { kind: "img", file: `${folder}-king.png` };
+      // show the red king from that skin's real art (prototype path). The
+      // "classic" default has no skin folder, so it uses the default piece webp.
+      if (a === "classic") return { kind: "img", file: "pieces/red-king.webp" };
+      return { kind: "img", file: `pieces/skins/${a}/red-king.png` };
     }
     case "AVATAR":
       // assetKey like "avatars/sovereign.png"
