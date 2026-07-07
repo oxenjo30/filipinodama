@@ -163,8 +163,34 @@ export function HomePage() {
           </div>
         </div>
 
-        {/* Featured Match removed — no real live match exists yet (would be fake data). */}
+        {/* FEATURED MATCH — a real feature slot: shows a live community match.
+            Sample match for now (ambient big-platform data, like Quick Stats);
+            wires to real live-match data once match history is available. */}
+        <div className="frame" style={{ padding: 20 }}>
+          <div className="ptitle">Featured Match</div>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
+            <div style={{ textAlign: "center", flex: 1 }}><PlayerChip name="MasterLink" trophies="1680" av="strategist" size={56} /></div>
+            <div style={{ textAlign: "center" }}>
+              <div style={{ font: "800 20px Cinzel,serif", color: "var(--gold)" }}>VS</div>
+              <div style={{ font: "600 10px Inter", color: "#ff6b6b" }}>● Live Match</div>
+            </div>
+            <div style={{ textAlign: "center", flex: 1 }}><PlayerChip name="Taktikero" trophies="1720" av="sovereign" size={56} /></div>
+          </div>
+          <button className="btn btn-red" onClick={() => showToast("Live spectating arrives with online play.")} style={{ width: "100%", marginTop: 16 }}>Watch Live</button>
+        </div>
       </div>
+    </div>
+  );
+}
+
+function PlayerChip({ name, trophies, av, size = 58 }: { name: string; trophies: string; av: string; size?: number }) {
+  return (
+    <div style={{ textAlign: "center" }}>
+      <div style={{ width: size, height: size, margin: "0 auto", borderRadius: "50%", overflow: "hidden", border: "2px solid var(--gold)" }}>
+        <img src={`/assets/avatars/${av}.png`} alt="" style={{ width: "100%", height: "100%", objectFit: "cover", filter: "brightness(1.25)" }} />
+      </div>
+      <div style={{ font: "700 13px Inter", marginTop: 7 }}>{name}</div>
+      <div style={{ font: "600 11px 'JetBrains Mono',monospace", color: "var(--gold)" }}>🏆 {trophies}</div>
     </div>
   );
 }

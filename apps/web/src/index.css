@@ -74,6 +74,7 @@ input:focus{outline:none;border-color:var(--gold)!important}
   .fd-modes-grid{grid-template-columns:repeat(2,1fr)!important}
   .fd-two-col{grid-template-columns:1fr!important}
   .fd-game-grid{grid-template-columns:1fr!important}
+  .fd-lb-grid{grid-template-columns:1fr!important}
 }
 @media(max-width:560px){
   .fd-modes-grid{grid-template-columns:1fr!important}

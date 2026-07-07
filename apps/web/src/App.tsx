@@ -5,6 +5,15 @@ import { PlayHubPage } from "./features/play/PlayHubPage";
 import { AiSetupPage } from "./features/play/AiSetupPage";
 import { GamePage } from "./features/play/GamePage";
 import { ComingSoon } from "./features/shared/ComingSoon";
+import { FriendsPage } from "./features/friends/FriendsPage";
+import { ProfilePage } from "./features/profile/ProfilePage";
+import { QuestsPage } from "./features/quests/QuestsPage";
+import { GuildsPage } from "./features/guilds/GuildsPage";
+import { StorePage } from "./features/store/StorePage";
+import { SettingsPage } from "./features/settings/SettingsPage";
+import { LearnPage } from "./features/learn/LearnPage";
+import { SeasonPage } from "./features/season/SeasonPage";
+import { LeaderboardPage } from "./features/leaderboard/LeaderboardPage";
 
 /**
  * App — router + shared layout.
@@ -26,15 +35,15 @@ export function App() {
           <Route path="/play/ai/game" element={<GamePage />} />
 
           {/* ── styled placeholders (no dead links) ── */}
-          <Route path="/leaderboard" element={<ComingSoon title="Leaderboard" />} />
-          <Route path="/learn" element={<ComingSoon title="Learn" blurb="Interactive lessons that teach every rule of Filipino Dama — from the first move to crowning a Dama — are on the way." />} />
-          <Route path="/store" element={<ComingSoon title="Store" />} />
-          <Route path="/profile" element={<ComingSoon title="Profile" />} />
-          <Route path="/friends" element={<ComingSoon title="Friends" />} />
-          <Route path="/guilds" element={<ComingSoon title="Guilds" />} />
-          <Route path="/quests" element={<ComingSoon title="Quests" />} />
-          <Route path="/season" element={<ComingSoon title="Season" />} />
-          <Route path="/settings" element={<ComingSoon title="Settings" />} />
+          <Route path="/leaderboard" element={<LeaderboardPage />} />
+          <Route path="/learn" element={<LearnPage />} />
+          <Route path="/store" element={<StorePage />} />
+          <Route path="/profile" element={<ProfilePage />} />
+          <Route path="/friends" element={<FriendsPage />} />
+          <Route path="/guilds" element={<GuildsPage />} />
+          <Route path="/quests" element={<QuestsPage />} />
+          <Route path="/season" element={<SeasonPage />} />
+          <Route path="/settings" element={<SettingsPage />} />
           <Route path="/matchmaking" element={<ComingSoon title="Matchmaking" />} />
 
           {/* ── catch-all ── */}
