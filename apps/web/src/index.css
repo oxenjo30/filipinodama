@@ -1,162 +1,80 @@
-/* index.css — shared component classes for FilipinoDama Royal.
-   Ported verbatim from the approved prototype (FilipinoDama Royal.dc.html).
-   Loaded via `@import "../index.css"` from theme/tokens.css. Design tokens
-   (--gold, --ink, …) and keyframes are defined in tokens.css. */
+/* FilipinoDama Royal — global styles, ported VERBATIM from the approved
+   prototype (handoff/FilipinoDama Royal.dc.html <style> block). Do not
+   reinterpret; this IS the design. */
 
-button { font-family: inherit; }
-a { color: inherit; }
-input::placeholder { color: var(--ink2); }
-input:focus { outline: none; border-color: var(--gold) !important; }
+:root{--gold:#E8B84B;--gold-lt:#F5D783;--gold-dp:#C99A2E;--ink:#c9b8e0;--ink2:#9a86bd;--red:#A0303A;--blue:#2E6BC6;--green:#2f8f5b;--purple:#4a2d7a;--text:#efe7fb;--bg:#160b28}
+*{box-sizing:border-box}
+body{margin:0;background:#160b28;color:#efe7fb;font-family:Inter,system-ui,sans-serif;-webkit-font-smoothing:antialiased}
+button{font-family:inherit}
+::selection{background:rgba(232,184,75,.3)}
+a{color:inherit;text-decoration:none}
 
-/* ── .frame — the signature ornate card (gold border, layered insets, four
-   gold ✦ star glyphs pinned in the corners as SVG data-URIs). ───────────── */
-.frame {
-  position: relative;
-  background-color: rgba(30, 17, 52, 0.9);
-  background-image:
-    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M8 0 L10 6 16 8 10 10 8 16 6 10 0 8 6 6 Z' fill='%23E8B84B'/%3E%3C/svg%3E"),
-    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M8 0 L10 6 16 8 10 10 8 16 6 10 0 8 6 6 Z' fill='%23E8B84B'/%3E%3C/svg%3E"),
-    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M8 0 L10 6 16 8 10 10 8 16 6 10 0 8 6 6 Z' fill='%23E8B84B'/%3E%3C/svg%3E"),
-    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M8 0 L10 6 16 8 10 10 8 16 6 10 0 8 6 6 Z' fill='%23E8B84B'/%3E%3C/svg%3E");
-  background-repeat: no-repeat;
-  background-position: 7px 7px, right 7px top 7px, left 7px bottom 7px, right 7px bottom 7px;
-  background-size: 11px 11px;
-  border: 1px solid rgba(232, 184, 75, 0.4);
-  border-radius: 10px;
-  box-shadow:
-    inset 0 0 0 4px rgba(15, 8, 32, 0.55),
-    inset 0 0 0 5px rgba(232, 184, 75, 0.16),
-    0 12px 30px rgba(0, 0, 0, 0.4);
-}
+@keyframes fdrise{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:none}}
+@keyframes fdpulse{0%,100%{opacity:.45}50%{opacity:1}}
+@keyframes fdglow{0%,100%{box-shadow:0 0 0 0 rgba(232,184,75,0)}50%{box-shadow:0 0 22px 2px rgba(232,184,75,.35)}}
+@keyframes fdspin{to{transform:rotate(360deg)}}
+@keyframes fdslidein{from{transform:translateX(30px);opacity:0}to{transform:none;opacity:1}}
+@keyframes fdfade{from{opacity:0}to{opacity:1}}
+@keyframes fdcoinflip{0%,16%{transform:rotateY(0deg)}42%,58%{transform:rotateY(180deg)}84%,100%{transform:rotateY(360deg)}}
+@keyframes fdcoinbob{0%,100%{transform:translateY(0)}50%{transform:translateY(-12px)}}
+@keyframes fdshadowpulse{0%,100%{transform:scaleX(1);opacity:.5}50%{transform:scaleX(.72);opacity:.28}}
+@keyframes fdsheen{0%,100%{opacity:0;transform:translateX(-120%) skewX(-18deg)}12%{opacity:.7}30%{opacity:0;transform:translateX(220%) skewX(-18deg)}}
+@keyframes fdckring{0%{stroke-dashoffset:166;opacity:.2}100%{stroke-dashoffset:0;opacity:1}}
+@keyframes fdckdraw{0%{stroke-dashoffset:48}100%{stroke-dashoffset:0}}
+@keyframes fdckpop{0%{transform:scale(0);opacity:0}55%{transform:scale(1.14)}72%{transform:scale(.94)}100%{transform:scale(1);opacity:1}}
+@keyframes fdckwave{0%{transform:scale(.6);opacity:.55}100%{transform:scale(2.3);opacity:0}}
+@keyframes fdconf{0%{transform:translate(0,0) rotate(0deg) scale(1);opacity:1}100%{transform:translate(var(--cx),var(--cy)) rotate(var(--cr)) scale(.4);opacity:0}}
 
-/* ── Section titles & dividers ──────────────────────────────────────────── */
-.ptitle {
-  font: 700 13px Inter;
-  letter-spacing: 2px;
-  text-transform: uppercase;
-  color: var(--gold-lt);
-  text-align: center;
-  padding-bottom: 11px;
-  margin: 2px 0 14px;
-  border-bottom: 1px solid rgba(232, 184, 75, 0.22);
+.frame{position:relative;background-color:rgba(30,17,52,.9);background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M8 0 L10 6 16 8 10 10 8 16 6 10 0 8 6 6 Z' fill='%23E8B84B'/%3E%3C/svg%3E"),url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M8 0 L10 6 16 8 10 10 8 16 6 10 0 8 6 6 Z' fill='%23E8B84B'/%3E%3C/svg%3E"),url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M8 0 L10 6 16 8 10 10 8 16 6 10 0 8 6 6 Z' fill='%23E8B84B'/%3E%3C/svg%3E"),url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M8 0 L10 6 16 8 10 10 8 16 6 10 0 8 6 6 Z' fill='%23E8B84B'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:7px 7px,right 7px top 7px,left 7px bottom 7px,right 7px bottom 7px;background-size:11px 11px;border:1px solid rgba(232,184,75,.4);border-radius:10px;box-shadow:inset 0 0 0 4px rgba(15,8,32,.55),inset 0 0 0 5px rgba(232,184,75,.16),0 12px 30px rgba(0,0,0,.4)}
+.ptitle{font:700 13px Inter;letter-spacing:2px;text-transform:uppercase;color:var(--gold-lt);text-align:center;padding-bottom:11px;margin:2px 0 14px;border-bottom:1px solid rgba(232,184,75,.22)}
+.divider{display:flex;align-items:center;gap:14px;margin:8px 0 18px}
+.divider>i{flex:1;height:1px;background:linear-gradient(90deg,transparent,rgba(232,184,75,.45))}
+.divider>i:last-child{background:linear-gradient(90deg,rgba(232,184,75,.45),transparent)}
+.divider>span{font:700 13px Inter;letter-spacing:2.5px;text-transform:uppercase;color:var(--gold);display:flex;align-items:center;gap:10px}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:9px;padding:13px 22px;border-radius:8px;font:700 13px Inter;letter-spacing:1.2px;text-transform:uppercase;cursor:pointer;border:1px solid rgba(232,184,75,.55);box-shadow:inset 0 1px 0 rgba(255,255,255,.14),0 4px 12px rgba(0,0,0,.4);color:#fff;transition:filter .15s,transform .1s}
+.btn:hover{filter:brightness(1.1)}.btn:active{transform:translateY(1px)}
+.btn:disabled{opacity:.5;cursor:not-allowed;filter:grayscale(.3)}
+.btn-red{background:linear-gradient(180deg,#a83744,#6e1b24)}
+.btn-purple{background:linear-gradient(180deg,#3d2a6b,#241640)}
+.btn-blue{background:linear-gradient(180deg,#2f5da8,#1a356b)}
+.btn-green{background:linear-gradient(180deg,#2f8f5b,#175236)}
+.btn-gold{background:linear-gradient(180deg,#f0cf72,#c99a2e);color:#3a2405;border-color:rgba(255,240,200,.7)}
+.navlink{font:700 13px Inter;letter-spacing:1.5px;color:var(--ink);cursor:pointer;padding:8px 2px;position:relative;background:none;border:none;text-transform:uppercase}
+.navlink:hover{color:var(--gold-lt)}
+.navlink.on{color:var(--gold-lt)}
+.navlink.on::after{content:'';position:absolute;left:0;right:0;bottom:0;height:2px;background:radial-gradient(closest-side,var(--gold),transparent)}
+.pill{display:inline-flex;align-items:center;gap:8px;padding:7px 12px;border-radius:100px;border:1px solid rgba(232,184,75,.4);background:rgba(15,8,32,.6);font:700 14px 'JetBrains Mono',monospace}
+.fd-hide-narrow{display:flex}
+@media(max-width:1100px){.fd-hide-narrow{display:none!important}}
+.fd-mnav{display:none}
+@media(max-width:1100px){.fd-mnav{display:flex;overflow-x:auto;gap:4px;padding:9px 12px;border-bottom:1px solid rgba(232,184,75,.22);background:rgba(18,9,34,.96);position:sticky;top:0;z-index:45;-webkit-overflow-scrolling:touch}.fd-mnav .navlink{flex:none}}
+@media(max-width:1000px){
+  main [style*="minmax("],main [style*="repeat("]:not([style*="repeat(8,"]){grid-template-columns:1fr!important}
+  main>div{padding-left:14px!important;padding-right:14px!important}
+  header{position:static!important}
+  main .frame{overflow-x:auto}
+  h1{font-size:clamp(24px,7vw,36px)!important}
 }
-.divider { display: flex; align-items: center; gap: 14px; margin: 8px 0 18px; }
-.divider > i { flex: 1; height: 1px; background: linear-gradient(90deg, transparent, rgba(232, 184, 75, 0.45)); }
-.divider > i:last-child { background: linear-gradient(90deg, rgba(232, 184, 75, 0.45), transparent); }
-.divider > span {
-  font: 700 13px Inter;
-  letter-spacing: 2.5px;
-  text-transform: uppercase;
-  color: var(--gold);
-  display: flex;
-  align-items: center;
-  gap: 10px;
+@media(max-width:640px){
+  header>div{padding:10px 14px!important;gap:8px!important}
 }
+input::placeholder{color:var(--ink2)}
+input:focus{outline:none;border-color:var(--gold)!important}
 
-/* ── Buttons ────────────────────────────────────────────────────────────── */
-.btn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 9px;
-  padding: 13px 22px;
-  border-radius: 8px;
-  font: 700 13px Inter;
-  letter-spacing: 1.2px;
-  text-transform: uppercase;
-  cursor: pointer;
-  border: 1px solid rgba(232, 184, 75, 0.55);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.14), 0 4px 12px rgba(0, 0, 0, 0.4);
-  color: #fff;
-  transition: filter 0.15s, transform 0.1s;
-}
-.btn:hover { filter: brightness(1.1); }
-.btn:active { transform: translateY(1px); }
-.btn:disabled { opacity: 0.5; cursor: not-allowed; filter: none; transform: none; }
-.btn-red { background: linear-gradient(180deg, #a83744, #6e1b24); }
-.btn-purple { background: linear-gradient(180deg, #3d2a6b, #241640); }
-.btn-blue { background: linear-gradient(180deg, #2f5da8, #1a356b); }
-.btn-green { background: linear-gradient(180deg, #2f8f5b, #175236); }
-.btn-gold { background: linear-gradient(180deg, #f0cf72, #c99a2e); color: #3a2405; border-color: rgba(255, 240, 200, 0.7); }
-.btn-sm { padding: 8px 14px; font-size: 11.5px; }
-.btn-lg { padding: 16px 28px; font-size: 14px; }
-.btn-block { display: flex; width: 100%; }
+/* Fixed background field (mounted once behind the app) */
+.fd-bg{position:fixed;inset:0;z-index:0;pointer-events:none;background:radial-gradient(1200px 700px at 50% -5%,rgba(90,50,140,.5),transparent 60%),radial-gradient(900px 900px at 8% 100%,rgba(120,30,50,.22),transparent 60%),#160b28}
+.fd-bg-dots{position:fixed;inset:0;z-index:0;opacity:.4;pointer-events:none;background-image:radial-gradient(rgba(232,184,75,.05) 1px,transparent 1px);background-size:30px 30px}
 
-/* ── Nav links (desktop) ────────────────────────────────────────────────── */
-.navlink {
-  font: 700 13px Inter;
-  letter-spacing: 1.5px;
-  color: var(--ink);
-  cursor: pointer;
-  padding: 8px 2px;
-  position: relative;
-  background: none;
-  border: none;
-  text-transform: uppercase;
-}
-.navlink:hover { color: var(--gold-lt); }
-.navlink.on { color: var(--gold-lt); }
-.navlink.on::after {
-  content: '';
-  position: absolute;
-  left: 0; right: 0; bottom: 0;
-  height: 2px;
-  background: radial-gradient(closest-side, var(--gold), transparent);
-}
+/* narrow-screen board scroll helper */
+.fd-board-scroll{width:100%;overflow-x:auto;-webkit-overflow-scrolling:touch}
 
-/* ── Pills / chips ──────────────────────────────────────────────────────── */
-.pill {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  padding: 7px 12px;
-  border-radius: 100px;
-  border: 1px solid rgba(232, 184, 75, 0.4);
-  background: rgba(15, 8, 32, 0.6);
-  font: 700 14px 'JetBrains Mono', monospace;
+/* responsive collapses for the feature-screen grids */
+@media(max-width:1000px){
+  .fd-home-grid{grid-template-columns:1fr!important}
+  .fd-modes-grid{grid-template-columns:repeat(2,1fr)!important}
+  .fd-two-col{grid-template-columns:1fr!important}
+  .fd-game-grid{grid-template-columns:1fr!important}
 }
-
-/* ── Responsive nav (mobile bar ≤1100px) ────────────────────────────────── */
-.fd-hide-narrow { display: flex; }
-@media (max-width: 1100px) { .fd-hide-narrow { display: none !important; } }
-.fd-mnav { display: none; }
-@media (max-width: 1100px) {
-  .fd-mnav {
-    display: flex;
-    overflow-x: auto;
-    gap: 4px;
-    padding: 9px 12px;
-    border-bottom: 1px solid rgba(232, 184, 75, 0.22);
-    background: rgba(18, 9, 34, 0.96);
-    position: sticky;
-    top: 0;
-    z-index: 45;
-    -webkit-overflow-scrolling: touch;
-  }
-  .fd-mnav .navlink { flex: none; }
-}
-
-/* ── Board responsiveness: allow horizontal scroll on very narrow screens ── */
-@media (max-width: 1000px) {
-  .fd-board-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; }
-}
-
-/* ── Feature screen layouts (built on top of the component library). ─────── */
-/* Collapse multi-column screen grids to a single column at 1000px, per the
-   DESIGN_SYSTEM breakpoints. Hit targets stay ≥44px on touch. */
-@media (max-width: 1000px) {
-  .fd-home-grid,
-  .fd-hub-grid,
-  .fd-game-grid { grid-template-columns: 1fr !important; }
-  .fd-hero-grid { grid-template-columns: 1fr !important; }
-  .fd-modes-grid { grid-template-columns: repeat(2, 1fr) !important; }
-  /* On narrow screens put the board first, side rail below. */
-  .fd-game-left { order: 2; }
-}
-@media (max-width: 760px) {
-  .fd-hub-modes { grid-template-columns: 1fr !important; }
-  .fd-diff-grid { grid-template-columns: 1fr !important; }
-}
-@media (max-width: 640px) {
-  .fd-modes-grid { grid-template-columns: 1fr !important; }
+@media(max-width:560px){
+  .fd-modes-grid{grid-template-columns:1fr!important}
 }
