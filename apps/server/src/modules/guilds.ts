@@ -128,6 +128,7 @@ export async function guildRoutes(app: FastifyInstance) {
         tag: input.tag,
         description: input.description,
         crestKey: input.crestKey,
+        ...(input.minTrophies !== undefined ? { minTrophies: input.minTrophies } : {}),
         members: { create: { userId: me, role: "LEADER" } },
       },
       include: { _count: { select: { members: true } } },

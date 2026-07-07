@@ -304,6 +304,7 @@ export function GuildsPage() {
   const [gcTag, setGcTag] = useState("");
   const [gcDesc, setGcDesc] = useState("");
   const [gcPolicy, setGcPolicy] = useState("open");
+  const [gcMinTrophies, setGcMinTrophies] = useState(0);
   const gcReady = gcName.trim().length >= 3 && gcTag.trim().length >= 2;
 
   const openCreate = () => {
@@ -321,12 +322,14 @@ export function GuildsPage() {
         name: gcName.trim(),
         tag: gcTag.trim().toUpperCase(),
         crestKey: gcCrest,
+        minTrophies: gcMinTrophies,
         ...(gcDesc.trim() ? { description: gcDesc.trim() } : {}),
       });
       setCreateShow(false);
       setGcName("");
       setGcTag("");
       setGcDesc("");
+      setGcMinTrophies(0);
       showToast(`${guild.name} founded — you are the Leader.`);
       setMyGuildId(guild.id);
       await loadDetail(guild.id, "LEADER");
@@ -850,6 +853,13 @@ export function GuildsPage() {
               <div>
                 <label style={{ display: "block", font: "700 11px Inter", letterSpacing: "1.5px", textTransform: "uppercase", color: "var(--ink2)", marginBottom: 7 }}>Description</label>
                 <textarea value={gcDesc} onChange={(e) => setGcDesc(e.target.value)} placeholder="What's your guild about?" rows={2} style={{ width: "100%", boxSizing: "border-box", padding: "12px 14px", borderRadius: 10, border: "1px solid rgba(232,184,75,.25)", background: "rgba(0,0,0,.3)", color: "#fff", font: "500 14px Inter", resize: "none", outline: "none" }} />
+              </div>
+              <div>
+                <label style={{ display: "block", font: "700 11px Inter", letterSpacing: "1.5px", textTransform: "uppercase", color: "var(--ink2)", marginBottom: 9 }}>Minimum Trophies to Join</label>
+                <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                  <input type="range" min={0} max={5000} step={100} value={gcMinTrophies} onChange={(e) => setGcMinTrophies(Number(e.target.value))} style={{ flex: 1, accentColor: "#f0c24b" }} />
+                  <div style={{ display: "flex", alignItems: "center", gap: 5, font: "800 15px 'JetBrains Mono',monospace", color: "var(--gold-lt)", minWidth: 82, justifyContent: "flex-end" }}>🏆 {gcMinTrophies.toLocaleString()}</div>
+                </div>
               </div>
               <div>
                 <label style={{ display: "block", font: "700 11px Inter", letterSpacing: "1.5px", textTransform: "uppercase", color: "var(--ink2)", marginBottom: 9 }}>Join Policy</label>

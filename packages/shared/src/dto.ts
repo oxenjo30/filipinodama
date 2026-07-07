@@ -55,6 +55,7 @@ export const createGuildSchema = z.object({
   tag: z.string().min(2).max(5),
   description: z.string().max(LIMITS.guildDescMax).optional(),
   crestKey: guildCrestKeySchema.optional(),
+  minTrophies: z.number().int().min(0).max(5000).optional(),
 });
 export const updateGuildSchema = z.object({
   name: z.string().min(3).max(LIMITS.guildNameMax).optional(),
