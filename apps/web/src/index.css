@@ -48,8 +48,24 @@ a{color:inherit;text-decoration:none}
 .pill{display:inline-flex;align-items:center;gap:8px;padding:7px 12px;border-radius:100px;border:1px solid rgba(232,184,75,.4);background:rgba(15,8,32,.6);font:700 14px 'JetBrains Mono',monospace}
 .fd-hide-narrow{display:flex}
 @media(max-width:1100px){.fd-hide-narrow{display:none!important}}
-.fd-mnav{display:none}
-@media(max-width:1100px){.fd-mnav{display:flex;overflow-x:auto;gap:4px;padding:9px 12px;border-bottom:1px solid rgba(232,184,75,.22);background:rgba(18,9,34,.96);position:sticky;top:0;z-index:45;-webkit-overflow-scrolling:touch}.fd-mnav .navlink{flex:none}}
+
+/* Hamburger button — hidden on desktop, shown on narrow screens (drawer trigger) */
+.fd-burger{display:none}
+@media(max-width:1100px){.fd-burger{display:inline-flex!important}}
+
+/* ── Mobile hamburger drawer ── */
+.fd-drawer-root{position:fixed;inset:0;z-index:200;display:none}
+@media(max-width:1100px){.fd-drawer-root{display:block}}
+.fd-drawer-backdrop{position:absolute;inset:0;background:rgba(6,3,14,.68);backdrop-filter:blur(3px);animation:fdfade .18s ease both}
+.fd-drawer{position:absolute;top:0;right:0;height:100%;width:min(86vw,340px);display:flex;flex-direction:column;background:linear-gradient(180deg,#1b1030,#120a22);border-left:1px solid rgba(232,184,75,.28);box-shadow:-18px 0 44px rgba(0,0,0,.5);animation:fdslidein .22s cubic-bezier(.2,.7,.3,1) both;padding-bottom:env(safe-area-inset-bottom)}
+.fd-drawer-scroll{flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch;padding:10px}
+.fd-drawer-sec{display:flex;flex-direction:column;gap:2px}
+.fd-drawer-sec--top{margin-top:10px;padding-top:10px;border-top:1px solid rgba(232,184,75,.14)}
+.fd-drawer-item{display:flex;align-items:center;gap:12px;width:100%;padding:14px 14px;border-radius:11px;border:none;background:none;color:#efe7fb;font:700 14px Inter;letter-spacing:.3px;cursor:pointer;text-align:left}
+.fd-drawer-item:hover,.fd-drawer-item:active{background:rgba(232,184,75,.1)}
+.fd-drawer-item.on{color:var(--gold-lt);background:rgba(232,184,75,.12)}
+@keyframes fdfade{from{opacity:0}to{opacity:1}}
+@keyframes fdslidein{from{transform:translateX(100%)}to{transform:translateX(0)}}
 @media(max-width:1000px){
   main [style*="minmax("],main [style*="repeat("]:not([style*="repeat(8,"]){grid-template-columns:1fr!important}
   main>div{padding-left:14px!important;padding-right:14px!important}

@@ -24,6 +24,7 @@ const NAV: { label: string; to: string; mobileLabel?: string }[] = [
   { label: "Leaderboard", to: "/leaderboard", mobileLabel: "Ranks" },
   { label: "Learn", to: "/learn" },
   { label: "Store", to: "/store" },
+  { label: "Blog", to: "/blog" },
 ];
 
 function Icon({ src, alt, size = 18 }: { src: string; alt: string; size?: number }) {
@@ -61,6 +62,27 @@ export function AppLayout() {
   const [topUpOpen, setTopUpOpen] = useState(false);
   const [notifOpen, setNotifOpen] = useState(false);
   const [notifUnread, setNotifUnread] = useState(0);
+  const [menuOpen, setMenuOpen] = useState(false); // mobile hamburger drawer
+
+  // Close the mobile drawer on any route change (tapping a link navigates → close).
+  useEffect(() => {
+    setMenuOpen(false);
+  }, [pathname]);
+
+  // While the drawer is open: lock body scroll + close on Escape.
+  useEffect(() => {
+    if (!menuOpen) return;
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setMenuOpen(false);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => {
+      document.body.style.overflow = prev;
+      window.removeEventListener("keydown", onKey);
+    };
+  }, [menuOpen]);
 
   const isGuest = !!me?.isGuest;
   const registered = !!me && !me.isGuest; // a real (non-guest) account
@@ -121,20 +143,29 @@ export function AppLayout() {
                 <div style={{ font: "900 26px Cinzel,serif", letterSpacing: "2px", background: "linear-gradient(180deg,#f7e2a0,#d5a63a)", WebkitBackgroundClip: "text", backgroundClip: "text", color: "transparent" }}>DAMA</div>
               </div>
             </div>
-            {/* Center nav links only for a signed-in session (registered OR guest).
-                A logged-out visitor sees a clean header: logo + Sign In + Play Now. */}
-            {me ? (
-              <nav className="fd-hide-narrow" style={{ flex: 1, alignItems: "center", justifyContent: "center", gap: 30 }}>
-                {NAV.map((n) => (
-                  <button key={n.to} className={`navlink ${isOn(n.to) ? "on" : ""}`} onClick={() => navigate(n.to)}>
-                    {n.label}
-                  </button>
-                ))}
-              </nav>
-            ) : (
-              <div style={{ flex: 1 }} />
-            )}
+            {/* Center nav links — visible to everyone (logged out too) so Home,
+                Play, Blog, Store, etc. are always reachable. The clean logged-out
+                header (Sign In + Play Now on the right) is preserved. Hidden on
+                narrow screens, where the hamburger drawer takes over. */}
+            <nav className="fd-hide-narrow" style={{ flex: 1, alignItems: "center", justifyContent: "center", gap: 30 }}>
+              {NAV.map((n) => (
+                <button key={n.to} className={`navlink ${isOn(n.to) ? "on" : ""}`} onClick={() => navigate(n.to)}>
+                  {n.label}
+                </button>
+              ))}
+            </nav>
             <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 10 }}>
+              {/* Hamburger — narrow screens only (CSS shows it below 1100px). Opens
+                  the full-screen drawer with all nav + account/auth. */}
+              <button
+                className="fd-burger"
+                aria-label="Menu"
+                aria-expanded={menuOpen}
+                onClick={() => setMenuOpen(true)}
+                style={{ width: 42, height: 42, borderRadius: 10, border: "1px solid rgba(232,184,75,.35)", background: "rgba(15,8,32,.6)", color: "var(--gold-lt)", cursor: "pointer", fontSize: 20, lineHeight: 1, alignItems: "center", justifyContent: "center", flex: "none" }}
+              >
+                ☰
+              </button>
               {registered ? (
                 <>
                   {/* ── REGISTERED USER: full account chrome ── */}
@@ -246,24 +277,89 @@ export function AppLayout() {
           </div>
         </header>
 
-        {/* mobile nav (prototype lines 173-181) */}
-        <nav className="fd-mnav">
-          {NAV.map((n) => (
-            <button key={n.to} className={`navlink ${isOn(n.to) ? "on" : ""}`} onClick={() => navigate(n.to)}>
-              {n.mobileLabel ?? n.label}
-            </button>
-          ))}
-          {/* mobile Profile tab + unread-MESSAGES badge (prototype line 180). No DM
-              backend yet → unreadMessages is 0 → badge stays hidden. */}
-          <button className={`navlink ${isOn("/profile") ? "on" : ""}`} onClick={() => navigate("/profile")} style={{ position: "relative" }}>
-            Profile
-            {unreadMessages > 0 && (
-              <span title="Unread messages" style={{ position: "absolute", top: -3, right: -5, minWidth: 17, height: 17, padding: "0 4px", borderRadius: 9, background: "linear-gradient(180deg,#e0555f,#a8202f)", color: "#fff", font: "800 10px Inter", display: "inline-flex", alignItems: "center", justifyContent: "center", border: "2px solid #150a24", boxShadow: "0 2px 6px rgba(0,0,0,.5)" }}>
-                {unreadMessages > 9 ? "9+" : unreadMessages}
-              </span>
-            )}
-          </button>
-        </nav>
+        {/* ============ MOBILE HAMBURGER DRAWER ============ */}
+        {/* Slide-in panel (narrow screens). Holds EVERYTHING: primary nav + Blog,
+            plus account items/balances when signed in, or Sign In / Sign Up when
+            logged out. Opened by the ☰ button; closes on link tap, backdrop, or Esc. */}
+        {menuOpen && (
+          <div className="fd-drawer-root" role="dialog" aria-modal="true" aria-label="Menu">
+            <div className="fd-drawer-backdrop" onClick={() => setMenuOpen(false)} />
+            <aside className="fd-drawer">
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "16px 18px", borderBottom: "1px solid rgba(232,184,75,.18)" }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 11 }}>
+                  <img src={BRAND.logoSun} alt="" width={34} height={34} style={{ objectFit: "contain", flex: "none" }} />
+                  <div style={{ font: "900 20px Cinzel,serif", letterSpacing: "2px", background: "linear-gradient(180deg,#f7e2a0,#d5a63a)", WebkitBackgroundClip: "text", backgroundClip: "text", color: "transparent" }}>DAMA</div>
+                </div>
+                <button aria-label="Close menu" onClick={() => setMenuOpen(false)} style={{ width: 40, height: 40, borderRadius: 10, border: "1px solid rgba(232,184,75,.3)", background: "rgba(15,8,32,.6)", color: "var(--gold-lt)", cursor: "pointer", fontSize: 20, lineHeight: 1 }}>✕</button>
+              </div>
+
+              {/* signed-in identity + balances */}
+              {me && (
+                <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "14px 18px", borderBottom: "1px solid rgba(232,184,75,.14)" }}>
+                  {avatarToken}
+                  <div style={{ minWidth: 0, flex: 1 }}>
+                    <div style={{ font: "700 15px Inter", color: "#fff", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{displayName}</div>
+                    {registered ? (
+                      <div style={{ font: "600 11px Inter", color: "var(--gold)" }}>{tier.label} <span style={{ color: "var(--ink2)", fontFamily: "'JetBrains Mono',monospace" }}>{playerTag}</span></div>
+                    ) : (
+                      <div style={{ font: "600 11px Inter", color: "var(--ink2)" }}>Playing as guest</div>
+                    )}
+                  </div>
+                  {registered && (
+                    <div style={{ display: "flex", flexDirection: "column", gap: 5, alignItems: "flex-end" }}>
+                      <span style={{ display: "inline-flex", alignItems: "center", gap: 5, font: "700 12px Inter", color: "#f2d493" }}><Icon src={ICONS.coin} alt="Gold" size={15} /> {gold.toLocaleString()}</span>
+                      <span style={{ display: "inline-flex", alignItems: "center", gap: 5, font: "700 12px Inter", color: "#ff9aa8" }}><Icon src={ICONS.gem} alt="Diamonds" size={15} /> {diamonds.toLocaleString()}</span>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              <div className="fd-drawer-scroll">
+                {/* primary nav */}
+                <div className="fd-drawer-sec">
+                  {NAV.map((n) => (
+                    <button key={n.to} className={`fd-drawer-item ${isOn(n.to) ? "on" : ""}`} onClick={() => navigate(n.to)}>
+                      {n.label}
+                    </button>
+                  ))}
+                </div>
+
+                {/* account section (signed-in) OR auth CTAs (logged-out) */}
+                {registered ? (
+                  <div className="fd-drawer-sec fd-drawer-sec--top">
+                    {acctItems.map((mi) => (
+                      <button key={mi.label} className="fd-drawer-item" onClick={mi.on}>
+                        <span style={{ width: 22, textAlign: "center", flex: "none" }}>{mi.icon}</span>
+                        {mi.label}
+                        {mi.label === "View Profile" && unreadMessages > 0 && (
+                          <span style={{ marginLeft: "auto", minWidth: 18, height: 18, padding: "0 5px", borderRadius: 9, background: "linear-gradient(180deg,#e0555f,#a8202f)", color: "#fff", font: "800 10px Inter", display: "inline-flex", alignItems: "center", justifyContent: "center" }}>{unreadMessages > 9 ? "9+" : unreadMessages}</span>
+                        )}
+                      </button>
+                    ))}
+                    <button className="fd-drawer-item" style={{ color: "#ff9aa8" }} onClick={signOut}>
+                      <span style={{ width: 22, textAlign: "center", flex: "none" }}>⏻</span>
+                      Log Out
+                    </button>
+                  </div>
+                ) : isGuest ? (
+                  <div className="fd-drawer-sec fd-drawer-sec--top">
+                    <button className="btn btn-gold" style={{ width: "100%", justifyContent: "center", padding: "13px" }} onClick={() => navigate("/login")}>Sign In / Sign Up</button>
+                    <button className="fd-drawer-item" style={{ color: "#ff9aa8", marginTop: 6 }} onClick={signOut}>
+                      <span style={{ width: 22, textAlign: "center", flex: "none" }}>⎋</span>
+                      End guest session
+                    </button>
+                  </div>
+                ) : (
+                  <div className="fd-drawer-sec fd-drawer-sec--top" style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                    <button className="btn btn-gold" style={{ width: "100%", justifyContent: "center", padding: "14px", letterSpacing: ".5px" }} onClick={() => navigate("/play")}>PLAY NOW</button>
+                    <button className="fd-drawer-item" style={{ justifyContent: "center", border: "1px solid rgba(232,184,75,.4)" }} onClick={() => navigate("/login")}>Sign In</button>
+                    <button className="fd-drawer-item" style={{ justifyContent: "center", border: "1px solid rgba(232,184,75,.4)" }} onClick={() => navigate("/register")}>Create Account</button>
+                  </div>
+                )}
+              </div>
+            </aside>
+          </div>
+        )}
 
         <main style={{ flex: 1 }}>
           <Outlet />
