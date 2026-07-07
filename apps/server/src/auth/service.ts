@@ -44,6 +44,37 @@ async function uniqueTag(prisma: PrismaClient): Promise<string> {
   return "#" + Date.now().toString().slice(-4);
 }
 
+/**
+ * Give a new user the free default cosmetics they should always own: every
+ * StoreItem priced at 0 gold (the default marble board + classic skin), added
+ * to their inventory and equipped. Idempotent (skips items already owned).
+ */
+async function grantDefaults(prisma: PrismaClient, userId: string) {
+  const defaults = await prisma.storeItem.findMany({
+    where: { active: true, priceGold: 0, priceDiamonds: null },
+  });
+  let equippedBoard: string | undefined;
+  let equippedSkin: string | undefined;
+  for (const item of defaults) {
+    await prisma.inventoryItem.upsert({
+      where: { userId_itemId: { userId, itemId: item.id } },
+      update: {},
+      create: { userId, itemId: item.id, equipped: true },
+    });
+    if (item.type === "BOARD" && !equippedBoard) equippedBoard = item.id;
+    if (item.type === "SKIN" && !equippedSkin) equippedSkin = item.id;
+  }
+  if (equippedBoard || equippedSkin) {
+    await prisma.user.update({
+      where: { id: userId },
+      data: {
+        ...(equippedBoard ? { equippedBoard } : {}),
+        ...(equippedSkin ? { equippedSkin } : {}),
+      },
+    });
+  }
+}
+
 export async function register(prisma: PrismaClient, input: { email: string; password: string; username: string }) {
   const email = input.email.toLowerCase();
   if (await prisma.user.findUnique({ where: { email } })) throw err.conflict("EMAIL_TAKEN", "Email already registered");
@@ -64,9 +95,11 @@ export async function register(prisma: PrismaClient, input: { email: string; pas
     },
   });
 
+  await grantDefaults(prisma, user.id);
+
   const link = `${env.WEB_ORIGIN}/verify?token=${verifyToken}`;
   await sendEmail(email, "Verify your FilipinoDama Royal account", verifyEmailHtml(input.username, link), link);
-  return user;
+  return prisma.user.findUniqueOrThrow({ where: { id: user.id } });
 }
 
 export async function verifyEmail(prisma: PrismaClient, token: string) {
@@ -90,7 +123,7 @@ export async function login(prisma: PrismaClient, input: { email: string; passwo
 
 export async function createGuest(prisma: PrismaClient) {
   const n = Math.floor(100000 + Math.random() * 900000);
-  return prisma.user.create({
+  const user = await prisma.user.create({
     data: {
       isGuest: true,
       username: `guest_${n}`,
@@ -98,6 +131,8 @@ export async function createGuest(prisma: PrismaClient) {
       tag: await uniqueTag(prisma),
     },
   });
+  await grantDefaults(prisma, user.id);
+  return prisma.user.findUniqueOrThrow({ where: { id: user.id } });
 }
 
 /** Issue a refresh session row; returns the raw token to set as a cookie. */
