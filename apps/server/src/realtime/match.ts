@@ -2,6 +2,7 @@ import type { Server as IOServer, Socket } from "socket.io";
 import {
   EV,
   ECONOMY,
+  DEFAULT_SETTINGS,
   type GameState,
   type GameSettings,
   type Move,
@@ -34,6 +35,23 @@ type LiveMatch = {
 
 /** matchId -> authoritative live state. */
 const live: Map<string, LiveMatch> = new Map();
+
+/**
+ * Rematch offers keyed by the just-finished matchId. When a match ends, either
+ * human player may offer a rematch; when BOTH have offered we seed a fresh match
+ * (colors swapped) and notify both. Entries auto-expire so a stale offer can't
+ * pair players who have wandered off.
+ */
+type RematchOffer = {
+  redId: string;
+  blueId: string;
+  mode: PrismaMatchMode;
+  settings: GameSettings;
+  offeredBy: Set<string>;
+  expires: number;
+};
+const rematchOffers: Map<string, RematchOffer> = new Map();
+const REMATCH_TTL_MS = 60_000;
 
 /**
  * Seed a live match. Called by matchmaking (and any room-start flow) the moment
@@ -269,7 +287,25 @@ async function settleMatch(io: IOServer, lm: LiveMatch): Promise<void> {
     state: lm.state,
   });
 
+  // Remember this pairing so either player can offer a rematch (both-human only).
+  if (lm.redId && lm.blueId) {
+    rematchOffers.set(lm.matchId, {
+      redId: lm.redId,
+      blueId: lm.blueId,
+      mode: lm.mode,
+      settings: { ...DEFAULT_SETTINGS },
+      offeredBy: new Set(),
+      expires: Date.now() + REMATCH_TTL_MS,
+    });
+  }
+
   live.delete(lm.matchId);
+}
+
+/** Prune expired rematch offers (called opportunistically on each offer). */
+function pruneRematchOffers() {
+  const now = Date.now();
+  for (const [id, o] of rematchOffers) if (o.expires < now) rematchOffers.delete(id);
 }
 
 export function registerMatch(io: IOServer, socket: Socket) {
@@ -364,5 +400,81 @@ export function registerMatch(io: IOServer, socket: Socket) {
       yourColor: myColor,
       settings: lm.state.settings,
     });
+  });
+
+  // ── In-match quick chat / emote — relay to the match room (persisted lightly
+  // via the match room; no separate channel needed for ephemeral match chat). ──
+  socket.on(EV.matchChat, (payload: { matchId?: unknown; body?: unknown; emote?: unknown } = {}) => {
+    const matchId = typeof payload?.matchId === "string" ? payload.matchId : null;
+    if (!matchId) return;
+    const lm = live.get(matchId);
+    // Only the two players may chat, and only in a live match.
+    if (!lm || !colorOf(lm, userId)) return;
+    const emote = typeof payload?.emote === "string" ? payload.emote.slice(0, 8) : null;
+    const body = typeof payload?.body === "string" ? payload.body.trim().slice(0, 200) : "";
+    if (!emote && !body) return;
+    io.to(matchId).emit(EV.matchChat, {
+      matchId,
+      from: userId,
+      color: colorOf(lm, userId),
+      body: body || null,
+      emote,
+      at: Date.now(),
+    });
+  });
+
+  // ── Rematch: either finished-match player offers; both offers → new match. ──
+  socket.on(EV.matchRematchOffer, async (payload: { matchId?: unknown } = {}) => {
+    pruneRematchOffers();
+    const matchId = typeof payload?.matchId === "string" ? payload.matchId : null;
+    if (!matchId) return;
+    const offer = rematchOffers.get(matchId);
+    if (!offer || (userId !== offer.redId && userId !== offer.blueId)) return;
+
+    offer.offeredBy.add(userId);
+    // Tell the opponent an offer is pending.
+    io.to(`presence:${userId === offer.redId ? offer.blueId : offer.redId}`).emit(EV.matchRematchOffer, {
+      fromMatchId: matchId,
+      by: userId,
+    });
+
+    // Both agreed → seed a fresh match with colors swapped and pair them.
+    if (offer.offeredBy.has(offer.redId) && offer.offeredBy.has(offer.blueId)) {
+      rematchOffers.delete(matchId);
+      const newRed = offer.blueId; // swap seats
+      const newBlue = offer.redId;
+      try {
+        const match = await prisma.match.create({
+          data: {
+            mode: offer.mode,
+            redId: newRed,
+            blueId: newBlue,
+            settings: offer.settings as unknown as object,
+            moves: [] as unknown as object,
+          },
+          select: { id: true },
+        });
+        createLiveMatch(match.id, newRed, newBlue, offer.mode, offer.settings);
+        // Join both players' current sockets to the new match room and notify.
+        for (const uid of [newRed, newBlue]) {
+          const room = io.sockets.adapter.rooms.get(`presence:${uid}`);
+          if (room) for (const sid of room) io.sockets.sockets.get(sid)?.join(match.id);
+        }
+        io.to(`presence:${newRed}`).emit(EV.matchRematchReady, { matchId: match.id, yourColor: "red" });
+        io.to(`presence:${newBlue}`).emit(EV.matchRematchReady, { matchId: match.id, yourColor: "blue" });
+      } catch (e) {
+        console.error("[match] rematch create failed", e);
+      }
+    }
+  });
+
+  socket.on(EV.matchRematchDecline, (payload: { matchId?: unknown } = {}) => {
+    const matchId = typeof payload?.matchId === "string" ? payload.matchId : null;
+    if (!matchId) return;
+    const offer = rematchOffers.get(matchId);
+    if (!offer) return;
+    rematchOffers.delete(matchId);
+    const other = userId === offer.redId ? offer.blueId : offer.redId;
+    io.to(`presence:${other}`).emit(EV.matchRematchDecline, { fromMatchId: matchId, by: userId });
   });
 }

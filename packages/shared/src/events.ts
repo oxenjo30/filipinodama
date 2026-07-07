@@ -26,6 +26,9 @@ export const EV = {
   matchResync: "match:resync",
   matchRematchOffer: "match:rematch:offer",
   matchRematchAccept: "match:rematch:accept",
+  matchRematchDecline: "match:rematch:decline",
+  matchRematchReady: "match:rematch:ready", // server → both: new match seeded
+  matchChat: "match:chat", // in-match quick chat / emote (server relays to the room)
 
   // rooms
   roomCreate: "room:create",

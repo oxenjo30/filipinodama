@@ -20,6 +20,7 @@ import { matchRoutes } from "./modules/matches.js";
 import { learnRoutes } from "./modules/learn.js";
 import { notificationRoutes } from "./modules/notifications.js";
 import { paymentRoutes } from "./modules/payments.js";
+import { dmRoutes } from "./modules/dm.js";
 import { registerRealtime } from "./realtime/index.js";
 
 export { prisma };
@@ -73,6 +74,7 @@ async function main() {
   await app.register(learnRoutes, { prefix: "/api" });
   await app.register(notificationRoutes, { prefix: "/api" });
   await app.register(paymentRoutes, { prefix: "/api" });
+  await app.register(dmRoutes, { prefix: "/api" });
   // more modules register here as they land
 
   await app.listen({ port: env.PORT, host: "0.0.0.0" });
