@@ -9,11 +9,16 @@ import {
 } from "@dama/game-engine";
 
 /**
- * The human always plays RED (bottom of the board), the AI plays BLUE (top).
- * The engine's initial state has RED to move first, so the human opens.
+ * In a vs-AI match the human plays RED (bottom), the AI plays BLUE (top). The
+ * engine's initial state has RED to move first, so the human opens. In a LOCAL
+ * (pass-and-play) match there is no AI: both colours are human-controlled on the
+ * one device, RED still opens, and "Player 1" is RED, "Player 2" is BLUE.
  */
 export const HUMAN_COLOR: PieceColor = "red";
 export const AI_COLOR: PieceColor = "blue";
+
+/** Match mode: "ai" = vs the computer, "local" = pass-and-play (two humans). */
+export type GameMode = "ai" | "local";
 
 /** Delay (ms) before the AI plays its move, so the "thinking" state is visible. */
 const AI_THINK_MS = 450;
@@ -23,7 +28,9 @@ type GameStatus = "playing" | "thinking" | "over";
 export type GameStore = {
   /** live engine state (source of truth) */
   state: GameState;
-  /** the AI strength for this match */
+  /** whether this is a vs-AI match or a local pass-and-play match */
+  mode: GameMode;
+  /** the AI strength for this match (unused in local mode) */
   difficulty: AiDifficulty;
   /** currently selected own piece square (null when nothing selected) */
   selected: Square | null;
@@ -39,14 +46,20 @@ export type GameStore = {
   redCaptured: number;
   blueCaptured: number;
 
-  /** start a fresh match at the given difficulty */
+  /** start a fresh vs-AI match at the given difficulty */
   newGame: (difficulty?: AiDifficulty) => void;
-  /** restart the current match keeping the same difficulty */
+  /** start a fresh local (pass-and-play) match */
+  newLocalGame: () => void;
+  /** restart the current match keeping the same mode/difficulty */
   rematch: () => void;
   /** handle a tap on any board square */
   onSquareClick: (sq: Square) => void;
-  /** human resigns → AI wins */
-  surrender: () => void;
+  /**
+   * Resign the match. In vs-AI mode the human (RED) resigns → AI wins. In local
+   * mode, pass the colour of the side that is resigning (defaults to the side to
+   * move) so the OTHER player wins.
+   */
+  surrender: (who?: PieceColor) => void;
 };
 
 /** All legal moves whose `from` is `sq` (the taps a selected piece enables). */
@@ -119,20 +132,22 @@ export const useGameStore = create<GameStore>((set, get) => {
     }, AI_THINK_MS);
   }
 
-  function start(difficulty: AiDifficulty) {
+  function start(mode: GameMode, difficulty: AiDifficulty) {
     const state = createInitialState(DEFAULT_SETTINGS);
     set({
       state,
+      mode,
       difficulty,
       selected: null,
       status: "playing",
       ...derive(state, null),
     });
-    // Human (red) always moves first, so no AI kickoff here.
+    // RED always moves first — the human (ai mode) or Player 1 (local). No kickoff.
   }
 
   return {
     state: createInitialState(DEFAULT_SETTINGS),
+    mode: "ai",
     difficulty: "normal",
     selected: null,
     moveTargets: [],
@@ -142,16 +157,20 @@ export const useGameStore = create<GameStore>((set, get) => {
     redCaptured: 0,
     blueCaptured: 0,
 
-    newGame: (difficulty) => start(difficulty ?? get().difficulty),
-    rematch: () => start(get().difficulty),
+    newGame: (difficulty) => start("ai", difficulty ?? get().difficulty),
+    newLocalGame: () => start("local", get().difficulty),
+    rematch: () => start(get().mode, get().difficulty),
 
-    surrender: () => {
-      const { state } = get();
+    surrender: (who) => {
+      const { state, mode } = get();
       if (state.result) return;
-      // Fabricate a resignation result without an illegal engine move.
+      // The resigning side loses. In ai mode the human (RED) resigns → AI wins.
+      // In local mode the given side (or the side to move) resigns → other wins.
+      const resigning = mode === "local" ? (who ?? state.turn) : HUMAN_COLOR;
+      const winner: PieceColor = resigning === "red" ? "blue" : "red";
       const resigned: GameState = {
         ...state,
-        result: { winner: AI_COLOR, reason: "resign" },
+        result: { winner, reason: "resign" },
       };
       set({
         state: resigned,
@@ -163,10 +182,12 @@ export const useGameStore = create<GameStore>((set, get) => {
     },
 
     onSquareClick: (sq) => {
-      const { state, selected, status } = get();
-      // Ignore taps while the AI is thinking, when the game is over, or when it
-      // is not the human's turn.
-      if (status !== "playing" || state.result || state.turn !== HUMAN_COLOR) return;
+      const { state, selected, status, mode } = get();
+      if (status !== "playing" || state.result) return;
+      // vs-AI: only the human (RED) may act. Local: whoever is to move may act.
+      if (mode === "ai" && state.turn !== HUMAN_COLOR) return;
+
+      const mover = state.turn; // the side whose turn it is (RED or BLUE)
 
       // If a piece is already selected and the tap is a legal landing, play it.
       if (selected) {
@@ -180,15 +201,16 @@ export const useGameStore = create<GameStore>((set, get) => {
             status: next.result ? "over" : "playing",
             ...derive(next, null),
           });
-          if (!next.result) scheduleAiMove();
+          // vs-AI: hand the turn to the AI. Local: the other human just plays next.
+          if (!next.result && mode === "ai") scheduleAiMove();
           return;
         }
       }
 
-      // Otherwise treat the tap as a (re)selection: only own pieces that HAVE a
-      // legal move can be selected. Tapping elsewhere clears the selection.
+      // Otherwise treat the tap as a (re)selection: only the mover's own pieces
+      // that HAVE a legal move can be selected. Tapping elsewhere clears it.
       const piece = state.pieces.find((p) => sameSquare(p.square, sq));
-      if (piece && piece.color === HUMAN_COLOR && movesFrom(state, sq).length > 0) {
+      if (piece && piece.color === mover && movesFrom(state, sq).length > 0) {
         set({ selected: sq, ...derive(state, sq) });
       } else {
         set({ selected: null, ...derive(state, null) });

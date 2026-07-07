@@ -16,6 +16,63 @@ export type PlayerPanelProps = {
 };
 
 /**
+ * StatusBadge — the turn/status chip ("Your move" / "Waiting" / "Thinking…").
+ *
+ * Rendered on its own row beneath the player name so it never overlaps long
+ * names. `whiteSpace: nowrap` keeps the label itself on one line; `flex: none`
+ * stops it from being squeezed by the rating on the same row.
+ */
+function StatusBadge({ active, thinking }: { active: boolean; thinking: boolean }) {
+  return (
+    <div
+      style={{
+        flex: "none",
+        display: "inline-flex",
+        alignItems: "center",
+        gap: 6,
+        padding: "5px 10px",
+        borderRadius: 8,
+        border: "1px solid rgba(232,184,75,.4)",
+        background: "rgba(0,0,0,.35)",
+        whiteSpace: "nowrap",
+      }}
+    >
+      {thinking ? (
+        <>
+          <span
+            style={{
+              width: 12,
+              height: 12,
+              borderRadius: "50%",
+              border: "2px solid rgba(232,184,75,.3)",
+              borderTopColor: "var(--gold)",
+              display: "inline-block",
+              animation: "fdspin .8s linear infinite",
+            }}
+          />
+          <span style={{ font: "700 12px Inter", color: "var(--gold-lt)" }}>Thinking…</span>
+        </>
+      ) : (
+        <>
+          <span
+            style={{
+              width: 8,
+              height: 8,
+              borderRadius: "50%",
+              background: active ? "#3fbf6f" : "rgba(255,255,255,.2)",
+              boxShadow: active ? "0 0 8px #3fbf6f" : undefined,
+            }}
+          />
+          <span style={{ font: "700 12px Inter", color: active ? "#fff" : "var(--ink2)" }}>
+            {active ? "Your move" : "Waiting"}
+          </span>
+        </>
+      )}
+    </div>
+  );
+}
+
+/**
  * PlayerPanel — the in-game player card (built locally; not in the shared lib).
  *
  * Mirrors the prototype's `playerCard`: colour-tinted `.frame`, avatar, ✦ name,
@@ -49,6 +106,10 @@ export function PlayerPanel({
           : undefined,
       }}
     >
+      {/* Header: avatar + (name / rating / status). The status badge lives on its
+          own row beneath the name so it never competes for horizontal space with
+          long player names — a long name simply wraps to a second line above the
+          badge instead of colliding with it. */}
       <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
         <Avatar src={avatar} size={54} />
         <div style={{ flex: 1, minWidth: 0 }}>
@@ -78,54 +139,20 @@ export function PlayerPanel({
               {name}
             </span>
           </div>
-          <div style={{ font: "700 12px 'JetBrains Mono',monospace", color: "var(--gold)", marginTop: 2 }}>
-            🏆 {rating}
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
+              gap: 8,
+              marginTop: 4,
+            }}
+          >
+            <span style={{ font: "700 12px 'JetBrains Mono',monospace", color: "var(--gold)" }}>
+              🏆 {rating}
+            </span>
+            <StatusBadge active={active} thinking={thinking} />
           </div>
-        </div>
-        <div
-          style={{
-            flex: "none",
-            display: "flex",
-            alignItems: "center",
-            gap: 6,
-            padding: "6px 10px",
-            borderRadius: 8,
-            border: "1px solid rgba(232,184,75,.4)",
-            background: "rgba(0,0,0,.35)",
-            whiteSpace: "nowrap",
-          }}
-        >
-          {thinking ? (
-            <>
-              <span
-                style={{
-                  width: 12,
-                  height: 12,
-                  borderRadius: "50%",
-                  border: "2px solid rgba(232,184,75,.3)",
-                  borderTopColor: "var(--gold)",
-                  display: "inline-block",
-                  animation: "fdspin .8s linear infinite",
-                }}
-              />
-              <span style={{ font: "700 12px Inter", color: "var(--gold-lt)" }}>Thinking…</span>
-            </>
-          ) : (
-            <>
-              <span
-                style={{
-                  width: 8,
-                  height: 8,
-                  borderRadius: "50%",
-                  background: active ? "#3fbf6f" : "rgba(255,255,255,.2)",
-                  boxShadow: active ? "0 0 8px #3fbf6f" : undefined,
-                }}
-              />
-              <span style={{ font: "700 12px Inter", color: active ? "#fff" : "var(--ink2)" }}>
-                {active ? "Your move" : "Waiting"}
-              </span>
-            </>
-          )}
         </div>
       </div>
       <div

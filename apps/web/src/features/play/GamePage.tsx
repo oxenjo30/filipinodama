@@ -66,7 +66,8 @@ function toRows(history: Move[]): HistoryRow[] {
   return rows;
 }
 
-export function GamePage() {
+export function GamePage({ mode = "ai" }: { mode?: "ai" | "local" }) {
+  const isLocal = mode === "local";
   const navigate = useNavigate();
   const difficulty = useSettingsStore((s) => s.difficulty);
   const boardTheme = useSettingsStore((s) => s.boardTheme);
@@ -92,18 +93,20 @@ export function GamePage() {
     blueCaptured,
     onSquareClick,
     newGame,
+    newLocalGame,
     rematch,
     surrender,
   } = useGameStore();
 
   const [chatDraft, setChatDraft] = useState("");
   // Pre-match loader (handoff `playWithLoader`): show the themed loading screen,
-  // then start a fresh match. Offline vs-AI uses the "default" context.
+  // then start a fresh match. Offline vs-AI / local both use the "default" ctx.
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     const t = window.setTimeout(() => {
-      newGame(difficulty);
+      if (isLocal) newLocalGame();
+      else newGame(difficulty);
       setLoading(false);
     }, LOADER_MS);
     return () => window.clearTimeout(t);
@@ -111,8 +114,12 @@ export function GamePage() {
   }, []);
 
   const result = state.result;
-  const humanTurn = !result && state.turn === HUMAN_COLOR && status === "playing";
   const aiThinking = status === "thinking";
+  // In local mode BOTH sides accept taps; the "active" side is just whoever is to
+  // move. In vs-AI mode only the human (RED) is interactive.
+  const redToMove = !result && state.turn === "red" && status === "playing";
+  const blueToMove = !result && state.turn === "blue" && status === "playing";
+  const humanTurn = isLocal ? redToMove || blueToMove : redToMove;
 
   const rows = toRows(state.history);
 
@@ -142,7 +149,14 @@ export function GamePage() {
     else showToast("Kingdom Mode is coming soon.");
   }
 
-  // ── Result modal wording (from the human's POV) ──
+  // Player names for the two seats. Local: Player 1 (red) vs Player 2 (blue).
+  // vs-AI: the human (red) vs the difficulty-named bot (blue).
+  const P1_NAME = "Player 1";
+  const P2_NAME = "Player 2";
+  const redName = isLocal ? P1_NAME : displayName;
+  const blueName = isLocal ? P2_NAME : AI_NAME[difficulty];
+
+  // ── Result modal wording ──
   let resultTitle = "";
   let resultReason = "";
   if (result) {
@@ -152,6 +166,23 @@ export function GamePage() {
         result.reason === "repetition"
           ? "The same position repeated three times."
           : "Neither side could force a win.";
+    } else if (isLocal) {
+      // Local: name the winning seat, no "you/AI".
+      const winnerName = result.winner === "red" ? P1_NAME : P2_NAME;
+      resultTitle = `${winnerName} Wins`;
+      switch (result.reason) {
+        case "capture-all":
+          resultReason = `${winnerName} captured every enemy piece.`;
+          break;
+        case "no-moves":
+          resultReason = `${result.winner === "red" ? P2_NAME : P1_NAME} has no legal moves left.`;
+          break;
+        case "resign":
+          resultReason = `${result.winner === "red" ? P2_NAME : P1_NAME} surrendered the match.`;
+          break;
+        default:
+          resultReason = `${winnerName} won the match.`;
+      }
     } else {
       const humanWon = result.winner === HUMAN_COLOR;
       resultTitle = humanWon ? "Victory" : "Defeat";
@@ -175,10 +206,12 @@ export function GamePage() {
     }
   }
 
+  // Result icon gradient. Local: always the neutral/gold "win" gradient (both are
+  // human winners). vs-AI: gold for human win, red for defeat.
   const winGrad =
     result?.winner === "draw"
       ? "linear-gradient(180deg,#6b6480,#3b3550)"
-      : result?.winner === HUMAN_COLOR
+      : isLocal || result?.winner === HUMAN_COLOR
         ? "linear-gradient(180deg,#f0cf72,#c99a2e)"
         : "linear-gradient(180deg,#a83744,#6e1b24)";
 
@@ -203,35 +236,41 @@ export function GamePage() {
       <div className="fd-game-left" style={{ display: "flex", flexDirection: "column", gap: 16 }}>
         <div
           className="frame"
-          style={{ padding: 16, display: "flex", alignItems: "center", gap: 12, borderColor: "rgba(50,150,100,.55)" }}
+          style={{ padding: 16, display: "flex", alignItems: "center", gap: 12, borderColor: isLocal ? "rgba(140,90,210,.55)" : "rgba(50,150,100,.55)" }}
         >
-          <span style={{ fontSize: 22 }}>🤖</span>
+          <span style={{ fontSize: 22 }}>{isLocal ? "👥" : "🤖"}</span>
           <div style={{ flex: 1 }}>
-            <div style={{ font: "700 15px Cinzel,serif", color: "#8ce0ad" }}>Play vs AI</div>
-            <div style={{ font: "500 11px Inter", color: "var(--ink2)" }}>Offline practice match</div>
+            <div style={{ font: "700 15px Cinzel,serif", color: isLocal ? "#c9a6ff" : "#8ce0ad" }}>
+              {isLocal ? "Local Match" : "Play vs AI"}
+            </div>
+            <div style={{ font: "500 11px Inter", color: "var(--ink2)" }}>
+              {isLocal ? "Pass & play · one device" : "Offline practice match"}
+            </div>
           </div>
-          <span
-            style={{
-              font: "700 10px Inter",
-              letterSpacing: ".5px",
-              textTransform: "uppercase",
-              padding: "4px 9px",
-              borderRadius: 100,
-              border: "1px solid rgba(50,150,100,.55)",
-              color: "#8ce0ad",
-            }}
-          >
-            {DIFF_LABEL[difficulty]}
-          </span>
+          {!isLocal && (
+            <span
+              style={{
+                font: "700 10px Inter",
+                letterSpacing: ".5px",
+                textTransform: "uppercase",
+                padding: "4px 9px",
+                borderRadius: 100,
+                border: "1px solid rgba(50,150,100,.55)",
+                color: "#8ce0ad",
+              }}
+            >
+              {DIFF_LABEL[difficulty]}
+            </span>
+          )}
         </div>
 
-        {/* AI panel (top / blue) */}
+        {/* Top panel (blue): AI in vs-AI, Player 2 in local */}
         <PlayerPanel
-          name={AI_NAME[difficulty]}
-          rating={difficulty === "hard" ? 1600 : difficulty === "normal" ? 1200 : 800}
+          name={blueName}
+          rating={isLocal ? "—" : difficulty === "hard" ? 1600 : difficulty === "normal" ? 1200 : 800}
           color={AI_COLOR}
-          avatar="strategist"
-          active={!result && state.turn === AI_COLOR}
+          avatar={isLocal ? "sovereign" : "strategist"}
+          active={blueToMove}
           captured={blueCaptured}
           thinking={aiThinking}
         />
@@ -255,23 +294,23 @@ export function GamePage() {
           </span>
         </div>
 
-        {/* Human panel (bottom / red) */}
+        {/* Bottom panel (red): human in vs-AI, Player 1 in local */}
         <PlayerPanel
-          name={displayName}
-          rating={trophies}
+          name={redName}
+          rating={isLocal ? "—" : trophies}
           color={HUMAN_COLOR}
-          avatar={avatar}
-          active={humanTurn}
+          avatar={isLocal ? "champion" : avatar}
+          active={redToMove}
           captured={redCaptured}
         />
 
         <Button variant="red" block onClick={() => goOnline("/play/online?mode=casual")}>
           🌐 Play Online
         </Button>
-        <Button variant="purple" block onClick={() => rematch()}>
+        <Button variant="purple" block onClick={() => navigate("/play/ai")}>
           🤖 VS AI
         </Button>
-        <Button variant="purple" block onClick={() => showToast("Local match arrives soon.")}>
+        <Button variant="purple" block onClick={() => (isLocal ? rematch() : navigate("/play/local"))}>
           👥 Local Match
         </Button>
         <Button variant="purple" block onClick={() => rematch()}>
@@ -293,6 +332,35 @@ export function GamePage() {
 
       {/* CENTER: board + controls */}
       <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 14 }}>
+        {/* Local pass-and-play: a clear whose-turn banner so players know who acts. */}
+        {isLocal && !result && (
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 10,
+              padding: "10px 20px",
+              borderRadius: 100,
+              border: `1px solid ${redToMove ? "rgba(200,70,80,.6)" : "rgba(70,110,200,.6)"}`,
+              background: redToMove ? "rgba(160,48,58,.22)" : "rgba(46,107,198,.2)",
+              color: "#fff",
+              font: "800 14px Cinzel,serif",
+            }}
+          >
+            <span
+              style={{
+                width: 12,
+                height: 12,
+                borderRadius: "50%",
+                background: redToMove
+                  ? "radial-gradient(circle at 35% 30%,#e0555f,#8f1b28)"
+                  : "radial-gradient(circle at 35% 30%,#5f97e6,#1f4a92)",
+                boxShadow: "0 0 8px rgba(232,184,75,.4)",
+              }}
+            />
+            {(redToMove ? P1_NAME : P2_NAME)}'s turn
+          </div>
+        )}
         {mustCapture && humanTurn && (
           <div
             style={{
@@ -308,7 +376,7 @@ export function GamePage() {
               animation: "fdglow 2s ease infinite",
             }}
           >
-            ⚠ You must capture this turn.
+            ⚠ {isLocal ? `${redToMove ? P1_NAME : P2_NAME} must capture this turn.` : "You must capture this turn."}
           </div>
         )}
         {aiThinking && (
@@ -373,7 +441,7 @@ export function GamePage() {
             ↻ Restart
           </Button>
           <Button variant="red" size="sm" onClick={() => surrender()} disabled={!!result}>
-            🏳 Surrender
+            🏳 {isLocal ? `${redToMove ? P1_NAME : P2_NAME} Resigns` : "Surrender"}
           </Button>
         </div>
 
@@ -531,7 +599,7 @@ export function GamePage() {
             boxShadow: "0 12px 30px rgba(0,0,0,.5)",
           }}
         >
-          {result?.winner === "draw" ? "🤝" : result?.winner === HUMAN_COLOR ? "👑" : "⚔"}
+          {result?.winner === "draw" ? "🤝" : isLocal || result?.winner === HUMAN_COLOR ? "👑" : "⚔"}
         </div>
         <div style={{ font: "700 12px Inter", letterSpacing: 2, textTransform: "uppercase", color: "var(--gold)" }}>
           Match Complete
@@ -543,8 +611,8 @@ export function GamePage() {
 
         <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 10, marginBottom: 24 }}>
           <ResultStat value={state.history.length} label="Moves" color="var(--gold-lt)" />
-          <ResultStat value={redCaptured} label="You took" color="#f27a86" />
-          <ResultStat value={blueCaptured} label="AI took" color="#6fa8ff" />
+          <ResultStat value={redCaptured} label={isLocal ? `${P1_NAME} took` : "You took"} color="#f27a86" />
+          <ResultStat value={blueCaptured} label={isLocal ? `${P2_NAME} took` : "AI took"} color="#6fa8ff" />
         </div>
 
         <div style={{ display: "flex", flexDirection: "column", gap: 9 }}>
@@ -552,8 +620,8 @@ export function GamePage() {
             ↻ Rematch
           </Button>
           <div style={{ display: "flex", gap: 9 }}>
-            <Button variant="purple" style={{ flex: 1 }} onClick={() => navigate("/play/ai")}>
-              Change Difficulty
+            <Button variant="purple" style={{ flex: 1 }} onClick={() => navigate(isLocal ? "/play" : "/play/ai")}>
+              {isLocal ? "Game Modes" : "Change Difficulty"}
             </Button>
             <Button variant="purple" style={{ flex: 1 }} onClick={() => navigate("/")}>
               Home

@@ -82,6 +82,7 @@ export function App() {
           <Route path="/play" element={<PlayHubPage />} />
           <Route path="/play/ai" element={<AiSetupPage />} />
           <Route path="/play/ai/game" element={<GamePage />} />
+          <Route path="/play/local" element={<GamePage mode="local" />} />
           <Route path="/play/online" element={<OnlineMatchPage />} />
           <Route path="/spectate" element={<SpectatePage />} />
           <Route path="/rooms" element={<PrivateRoomPage />} />
