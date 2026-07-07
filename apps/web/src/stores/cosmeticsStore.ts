@@ -81,7 +81,15 @@ export const useCosmeticsStore = create<CosmeticsState>((set, get) => ({
   boardKey: (id) => {
     if (!id) return null;
     const it = get().byId[id];
-    return it?.assetKey ?? null;
+    if (!it?.assetKey) return null;
+    // A BOARD item's assetKey is a filename like "board-ebony.png", but the
+    // Board component keys on a BoardTextureKey ("ebony"/"marble"/"wood"/...).
+    // Derive it: strip the "board-" prefix + extension, then only return it if
+    // it's a real texture key — otherwise null so the caller keeps the default
+    // and the board never renders blank.
+    const derived = it.assetKey.replace(/^board-/, "").replace(/\.\w+$/, "");
+    const known = new Set(["marble", "classic", "wood", "ebony", "obsidian"]);
+    return known.has(derived) ? derived : null;
   },
 
   emoteGlyph: (id) => {

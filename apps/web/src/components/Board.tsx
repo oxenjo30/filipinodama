@@ -91,7 +91,11 @@ export function Board({
 }: BoardProps) {
   const grid = toGrid(state.pieces);
   const turn = state.turn;
-  const useImage = boardTheme !== "marble";
+  // Only render the image board for a KNOWN texture key. An unknown/invalid
+  // boardTheme falls back to the marble/CSS board rather than a broken image
+  // (missing IMAGE_INSET → undefined% insets → a blank board). Defensive: keeps
+  // the board visible no matter what value reaches it.
+  const useImage = boardTheme !== "marble" && boardTheme in IMAGE_INSET;
   const order = flip ? [7, 6, 5, 4, 3, 2, 1, 0] : [0, 1, 2, 3, 4, 5, 6, 7];
 
   const cells: JSX.Element[] = [];
