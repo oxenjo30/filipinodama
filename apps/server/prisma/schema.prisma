@@ -135,6 +135,7 @@ model StoreItem {
   priceDiamonds Int?
   assetKey      String
   previewKey    String?
+  tag           String? // NEW | PREMIUM | VALUE | -35% | SEASON (store badge)
   bundleItems   String[]
   isPremium     Boolean         @default(false)
   active        Boolean         @default(true)
