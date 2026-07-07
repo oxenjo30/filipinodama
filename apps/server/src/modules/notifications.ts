@@ -19,6 +19,12 @@ const resolveBodySchema = z.object({
   status: z.enum(["accepted", "declined"]),
 });
 
+// Notification `type`s that are internal progress markers, not user-facing bell
+// items. The learn module stores lesson completion as a silent, pre-read
+// Notification row (type "lesson_complete"); it must never surface in the feed
+// or the unread count. Kept here so the feed query is the single source of truth.
+const HIDDEN_TYPES = ["lesson_complete"];
+
 /** Bucket a timestamp into a coarse date group for UI section headers. */
 function groupFor(date: Date, now: Date): "today" | "yesterday" | "earlier" {
   const startOfDay = (d: Date) => new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
@@ -39,8 +45,13 @@ export async function notificationRoutes(app: FastifyInstance) {
       const { cursor, limit, unread } = listQuerySchema.parse(req.query);
 
       const rows = await prisma.notification.findMany({
-        // Dismissed rows are hidden everywhere.
-        where: { userId: me, dismissedAt: null, ...(unread ? { readAt: null } : {}) },
+        // Dismissed rows are hidden everywhere; internal markers never surface.
+        where: {
+          userId: me,
+          dismissedAt: null,
+          type: { notIn: HIDDEN_TYPES },
+          ...(unread ? { readAt: null } : {}),
+        },
         orderBy: { createdAt: "desc" },
         take: limit + 1,
         ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
@@ -69,7 +80,7 @@ export async function notificationRoutes(app: FastifyInstance) {
       });
 
       const unreadCount = await prisma.notification.count({
-        where: { userId: me, readAt: null, dismissedAt: null },
+        where: { userId: me, readAt: null, dismissedAt: null, type: { notIn: HIDDEN_TYPES } },
       });
 
       return ok({

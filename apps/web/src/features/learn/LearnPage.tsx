@@ -39,17 +39,19 @@ import { useAuthStore } from "../../stores/authStore";
  */
 
 // ── server lesson shape (GET /api/learn/lessons) ──
-type Lesson = { id: string; title: string; summary: string; completed: boolean };
+type LessonStep = { heading: string; body: string };
+type Lesson = { id: string; title: string; tag: string; summary: string; steps: LessonStep[]; completed: boolean };
 type LessonsResponse = { lessons: Lesson[]; completedCount: number; total: number };
 
 const XP_PER_LESSON = 50;
 
-/** Learning rank label derived from the REAL completed-lesson count. */
+/** Learning rank label derived from the REAL completed-lesson count.
+ *  Tiers match the prototype exactly (Beginner → Apprentice → Strategist →
+ *  Dama Master); there is no "Novice" tier. */
 function learnRankFor(done: number, total: number): string {
   if (total > 0 && done >= total) return "Dama Master";
   if (done >= 6) return "Strategist";
   if (done >= 3) return "Apprentice";
-  if (done >= 1) return "Novice";
   return "Beginner";
 }
 
@@ -104,7 +106,7 @@ const TOPICS: Topic[] = [
     tint: "rgba(24,64,44,.45)",
     border: "rgba(50,150,100,.5)",
     btn: "btn-green",
-    lessonId: "strategy-endgame",
+    lessonId: "strategy-tactics",
   },
 ];
 
@@ -426,7 +428,7 @@ export function LearnPage() {
                     {allDone
                       ? "You've mastered every lesson"
                       : resumeLesson
-                        ? `Lesson ${resumeIndex + 1} · ${resumeLesson.summary}`.slice(0, 60)
+                        ? `Lesson ${resumeIndex + 1} of ${learnTotal} · ${resumeLesson.tag}`
                         : ""}
                   </div>
                   <div
@@ -537,7 +539,7 @@ export function LearnPage() {
                         {l.title}
                       </span>
                       <span style={{ font: "500 10px Inter", color: "var(--ink2)" }}>
-                        {done ? "Completed" : `Lesson ${i + 1}`}
+                        {done ? `Completed · ${l.tag}` : `Lesson ${i + 1} · ${l.tag}`}
                       </span>
                     </span>
                   </span>

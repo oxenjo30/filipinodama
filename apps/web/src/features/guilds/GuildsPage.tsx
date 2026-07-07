@@ -32,6 +32,8 @@ import { GuildChatPanel } from "./GuildChatPanel";
  */
 
 // ── real API shapes ─────────────────────────────────────────────────────────
+type GuildJoinPolicy = "open" | "request" | "invite";
+
 type ApiGuildCard = {
   id: string;
   name: string;
@@ -39,6 +41,7 @@ type ApiGuildCard = {
   description: string | null;
   crestKey: string | null;
   minTrophies: number;
+  joinPolicy: GuildJoinPolicy;
   weeklyPoints: number;
   memberCount: number;
 };
@@ -70,6 +73,7 @@ type ApiGuildDetail = {
     description: string | null;
     crestKey: string | null;
     minTrophies: number;
+    joinPolicy: GuildJoinPolicy;
     weeklyPoints: number;
     memberCount: number;
     createdAt: string;
@@ -168,6 +172,17 @@ const PERM_MATRIX: { label: string; leader: boolean; officer: boolean; member: b
 function tierBadge(trophies: number) {
   const t = rankTierFor(trophies);
   return { label: t.label, color: t.accent, border: t.accent + "66" };
+}
+
+/**
+ * guildLevel — a guild's level, derived from its real cumulative weeklyPoints.
+ * Every 1,000 accumulated war points is one level; a brand-new guild (0 pts) is
+ * Level 1. This is a documented derivation from real backend data (weeklyPoints),
+ * not a fabricated stat — the prototype shows a "Level N" badge with no dedicated
+ * backend column, so we compute it consistently on both the banner and the cards.
+ */
+function guildLevel(weeklyPoints: number): number {
+  return Math.floor(Math.max(0, weeklyPoints) / 1000) + 1;
 }
 
 // A member is "online" if seen in the last 5 minutes.
@@ -289,6 +304,17 @@ export function GuildsPage() {
     return idx >= 0 ? idx + 1 : null;
   }, [detail, me]);
 
+  // Global rank derived from the real browse list, which GET /api/guilds returns
+  // sorted by weeklyPoints desc. My guild's position (index + 1) in that ordering
+  // is its global standing. If the guild isn't present in the loaded list (e.g. a
+  // search filter is active, or the list hasn't loaded), we show "—" honestly
+  // rather than fabricating a number.
+  const globalRank = useMemo(() => {
+    if (!myGuildId || !browse) return null;
+    const idx = browse.findIndex((g) => g.id === myGuildId);
+    return idx >= 0 ? idx + 1 : null;
+  }, [browse, myGuildId]);
+
   // Honest war meter derived from real weeklyPoints toward a rolling weekly goal.
   const warPct = useMemo(() => {
     if (!detail) return 0;
@@ -323,6 +349,7 @@ export function GuildsPage() {
         tag: gcTag.trim().toUpperCase(),
         crestKey: gcCrest,
         minTrophies: gcMinTrophies,
+        joinPolicy: gcPolicy as GuildJoinPolicy,
         ...(gcDesc.trim() ? { description: gcDesc.trim() } : {}),
       });
       setCreateShow(false);
@@ -443,12 +470,14 @@ export function GuildsPage() {
   const [geDesc, setGeDesc] = useState("");
   const [geMin, setGeMin] = useState(0);
   const [geCrest, setGeCrest] = useState<CrestKey>(CREST_KEYS[0]);
+  const [gePolicy, setGePolicy] = useState<GuildJoinPolicy>("open");
   const openEdit = () => {
     if (!detail) return;
     setGeName(detail.guild.name);
     setGeDesc(detail.guild.description ?? "");
     setGeMin(detail.guild.minTrophies);
     setGeCrest(guildCrest(detail.guild.crestKey, detail.guild.id).key);
+    setGePolicy(detail.guild.joinPolicy);
     setEditShow(true);
   };
   const saveEdit = async () => {
@@ -460,6 +489,7 @@ export function GuildsPage() {
         description: geDesc.trim(),
         minTrophies: geMin,
         crestKey: geCrest,
+        joinPolicy: gePolicy,
       });
       showToast("Guild updated.");
       setEditShow(false);
@@ -511,8 +541,13 @@ export function GuildsPage() {
               <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
                 <span style={{ font: "800 26px Cinzel,serif", color: "var(--gold-lt)" }}>{detail.guild.name}</span>
                 <span style={{ font: "700 13px 'JetBrains Mono',monospace", color: "var(--ink2)" }}>{detail.guild.tag}</span>
+                <span style={{ padding: "3px 10px", borderRadius: 100, border: "1px solid rgba(232,184,75,.3)", background: "rgba(15,8,32,.5)", font: "700 11px Inter", color: "var(--gold)" }}>Level {guildLevel(detail.guild.weeklyPoints)}</span>
               </div>
               <div style={{ display: "flex", gap: 22, marginTop: 12, flexWrap: "wrap" }}>
+                <div>
+                  <div style={{ font: "800 18px 'JetBrains Mono',monospace", color: "#fff" }}>{globalRank !== null ? `#${globalRank}` : "—"}</div>
+                  <div style={{ font: "500 11px Inter", color: "var(--ink2)" }}>Global Rank</div>
+                </div>
                 <div>
                   <div style={{ font: "800 18px 'JetBrains Mono',monospace", color: "#fff" }}>{detail.guild.memberCount}</div>
                   <div style={{ font: "500 11px Inter", color: "var(--ink2)" }}>Members</div>
@@ -758,6 +793,7 @@ export function GuildsPage() {
                     <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
                       <span style={{ font: "700 15px Inter", color: "#fff" }}>{g.name}</span>
                       <span style={{ font: "700 11px 'JetBrains Mono',monospace", color: "var(--ink2)" }}>{g.tag}</span>
+                      <span style={{ padding: "2px 8px", borderRadius: 100, border: "1px solid rgba(232,184,75,.2)", background: "rgba(15,8,32,.5)", font: "600 10px Inter", color: "var(--gold)" }}>Lv {guildLevel(g.weeklyPoints)}</span>
                       {g.minTrophies > 0 && (
                         <span style={{ display: "inline-flex", alignItems: "center", gap: 4, padding: "2px 8px", borderRadius: 100, border: "1px solid rgba(232,184,75,.2)", background: "rgba(15,8,32,.5)", font: "600 10px Inter", color: "var(--gold)" }}><Trophy size={11} /> {g.minTrophies.toLocaleString()}+</span>
                       )}
@@ -929,6 +965,17 @@ export function GuildsPage() {
                   <input type="range" min={0} max={5000} step={100} value={geMin} onChange={(e) => setGeMin(Number(e.target.value))} style={{ flex: 1, accentColor: "#f0c24b" }} />
                 </div>
                 <div style={{ font: "500 11.5px Inter", color: "var(--ink2)", marginTop: 8 }}>Applicants below this trophy count can't request to join.</div>
+              </div>
+              <div>
+                <label style={{ display: "block", font: "700 11px Inter", letterSpacing: "1.5px", textTransform: "uppercase", color: "var(--ink2)", marginBottom: 9 }}>Join Policy</label>
+                <div style={{ display: "flex", gap: 9 }}>
+                  {GC_POLICIES.map((p) => {
+                    const on = p.key === gePolicy;
+                    return (
+                      <button key={p.key} onClick={() => setGePolicy(p.key as GuildJoinPolicy)} style={{ flex: 1, padding: "10px 8px", borderRadius: 9, cursor: "pointer", font: "700 12px Inter", border: on ? "1px solid var(--gold)" : "1px solid rgba(232,184,75,.2)", background: on ? "rgba(232,184,75,.16)" : "rgba(0,0,0,.3)", color: on ? "var(--gold-lt)" : "var(--ink)" }}>{p.label}</button>
+                    );
+                  })}
+                </div>
               </div>
               <button onClick={() => void saveEdit()} disabled={busy || geName.trim().length < 3} style={{ width: "100%", padding: 14, borderRadius: 11, border: "1px solid var(--gold)", background: "linear-gradient(180deg,#f0c24b,#c98b2e)", color: "#2a1607", font: "800 14px Inter", letterSpacing: ".4px", cursor: busy || geName.trim().length < 3 ? "not-allowed" : "pointer", opacity: geName.trim().length < 3 ? 0.6 : 1 }}>Save Changes</button>
             </div>

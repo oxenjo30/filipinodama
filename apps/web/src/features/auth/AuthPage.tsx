@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { useAuthStore, ApiError } from "../../stores/authStore";
+import { api } from "../../lib/api";
 import { BRAND } from "../../lib/assets";
 
 /**
@@ -13,6 +14,13 @@ import { BRAND } from "../../lib/assets";
  * only when providers.google is true, and clicking it hands off to the backend
  * OAuth start route which redirects to Google's consent screen. A Terms &
  * Conditions checkbox must be accepted before any account is created / signed in.
+ *
+ * DELIBERATE DEVIATIONS from the prototype (kept on purpose):
+ *  - The required Terms & Conditions checkbox is a legal improvement the prototype
+ *    lacks — it is intentionally KEPT.
+ *  - The prototype renders three social buttons; only Google OAuth is actually
+ *    configured server-side, so we intentionally show ONLY Google (no dead
+ *    Apple/Facebook buttons).
  */
 
 /** Where the API (and its OAuth start routes) live — mirrors lib/api.ts. */
@@ -71,6 +79,14 @@ export function AuthPage({ initialMode = "signin" }: { initialMode?: Mode }) {
   const [agreed, setAgreed] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  // Forgot-password flow: null = not open, otherwise the small inline panel is
+  // shown. `forgotDone` flips to the honest "check your email" confirmation once
+  // the request has been POSTed.
+  const [forgotOpen, setForgotOpen] = useState(false);
+  const [forgotEmail, setForgotEmail] = useState("");
+  const [forgotBusy, setForgotBusy] = useState(false);
+  const [forgotDone, setForgotDone] = useState(false);
+  const [forgotError, setForgotError] = useState<string | null>(null);
 
   const isSignup = mode === "signup";
   const disabled = busy || loading;
@@ -107,7 +123,7 @@ export function AuthPage({ initialMode = "signin" }: { initialMode?: Mode }) {
     // Client-side validation: show a friendly message for empty/invalid input
     // instead of firing a request that 400s (and logs a console error).
     if (isSignup && !name.trim()) {
-      setError("Please choose a username.");
+      setError("Please enter a display name.");
       return;
     }
     if (!cleanEmail || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(cleanEmail)) {
@@ -145,6 +161,40 @@ export function AuthPage({ initialMode = "signin" }: { initialMode?: Mode }) {
       setError(e instanceof ApiError ? e.message : "Something went wrong. Please try again.");
     } finally {
       setBusy(false);
+    }
+  }
+
+  /** Open the reset panel, pre-filling whatever email is already typed. */
+  function openForgot() {
+    setForgotEmail(email.trim());
+    setForgotError(null);
+    setForgotDone(false);
+    setForgotOpen(true);
+  }
+
+  /**
+   * Fire the real password-reset request. The backend
+   * (POST /api/auth/password/forgot) always returns { sent: true } and never
+   * reveals whether the address exists — so we show the same honest
+   * "check your email" confirmation regardless.
+   */
+  async function submitForgot() {
+    const cleanEmail = forgotEmail.trim().toLowerCase();
+    if (!cleanEmail || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(cleanEmail)) {
+      setForgotError("Please enter a valid email address.");
+      return;
+    }
+    setForgotError(null);
+    setForgotBusy(true);
+    try {
+      await api.post("/api/auth/password/forgot", { email: cleanEmail });
+      setForgotDone(true);
+    } catch (e) {
+      setForgotError(
+        e instanceof ApiError ? e.message : "Something went wrong. Please try again.",
+      );
+    } finally {
+      setForgotBusy(false);
     }
   }
 
@@ -230,7 +280,9 @@ export function AuthPage({ initialMode = "signin" }: { initialMode?: Mode }) {
         >
           {isSignup && (
             <label style={{ display: "block" }}>
-              <span style={LABEL_TEXT}>USERNAME</span>
+              {/* Label matches the prototype ("DISPLAY NAME"); the field still
+                  maps to the register endpoint's `username`. */}
+              <span style={LABEL_TEXT}>DISPLAY NAME</span>
               <input
                 value={name}
                 onChange={(e) => setName(e.target.value)}
@@ -252,7 +304,32 @@ export function AuthPage({ initialMode = "signin" }: { initialMode?: Mode }) {
             />
           </label>
           <label style={{ display: "block" }}>
-            <span style={{ ...LABEL_TEXT, marginBottom: 6 }}>PASSWORD</span>
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                marginBottom: 6,
+              }}
+            >
+              <span style={{ ...LABEL_TEXT, marginBottom: 0 }}>PASSWORD</span>
+              {!isSignup && (
+                <button
+                  type="button"
+                  onClick={openForgot}
+                  style={{
+                    border: "none",
+                    background: "transparent",
+                    color: "var(--gold)",
+                    font: "600 11px Inter",
+                    cursor: "pointer",
+                    padding: 0,
+                  }}
+                >
+                  Forgot?
+                </button>
+              )}
+            </div>
             <input
               value={pass}
               onChange={(e) => setPass(e.target.value)}
@@ -335,7 +412,7 @@ export function AuthPage({ initialMode = "signin" }: { initialMode?: Mode }) {
             opacity: disabled ? 0.7 : 1,
           }}
         >
-          Play as Guest
+          Continue as Guest
         </button>
         <label
           style={{
@@ -387,6 +464,135 @@ export function AuthPage({ initialMode = "signin" }: { initialMode?: Mode }) {
             .
           </span>
         </label>
+
+        {/* Forgot-password panel — a real, wired reset flow. */}
+        {forgotOpen && (
+          <div
+            role="dialog"
+            aria-modal="true"
+            style={{
+              position: "absolute",
+              inset: 0,
+              zIndex: 5,
+              borderRadius: "inherit",
+              background: "rgba(12,6,24,.92)",
+              display: "flex",
+              flexDirection: "column",
+              justifyContent: "center",
+              gap: 14,
+              padding: "34px 32px",
+            }}
+          >
+            {forgotDone ? (
+              <>
+                <div style={{ textAlign: "center", fontSize: 30 }}>📧</div>
+                <h2
+                  style={{
+                    margin: 0,
+                    textAlign: "center",
+                    font: "800 20px Cinzel,serif",
+                    color: "var(--gold-lt)",
+                  }}
+                >
+                  Check your email
+                </h2>
+                <p
+                  style={{
+                    margin: 0,
+                    textAlign: "center",
+                    font: "400 12.5px/1.6 Inter",
+                    color: "var(--ink2)",
+                  }}
+                >
+                  If an account exists for <b style={{ color: "#fff" }}>{forgotEmail.trim()}</b>,
+                  we&rsquo;ve sent a password-reset link. It may take a minute to arrive — check
+                  your spam folder too.
+                </p>
+                <button
+                  type="button"
+                  className="btn btn-gold"
+                  onClick={() => setForgotOpen(false)}
+                  style={{ width: "100%", justifyContent: "center", padding: 13, marginTop: 4 }}
+                >
+                  Back to Sign In
+                </button>
+              </>
+            ) : (
+              <>
+                <h2
+                  style={{
+                    margin: 0,
+                    textAlign: "center",
+                    font: "800 20px Cinzel,serif",
+                    color: "var(--gold-lt)",
+                  }}
+                >
+                  Reset your password
+                </h2>
+                <p
+                  style={{
+                    margin: 0,
+                    textAlign: "center",
+                    font: "400 12.5px/1.6 Inter",
+                    color: "var(--ink2)",
+                  }}
+                >
+                  Enter your account email and we&rsquo;ll send you a link to set a new password.
+                </p>
+                <label style={{ display: "block" }}>
+                  <span style={LABEL_TEXT}>EMAIL</span>
+                  <input
+                    value={forgotEmail}
+                    onChange={(e) => setForgotEmail(e.target.value)}
+                    type="email"
+                    placeholder="you@example.com"
+                    autoComplete="email"
+                    autoFocus
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" && !forgotBusy) submitForgot();
+                    }}
+                    style={INPUT}
+                  />
+                </label>
+                {forgotError && (
+                  <div style={{ font: "600 12px Inter", color: "#ff9aa8" }}>{forgotError}</div>
+                )}
+                <button
+                  type="button"
+                  className="btn btn-gold"
+                  onClick={submitForgot}
+                  disabled={forgotBusy}
+                  style={{
+                    width: "100%",
+                    justifyContent: "center",
+                    padding: 13,
+                    opacity: forgotBusy ? 0.7 : 1,
+                    cursor: forgotBusy ? "default" : "pointer",
+                  }}
+                >
+                  {forgotBusy ? "Sending…" : "Send reset link"}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setForgotOpen(false)}
+                  disabled={forgotBusy}
+                  style={{
+                    width: "100%",
+                    padding: 10,
+                    borderRadius: 11,
+                    border: "1px solid rgba(232,184,75,.22)",
+                    background: "transparent",
+                    color: "var(--ink)",
+                    font: "700 12px Inter",
+                    cursor: forgotBusy ? "default" : "pointer",
+                  }}
+                >
+                  Cancel
+                </button>
+              </>
+            )}
+          </div>
+        )}
       </div>
     </div>
   );

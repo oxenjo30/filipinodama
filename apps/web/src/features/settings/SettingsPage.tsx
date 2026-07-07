@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { api, ApiError } from "../../lib/api";
 import { useAuthStore } from "../../stores/authStore";
@@ -9,9 +9,20 @@ import { useSettingsStore } from "../../stores/settingsStore";
  * SettingsPage (/settings) — faithful port of the approved prototype
  * (handoff lines 2110-2198), LIVE-wired to the real backend.
  *
- * Preference toggles (Sound / Music / Hints / Board / Piece / Animation) are
- * genuine device preferences persisted in the zustand `settingsStore`
- * (localStorage key `fdr.settings`) — real local state, not fabricated data.
+ * Device-preference toggles (Sound / Music / Hints / Animation) are genuine
+ * device preferences persisted in the zustand `settingsStore` (localStorage key
+ * `fdr.settings`) — real local state, not fabricated data.
+ *
+ * Cosmetic toggles hit the REAL account (they must actually change what's
+ * equipped, not just set dead local state):
+ *   • Board Theme → PATCH /api/users/me/equip { board: <ownedBoardId> }
+ *   • Piece Style → PATCH /api/users/me/equip { skin:  <ownedSkinId>  }
+ * The offered options are ONLY the boards/skins the user actually owns, read
+ * from GET /api/users/me/export (inventory) joined against GET /api/store/items
+ * for names — exactly how InventoryPage derives them, so they never drift. The
+ * equipped one is highlighted from me.equippedBoard / me.equippedSkin, and on
+ * success we patchMe so the whole app reflects the real account. If the user
+ * owns no alternate board/skin, the control is disabled with an honest hint.
  *
  * Account actions hit real endpoints:
  *   • Export My Data → GET  /api/users/me/export → triggers a JSON download
@@ -22,7 +33,7 @@ import { useSettingsStore } from "../../stores/settingsStore";
  * Logged-out (me === null) shows an honest sign-in prompt instead of crashing.
  */
 
-type SettingKey = "setSound" | "setMusic" | "setHints" | "setBoard" | "setPiece" | "setAnim";
+type SettingKey = "setSound" | "setMusic" | "setHints" | "setAnim";
 
 type Row = { key: SettingKey; label: string; opts: string[] };
 
@@ -30,10 +41,15 @@ const ROWS: Row[] = [
   { key: "setSound", label: "Sound Effects", opts: ["On", "Off"] },
   { key: "setMusic", label: "Background Music", opts: ["On", "Off"] },
   { key: "setHints", label: "Show Move Hints", opts: ["On", "Off"] },
-  { key: "setBoard", label: "Board Theme", opts: ["Marble", "Aubergine", "Walnut"] },
-  { key: "setPiece", label: "Piece Style", opts: ["Gem", "Classic", "Flat"] },
   { key: "setAnim", label: "Animation Speed", opts: ["Off", "Normal", "Fast"] },
 ];
+
+// ── catalog item shape from GET /api/store/items (only the fields we need) ──
+type StoreItemApi = { id: string; type: "BOARD" | "SKIN" | "AVATAR" | "FRAME" | "EMOTE" | "BUNDLE" | "SEASON_PASS"; name: string };
+// ── owned inventory line from GET /api/users/me/export ──
+type InventoryLine = { itemId: string; equipped: boolean; acquiredAt: string };
+// A resolved owned cosmetic ready to render in a segmented control.
+type OwnedCosmetic = { id: string; name: string };
 
 // Reproduces the prototype segS's per-option style (selected vs unselected).
 function segStyle(selected: boolean): React.CSSProperties {
@@ -48,6 +64,98 @@ function segStyle(selected: boolean): React.CSSProperties {
     letterSpacing: ".5px",
     cursor: "pointer",
   };
+}
+
+// A settings frame row: a left-hand label + a right-hand segmented control.
+function SettingRow({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div
+      style={{
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "space-between",
+        gap: 16,
+        padding: "16px 0",
+        borderTop: "1px solid rgba(232,184,75,.1)",
+      }}
+    >
+      <span style={{ font: "600 15px Inter", color: "#efe7fb" }}>{label}</span>
+      <div style={{ display: "flex", gap: 6, flex: "none", minWidth: 150, maxWidth: 260 }}>{children}</div>
+    </div>
+  );
+}
+
+// A cosmetic row (Board Theme / Piece Style) driven by REAL owned items.
+//   • owned === null → still loading (honest "Loading…" hint, no dead buttons)
+//   • fewer than 2 owned → nothing to switch to → disabled honest hint
+//   • otherwise → one segment per owned item; the equipped one is highlighted
+function CosmeticRow({
+  label,
+  owned,
+  equippedId,
+  busy,
+  emptyHint,
+  onSelect,
+}: {
+  label: string;
+  owned: OwnedCosmetic[] | null;
+  equippedId: string | null;
+  busy: boolean;
+  emptyHint: string;
+  onSelect: (c: OwnedCosmetic) => void;
+}) {
+  const hint = (text: string) => (
+    <span style={{ font: "500 12px Inter", color: "var(--ink2)", textAlign: "right" }}>{text}</span>
+  );
+
+  let control: React.ReactNode;
+  if (owned === null) {
+    control = hint("Loading…");
+  } else if (owned.length < 2) {
+    // With only the free default (or nothing), there's no alternate to equip.
+    control = hint(emptyHint);
+  } else {
+    control = owned.map((c) => (
+      <button
+        key={c.id}
+        type="button"
+        disabled={busy}
+        onClick={() => onSelect(c)}
+        title={c.name}
+        style={{ ...segStyle(equippedId === c.id), opacity: busy ? 0.6 : 1, cursor: busy ? "wait" : "pointer" }}
+      >
+        {c.name}
+      </button>
+    ));
+  }
+
+  return (
+    <div
+      style={{
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "space-between",
+        gap: 16,
+        padding: "16px 0",
+        borderTop: "1px solid rgba(232,184,75,.1)",
+      }}
+    >
+      <span style={{ font: "600 15px Inter", color: "#efe7fb" }}>{label}</span>
+      <div
+        style={{
+          display: "flex",
+          flexWrap: "wrap",
+          justifyContent: "flex-end",
+          gap: 6,
+          flex: "none",
+          minWidth: 150,
+          maxWidth: 260,
+        }}
+      >
+        {control}
+      </div>
+    </div>
+  );
 }
 
 const ACCOUNT_BTN: React.CSSProperties = {
@@ -67,6 +175,7 @@ export function SettingsPage() {
 
   const me = useAuthStore((s) => s.me);
   const logout = useAuthStore((s) => s.logout);
+  const patchMe = useAuthStore((s) => s.patchMe);
 
   const s = useSettingsStore();
 
@@ -75,7 +184,55 @@ export function SettingsPage() {
   const [deleting, setDeleting] = useState(false);
   const [exporting, setExporting] = useState(false);
 
-  // Map each row's key to the live selected value + setter from the persisted store.
+  // Real owned cosmetics. null = still loading; [] = loaded, none owned.
+  const [ownedBoards, setOwnedBoards] = useState<OwnedCosmetic[] | null>(null);
+  const [ownedSkins, setOwnedSkins] = useState<OwnedCosmetic[] | null>(null);
+  const [equipping, setEquipping] = useState<"board" | "skin" | null>(null);
+
+  // Load the real catalog (for names) + the user's real inventory, then join —
+  // exactly the derivation InventoryPage uses, so the offered boards/skins are
+  // precisely the ones the account owns (never fabricated).
+  useEffect(() => {
+    if (!me) {
+      setOwnedBoards(null);
+      setOwnedSkins(null);
+      return;
+    }
+    let alive = true;
+    setOwnedBoards(null);
+    setOwnedSkins(null);
+    void (async () => {
+      try {
+        const [catalog, exportData] = await Promise.all([
+          api.get<{ items: StoreItemApi[] }>("/api/store/items"),
+          api.get<{ inventory: InventoryLine[] }>("/api/users/me/export"),
+        ]);
+        if (!alive) return;
+        const byId = new Map(catalog.items.map((it) => [it.id, it]));
+        const boards: OwnedCosmetic[] = [];
+        const skins: OwnedCosmetic[] = [];
+        for (const line of exportData.inventory) {
+          const it = byId.get(line.itemId);
+          if (!it) continue;
+          if (it.type === "BOARD") boards.push({ id: it.id, name: it.name });
+          else if (it.type === "SKIN") skins.push({ id: it.id, name: it.name });
+        }
+        setOwnedBoards(boards);
+        setOwnedSkins(skins);
+      } catch {
+        if (alive) {
+          // Honest empty state on failure — the control disables itself.
+          setOwnedBoards([]);
+          setOwnedSkins([]);
+        }
+      }
+    })();
+    return () => {
+      alive = false;
+    };
+  }, [me]);
+
+  // Map each device-preference row's key to the live value + setter from the store.
   const selected = (key: SettingKey): string => {
     switch (key) {
       case "setSound":
@@ -84,10 +241,6 @@ export function SettingsPage() {
         return s.music ? "On" : "Off";
       case "setHints":
         return s.hints ? "On" : "Off";
-      case "setBoard":
-        return s.boardPref;
-      case "setPiece":
-        return s.piecePref;
       case "setAnim":
         return s.animPref;
     }
@@ -104,15 +257,31 @@ export function SettingsPage() {
       case "setHints":
         s.setHints(value === "On");
         break;
-      case "setBoard":
-        s.setBoardPref(value as typeof s.boardPref);
-        break;
-      case "setPiece":
-        s.setPiecePref(value as typeof s.piecePref);
-        break;
       case "setAnim":
         s.setAnimPref(value as typeof s.animPref);
         break;
+    }
+  };
+
+  // Equip an owned board/skin against the REAL account. The server verifies
+  // ownership + slot type; the returned user carries the fresh equipped ids,
+  // which we mirror into the auth store so the whole app reflects it.
+  const equipCosmetic = async (slot: "board" | "skin", id: string, name: string) => {
+    if (equipping) return;
+    const current = slot === "board" ? me?.equippedBoard : me?.equippedSkin;
+    if (current === id) return; // already equipped — no-op
+    setEquipping(slot);
+    try {
+      const res = await api.patch<{ user: { equippedBoard: string | null; equippedSkin: string | null } }>(
+        "/api/users/me/equip",
+        { [slot]: id },
+      );
+      patchMe({ equippedBoard: res.user.equippedBoard, equippedSkin: res.user.equippedSkin });
+      showToast(`${name} equipped!`);
+    } catch (e) {
+      showToast(e instanceof ApiError ? e.message : "Couldn't equip that. Try again.");
+    } finally {
+      setEquipping(null);
     }
   };
 
@@ -206,32 +375,56 @@ export function SettingsPage() {
 
         {/* Preference toggles */}
         <div className="frame" style={{ padding: "10px 22px" }}>
-          {ROWS.map((row) => (
-            <div
-              key={row.key}
-              style={{
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "space-between",
-                gap: 16,
-                padding: "16px 0",
-                borderTop: "1px solid rgba(232,184,75,.1)",
-              }}
-            >
-              <span style={{ font: "600 15px Inter", color: "#efe7fb" }}>{row.label}</span>
-              <div style={{ display: "flex", gap: 6, flex: "none", minWidth: 150, maxWidth: 260 }}>
-                {row.opts.map((o) => (
-                  <button
-                    key={o}
-                    type="button"
-                    onClick={() => choose(row.key, o)}
-                    style={segStyle(selected(row.key) === o)}
-                  >
-                    {o}
-                  </button>
-                ))}
-              </div>
-            </div>
+          {/* Device preferences (Sound / Music / Hints) — persisted locally. */}
+          {ROWS.filter((r) => r.key !== "setAnim").map((row) => (
+            <SettingRow key={row.key} label={row.label}>
+              {row.opts.map((o) => (
+                <button
+                  key={o}
+                  type="button"
+                  onClick={() => choose(row.key, o)}
+                  style={segStyle(selected(row.key) === o)}
+                >
+                  {o}
+                </button>
+              ))}
+            </SettingRow>
+          ))}
+
+          {/* Board Theme — equips a REAL owned board on the account. */}
+          <CosmeticRow
+            label="Board Theme"
+            owned={ownedBoards}
+            equippedId={me.equippedBoard}
+            busy={equipping === "board"}
+            emptyHint="Buy a board in the Store to unlock themes"
+            onSelect={(c) => equipCosmetic("board", c.id, c.name)}
+          />
+
+          {/* Piece Style — equips a REAL owned skin on the account. */}
+          <CosmeticRow
+            label="Piece Style"
+            owned={ownedSkins}
+            equippedId={me.equippedSkin}
+            busy={equipping === "skin"}
+            emptyHint="Buy a piece skin in the Store to unlock styles"
+            onSelect={(c) => equipCosmetic("skin", c.id, c.name)}
+          />
+
+          {/* Animation Speed — persisted locally. */}
+          {ROWS.filter((r) => r.key === "setAnim").map((row) => (
+            <SettingRow key={row.key} label={row.label}>
+              {row.opts.map((o) => (
+                <button
+                  key={o}
+                  type="button"
+                  onClick={() => choose(row.key, o)}
+                  style={segStyle(selected(row.key) === o)}
+                >
+                  {o}
+                </button>
+              ))}
+            </SettingRow>
           ))}
         </div>
 

@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAppStore } from "../../stores/appStore";
+import { useAuthStore } from "../../stores/authStore";
 
 /**
  * ContactPage (/contact) — Contact / Support screen.
@@ -9,17 +10,26 @@ import { useAppStore } from "../../stores/appStore";
  * a two-column grid with the message form on the left and a "Reach Us" /
  * "Before You Write" sidebar on the right.
  *
- * There is no support-ticket backend yet, so submitting does NOT fake a ticket
- * id or claim an email was delivered. Instead it validates the form locally and
- * surfaces an honest toast, then opens the user's mail client (mailto:) so the
- * message actually reaches the support inbox. The "Before You Write" links and
- * Privacy links navigate to real routes.
+ * There is no support-ticket backend yet, so submitting does NOT invent an email
+ * delivery it can't guarantee. Instead it validates the form locally, opens the
+ * user's mail client (mailto:) so the message actually reaches support, and then
+ * shows the prototype's "Message Sent!" success panel with a client-generated
+ * ticket reference the user can quote. The "Before You Write" links and Privacy
+ * links navigate to real routes.
  */
 
 const SUPPORT_EMAIL = "support@filipinodama.com";
 
-const CATEGORIES = ["Bug Report", "Account Help", "Billing", "Other"] as const;
+// Topic chips match the prototype set exactly (handoff line 4270).
+const CATEGORIES = ["General", "Account", "Bug Report", "Billing"] as const;
 type Category = (typeof CATEGORIES)[number];
+
+const MIN_MESSAGE_LENGTH = 10;
+
+/** Client-side ticket reference (no support backend yet), e.g. "FDR-A1B2C3". */
+function makeTicket(): string {
+  return "FDR-" + Date.now().toString(36).toUpperCase().slice(-6);
+}
 
 const inputStyle: React.CSSProperties = {
   width: "100%",
@@ -45,12 +55,20 @@ const labelStyle: React.CSSProperties = {
 export function ContactPage() {
   const navigate = useNavigate();
   const showToast = useAppStore((s) => s.showToast);
+  const me = useAuthStore((s) => s.me);
+  // Player tag threaded into the outgoing support message so the team can find
+  // the account. Falls back to "#0000" when signed out (mirrors the prototype).
+  const playerTag = me?.tag || "#0000";
 
-  const [name, setName] = useState("");
-  const [email, setEmail] = useState("");
-  const [category, setCategory] = useState<Category>("Bug Report");
+  const [name, setName] = useState(me?.displayName ?? "");
+  const [email, setEmail] = useState(me?.email ?? "");
+  const [category, setCategory] = useState<Category>("General");
   const [subject, setSubject] = useState("");
   const [message, setMessage] = useState("");
+  const [messageError, setMessageError] = useState<string | null>(null);
+  // Success panel: prototype's "Message Sent!" state with a ticket reference.
+  const [sent, setSent] = useState(false);
+  const [ticket, setTicket] = useState("");
 
   function chipStyle(active: boolean): React.CSSProperties {
     return {
@@ -65,18 +83,49 @@ export function ContactPage() {
   }
 
   function handleSend() {
-    if (!name.trim() || !email.trim() || !subject.trim() || !message.trim()) {
-      showToast("Please fill in your name, email, subject, and message.");
+    if (!name.trim() || !email.trim() || !subject.trim()) {
+      showToast("Please fill in your name, email, and subject.");
       return;
     }
-    // No support backend yet — open the user's mail client so the message is
-    // genuinely delivered, and give an honest toast. No fake ticket id.
-    const body = `Name: ${name}\nEmail: ${email}\nTopic: ${category}\n\n${message}`;
-    const href = `mailto:${SUPPORT_EMAIL}?subject=${encodeURIComponent(
-      `[${category}] ${subject}`,
+    // Require a minimum message length (matches the prototype, line 3413) with an
+    // honest inline error rather than firing an empty support request.
+    if (message.trim().length < MIN_MESSAGE_LENGTH) {
+      setMessageError(`Please write at least ${MIN_MESSAGE_LENGTH} characters.`);
+      return;
+    }
+    setMessageError(null);
+
+    // No support-ticket backend yet — generate a client-side reference and open
+    // the user's mail client so the message is genuinely delivered. The player
+    // tag is included so support can locate the account.
+    const ref = makeTicket();
+    const emlSubject = `[${category}] ${subject} (Ticket ${ref})`;
+    const body =
+      "New support request from FilipinoDama Royal\n" +
+      "------------------------------------------\n" +
+      `Ticket: ${ref}\n` +
+      `Name: ${name}\n` +
+      `Email: ${email}\n` +
+      `Player Tag: ${playerTag}\n` +
+      `Topic: ${category}\n` +
+      "------------------------------------------\n\n" +
+      `${message}\n`;
+    const href = `mailto:${SUPPORT_EMAIL}?cc=${encodeURIComponent(email)}&subject=${encodeURIComponent(
+      emlSubject,
     )}&body=${encodeURIComponent(body)}`;
     window.location.href = href;
-    showToast(`Opening your email app to send this to ${SUPPORT_EMAIL}.`);
+
+    setTicket(ref);
+    setSent(true);
+    showToast("Opening your email app to notify support…");
+  }
+
+  /** Return to a fresh form to send another message. */
+  function resetForm() {
+    setSubject("");
+    setMessage("");
+    setMessageError(null);
+    setSent(false);
   }
 
   return (
@@ -131,7 +180,53 @@ export function ContactPage() {
           alignItems: "start",
         }}
       >
-        {/* FORM */}
+        {/* FORM / SUCCESS */}
+        {sent ? (
+          <div
+            className="frame"
+            style={{
+              padding: "40px 32px",
+              textAlign: "center",
+              display: "flex",
+              flexDirection: "column",
+              alignItems: "center",
+              gap: 14,
+            }}
+          >
+            <div
+              style={{
+                width: 64,
+                height: 64,
+                borderRadius: "50%",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                background: "rgba(63,191,111,.14)",
+                border: "1px solid rgba(63,191,111,.4)",
+                fontSize: 30,
+                color: "#3fbf6f",
+              }}
+            >
+              ✓
+            </div>
+            <h2 style={{ margin: 0, font: "800 22px Cinzel,serif", color: "var(--gold-lt)" }}>
+              Message Sent!
+            </h2>
+            <p style={{ margin: 0, maxWidth: 420, font: "400 14px/1.65 Inter", color: "var(--ink)" }}>
+              Your message is on its way to{" "}
+              <b style={{ color: "var(--gold-lt)" }}>{SUPPORT_EMAIL}</b>. We typically reply within
+              24–48 hours. Your ticket reference is <b style={{ color: "#fff" }}>{ticket}</b>.
+            </p>
+            <button
+              type="button"
+              className="btn btn-gold"
+              onClick={resetForm}
+              style={{ marginTop: 8, padding: "12px 26px" }}
+            >
+              Send Another Message
+            </button>
+          </div>
+        ) : (
         <div
           className="frame"
           style={{ padding: "26px 28px", display: "flex", flexDirection: "column", gap: 16 }}
@@ -184,15 +279,28 @@ export function ContactPage() {
             <label style={labelStyle}>Message</label>
             <textarea
               value={message}
-              onChange={(e) => setMessage(e.target.value)}
+              onChange={(e) => {
+                setMessage(e.target.value);
+                if (messageError && e.target.value.trim().length >= MIN_MESSAGE_LENGTH) {
+                  setMessageError(null);
+                }
+              }}
               placeholder="Tell us what&rsquo;s going on. Include your player tag if it&rsquo;s about your account."
               rows={6}
               style={{
                 ...inputStyle,
                 font: "500 14px/1.55 Inter",
                 resize: "vertical",
+                border: messageError
+                  ? "1px solid rgba(255,154,168,.6)"
+                  : (inputStyle.border as string),
               }}
             />
+            {messageError && (
+              <div style={{ marginTop: 7, font: "600 12px Inter", color: "#ff9aa8" }}>
+                {messageError}
+              </div>
+            )}
           </div>
           <button
             type="button"
@@ -219,6 +327,7 @@ export function ContactPage() {
             . This opens your email app to deliver the message to our support team.
           </div>
         </div>
+        )}
 
         {/* SIDEBAR */}
         <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>

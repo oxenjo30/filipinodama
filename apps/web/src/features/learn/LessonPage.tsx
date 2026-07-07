@@ -36,13 +36,14 @@ import { useAuthStore } from "../../stores/authStore";
  */
 
 // ── server lesson shape (GET /api/learn/lessons) ──
-type Lesson = { id: string; title: string; summary: string; completed: boolean };
+type LessonStep = { heading: string; body: string };
+type Lesson = { id: string; title: string; tag: string; summary: string; steps: LessonStep[]; completed: boolean };
 type LessonsResponse = { lessons: Lesson[]; completedCount: number; total: number };
 
-// ── a single teaching step ──
-type Step = {
-  heading: string;
-  body: string;
+// ── the visual (board) part of a single teaching step ──
+// The heading/body COPY comes from the server lesson's steps[]; this holds only
+// the engine position + overlays illustrated for that step.
+type StepBoard = {
   /** the engine position shown for this step */
   state: GameState;
   /** the selected piece whose move we illustrate (gold ring) */
@@ -55,11 +56,14 @@ type Step = {
   jumpOrder?: Square[];
 };
 
+// ── a fully assembled teaching step (server copy + engine board) ──
+type Step = LessonStep & StepBoard;
+
 type LessonScript = {
-  /** short uppercase category tag + its accent colour, per the prototype */
-  tag: string;
+  /** accent colour for the category tag, per the prototype */
   color: string;
-  steps: Step[];
+  /** one board setup per step, in order — 3 per lesson */
+  boards: StepBoard[];
 };
 
 const eq = (a: Square, b: Square) => a.r === b.r && a.c === b.c;
@@ -77,80 +81,79 @@ function board(keep: { color: "red" | "blue"; king?: boolean; r: number; c: numb
   return { ...s, pieces, turn: "red", history: [], moveNumber: 1 };
 }
 
+/** Engine-derived quiet-move landings for the (single) red piece on the board. */
+function movesFrom(st: GameState, _sq: Square): Square[] {
+  return legalMoves(st, "red").map((m) => m.path[m.path.length - 1]);
+}
+
 /**
- * Build the scripted lesson for a given lesson id. Each step's highlighted
- * squares are derived from the ENGINE (legalMoves) for the shown position, so
- * the lesson never contradicts real play.
+ * Build the scripted lesson boards for a given lesson id. Each of the THREE
+ * steps' highlighted squares is derived from the ENGINE (legalMoves) for the
+ * shown position, so the lesson never contradicts real play. The step COPY
+ * (heading + body) comes from the server lesson's steps[]; this only supplies
+ * the board geometry, one entry per step and always 3 to match the prototype.
+ * Red is the acting side (red moves up, toward row 0).
  */
 function scriptFor(id: string): LessonScript {
   switch (id) {
-    // ── The Board & Pieces ──
+    // ── The Board & Setup ──
     case "basics-board": {
+      const full = createInitialState();
       return {
-        tag: "Basics",
-        color: "#3f79d6",
-        steps: [
-          {
-            heading: "An 8×8 board of light and dark squares",
-            body: "Filipino Dama is played on a standard 8×8 board. Pieces only ever sit and move on the dark squares — the light squares are never used.",
-            state: createInitialState(),
-          },
-          {
-            heading: "Twelve pieces a side",
-            body: "Each player starts with twelve men on the three dark rows closest to them. Red sits at the bottom and moves up; Blue sits at the top and moves down.",
-            state: createInitialState(),
-          },
-          {
-            heading: "Red moves first",
-            body: "Red always opens the game. Your goal is to capture all of your opponent's pieces — or leave them with no legal move.",
-            state: createInitialState(),
-          },
+        color: "#5a86e6",
+        boards: [
+          // An 8×8 battlefield — empty board (dark squares visible)
+          { state: board([]) },
+          // Your army of 12 — full starting position
+          { state: full },
+          // The objective — full starting position
+          { state: full },
         ],
       };
     }
 
-    // ── Moving Pieces ──
+    // ── How Pieces Move ──
     case "basics-move": {
       const st = board([{ color: "red", r: 5, c: 2 }]);
-      const moves = legalMoves(st, "red");
-      const landings = moves.map((m) => m.path[m.path.length - 1]);
+      const landings = movesFrom(st, { r: 5, c: 2 });
+      const st2 = board([{ color: "red", r: 5, c: 4 }]);
+      const landings2 = movesFrom(st2, { r: 5, c: 4 });
+      // blocked: both forward squares occupied by friendly pieces → no moves
+      const blocked = board([
+        { color: "red", r: 5, c: 2 },
+        { color: "red", r: 4, c: 1 },
+        { color: "red", r: 4, c: 3 },
+      ]);
       return {
-        tag: "Basics",
-        color: "#3f79d6",
-        steps: [
-          {
-            heading: "One square, diagonally forward",
-            body: "A man moves one square diagonally forward onto an empty dark square. Red moves up the board, toward Blue's home row.",
-            state: st,
-            selected: { r: 5, c: 2 },
-            landings,
-          },
-          {
-            heading: "Only onto empty squares",
-            body: "You can never move onto a square that is already occupied. With no captures available, any of the green squares is a legal quiet move.",
-            state: st,
-            selected: { r: 5, c: 2 },
-            landings,
-          },
+        color: "#3fbf6f",
+        boards: [
+          { state: st, selected: { r: 5, c: 2 }, landings },
+          { state: st2, selected: { r: 5, c: 4 }, landings: landings2 },
+          { state: blocked, selected: { r: 5, c: 2 } },
         ],
       };
     }
 
-    // ── Capturing ──
+    // ── Making a Capture ──
     case "basics-capture": {
       const st = board([
         { color: "red", r: 5, c: 2 },
         { color: "blue", r: 4, c: 3 },
       ]);
-      const moves = legalMoves(st, "red");
-      const cap = moves.find((m) => m.captures.length > 0)!;
+      const cap = legalMoves(st, "red").find((m) => m.captures.length > 0)!;
+      // capture in any direction: enemy ahead and behind, both legal jumps
+      const bothSt = board([
+        { color: "red", r: 4, c: 3 },
+        { color: "blue", r: 3, c: 4 },
+        { color: "blue", r: 5, c: 4 },
+      ]);
+      const bothCaps = legalMoves(bothSt, "red").filter((m) => m.captures.length > 0);
+      const bothCaptured = bothCaps.flatMap((m) => m.captures);
+      const bothLandings = bothCaps.map((m) => m.path[m.path.length - 1]);
       return {
-        tag: "Basics",
-        color: "#3f79d6",
-        steps: [
+        color: "#E8B84B",
+        boards: [
           {
-            heading: "Jump the enemy piece",
-            body: "When an enemy piece sits diagonally next to yours and the square beyond it is empty, you jump over it and land there.",
             state: st,
             selected: { r: 5, c: 2 },
             captured: cap.captures,
@@ -158,8 +161,12 @@ function scriptFor(id: string): LessonScript {
             jumpOrder: cap.path,
           },
           {
-            heading: "The captured piece is removed",
-            body: "After the jump the enemy piece is taken off the board. In Filipino Dama a man may capture in any diagonal direction — forward or backward.",
+            state: bothSt,
+            selected: { r: 4, c: 3 },
+            captured: bothCaptured,
+            landings: bothLandings,
+          },
+          {
             state: st,
             selected: { r: 5, c: 2 },
             captured: cap.captures,
@@ -170,152 +177,155 @@ function scriptFor(id: string): LessonScript {
       };
     }
 
-    // ── Forced Captures (multi-jump) ──
+    // ── Multiple Jumps ──
     case "rules-forced-capture": {
-      // A double-jump: red at (5,0) jumps blue at (4,1) to (3,2), then blue at
-      // (2,3) to (1,4). The engine finds and forces the longer chain.
+      const longest = (st: GameState) => {
+        const moves = legalMoves(st, "red");
+        return moves.reduce((best, m) => (m.captures.length > best.captures.length ? m : best), moves[0]);
+      };
       const st = board([
         { color: "red", r: 5, c: 0 },
         { color: "blue", r: 4, c: 1 },
         { color: "blue", r: 2, c: 3 },
       ]);
-      const moves = legalMoves(st, "red");
-      const chain = moves.reduce((best, m) => (m.captures.length > best.captures.length ? m : best), moves[0]);
+      const chain = longest(st);
+      // choose the longest line over a single capture
+      const st2 = board([
+        { color: "red", r: 6, c: 1 },
+        { color: "blue", r: 5, c: 2 },
+        { color: "blue", r: 3, c: 4 },
+      ]);
+      const chain2 = longest(st2);
+      // one piece, three kills
+      const st3 = board([
+        { color: "red", r: 7, c: 2 },
+        { color: "blue", r: 6, c: 3 },
+        { color: "blue", r: 4, c: 5 },
+        { color: "blue", r: 2, c: 5 },
+      ]);
+      const chain3 = longest(st3);
       return {
-        tag: "Rules",
-        color: "#d63b52",
-        steps: [
-          {
-            heading: "Captures are mandatory",
-            body: "If a capture is available you must take it — you cannot make a quiet move instead. Here the only legal move is a jump.",
-            state: st,
-            selected: { r: 5, c: 0 },
-            captured: [chain.captures[0]],
-            landings: [chain.path[0]],
-            jumpOrder: [chain.path[0]],
-          },
-          {
-            heading: "Take the longest chain",
-            body: "When one jump leads into another, you must continue — and you must choose the chain that captures the most pieces. Follow the numbered landings.",
-            state: st,
-            selected: { r: 5, c: 0 },
-            captured: chain.captures,
-            landings: chain.path,
-            jumpOrder: chain.path,
-          },
+        color: "#d97a2e",
+        boards: [
+          { state: st, selected: { r: 5, c: 0 }, captured: chain.captures, landings: chain.path, jumpOrder: chain.path },
+          { state: st2, selected: { r: 6, c: 1 }, captured: chain2.captures, landings: chain2.path, jumpOrder: chain2.path },
+          { state: st3, selected: { r: 7, c: 2 }, captured: chain3.captures, landings: chain3.path, jumpOrder: chain3.path },
         ],
       };
     }
 
-    // ── Promotion to Dama ──
+    // ── Becoming a Dama ──
     case "rules-promotion": {
       const st = board([{ color: "red", r: 1, c: 2 }]);
-      const moves = legalMoves(st, "red");
-      const landings = moves.map((m) => m.path[m.path.length - 1]);
-      const promoted = board([{ color: "red", king: true, r: 0, c: 3 }]);
+      const landings = movesFrom(st, { r: 1, c: 2 });
+      const crowned = board([{ color: "red", king: true, r: 0, c: 3 }]);
+      const powerSt = board([{ color: "red", king: true, r: 3, c: 3 }]);
+      const powerLandings = movesFrom(powerSt, { r: 3, c: 3 });
       return {
-        tag: "Rules",
-        color: "#d63b52",
-        steps: [
-          {
-            heading: "Reach the far row",
-            body: "A man that moves onto the opponent's back row is promoted. Red promotes on row 8 (the very top), Blue on row 1 (the very bottom).",
-            state: st,
-            selected: { r: 1, c: 2 },
-            landings,
-          },
-          {
-            heading: "It becomes a Dama (king)",
-            body: "The promoted piece is crowned into a flying king — a Dama — marked with a crown. The Dama is far more powerful than a man.",
-            state: promoted,
-            selected: { r: 0, c: 3 },
-          },
+        color: "#b78bff",
+        boards: [
+          { state: st, selected: { r: 1, c: 2 }, landings },
+          { state: crowned, selected: { r: 0, c: 3 } },
+          { state: powerSt, selected: { r: 3, c: 3 }, landings: powerLandings },
         ],
       };
     }
 
-    // ── Playing the Dama ──
+    // ── King (Dama) Movement ──
     case "rules-dama": {
-      const st = board([{ color: "red", king: true, r: 4, c: 3 }]);
-      const moves = legalMoves(st, "red");
-      const landings = moves.map((m) => m.path[m.path.length - 1]);
+      const st = board([{ color: "red", king: true, r: 5, c: 2 }]);
+      const landings = movesFrom(st, { r: 5, c: 2 });
       const capSt = board([
         { color: "red", king: true, r: 6, c: 1 },
         { color: "blue", r: 3, c: 4 },
       ]);
-      const capMoves = legalMoves(capSt, "red");
-      const cap = capMoves.find((m) => m.captures.length > 0)!;
+      const cap = legalMoves(capSt, "red").find((m) => m.captures.length > 0)!;
+      const ruleSt = board([
+        { color: "red", king: true, r: 4, c: 3 },
+        { color: "blue", r: 1, c: 6 },
+        { color: "blue", r: 6, c: 5 },
+      ]);
+      const ruleLandings = movesFrom(ruleSt, { r: 4, c: 3 });
       return {
-        tag: "King",
-        color: "#8b5cf0",
-        steps: [
+        color: "#8c5ad6",
+        boards: [
+          { state: st, selected: { r: 5, c: 2 }, landings },
           {
-            heading: "The Dama slides any distance",
-            body: "A Dama moves along a diagonal as far as it likes, in any of the four directions, so long as every square along the way is empty.",
-            state: st,
-            selected: { r: 4, c: 3 },
-            landings,
-          },
-          {
-            heading: "And captures from afar",
-            body: "The Dama slides up to a lone enemy piece, jumps it, and lands on any empty square beyond. Its long reach makes it a game-winning piece.",
             state: capSt,
             selected: { r: 6, c: 1 },
             captured: cap.captures,
-            landings: [cap.path[cap.path.length - 1]],
+            landings: cap.path.filter((_, i) => i === cap.path.length - 1),
             jumpOrder: cap.path,
           },
+          { state: ruleSt, selected: { r: 4, c: 3 }, landings: ruleLandings },
         ],
       };
     }
 
-    // ── Tempo & Trades ──
-    case "strategy-tempo": {
-      return {
-        tag: "Strategy",
-        color: "#3fbf6f",
-        steps: [
-          {
-            heading: "Keep your pieces connected",
-            body: "Pieces that support each other are hard to attack. Avoid pushing a lone man deep into enemy territory where it can be surrounded.",
-            state: createInitialState(),
-          },
-          {
-            heading: "Trade when you're ahead",
-            body: "If you have more pieces, exchanging one-for-one simplifies the position and brings you closer to a winning endgame.",
-            state: createInitialState(),
-          },
-        ],
-      };
-    }
-
-    // ── Endgame Basics ──
-    case "strategy-endgame": {
-      const st = board([
-        { color: "red", king: true, r: 5, c: 2 },
+    // ── Winning the Game ──
+    case "endgame-winning": {
+      // Capture everything: red delivers the finishing jump.
+      const winSt = board([
+        { color: "blue", r: 3, c: 4 },
+        { color: "red", r: 4, c: 3 },
         { color: "red", king: true, r: 6, c: 5 },
-        { color: "blue", r: 1, c: 2 },
+      ]);
+      const winCap = legalMoves(winSt, "red").find((m) => m.captures.length > 0)!;
+      // Leave them stuck: a boxed-in blue man with no legal move (glow it).
+      const stuckSt = board([
+        { color: "blue", r: 0, c: 7 },
+        { color: "red", r: 1, c: 6 },
+        { color: "red", r: 2, c: 5 },
+      ]);
+      // A draw: lone king vs lone king.
+      const drawSt = board([
+        { color: "blue", king: true, r: 2, c: 3 },
+        { color: "red", king: true, r: 5, c: 4 },
       ]);
       return {
-        tag: "Strategy",
-        color: "#3fbf6f",
-        steps: [
+        color: "#e05566",
+        boards: [
           {
-            heading: "Two Damas corner a lone man",
-            body: "With a material edge, use your Damas together. Coordinate them to trap the last enemy piece against an edge where it can't escape.",
-            state: st,
+            state: winSt,
+            selected: { r: 4, c: 3 },
+            captured: winCap.captures,
+            landings: [winCap.path[winCap.path.length - 1]],
+            jumpOrder: winCap.path,
           },
-          {
-            heading: "Convert the advantage",
-            body: "A clear material lead is a won game — stay patient, avoid needless trades that give it back, and drive the opponent out of moves.",
-            state: st,
-          },
+          { state: stuckSt, captured: [{ r: 0, c: 7 }] },
+          { state: drawSt },
+        ],
+      };
+    }
+
+    // ── Strategy & Tactics ──
+    case "strategy-tactics": {
+      const centerSt = board([
+        { color: "red", r: 4, c: 3 },
+        { color: "red", r: 3, c: 4 },
+        { color: "blue", r: 2, c: 5 },
+        { color: "blue", r: 5, c: 2 },
+      ]);
+      const backSt = { ...createInitialState(), pieces: createInitialState().pieces.filter((p) => p.color === "red") };
+      const tradeSt = board([
+        { color: "blue", r: 2, c: 3 },
+        { color: "red", r: 4, c: 3 },
+        { color: "red", r: 5, c: 4 },
+        { color: "red", king: true, r: 6, c: 1 },
+        { color: "red", r: 5, c: 2 },
+      ]);
+      return {
+        color: "#3fb0bf",
+        boards: [
+          { state: centerSt, landings: [{ r: 4, c: 3 }, { r: 3, c: 4 }, { r: 3, c: 2 }, { r: 4, c: 5 }] },
+          { state: backSt, landings: [{ r: 0, c: 1 }, { r: 0, c: 3 }, { r: 0, c: 5 }, { r: 0, c: 7 }] },
+          { state: tradeSt },
         ],
       };
     }
 
     default:
-      return { tag: "Lesson", color: "var(--gold)", steps: [] };
+      return { color: "var(--gold)", boards: [] };
   }
 }
 
@@ -505,7 +515,6 @@ export function LessonPage() {
   }, [me, id, showToast]);
 
   const script = useMemo(() => scriptFor(id), [id]);
-  const steps = script.steps;
 
   // Reset the step pointer when the lesson changes.
   useEffect(() => {
@@ -516,6 +525,17 @@ export function LessonPage() {
   const lessonIndex = lessons ? lessons.findIndex((l) => l.id === id) : -1;
   const lessonNum = lessonIndex >= 0 ? lessonIndex + 1 : 0;
   const lessonTotal = total || lessons?.length || 0;
+
+  // Merge the server's per-step COPY (heading + body) with the local engine
+  // boards. Both are 3 long; the server copy is the source of truth for text.
+  const steps: Step[] = useMemo(() => {
+    if (!lesson) return [];
+    return lesson.steps.map((s, i) => ({
+      heading: s.heading,
+      body: s.body,
+      ...(script.boards[i] ?? { state: createInitialState() }),
+    }));
+  }, [lesson, script]);
 
   const isLast = stepIdx >= steps.length - 1;
 
@@ -628,7 +648,7 @@ export function LessonPage() {
             textTransform: "uppercase",
           }}
         >
-          {script.tag}
+          {lesson.tag}
         </span>
         <div style={{ marginLeft: "auto", font: "700 12px 'JetBrains Mono',monospace", color: "var(--ink2)" }}>
           Lesson {lessonNum} of {lessonTotal}
