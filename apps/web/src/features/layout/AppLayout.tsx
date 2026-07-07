@@ -84,7 +84,6 @@ export function AppLayout() {
     };
   }, [menuOpen]);
 
-  const isGuest = !!me?.isGuest;
   const registered = !!me && !me.isGuest; // a real (non-guest) account
   const displayName = me?.displayName ?? "Guest";
   const playerTag = me?.tag ?? "";
@@ -239,20 +238,11 @@ export function AppLayout() {
                     )}
                   </div>
                 </>
-              ) : isGuest ? (
-                <>
-                  {/* ── GUEST: temporary session — nudge to sign in, no account chrome ── */}
-                  <span className="fd-hide-narrow" style={{ font: "600 12px Inter", color: "var(--ink2)" }}>Playing as guest</span>
-                  <button onClick={() => navigate("/login")} className="btn btn-gold" style={{ padding: "9px 18px", fontSize: 13 }}>
-                    Sign In / Sign Up
-                  </button>
-                  <button onClick={signOut} title="End guest session" style={{ width: 40, height: 40, borderRadius: 10, border: "1px solid rgba(232,184,75,.3)", background: "rgba(15,8,32,.6)", color: "var(--ink2)", cursor: "pointer", fontSize: 15 }}>
-                    ⎋
-                  </button>
-                </>
               ) : (
                 <>
-                  {/* ── LOGGED OUT: only Sign In (ghost) + Play Now (gold) ── */}
+                  {/* ── GUEST or LOGGED OUT: identical clean header — only Sign In
+                      (ghost) + Play Now (gold). A guest is still a temporary
+                      session, but the header looks the same as logged-out. ── */}
                   <button
                     onClick={() => navigate("/login")}
                     style={{
@@ -341,15 +331,8 @@ export function AppLayout() {
                       Log Out
                     </button>
                   </div>
-                ) : isGuest ? (
-                  <div className="fd-drawer-sec fd-drawer-sec--top">
-                    <button className="btn btn-gold" style={{ width: "100%", justifyContent: "center", padding: "13px" }} onClick={() => navigate("/login")}>Sign In / Sign Up</button>
-                    <button className="fd-drawer-item" style={{ color: "#ff9aa8", marginTop: 6 }} onClick={signOut}>
-                      <span style={{ width: 22, textAlign: "center", flex: "none" }}>⎋</span>
-                      End guest session
-                    </button>
-                  </div>
                 ) : (
+                  /* GUEST or LOGGED OUT — identical CTAs (guest looks like logged-out) */
                   <div className="fd-drawer-sec fd-drawer-sec--top" style={{ display: "flex", flexDirection: "column", gap: 10 }}>
                     <button className="btn btn-gold" style={{ width: "100%", justifyContent: "center", padding: "14px", letterSpacing: ".5px" }} onClick={() => navigate("/play")}>PLAY NOW</button>
                     <button className="fd-drawer-item" style={{ justifyContent: "center", border: "1px solid rgba(232,184,75,.4)" }} onClick={() => navigate("/login")}>Sign In</button>

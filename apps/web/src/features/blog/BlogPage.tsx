@@ -1,15 +1,17 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
-import { articles, categories, formatDate, type BlogCategory } from "./blog";
+import { publishedArticles, categories, formatDate, type BlogCategory } from "./blog";
 
 /**
  * BlogPage — the /blog index.
  *
- * Lists the 145 real articles from articles.json (via ./blog). A category filter
- * row (All + the 4 real categories) and a title/description search narrow the
- * grid of cards; each card links to /blog/:slug. When a search matches nothing we
- * show an honest empty state rather than a blank grid. Styling follows the app's
- * gold/dark frame language (`.frame`, `.pill`, CSS vars).
+ * Lists the articles that are LIVE right now. The 145 articles are a scheduled
+ * drip (each has a publish date); `publishedArticles()` returns only those whose
+ * date has arrived, so future-dated posts stay hidden until their day. A category
+ * filter row (All + the 4 real categories) and a title/description search narrow
+ * the grid of cards; each card links to /blog/:slug. When a search matches
+ * nothing we show an honest empty state rather than a blank grid. Styling follows
+ * the app's gold/dark frame language (`.frame`, `.pill`, CSS vars).
  */
 
 type Filter = "All" | BlogCategory;
@@ -52,16 +54,20 @@ export function BlogPage() {
     document.title = "Dama Blog — FilipinoDama";
   }, []);
 
+  // Only articles whose publish date has arrived. Computed once per mount (the
+  // set only changes at date boundaries, not within a session).
+  const live = useMemo(() => publishedArticles(), []);
+
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
-    return articles.filter((a) => {
+    return live.filter((a) => {
       if (filter !== "All" && a.category !== filter) return false;
       if (!q) return true;
       return (
         a.title.toLowerCase().includes(q) || a.description.toLowerCase().includes(q)
       );
     });
-  }, [filter, query]);
+  }, [live, filter, query]);
 
   const tabs: Filter[] = ["All", ...categories];
 
@@ -133,13 +139,19 @@ export function BlogPage() {
       {/* RESULTS */}
       {filtered.length === 0 ? (
         <div className="frame" style={{ padding: "48px 20px", textAlign: "center" }}>
-          <div style={{ fontSize: 34, marginBottom: 10 }}>🔍</div>
+          <div style={{ fontSize: 34, marginBottom: 10 }}>{live.length === 0 ? "📅" : "🔍"}</div>
           <div style={{ font: "700 16px Cinzel,serif", color: "var(--gold-lt)" }}>
-            No articles found
+            {live.length === 0 ? "No articles yet" : "No articles found"}
           </div>
           <div style={{ font: "400 13px Inter", color: "var(--ink)", margin: "8px 0 0" }}>
-            Nothing matches “{query.trim()}”
-            {filter !== "All" ? ` in ${filter}` : ""}. Try a different search or category.
+            {live.length === 0
+              ? "New Dama guides are on the way — check back soon."
+              : (
+                <>
+                  Nothing matches “{query.trim()}”
+                  {filter !== "All" ? ` in ${filter}` : ""}. Try a different search or category.
+                </>
+              )}
           </div>
         </div>
       ) : (
@@ -150,7 +162,7 @@ export function BlogPage() {
           <div
             style={{
               display: "grid",
-              gridTemplateColumns: "repeat(auto-fill,minmax(300px,1fr))",
+              gridTemplateColumns: "repeat(auto-fill,minmax(min(100%,280px),1fr))",
               gap: 18,
             }}
           >

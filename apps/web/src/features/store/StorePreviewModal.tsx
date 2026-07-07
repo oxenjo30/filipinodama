@@ -294,6 +294,10 @@ const overlay: CSSProperties = {
 const card: CSSProperties = {
   width: 600,
   maxWidth: "100%",
+  // Cap height + scroll internally so tall bundle/season previews never push the
+  // Add-to-Cart button off a short or landscape phone (matches TopUpModal).
+  maxHeight: "88vh",
+  overflowY: "auto",
   padding: "32px 30px 26px",
   textAlign: "center",
   position: "relative",

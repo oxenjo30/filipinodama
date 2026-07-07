@@ -1,17 +1,21 @@
 import { useEffect, useMemo } from "react";
 import { Link, useParams } from "react-router-dom";
-import { articles, bySlug, formatDate, type BlogCategory } from "./blog";
+import { articles, allBySlug, isPublished, formatDate, type BlogCategory } from "./blog";
 
 /**
  * ArticlePage — the /blog/:slug reader.
  *
- * Looks the article up by slug (honest "not found" state + back link if missing),
- * renders category/date/read-time meta, the <h1> title, then the pre-sanitized
+ * Looks the article up across the FULL set so we can tell three cases apart:
+ *   • no such slug              → "Article not found"
+ *   • slug exists but future    → "This article isn't published yet" (drip
+ *                                  schedule — the date hasn't arrived)
+ *   • slug exists and is live   → render it
+ * Renders category/date/read-time meta, the <h1> title, then the pre-sanitized
  * static HTML body via dangerouslySetInnerHTML (safe: we author & ship this HTML,
  * it contains no scripts). Prose is styled for the dark theme, scoped to
  * `.fd-article` so it never leaks into the rest of the app. On mount we set
  * document.title and the meta description for SEO, and render a related-articles
- * strip (up to 3 others from the same category) plus a "Play Dama online" CTA.
+ * strip (up to 3 other LIVE articles from the same category) plus a CTA.
  */
 
 const CAT_ACCENT: Record<BlogCategory, string> = {
@@ -60,21 +64,51 @@ function setMetaDescription(content: string) {
 
 export function ArticlePage() {
   const { slug } = useParams<{ slug: string }>();
-  const article = slug ? bySlug[slug] : undefined;
+  // Look up across ALL articles (published + future) so a future-dated slug is
+  // "found" — we then gate it below rather than 404'ing it.
+  const found = slug ? allBySlug[slug] : undefined;
+  const live = found ? isPublished(found) : false;
+  const article = found && live ? found : undefined;
 
   useEffect(() => {
-    if (!article) return;
+    if (!article) {
+      document.title = "Dama Blog — FilipinoDama";
+      return;
+    }
     document.title = `${article.title} — FilipinoDama`;
     setMetaDescription(article.description);
   }, [article]);
 
-  // Up to 3 other articles from the same category (excludes the current one).
+  // Up to 3 other LIVE articles from the same category (excludes the current one).
   const related = useMemo(() => {
     if (!article) return [];
     return articles
       .filter((a) => a.category === article.category && a.slug !== article.slug)
       .slice(0, 3);
   }, [article]);
+
+  // Slug exists but its publish date hasn't arrived — a friendly "coming soon"
+  // rather than pretending it doesn't exist.
+  if (found && !live) {
+    const when = formatDate(found.datePublished);
+    return (
+      <div style={{ maxWidth: 720, margin: "0 auto", padding: 26 }}>
+        <div className="frame" style={{ padding: "48px 20px", textAlign: "center" }}>
+          <div style={{ fontSize: 34, marginBottom: 10 }}>📅</div>
+          <div style={{ font: "700 18px Cinzel,serif", color: "var(--gold-lt)" }}>
+            This article isn&apos;t published yet
+          </div>
+          <div style={{ font: "400 13px Inter", color: "var(--ink)", margin: "8px 0 18px" }}>
+            “{found.title}” goes live{when ? ` on ${when}` : " soon"}. Check back then —
+            or explore the guides already published.
+          </div>
+          <Link to="/blog" className="btn btn-purple" style={{ textDecoration: "none" }}>
+            ← Browse the blog
+          </Link>
+        </div>
+      </div>
+    );
+  }
 
   if (!article) {
     return (

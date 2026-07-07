@@ -72,6 +72,10 @@ const overlay: CSSProperties = {
 const card: CSSProperties = {
   width: 520,
   maxWidth: "100%",
+  // Cap height + scroll internally so a long cart / receipt never pushes the
+  // Confirm/Cancel (or Keep Shopping/View Locker) buttons off-screen on mobile.
+  maxHeight: "calc(100vh - 48px)",
+  overflowY: "auto",
   padding: "30px 28px 26px",
   position: "relative",
   animation: "fdrise .26s ease both",

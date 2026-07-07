@@ -89,6 +89,7 @@ input:focus{outline:none;border-color:var(--gold)!important}
 /* responsive collapses for the feature-screen grids */
 @media(max-width:1000px){
   .fd-home-grid{grid-template-columns:1fr!important}
+  .fd-continue-grid{grid-template-columns:1fr!important}
   .fd-modes-grid{grid-template-columns:repeat(2,1fr)!important}
   .fd-two-col{grid-template-columns:1fr!important}
   .fd-game-grid{grid-template-columns:1fr!important}
