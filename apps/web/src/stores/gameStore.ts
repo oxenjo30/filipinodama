@@ -135,14 +135,16 @@ function derive(state: GameState, selected: Square | null) {
 export const useGameStore = create<GameStore>((set, get) => {
   /** Schedule the AI's reply if it is the AI's turn and the game is live. */
   function scheduleAiMove() {
-    const { state, difficulty } = get();
-    if (state.result || state.turn !== AI_COLOR) return;
+    const { state, mode, difficulty } = get();
+    if (mode !== "ai" || state.result || state.turn !== AI_COLOR) return;
     set({ status: "thinking" });
     window.setTimeout(() => {
-      const cur = get().state;
-      // Guard: state may have been reset (new game / surrender) mid-timeout.
-      if (cur.result || cur.turn !== AI_COLOR) {
-        if (!cur.result) set({ status: "playing" });
+      const { state: cur, mode: curMode } = get();
+      // Guard: the match may have been reset or switched to LOCAL mid-timeout.
+      // The mode check is essential — in local mode blue is a HUMAN even though
+      // blue === AI_COLOR, so without it a stale timeout would move for the human.
+      if (curMode !== "ai" || cur.result || cur.turn !== AI_COLOR) {
+        if (!cur.result && curMode === "ai") set({ status: "playing" });
         return;
       }
       const mv = bestMove(cur, difficulty);

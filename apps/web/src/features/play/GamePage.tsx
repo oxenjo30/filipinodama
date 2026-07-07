@@ -107,7 +107,15 @@ export function GamePage({ mode = "ai" }: { mode?: "ai" | "local" }) {
   // then start a fresh match. Offline vs-AI / local both use the "default" ctx.
   const [loading, setLoading] = useState(true);
 
+  // Start (or RE-start) the match whenever the mode changes. This effect MUST
+  // depend on `mode`: react-router renders both /play/ai/game and /play/local
+  // with the same GamePage component, so navigating between them REUSES the
+  // instance — a run-once []-effect would leave the store in its previous mode
+  // (e.g. still "ai"), and the AI would keep playing during a Local Match. Keying
+  // on `mode` re-seeds the correct game (local = two humans, no AI) on every
+  // switch. `difficulty` is read fresh inside so it isn't a dependency.
   useEffect(() => {
+    setLoading(true);
     const t = window.setTimeout(() => {
       if (isLocal) newLocalGame();
       else newGame(difficulty);
@@ -115,7 +123,7 @@ export function GamePage({ mode = "ai" }: { mode?: "ai" | "local" }) {
     }, LOADER_MS);
     return () => window.clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [mode]);
 
   const result = state.result;
   // "Thinking" only exists in vs-AI mode — a local (pass-and-play) match has no AI,
