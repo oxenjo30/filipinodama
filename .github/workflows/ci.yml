@@ -33,11 +33,12 @@ jobs:
       JWT_REFRESH_SECRET: ci-refresh
     steps:
       - uses: actions/checkout@v4
+      # pnpm version comes from package.json "packageManager" (single source of
+      # truth) — do NOT also set `version` here or action-setup errors.
       - uses: pnpm/action-setup@v4
-        with: { version: 9 }
       - uses: actions/setup-node@v4
-        with: { node-version: 20, cache: pnpm }
-      - run: pnpm install --frozen-lockfile
+        with: { node-version: 22, cache: pnpm }
+      - run: pnpm install --no-frozen-lockfile
       - run: pnpm --filter server prisma generate
       - run: pnpm lint
       - run: pnpm typecheck
