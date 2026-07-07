@@ -1,5 +1,5 @@
 ﻿import { useEffect } from "react";
-import { BrowserRouter, Routes, Route } from "react-router-dom";
+import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { AppLayout } from "./features/layout/AppLayout";
 import { HomePage } from "./features/home/HomePage";
 import { PlayHubPage } from "./features/play/PlayHubPage";
@@ -13,7 +13,7 @@ import { GuildsPage } from "./features/guilds/GuildsPage";
 import { StorePage } from "./features/store/StorePage";
 import { InventoryPage } from "./features/inventory/InventoryPage";
 import { SettingsPage } from "./features/settings/SettingsPage";
-import { LegalPage } from "./features/legal/LegalPage";
+import { PrivacyPage, TermsPage, CommunityPage, DataPage } from "./features/legal/LegalPages";
 import { LearnPage } from "./features/learn/LearnPage";
 import { LessonPage } from "./features/learn/LessonPage";
 import { SeasonPage } from "./features/season/SeasonPage";
@@ -99,12 +99,11 @@ export function App() {
           <Route path="/quests" element={<QuestsPage />} />
           <Route path="/season" element={<SeasonPage />} />
           <Route path="/settings" element={<SettingsPage />} />
-          <Route path="/legal" element={<LegalPage />} />
-          {/* Per-document legal deep-links (footer menu targets these). */}
-          <Route path="/privacy" element={<LegalPage doc="privacy" />} />
-          <Route path="/terms" element={<LegalPage doc="terms" />} />
-          <Route path="/community" element={<LegalPage doc="community" />} />
-          <Route path="/data" element={<LegalPage doc="data" />} />
+          <Route path="/legal" element={<Navigate to="/privacy" replace />} />
+          <Route path="/privacy" element={<PrivacyPage />} />
+          <Route path="/terms" element={<TermsPage />} />
+          <Route path="/community" element={<CommunityPage />} />
+          <Route path="/data" element={<DataPage />} />
           <Route path="/contact" element={<ContactPage />} />
           <Route path="/matchmaking" element={<ComingSoon title="Matchmaking" />} />
 

@@ -368,7 +368,7 @@ export function AuthPage({ initialMode = "signin" }: { initialMode?: Mode }) {
           <span>
             I agree to the{" "}
             <a
-              href="/legal"
+              href="/terms"
               target="_blank"
               rel="noopener noreferrer"
               style={{ color: "var(--gold-lt)", fontWeight: 700, textDecoration: "underline" }}
@@ -377,7 +377,7 @@ export function AuthPage({ initialMode = "signin" }: { initialMode?: Mode }) {
             </a>{" "}
             and{" "}
             <a
-              href="/legal"
+              href="/privacy"
               target="_blank"
               rel="noopener noreferrer"
               style={{ color: "var(--gold-lt)", fontWeight: 700, textDecoration: "underline" }}
