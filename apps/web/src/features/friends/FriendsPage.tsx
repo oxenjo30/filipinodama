@@ -5,6 +5,7 @@ import { Avatar } from "../../components";
 import { api, ApiError } from "../../lib/api";
 import { useAppStore } from "../../stores/appStore";
 import { useAuthStore } from "../../stores/authStore";
+import { usePresenceStore } from "../../stores/presenceStore";
 
 /**
  * FriendsPage — social hub ported from the approved prototype (lines 2026-2109).
@@ -19,18 +20,19 @@ import { useAuthStore } from "../../stores/authStore";
  *   POST /api/friends/request/:id/accept                     (Accept)
  *   POST /api/friends/request/:id/decline                    (Decline)
  *
- * PRESENCE: there is no live presence broadcast yet (the presence:update socket
- * is scaffolded but not firing), so we derive a best-effort "online" state from
- * lastSeenAt within the last 2 minutes — truthful, never random. If everyone's
- * lastSeenAt is stale, everyone honestly falls into the Offline section and the
- * "Online Now" tile reads 0.
+ * PRESENCE: LIVE. The online/offline split, the per-row presence dot, and the
+ * "Online Now" tile are all driven by usePresenceStore().isOnline(friend.id) —
+ * a friend is "online" only while the server reports an active socket for them.
+ * The store is started app-wide in AppLayout and updates via presence:update
+ * socket pushes, so this page re-renders as friends come and go. No fake states.
+ * lastSeenAt survives only as a fallback for the "last seen" label.
  *
- * DIRECT MESSAGES: there is no DM backend, so the 💬 button opens an honest
- * "coming soon" toast. We deliberately render NO unread badge — inventing one
- * would be fake data.
+ * DIRECT MESSAGES: the 💬 button navigates to /messages/:friendId (owned by the
+ * dm-ui agent). We deliberately render NO unread badge here — the DM view owns
+ * unread state; inventing one would be fake data.
  */
 
-const ONLINE_WINDOW_MS = 2 * 60 * 1000; // lastSeenAt within 2 min ⇒ best-effort "online"
+const ONLINE_WINDOW_MS = 2 * 60 * 1000; // lastSeenAt within 2 min ⇒ recent "last seen" fallback
 
 /** publicFriend() shape the server returns for friends / requests / suggestions. */
 type FriendUser = {
@@ -73,13 +75,22 @@ function tierOf(u: FriendUser): { label: string; color: string } {
   return { label: t.label, color: t.accent };
 }
 
-/** Best-effort presence: lastSeenAt within the online window ⇒ online. Honest —
- *  when lastSeenAt is missing/unparseable/stale the friend is Offline. */
-function isOnline(u: FriendUser): boolean {
-  if (!u.lastSeenAt) return false;
+/** Fallback "last seen" label for offline friends, derived from lastSeenAt.
+ *  Live presence (the store) is the source of truth for online/offline; this is
+ *  only shown under the name when a friend is offline. Honest — returns null when
+ *  lastSeenAt is missing/unparseable so we simply say "Offline". */
+function lastSeenLabel(u: FriendUser): string | null {
+  if (!u.lastSeenAt) return null;
   const t = new Date(u.lastSeenAt).getTime();
-  if (Number.isNaN(t)) return false;
-  return Date.now() - t < ONLINE_WINDOW_MS;
+  if (Number.isNaN(t)) return null;
+  const diff = Date.now() - t;
+  if (diff < ONLINE_WINDOW_MS) return "last seen just now";
+  const mins = Math.floor(diff / 60000);
+  if (mins < 60) return `last seen ${mins}m ago`;
+  const hrs = Math.floor(mins / 60);
+  if (hrs < 24) return `last seen ${hrs}h ago`;
+  const days = Math.floor(hrs / 24);
+  return `last seen ${days}d ago`;
 }
 
 function summaryFor(friends: number, online: number, requests: number): { k: string; v: string; c: string }[] {
@@ -188,7 +199,8 @@ function FriendRow({
             marginTop: 3,
           }}
         >
-          {online ? "Online now" : "Offline"} · {friend.trophies.toLocaleString()} 🏆
+          {online ? "Online now" : lastSeenLabel(friend) ?? "Offline"} ·{" "}
+          {friend.trophies.toLocaleString()} 🏆
         </div>
       </div>
       <div style={{ display: "flex", gap: 8, flex: "none", alignItems: "center" }}>
@@ -233,6 +245,10 @@ export function FriendsPage() {
   const navigate = useNavigate();
   const me = useAuthStore((s) => s.me);
   const showToast = useAppStore((s) => s.showToast);
+  // LIVE presence: subscribe to the online set so this page re-renders whenever a
+  // friend connects/disconnects. A friend is online only while the server reports
+  // an active socket — presenceStore is started app-wide in AppLayout.
+  const onlineSet = usePresenceStore((s) => s.online);
 
   const [loading, setLoading] = useState(true);
   const [friends, setFriends] = useState<FriendUser[]>([]);
@@ -405,8 +421,8 @@ export function FriendsPage() {
     }
   }
 
-  // 💬 Message: no DM backend yet — keep it honest, never a fake unread badge.
-  const messageFriend = () => showToast("Direct messages arrive soon — stay tuned.");
+  // 💬 Message: open the DM view for this friend (route owned by the dm-ui agent).
+  const messageFriend = (id: string) => navigate("/messages/" + id);
 
   /** Client-side filter over the real friends list (name / tag / tier). */
   const filteredFriends = useMemo(() => {
@@ -422,15 +438,19 @@ export function FriendsPage() {
     });
   }, [friends, query]);
 
-  // Split filtered friends into online / offline by best-effort presence.
+  // Split filtered friends into online / offline by LIVE presence (the store).
   const { onlineFriends, offlineFriends } = useMemo(() => {
     const on: FriendUser[] = [];
     const off: FriendUser[] = [];
-    for (const f of filteredFriends) (isOnline(f) ? on : off).push(f);
+    for (const f of filteredFriends) (onlineSet.has(f.id) ? on : off).push(f);
     return { onlineFriends: on, offlineFriends: off };
-  }, [filteredFriends]);
+  }, [filteredFriends, onlineSet]);
 
-  const onlineCount = useMemo(() => friends.filter(isOnline).length, [friends]);
+  // "Online Now" tile — count of ALL friends the server currently reports online.
+  const onlineCount = useMemo(
+    () => friends.reduce((n, f) => (onlineSet.has(f.id) ? n + 1 : n), 0),
+    [friends, onlineSet],
+  );
   const SUMMARY = summaryFor(friends.length, onlineCount, incoming.length);
 
   // ---- Logged-out prompt (never crash) ----
@@ -672,7 +692,7 @@ export function FriendsPage() {
                         friend={f}
                         online
                         onOpen={() => setProfileId(f.id)}
-                        onMessage={messageFriend}
+                        onMessage={() => messageFriend(f.id)}
                         onInvite={() => navigate("/play")}
                       />
                     ))}
@@ -692,7 +712,7 @@ export function FriendsPage() {
                         friend={f}
                         online={false}
                         onOpen={() => setProfileId(f.id)}
-                        onMessage={messageFriend}
+                        onMessage={() => messageFriend(f.id)}
                         onInvite={() => navigate("/play")}
                       />
                     ))}

@@ -64,7 +64,9 @@ export function OnlineMatchPage() {
   const {
     status, matchId, myColor, opponent, state,
     selected, moveTargets, captureTargets, mustCapture, end, error,
+    chat, offeredByMe, offeredByOpponent, rematchDeclined,
     joinQueue, leaveQueue, onSquareClick, resign, reset,
+    sendChat: sendMatchChat, sendEmote, offerRematch, acceptRematch, declineRematch,
   } = useOnlineStore();
 
   // Elapsed-search clock (mm:ss), reset whenever we (re)enter searching.
@@ -104,19 +106,24 @@ export function OnlineMatchPage() {
   const myTurn = !!state && !state.result && state.turn === myColor && status === "playing";
   const flip = myColor === "blue"; // blue player views from their side
 
-  // In-match Quick Chat draft. There is NO match-chat socket backend yet, so
-  // sending is HONEST: we never fabricate a message thread or an opponent reply —
-  // we only surface a "coming soon" toast. See sendChat() below.
+  // In-match Quick Chat draft. This is REAL: the text/emote is emitted over the
+  // match socket (EV.matchChat) and the server relays it back to both players,
+  // where the store appends it to `chat`. We never fabricate a message or reply.
   const [chatDraft, setChatDraft] = useState("");
   // Static rotating Tip of the Day (no backend needed); rotates by day-of-year.
   const tip = TIPS[Math.floor(Date.now() / 86_400_000) % TIPS.length];
 
+  const chatScrollRef = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    const el = chatScrollRef.current;
+    if (el) el.scrollTop = el.scrollHeight;
+  }, [chat.length]);
+
   function sendChat() {
-    // TODO(match-chat): no in-match chat socket exists server-side yet. Keep this
-    // honest — do NOT append a fake local message or fake an opponent reply.
-    if (!chatDraft.trim()) return;
+    const text = chatDraft.trim();
+    if (!text) return;
+    sendMatchChat(text);
     setChatDraft("");
-    showToast("In-match chat arrives soon.");
   }
 
   // ── MATCHMAKING screen (reproduced from prototype isMatchmaking, lines 345-423) ──
@@ -356,16 +363,66 @@ export function OnlineMatchPage() {
           </div>
         </div>
 
-        {/* Quick Chat — HONEST: no match-chat socket backend exists yet, so both the
-            emote buttons and the text send only surface a "coming soon" toast. We do
-            NOT render a fake message list or fabricate an opponent. */}
+        {/* Quick Chat — REAL in-match chat. Emote buttons emit EV.matchChat
+            {emote}; the text box emits EV.matchChat {body}. The server relays
+            both back to the room and the store appends them to `chat`, so what
+            renders here is only genuine messages from the two players. */}
         <div className="frame" style={{ padding: 16 }}>
           <div className="ptitle">Quick Chat</div>
+
+          {/* Live message/emote log — "You" (right, gold) vs opponent (left). */}
+          <div
+            ref={chatScrollRef}
+            style={{
+              display: "flex", flexDirection: "column", gap: 6,
+              maxHeight: 176, minHeight: 64, overflowY: "auto", marginBottom: 12,
+              paddingRight: 2,
+            }}
+          >
+            {chat.length === 0 ? (
+              <div style={{ font: "500 12px Inter", color: "var(--ink2)", textAlign: "center", padding: "20px 0" }}>
+                Say hello or send an emote 👋
+              </div>
+            ) : (
+              chat.map((m) => (
+                <div
+                  key={m.id}
+                  style={{
+                    display: "flex", flexDirection: "column",
+                    alignItems: m.mine ? "flex-end" : "flex-start",
+                    alignSelf: m.mine ? "flex-end" : "flex-start",
+                    maxWidth: "88%",
+                  }}
+                >
+                  <div style={{ font: "700 10px Inter", color: m.mine ? "var(--gold-lt)" : "#ff9fb4", marginBottom: 2 }}>
+                    {m.mine ? "You" : opponent?.displayName ?? "Opponent"}
+                  </div>
+                  {m.emote ? (
+                    <div style={{ fontSize: 26, lineHeight: 1 }}>{m.emote}</div>
+                  ) : (
+                    <div
+                      style={{
+                        padding: "8px 12px",
+                        borderRadius: m.mine ? "13px 13px 4px 13px" : "13px 13px 13px 4px",
+                        background: m.mine ? "linear-gradient(180deg,#f0c24b,#c98b2e)" : "rgba(255,255,255,.06)",
+                        border: m.mine ? "none" : "1px solid rgba(232,184,75,.14)",
+                        color: m.mine ? "#2a1607" : "#efe7fb",
+                        font: "500 13px Inter", lineHeight: 1.4, wordBreak: "break-word",
+                      }}
+                    >
+                      {m.body}
+                    </div>
+                  )}
+                </div>
+              ))
+            )}
+          </div>
+
           <div style={{ display: "flex", gap: 6, flexWrap: "wrap", justifyContent: "center", marginBottom: 12 }}>
             {GAME_EMOTES.map((ch) => (
               <button
                 key={ch}
-                onClick={() => showToast("In-match chat arrives soon.")}
+                onClick={() => sendEmote(ch)}
                 style={{
                   width: 38, height: 38, borderRadius: 9,
                   border: "1px solid rgba(232,184,75,.3)", background: "rgba(15,8,32,.5)",
@@ -381,9 +438,10 @@ export function OnlineMatchPage() {
               value={chatDraft}
               onChange={(e) => setChatDraft(e.target.value)}
               onKeyDown={(e) => { if (e.key === "Enter") sendChat(); }}
+              maxLength={200}
               placeholder="Type a message..."
               style={{
-                flex: 1, padding: "10px 12px", borderRadius: 8,
+                flex: 1, minWidth: 0, padding: "10px 12px", borderRadius: 8,
                 border: "1px solid rgba(232,184,75,.3)", background: "rgba(0,0,0,.3)",
                 color: "#fff", font: "500 13px Inter",
               }}
@@ -438,13 +496,38 @@ export function OnlineMatchPage() {
           <ResultStat value={blueCaps} label="Blue caps" color="#6fa8ff" />
         </div>
 
-        {/* Play Again — HONEST re-queue. The rematch-offer socket (rematch the SAME
-            opponent) is NOT built server-side yet, so this re-enters matchmaking and
-            pairs you with the next available player, not necessarily this opponent.
-            TODO(rematch-offer): wire a socket rematch flow, then relabel to "Rematch".
-            Do NOT fake a same-opponent rematch here. */}
+        {/* Rematch — REAL same-opponent flow over the match socket. Offering emits
+            EV.matchRematchOffer for the just-ended matchId; when the opponent also
+            offers the server seeds a NEW match and the store resets into it (board
+            reloads). "Find New Match" is the solo re-queue fallback. */}
         <div style={{ display: "flex", flexDirection: "column", gap: 9 }}>
-          <button className="btn btn-gold" onClick={() => { reset(); joinQueue(mode); }}>↻ Play Again (find new opponent)</button>
+          {offeredByOpponent && !offeredByMe ? (
+            <>
+              <div style={{ font: "600 13px Inter", color: "var(--gold-lt)", marginBottom: 2 }}>
+                {opponent?.displayName ?? "Your opponent"} wants a rematch!
+              </div>
+              <button className="btn btn-gold" onClick={acceptRematch}>✔ Accept Rematch</button>
+              <button className="btn btn-purple" onClick={declineRematch}>Decline</button>
+            </>
+          ) : offeredByMe ? (
+            <>
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 8, font: "600 13px Inter", color: "var(--ink)" }}>
+                <span style={{ width: 14, height: 14, borderRadius: "50%", border: "2px solid rgba(232,184,75,.35)", borderTopColor: "var(--gold)", animation: "fdspin 0.9s linear infinite", display: "inline-block" }} />
+                Waiting for opponent…
+              </div>
+              <button className="btn btn-purple" onClick={declineRematch}>Cancel</button>
+            </>
+          ) : (
+            <>
+              {rematchDeclined && (
+                <div style={{ font: "600 13px Inter", color: "#ff8fae", textAlign: "center", marginBottom: 2 }}>
+                  Opponent declined the rematch.
+                </div>
+              )}
+              <button className="btn btn-gold" onClick={offerRematch}>↻ Request Rematch</button>
+              <button className="btn btn-purple" onClick={() => { reset(); joinQueue(mode); }}>Find New Match</button>
+            </>
+          )}
           <button className="btn btn-purple" onClick={() => navigate("/")}>Home</button>
         </div>
       </Modal>

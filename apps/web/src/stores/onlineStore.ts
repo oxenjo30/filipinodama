@@ -33,6 +33,20 @@ type EndInfo = {
   goldReward: number;
 } | null;
 
+/**
+ * A single in-match chat entry (message or emote), kept in the store so it
+ * persists across re-renders for the duration of the match. `mine` is resolved
+ * from the relay's `color` vs our myColor at receive time.
+ */
+export type ChatMsg = {
+  id: string;
+  mine: boolean;
+  color: PieceColor;
+  body: string | null;
+  emote: string | null;
+  at: number;
+};
+
 export type OnlineStore = {
   status: MMStatus;
   matchId: string | null;
@@ -46,11 +60,29 @@ export type OnlineStore = {
   end: EndInfo;
   error: string | null;
 
+  /** In-match quick chat log (messages + emotes), live for the current match. */
+  chat: ChatMsg[];
+  /** Rematch UI state, driven by the rematch socket events. */
+  offeredByMe: boolean;
+  offeredByOpponent: boolean;
+  rematchDeclined: boolean;
+
   joinQueue: (mode: "CASUAL" | "RANKED") => Promise<void>;
   leaveQueue: () => void;
   onSquareClick: (sq: Square) => void;
   resign: () => void;
   reset: () => void;
+
+  /** Send a text message to the opponent (relayed back to both by the server). */
+  sendChat: (body: string) => void;
+  /** Send an emote to the opponent. */
+  sendEmote: (emote: string) => void;
+
+  /** Offer / accept a rematch of the just-ended match (same opponent). */
+  offerRematch: () => void;
+  acceptRematch: () => void;
+  /** Decline a pending rematch offer (or withdraw fallback to solo re-queue). */
+  declineRematch: () => void;
 };
 
 let wired = false;
@@ -69,7 +101,17 @@ export const useOnlineStore = create<OnlineStore>((set, get) => {
     s.on(EV.mmSearching, () => set({ status: "searching", error: null }));
 
     s.on(EV.mmFound, (p: { matchId: string; opponent: Opponent; yourColor: PieceColor; settings: unknown }) => {
-      set({ status: "found", matchId: p.matchId, opponent: p.opponent, myColor: p.yourColor, end: null });
+      set({
+        status: "found",
+        matchId: p.matchId,
+        opponent: p.opponent,
+        myColor: p.yourColor,
+        end: null,
+        chat: [],
+        offeredByMe: false,
+        offeredByOpponent: false,
+        rematchDeclined: false,
+      });
       // ask for the authoritative opening state
       s.emit(EV.matchResync, { matchId: p.matchId });
     });
@@ -117,6 +159,62 @@ export const useOnlineStore = create<OnlineStore>((set, get) => {
         captureTargets: [],
       });
     });
+
+    // ── In-match quick chat / emote relayed by the server to both players. ──
+    s.on(
+      EV.matchChat,
+      (p: { matchId: string; from: string; color: PieceColor; body: string | null; emote: string | null; at: number }) => {
+        set((st) => {
+          // Ignore chat that isn't for the match we're currently in.
+          if (st.matchId && p.matchId !== st.matchId) return {};
+          const msg: ChatMsg = {
+            id: `${p.at}-${p.from}-${st.chat.length}`,
+            mine: st.myColor != null && p.color === st.myColor,
+            color: p.color,
+            body: p.body ?? null,
+            emote: p.emote ?? null,
+            at: p.at,
+          };
+          return { chat: [...st.chat, msg] };
+        });
+      },
+    );
+
+    // ── Rematch: opponent offered a rematch of the just-ended match. ──
+    s.on(EV.matchRematchOffer, (p: { fromMatchId: string; by: string }) => {
+      set((st) => (st.matchId && p.fromMatchId !== st.matchId ? {} : { offeredByOpponent: true, rematchDeclined: false }));
+    });
+
+    // ── Rematch: both agreed → a NEW match has been seeded. Reset into it. ──
+    s.on(EV.matchRematchReady, (p: { matchId: string; yourColor: PieceColor }) => {
+      set({
+        status: "playing",
+        matchId: p.matchId,
+        myColor: p.yourColor,
+        state: null,
+        selected: null,
+        moveTargets: [],
+        captureTargets: [],
+        mustCapture: false,
+        end: null,
+        error: null,
+        chat: [],
+        offeredByMe: false,
+        offeredByOpponent: false,
+        rematchDeclined: false,
+      });
+      // The server already joined our socket to the new room; pull the opening state.
+      s.emit(EV.matchResync, { matchId: p.matchId });
+    });
+
+    // ── Rematch: opponent declined our offer. Fall back to solo re-queue. ──
+    s.on(EV.matchRematchDecline, (p: { fromMatchId: string; by: string }) => {
+      set((st) =>
+        st.matchId && p.fromMatchId !== st.matchId
+          ? {}
+          : { offeredByMe: false, offeredByOpponent: false, rematchDeclined: true },
+      );
+    });
   }
 
   /** Compute the human's tappable highlights from the *server* state. */
@@ -148,6 +246,10 @@ export const useOnlineStore = create<OnlineStore>((set, get) => {
     mustCapture: false,
     end: null,
     error: null,
+    chat: [],
+    offeredByMe: false,
+    offeredByOpponent: false,
+    rematchDeclined: false,
 
     joinQueue: async (mode) => {
       set({ status: "searching", error: null, end: null });
@@ -210,6 +312,71 @@ export const useOnlineStore = create<OnlineStore>((set, get) => {
         mustCapture: false,
         end: null,
         error: null,
+        chat: [],
+        offeredByMe: false,
+        offeredByOpponent: false,
+        rematchDeclined: false,
       }),
+
+    sendChat: (body) => {
+      const text = body.trim();
+      const { matchId } = get();
+      if (!text || !matchId) return;
+      try {
+        getSocket().emit(EV.matchChat, { matchId, body: text });
+      } catch {
+        /* socket unavailable — nothing to append; the server echoes real messages */
+      }
+    },
+
+    sendEmote: (emote) => {
+      const { matchId } = get();
+      if (!emote || !matchId) return;
+      try {
+        getSocket().emit(EV.matchChat, { matchId, emote });
+      } catch {
+        /* ignore */
+      }
+    },
+
+    // The rematch offer is keyed by the JUST-ENDED matchId, which onlineStore
+    // still holds (matchEnded does not clear it). Emitting marks us as offered;
+    // if the opponent had already offered, the server seeds the new match and we
+    // receive matchRematchReady.
+    offerRematch: () => {
+      const { matchId } = get();
+      if (!matchId) return;
+      try {
+        getSocket().emit(EV.matchRematchOffer, { matchId });
+        set({ offeredByMe: true, rematchDeclined: false });
+      } catch {
+        set({ error: "Couldn't reach the server." });
+      }
+    },
+
+    // Accepting an opponent's pending offer is the same emit — once both sides
+    // have offered, the server pairs them and emits matchRematchReady.
+    acceptRematch: () => {
+      const { matchId } = get();
+      if (!matchId) return;
+      try {
+        getSocket().emit(EV.matchRematchOffer, { matchId });
+        set({ offeredByMe: true });
+      } catch {
+        set({ error: "Couldn't reach the server." });
+      }
+    },
+
+    declineRematch: () => {
+      const { matchId } = get();
+      if (matchId) {
+        try {
+          getSocket().emit(EV.matchRematchDecline, { matchId });
+        } catch {
+          /* ignore */
+        }
+      }
+      set({ offeredByMe: false, offeredByOpponent: false });
+    },
   };
 });

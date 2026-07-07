@@ -20,6 +20,7 @@ import { SeasonPage } from "./features/season/SeasonPage";
 import { LeaderboardPage } from "./features/leaderboard/LeaderboardPage";
 import { AuthPage } from "./features/auth/AuthPage";
 import { OnlineMatchPage } from "./features/play/OnlineMatchPage";
+import { MessagesPage } from "./features/messages/MessagesPage";
 import { SpectatePage } from "./features/spectate/SpectatePage";
 import { PrivateRoomPage } from "./features/rooms/PrivateRoomPage";
 import { ContactPage } from "./features/contact/ContactPage";
@@ -96,6 +97,8 @@ export function App() {
           <Route path="/inventory" element={<InventoryPage />} />
           <Route path="/profile" element={<ProfilePage />} />
           <Route path="/friends" element={<FriendsPage />} />
+          <Route path="/messages" element={<MessagesPage />} />
+          <Route path="/messages/:userId" element={<MessagesPage />} />
           <Route path="/guilds" element={<GuildsPage />} />
           <Route path="/quests" element={<QuestsPage />} />
           <Route path="/season" element={<SeasonPage />} />
