@@ -55,14 +55,17 @@ export function AppLayout() {
     navigate("/login");
   }
 
+  // Account menu — reproduced VERBATIM from the prototype accountMenu array
+  // (FilipinoDama Royal.dc.html line 4314).
   const acctItems = [
-    { icon: "👤", label: "My Profile", on: () => navigate("/profile") },
-    { icon: "🎒", label: "Inventory", on: () => navigate("/inventory") },
-    { icon: "🧾", label: "Orders", on: () => navigate("/orders") },
+    { icon: "👤", label: "View Profile", on: () => navigate("/profile") },
+    { icon: "🛡️", label: "Guild Hall", on: () => navigate("/guilds") },
+    { icon: "👥", label: "Friends", on: () => navigate("/friends") },
+    { icon: "🎒", label: "Locker", on: () => navigate("/inventory") },
+    { icon: "🧾", label: "Purchase History", on: () => navigate("/orders") },
+    { icon: "🎯", label: "Quests", on: () => navigate("/quests") },
+    { icon: "✏️", label: "Edit Profile", on: () => navigate("/profile?edit=1") },
     { icon: "⚙️", label: "Settings", on: () => navigate("/settings") },
-    me
-      ? { icon: "🚪", label: "Sign Out", on: signOut }
-      : { icon: "🔑", label: "Sign In", on: () => navigate("/login") },
   ];
 
   const avatarToken = (
@@ -139,11 +142,16 @@ export function AppLayout() {
                           </div>
                           <div style={{ padding: 6 }}>
                             {acctItems.map((mi) => (
-                              <button key={mi.label} onClick={() => { setAcctOpen(false); mi.on(); }} style={{ display: "flex", alignItems: "center", gap: 11, width: "100%", padding: "10px 12px", borderRadius: 9, border: "none", background: "none", color: "var(--ink)", font: "600 13px Inter", cursor: "pointer", textAlign: "left" }}>
+                              <button key={mi.label} onClick={() => { setAcctOpen(false); mi.on(); }} style={{ display: "flex", alignItems: "center", gap: 11, width: "100%", padding: "11px 12px", borderRadius: 9, border: "none", background: "none", color: "#efe7fb", font: "600 13px Inter", cursor: "pointer", textAlign: "left" }}>
                                 <span style={{ width: 20, textAlign: "center", flex: "none" }}>{mi.icon}</span>
                                 {mi.label}
                               </button>
                             ))}
+                            {/* Log Out — distinct styling (top border, red), per prototype */}
+                            <button onClick={() => { setAcctOpen(false); signOut(); }} style={{ display: "flex", alignItems: "center", gap: 11, width: "100%", padding: "11px 12px", marginTop: 5, borderRadius: 9, border: "none", borderTop: "1px solid rgba(232,184,75,.14)", background: "none", color: "#ff9aa8", font: "600 13px Inter", cursor: "pointer", textAlign: "left" }}>
+                              <span style={{ width: 20, textAlign: "center", flex: "none" }}>⏻</span>
+                              Log Out
+                            </button>
                           </div>
                         </div>
                       </>

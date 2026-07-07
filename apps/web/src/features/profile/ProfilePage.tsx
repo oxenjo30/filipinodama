@@ -147,6 +147,12 @@ export function ProfilePage() {
   const [nameDraft, setNameDraft] = useState("");
   const [saving, setSaving] = useState(false);
 
+  // Open directly into edit mode when arriving via ?edit=1 (account menu "Edit Profile").
+  useEffect(() => {
+    const p = new URLSearchParams(window.location.search);
+    if (p.get("edit") === "1") setEditing(true);
+  }, []);
+
   // ── Trophy History (live ledger) ──
   const [trophyRows, setTrophyRows] = useState<LedgerRow[] | null>(null);
   const [trophyErr, setTrophyErr] = useState<string | null>(null);
