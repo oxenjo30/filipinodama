@@ -1,17 +1,26 @@
+import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Avatar } from "../../components";
+import { api, ApiError } from "../../lib/api";
 import { useAppStore } from "../../stores/appStore";
+import { useAuthStore } from "../../stores/authStore";
 
 /**
  * FriendsPage — social hub ported from the approved prototype (lines 2026-2109).
  *
- * STALE-DATA RULE: the user has no real social graph yet, so Friend Requests,
- * Online and Offline friend lists are rendered as HONEST EMPTY states rather
- * than fabricated rosters. The three summary tiles read 0. A "Suggested
- * players" list is kept populated — that is discovery data (people you could
- * add), not a claim that they are already your friends. Every add/message
- * control routes through showToast since online play is not wired yet.
+ * DATA: when logged in we GET /api/friends → { friends } and
+ * GET /api/friends/requests → { incoming, outgoing }. The three summary tiles
+ * (Friends / Online Now / Requests) and the Friend Requests + friends lists
+ * reflect the real social graph. When the user has none, every section renders
+ * an HONEST EMPTY state (no fabricated roster) and the tiles read 0 — exactly
+ * matching the approved empty design. Presence isn't delivered over REST, so
+ * "Online Now" stays 0 here (realtime presence is owned by another task). The
+ * "Suggested Players" list is kept populated (discovery data, like the
+ * leaderboard). Logged out: no fetch fires and the screen prompts sign-in.
  */
+
+type FriendUser = { id: string; displayName: string; tag: string; avatarUrl: string | null; rankTier: string };
+type FriendReq = { id: string; user: FriendUser };
 
 type Tier = { label: string; color: string };
 
@@ -47,11 +56,62 @@ const SUGGESTED: Suggested[] = [
   },
 ];
 
-const SUMMARY: { k: string; v: string; c: string }[] = [
-  { k: "Friends", v: "0", c: "var(--gold-lt)" },
-  { k: "Online Now", v: "0", c: "#7ee6a4" },
-  { k: "Requests", v: "0", c: "#ff9aa6" },
-];
+function summaryFor(friends: number, online: number, requests: number): { k: string; v: string; c: string }[] {
+  return [
+    { k: "Friends", v: String(friends), c: "var(--gold-lt)" },
+    { k: "Online Now", v: String(online), c: "#7ee6a4" },
+    { k: "Requests", v: String(requests), c: "#ff9aa6" },
+  ];
+}
+
+/** A single friend / request row (matches the Suggested-player row styling). */
+function FriendRow({
+  user,
+  action,
+  onAction,
+}: {
+  user: FriendUser;
+  action: string;
+  onAction: () => void;
+}) {
+  return (
+    <div
+      style={{
+        display: "flex",
+        alignItems: "center",
+        gap: 14,
+        padding: 12,
+        borderRadius: 12,
+        border: "1px solid rgba(232,184,75,.16)",
+        background: "rgba(0,0,0,.2)",
+      }}
+    >
+      <Avatar src={user.avatarUrl ?? "champion"} size={44} />
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+          <span style={{ font: "700 15px Inter", color: "#fff" }}>{user.displayName}</span>
+          <span style={{ font: "700 11px 'JetBrains Mono',monospace", color: "var(--ink2)" }}>{user.tag}</span>
+        </div>
+        <div style={{ font: "500 12px Inter", color: "var(--ink2)", marginTop: 3 }}>{user.rankTier}</div>
+      </div>
+      <button
+        onClick={onAction}
+        style={{
+          flex: "none",
+          padding: "9px 16px",
+          borderRadius: 8,
+          border: "1px solid rgba(232,184,75,.4)",
+          background: "rgba(232,184,75,.1)",
+          color: "var(--gold-lt)",
+          font: "700 12px Inter",
+          cursor: "pointer",
+        }}
+      >
+        {action}
+      </button>
+    </div>
+  );
+}
 
 /** Honest empty-state panel shared by Requests / Online / Offline sections. */
 function EmptyPanel({ title, message }: { title: string; message: string }) {
@@ -79,7 +139,41 @@ function EmptyPanel({ title, message }: { title: string; message: string }) {
 
 export function FriendsPage() {
   const navigate = useNavigate();
+  const me = useAuthStore((s) => s.me);
   const showToast = useAppStore((s) => s.showToast);
+
+  const [friends, setFriends] = useState<FriendUser[]>([]);
+  const [incoming, setIncoming] = useState<FriendReq[]>([]);
+
+  useEffect(() => {
+    if (!me) {
+      setFriends([]);
+      setIncoming([]);
+      return;
+    }
+    let alive = true;
+    void (async () => {
+      try {
+        const [f, r] = await Promise.all([
+          api.get<{ friends: FriendUser[] }>("/api/friends"),
+          api.get<{ incoming: FriendReq[]; outgoing: FriendReq[] }>("/api/friends/requests"),
+        ]);
+        if (!alive) return;
+        setFriends(f.friends);
+        setIncoming(r.incoming);
+      } catch (e) {
+        if (!(e instanceof ApiError && e.status === 401)) {
+          showToast("Couldn't load friends. Try again in a moment.");
+        }
+      }
+    })();
+    return () => {
+      alive = false;
+    };
+  }, [me, showToast]);
+
+  // Presence isn't delivered over REST → "Online Now" is 0 here (realtime task).
+  const SUMMARY = summaryFor(friends.length, 0, incoming.length);
 
   return (
     <div
@@ -156,14 +250,47 @@ export function FriendsPage() {
         />
       </div>
 
-      {/* Friend Requests — honest empty */}
-      <EmptyPanel title="Friend Requests · 0" message="No pending requests." />
+      {/* Friend Requests — real incoming requests, honest-empty when none */}
+      {incoming.length === 0 ? (
+        <EmptyPanel title={`Friend Requests · ${incoming.length}`} message="No pending requests." />
+      ) : (
+        <div className="frame" style={{ padding: 22 }}>
+          <div className="ptitle" style={{ textAlign: "left", marginBottom: 14 }}>
+            Friend Requests · {incoming.length}
+          </div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+            {incoming.map((r) => (
+              <FriendRow
+                key={r.id}
+                user={r.user}
+                action="Accept"
+                onAction={() => showToast("Accepting requests arrives with online play.")}
+              />
+            ))}
+          </div>
+        </div>
+      )}
 
-      {/* Online — honest empty */}
-      <EmptyPanel
-        title="Online · 0"
-        message="No friends yet — add some to play together."
-      />
+      {/* Friends — real accepted friends, honest-empty when none */}
+      {friends.length === 0 ? (
+        <EmptyPanel title="Friends · 0" message="No friends yet — add some to play together." />
+      ) : (
+        <div className="frame" style={{ padding: 22 }}>
+          <div className="ptitle" style={{ textAlign: "left", marginBottom: 14 }}>
+            Friends · {friends.length}
+          </div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+            {friends.map((f) => (
+              <FriendRow
+                key={f.id}
+                user={f}
+                action="Message"
+                onAction={() => showToast("Messaging arrives with online play.")}
+              />
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Suggested players — discovery data (not a fake roster) */}
       <div className="frame" style={{ padding: 22 }}>

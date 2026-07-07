@@ -1,18 +1,58 @@
-import { useMemo, useState, type CSSProperties, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useState, type CSSProperties, type ReactNode } from "react";
+import { api, ApiError } from "../../lib/api";
 import { useAppStore } from "../../stores/appStore";
+import { useAuthStore } from "../../stores/authStore";
 
 /**
  * StorePage — reproduced from the prototype's Store screen
  * (handoff/FilipinoDama Royal.dc.html, lines 1243-1358): a three-column layout
  * of Store Categories + Member Benefits (left), Featured Pack / filter tabs /
  * catalog grid / Daily Deals (center), and Your Cart + Seasonal Offer (right).
+ * The visual layout is unchanged — it is now backed by real store data.
  *
- * Catalog content is product data (fine to show). Per the owner's stale-data
- * rule the user OWNS nothing yet, so no item is marked "Owned", and the cart
- * starts EMPTY with an honest empty state rather than the prototype's seeded
- * row. Buy / Add to Cart update the local cart and raise a toast; checkout /
- * bundle / benefits actions raise a toast (no backend yet).
+ * DATA WIRING:
+ *   - GET /api/store/items → the real catalog. Any prototype catalog tile whose
+ *     id maps to a real StoreItem (REAL_ID map) shows that item's real PRICE and,
+ *     when owned, an "Owned" badge with a disabled Buy button.
+ *   - Ownership comes from the authed user's inventory (read via
+ *     GET /api/users/me/export → inventory[]) on load, plus anything just bought.
+ *   - Buy on a real item → POST /api/store/purchase { itemId }; on success we
+ *     update gold/diamond balances (auth store) and mark the item owned. Errors
+ *     (insufficient funds, already owned) surface as a toast.
+ *   - Catalog tiles with no backing StoreItem (frames, emotes, bundles that
+ *     aren't seeded yet) keep the prototype's add-to-cart + honest "arrives with
+ *     online play" toast — no fake purchase is fabricated.
+ *   - Logged out: no fetch fires; Buy prompts sign-in; the screen still renders.
  */
+
+/**
+ * Maps a prototype catalog id → the seeded StoreItem id it represents. Only
+ * these are really purchasable; everything else stays cart/toast-only.
+ */
+const REAL_ID: Record<string, string> = {
+  ebony: "board-ebony",
+  marble: "board-marble",
+  classicwood: "board-wood",
+  obsidian: "board-obsidian",
+  jadeskin: "skin-jade",
+  obsidianskin: "skin-obsidian",
+  bagani: "skin-bagani",
+  mandirigma: "skin-mandirigma",
+  diwata: "skin-diwata",
+  ermitanyo: "skin-ermitanyo",
+  babaylan: "skin-babaylan",
+  seasonpass: "season-pass-s1",
+};
+
+// Real StoreItem shape from GET /api/store/items.
+type StoreItemApi = {
+  id: string;
+  type: string;
+  name: string;
+  priceGold: number | null;
+  priceDiamonds: number | null;
+  isPremium: boolean;
+};
 
 const A = (n: string) => `/assets/${n}`;
 
@@ -229,15 +269,88 @@ interface CartLine {
 }
 
 export function StorePage() {
+  const me = useAuthStore((s) => s.me);
+  const patchMe = useAuthStore((s) => s.patchMe);
   const showToast = useAppStore((s) => s.showToast);
   const [tab, setTab] = useState<string>("All");
   const [cart, setCart] = useState<CartLine[]>([]);
+
+  // Real catalog (by StoreItem id) + owned item ids + in-flight purchase id.
+  const [realItems, setRealItems] = useState<Record<string, StoreItemApi>>({});
+  const [owned, setOwned] = useState<Set<string>>(new Set());
+  const [buying, setBuying] = useState<string | null>(null);
+
+  // Load the real catalog (public) once; load ownership only when logged in.
+  useEffect(() => {
+    let alive = true;
+    void (async () => {
+      try {
+        const data = await api.get<{ items: StoreItemApi[] }>("/api/store/items");
+        if (!alive) return;
+        const map: Record<string, StoreItemApi> = {};
+        for (const it of data.items) map[it.id] = it;
+        setRealItems(map);
+      } catch {
+        /* catalog visuals still render from the prototype defaults */
+      }
+    })();
+    return () => {
+      alive = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!me) {
+      setOwned(new Set());
+      return;
+    }
+    let alive = true;
+    void (async () => {
+      try {
+        // The user's inventory ships inside the GDPR export payload (the only
+        // inventory read exposed over REST).
+        const data = await api.get<{ inventory: { itemId: string }[] }>("/api/users/me/export");
+        if (!alive) return;
+        setOwned(new Set(data.inventory.map((i) => i.itemId)));
+      } catch {
+        /* leave owned empty on failure — nothing is falsely marked owned */
+      }
+    })();
+    return () => {
+      alive = false;
+    };
+  }, [me]);
 
   const addToCart = (line: CartLine) => {
     setCart((c) => (c.some((x) => x.id === line.id) ? c : [...c, line]));
     showToast(`${line.name} added to cart`);
   };
   const removeFromCart = (id: string) => setCart((c) => c.filter((x) => x.id !== id));
+
+  // Real, server-authoritative purchase for catalog tiles backed by a StoreItem.
+  const buyReal = useCallback(
+    async (realId: string, name: string) => {
+      if (!me) {
+        showToast("Sign in to buy items.");
+        return;
+      }
+      setBuying(realId);
+      try {
+        const res = await api.post<{ balances: { gold: number; diamonds: number; trophies: number } }>(
+          "/api/store/purchase",
+          { itemId: realId },
+        );
+        patchMe({ gold: res.balances.gold, diamonds: res.balances.diamonds });
+        setOwned((s) => new Set(s).add(realId));
+        showToast(`${name} purchased!`);
+      } catch (e) {
+        showToast(e instanceof ApiError ? e.message : "Purchase failed.");
+      } finally {
+        setBuying(null);
+      }
+    },
+    [me, patchMe, showToast],
+  );
 
   const grid = useMemo(() => {
     if (tab === "All") return FEATURED_IDS.map((id) => CATALOG.find((it) => it.id === id)).filter(Boolean) as Item[];
@@ -364,11 +477,21 @@ export function StorePage() {
           <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 14 }}>
             {grid.map((it) => {
               const isSkin = it.cat === "Piece Skins";
-              const free = it.price === 0;
+              // Prefer the real StoreItem (price + currency + ownership) when this
+              // catalog tile is backed by one; otherwise use the prototype values.
+              const realId = REAL_ID[it.id];
+              const real = realId ? realItems[realId] : undefined;
+              const cur: Cur = real ? (real.priceDiamonds != null ? "gem" : "gold") : it.cur;
+              const price = real ? (real.priceDiamonds ?? real.priceGold ?? 0) : it.price;
+              const free = price === 0;
+              const isOwned = !!realId && owned.has(realId);
+              const isBuying = !!realId && buying === realId;
               const line: CartLine = { id: it.id, name: it.name, sub: subFor[it.cat], price: it.price, cur: it.cur, thumb: it.thumb };
               return (
                 <div key={it.id} className="frame" style={{ padding: "16px 14px", position: "relative", display: "flex", flexDirection: "column", gap: 10, alignItems: "center", textAlign: "center" }}>
-                  {it.tag ? (
+                  {isOwned ? (
+                    <span style={{ position: "absolute", top: 9, left: 9, font: "700 9px Inter", letterSpacing: "1px", padding: "3px 7px", borderRadius: 5, background: "#2f8f5b", color: "#fff", zIndex: 2 }}>OWNED</span>
+                  ) : it.tag ? (
                     <span style={{ position: "absolute", top: 9, left: 9, font: "700 9px Inter", letterSpacing: "1px", padding: "3px 7px", borderRadius: 5, background: "#2f8f5b", color: "#fff", zIndex: 2 }}>{it.tag}</span>
                   ) : null}
                   <div onClick={() => showToast(`${it.name} preview arrives with online play.`)} title="Preview" style={{ height: 70, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", width: "100%" }}>
@@ -381,15 +504,22 @@ export function StorePage() {
                   <button onClick={() => showToast(`${it.name} preview arrives with online play.`)} style={{ display: "inline-flex", alignItems: "center", gap: 5, background: "none", border: "none", padding: 0, color: "var(--gold)", font: "700 10px Inter", letterSpacing: ".8px", textTransform: "uppercase", cursor: "pointer" }}>
                     🔍 Preview
                   </button>
-                  {free ? (
+                  {isOwned ? (
+                    <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 5, width: "100%", marginTop: "auto", font: "700 13px Inter", color: "#7ee6a4" }}>✓ Owned</div>
+                  ) : free ? (
                     <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 5, width: "100%", marginTop: "auto", font: "700 14px 'JetBrains Mono',monospace", color: "var(--ink)" }}>Free</div>
                   ) : (
                     <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, width: "100%", marginTop: "auto" }}>
-                      <span style={{ display: "flex", alignItems: "center", gap: 5, font: "700 14px 'JetBrains Mono',monospace", color: curColor(it.cur) }}>
-                        <CurIcon cur={it.cur} /> {it.price.toLocaleString()}
+                      <span style={{ display: "flex", alignItems: "center", gap: 5, font: "700 14px 'JetBrains Mono',monospace", color: curColor(cur) }}>
+                        <CurIcon cur={cur} /> {price.toLocaleString()}
                       </span>
-                      <button className="btn btn-purple" onClick={() => addToCart(line)} style={{ padding: "8px 16px", fontSize: 11 }}>
-                        Buy
+                      <button
+                        className="btn btn-purple"
+                        disabled={isBuying}
+                        onClick={() => (realId ? buyReal(realId, it.name) : addToCart(line))}
+                        style={{ padding: "8px 16px", fontSize: 11, opacity: isBuying ? 0.7 : 1 }}
+                      >
+                        {isBuying ? "…" : "Buy"}
                       </button>
                     </div>
                   )}

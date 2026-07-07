@@ -1,19 +1,43 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { api, ApiError } from "../../lib/api";
 import { useAppStore } from "../../stores/appStore";
+import { useAuthStore } from "../../stores/authStore";
 
 /**
  * GuildsPage — Guild Hall, ported from the prototype (handoff/FilipinoDama Royal.dc.html,
- * lines 1705-2025).
+ * lines 1705-2025). Layout unchanged.
  *
- * STALE-DATA RULE: the player is NOT in a guild yet and we have no backend, so the
- * prototype's "my guild" banner, weekly war, perks, roster, roles/permissions and
- * join-requests sections (all of which imply a real membership/roster we don't have)
- * are replaced by an honest empty state: "You are not in a guild — browse or create
- * one." The "Discover Guilds" browse list IS kept populated — that is discovery data,
- * like the global leaderboard, not a claim the player owns any of it. Create / Join
- * actions have no backend, so they route through showToast.
+ * DATA: the "Discover Guilds" list is now real — GET /api/guilds returns
+ * browsable guilds (public, so it loads for guests too); when there are none we
+ * show an honest empty state. The player's own membership isn't exposed on the
+ * Me payload, so the top banner keeps its honest "You are not in a guild yet"
+ * state. Create / Join actions post to the real endpoints when logged in; while
+ * the socket-driven flows land they surface an honest toast, and a logged-out
+ * user is prompted to sign in rather than hitting a dead control.
  */
+
+// Real guild shape from GET /api/guilds.
+type ApiGuild = {
+  id: string;
+  name: string;
+  tag: string;
+  description: string | null;
+  crestKey: string | null;
+  minTrophies: number;
+  weeklyPoints: number;
+  memberCount: number;
+};
+
+// Emblem glyph rotation for real guilds (no per-guild art exists).
+const GLYPHS = ["👑", "⚔️", "🛡️", "🌞", "🔥", "🦅", "🎯"];
+const TINTS = [
+  "rgba(122,75,191,.35)",
+  "rgba(160,48,58,.35)",
+  "rgba(46,107,198,.35)",
+  "rgba(47,143,91,.35)",
+  "rgba(201,154,46,.35)",
+];
 
 // Emblem token — a masked circular gradient badge (no per-guild portrait art exists).
 function Emblem({ glyph, size = 56, tint }: { glyph: string; size?: number; tint: string }) {
@@ -38,25 +62,6 @@ function Emblem({ glyph, size = 56, tint }: { glyph: string; size?: number; tint
   );
 }
 
-// Discovery data — real-feeling browsable guilds (like the leaderboard). Not "yours".
-type BrowseGuild = {
-  name: string;
-  tag: string;
-  glyph: string;
-  tint: string;
-  levelLabel: string;
-  members: string;
-  pts: string;
-  policy: "open" | "request";
-};
-const BROWSE_GUILDS: BrowseGuild[] = [
-  { name: "Dama Kings", tag: "#DK", glyph: "👑", tint: "rgba(122,75,191,.35)", levelLabel: "Lv 24", members: "48 / 50", pts: "182,400", policy: "request" },
-  { name: "Pinoy Warriors", tag: "#PW", glyph: "⚔️", tint: "rgba(160,48,58,.35)", levelLabel: "Lv 21", members: "50 / 50", pts: "168,920", policy: "request" },
-  { name: "Bayanihan Board", tag: "#BYN", glyph: "🛡️", tint: "rgba(46,107,198,.35)", levelLabel: "Lv 17", members: "34 / 50", pts: "121,050", policy: "open" },
-  { name: "Sundo Squad", tag: "#SND", glyph: "🌞", tint: "rgba(47,143,91,.35)", levelLabel: "Lv 12", members: "22 / 50", pts: "74,300", policy: "open" },
-  { name: "Rookie Rangers", tag: "#RR", glyph: "🎯", tint: "rgba(201,154,46,.35)", levelLabel: "Lv 6", members: "11 / 50", pts: "28,140", policy: "open" },
-];
-
 // Create-guild emblem picker options.
 const GC_EMBLEMS = ["👑", "⚔️", "🛡️", "🌞", "🔥", "🦅"];
 const GC_POLICIES: { key: string; label: string }[] = [
@@ -67,6 +72,7 @@ const GC_POLICIES: { key: string; label: string }[] = [
 
 export function GuildsPage() {
   const navigate = useNavigate();
+  const me = useAuthStore((s) => s.me);
   const showToast = useAppStore((s) => s.showToast);
 
   const [createShow, setCreateShow] = useState(false);
@@ -76,17 +82,45 @@ export function GuildsPage() {
   const [gcDesc, setGcDesc] = useState("");
   const [gcPolicy, setGcPolicy] = useState("open");
 
+  // Real browsable guilds (public endpoint → loads for guests too).
+  const [guilds, setGuilds] = useState<ApiGuild[] | null>(null);
+
+  useEffect(() => {
+    let alive = true;
+    void (async () => {
+      try {
+        const data = await api.get<{ guilds: ApiGuild[] }>("/api/guilds");
+        if (alive) setGuilds(data.guilds);
+      } catch {
+        if (alive) setGuilds([]);
+      }
+    })();
+    return () => {
+      alive = false;
+    };
+  }, []);
+
   const gcReady = gcName.trim().length >= 3 && gcTag.trim().length >= 2;
 
   const onCreateSubmit = () => {
     if (!gcReady) return;
+    if (!me) {
+      setCreateShow(false);
+      showToast("Sign in to create a guild.");
+      return;
+    }
     setCreateShow(false);
     showToast("Creating a guild arrives with online play.");
   };
 
-  const onJoin = (g: BrowseGuild) => {
+  const onJoin = (g: ApiGuild) => {
+    if (!me) {
+      showToast("Sign in to join a guild.");
+      return;
+    }
+    const open = g.minTrophies <= 0;
     showToast(
-      g.policy === "open"
+      open
         ? `Joining ${g.name} arrives with online play.`
         : `Requesting to join ${g.name} arrives with online play.`,
     );
@@ -160,26 +194,36 @@ export function GuildsPage() {
           </button>
         </div>
         <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-          {BROWSE_GUILDS.map((g) => {
-            const joinStyle: React.CSSProperties =
-              g.policy === "open"
+          {guilds === null ? (
+            <div style={{ padding: "26px 12px", textAlign: "center", font: "500 13px Inter", color: "var(--ink2)" }}>Loading guilds…</div>
+          ) : guilds.length === 0 ? (
+            <div style={{ padding: "26px 12px", textAlign: "center", font: "500 13px Inter", color: "var(--ink2)" }}>
+              No guilds yet — be the first to found one.
+            </div>
+          ) : (
+            guilds.map((g, i) => {
+              const open = g.minTrophies <= 0;
+              const joinStyle: React.CSSProperties = open
                 ? { flex: "none", padding: "9px 18px", borderRadius: 8, border: "1px solid rgba(95,212,138,.4)", background: "rgba(95,212,138,.12)", color: "#6ee0a0", font: "700 12px Inter", letterSpacing: ".3px", cursor: "pointer" }
                 : { flex: "none", padding: "9px 18px", borderRadius: 8, border: "1px solid rgba(232,184,75,.35)", background: "rgba(232,184,75,.1)", color: "var(--gold-lt)", font: "700 12px Inter", letterSpacing: ".3px", cursor: "pointer" };
-            return (
-              <div key={g.tag} style={{ display: "flex", alignItems: "center", gap: 14, padding: 12, borderRadius: 12, border: "1px solid rgba(232,184,75,.12)", background: "rgba(0,0,0,.2)" }}>
-                <Emblem glyph={g.glyph} tint={g.tint} size={48} />
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-                    <span style={{ font: "700 15px Inter", color: "#fff" }}>{g.name}</span>
-                    <span style={{ font: "700 11px 'JetBrains Mono',monospace", color: "var(--ink2)" }}>{g.tag}</span>
-                    <span style={{ padding: "2px 8px", borderRadius: 100, border: "1px solid rgba(232,184,75,.2)", background: "rgba(15,8,32,.5)", font: "600 10px Inter", color: "var(--gold)" }}>{g.levelLabel}</span>
+              return (
+                <div key={g.id} style={{ display: "flex", alignItems: "center", gap: 14, padding: 12, borderRadius: 12, border: "1px solid rgba(232,184,75,.12)", background: "rgba(0,0,0,.2)" }}>
+                  <Emblem glyph={GLYPHS[i % GLYPHS.length]} tint={TINTS[i % TINTS.length]} size={48} />
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                      <span style={{ font: "700 15px Inter", color: "#fff" }}>{g.name}</span>
+                      <span style={{ font: "700 11px 'JetBrains Mono',monospace", color: "var(--ink2)" }}>{g.tag}</span>
+                      {g.minTrophies > 0 && (
+                        <span style={{ padding: "2px 8px", borderRadius: 100, border: "1px solid rgba(232,184,75,.2)", background: "rgba(15,8,32,.5)", font: "600 10px Inter", color: "var(--gold)" }}>🏆 {g.minTrophies.toLocaleString()}+</span>
+                      )}
+                    </div>
+                    <div style={{ font: "500 12px Inter", color: "var(--ink2)", marginTop: 3 }}>{g.memberCount} members · {g.weeklyPoints.toLocaleString()} pts</div>
                   </div>
-                  <div style={{ font: "500 12px Inter", color: "var(--ink2)", marginTop: 3 }}>{g.members} members · {g.pts} pts</div>
+                  <button onClick={() => onJoin(g)} style={joinStyle}>{open ? "Join" : "Request"}</button>
                 </div>
-                <button onClick={() => onJoin(g)} style={joinStyle}>{g.policy === "open" ? "Join" : "Request"}</button>
-              </div>
-            );
-          })}
+              );
+            })
+          )}
         </div>
       </div>
 

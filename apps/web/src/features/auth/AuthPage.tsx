@@ -1,0 +1,312 @@
+import { useState } from "react";
+import { useNavigate } from "react-router-dom";
+import { useAuthStore, ApiError } from "../../stores/authStore";
+import { BRAND } from "../../lib/assets";
+
+/**
+ * AuthPage — Login / Register / Guest, reproduced faithfully from the prototype's
+ * Login screen (handoff/FilipinoDama Royal.dc.html, lines 2682-2738) using the
+ * approved global classes (.frame/.btn/.btn-gold). Wires to the real authStore
+ * actions; on success navigates to "/". Google/Facebook buttons are disabled with
+ * a "not configured" hint whenever providers.google/facebook are false.
+ */
+
+type Mode = "signin" | "signup";
+
+const INPUT: React.CSSProperties = {
+  width: "100%",
+  boxSizing: "border-box",
+  padding: "13px 14px",
+  borderRadius: 11,
+  border: "1px solid rgba(232,184,75,.25)",
+  background: "rgba(0,0,0,.35)",
+  color: "#fff",
+  font: "600 14px Inter",
+  outline: "none",
+};
+
+const LABEL_TEXT: React.CSSProperties = {
+  display: "block",
+  font: "700 11px Inter",
+  letterSpacing: ".5px",
+  color: "var(--ink2)",
+  marginBottom: 6,
+};
+
+function tabStyle(active: boolean): React.CSSProperties {
+  return {
+    flex: 1,
+    padding: "10px 0",
+    borderRadius: 9,
+    border: "none",
+    cursor: "pointer",
+    font: "700 13px Inter",
+    background: active ? "linear-gradient(180deg,#f0cf72,#c99a2e)" : "transparent",
+    color: active ? "#3a2405" : "var(--ink2)",
+    transition: "background .15s ease,color .15s ease",
+  };
+}
+
+export function AuthPage({ initialMode = "signin" }: { initialMode?: Mode }) {
+  const navigate = useNavigate();
+  const providers = useAuthStore((s) => s.providers);
+  const loading = useAuthStore((s) => s.loading);
+  const login = useAuthStore((s) => s.login);
+  const register = useAuthStore((s) => s.register);
+  const guest = useAuthStore((s) => s.guest);
+
+  const [mode, setMode] = useState<Mode>(initialMode);
+  const [name, setName] = useState("");
+  const [email, setEmail] = useState("");
+  const [pass, setPass] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  const isSignup = mode === "signup";
+  const disabled = busy || loading;
+
+  function switchMode(m: Mode) {
+    setMode(m);
+    setError(null);
+  }
+
+  async function submit() {
+    setError(null);
+    setBusy(true);
+    try {
+      if (isSignup) {
+        await register({ email: email.trim(), password: pass, username: name.trim() });
+      } else {
+        await login({ email: email.trim(), password: pass });
+      }
+      navigate("/");
+    } catch (e) {
+      setError(e instanceof ApiError ? e.message : "Something went wrong. Please try again.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function playAsGuest() {
+    setError(null);
+    setBusy(true);
+    try {
+      await guest();
+      navigate("/");
+    } catch (e) {
+      setError(e instanceof ApiError ? e.message : "Something went wrong. Please try again.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const socials: { key: "google" | "facebook"; label: string; glyph: string; glyphColor: string; on: boolean }[] = [
+    { key: "google", label: "Google", glyph: "G", glyphColor: "#e8b84b", on: providers.google },
+    { key: "facebook", label: "Facebook", glyph: "f", glyphColor: "#5a8bff", on: providers.facebook },
+  ];
+
+  return (
+    <div
+      style={{
+        position: "fixed",
+        inset: 0,
+        zIndex: 360,
+        overflow: "auto",
+        background:
+          "radial-gradient(1200px 700px at 50% -8%,rgba(90,50,140,.6),#0c0618 60%),#0c0618",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        padding: 24,
+        animation: "fdfade .25s ease",
+      }}
+    >
+      <div
+        style={{
+          position: "absolute",
+          inset: 0,
+          opacity: 0.4,
+          backgroundImage: "radial-gradient(rgba(232,184,75,.06) 1px,transparent 1px)",
+          backgroundSize: "30px 30px",
+          pointerEvents: "none",
+        }}
+      />
+      <div
+        className="frame"
+        style={{
+          position: "relative",
+          width: "min(94vw,420px)",
+          padding: "34px 32px 26px",
+          background: "linear-gradient(180deg,#1c1130,#140a24)",
+        }}
+      >
+        <div style={{ textAlign: "center", marginBottom: 24 }}>
+          <div style={{ display: "flex", justifyContent: "center", marginBottom: 12 }}>
+            <img src={BRAND.logoSun} alt="" width={54} height={54} style={{ objectFit: "contain" }} />
+          </div>
+          <div style={{ font: "700 10px Inter", letterSpacing: "3px", textTransform: "uppercase", color: "var(--gold)" }}>
+            ✦ FilipinoDama Royal ✦
+          </div>
+          <h1 style={{ margin: "8px 0 4px", font: "800 26px Cinzel,serif", color: "var(--gold-lt)" }}>
+            {isSignup ? "Create Account" : "Welcome Back"}
+          </h1>
+          <p style={{ margin: 0, font: "400 12.5px Inter", color: "var(--ink2)" }}>
+            {isSignup ? "Join the board and start climbing the ranks." : "Sign in to return to the board."}
+          </p>
+        </div>
+
+        {/* mode toggle */}
+        <div
+          style={{
+            display: "flex",
+            gap: 6,
+            padding: 5,
+            borderRadius: 12,
+            background: "rgba(0,0,0,.3)",
+            border: "1px solid rgba(232,184,75,.14)",
+            marginBottom: 22,
+          }}
+        >
+          <button type="button" onClick={() => switchMode("signin")} style={tabStyle(!isSignup)}>
+            Sign In
+          </button>
+          <button type="button" onClick={() => switchMode("signup")} style={tabStyle(isSignup)}>
+            Create Account
+          </button>
+        </div>
+
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            if (!disabled) submit();
+          }}
+          style={{ display: "flex", flexDirection: "column", gap: 14 }}
+        >
+          {isSignup && (
+            <label style={{ display: "block" }}>
+              <span style={LABEL_TEXT}>USERNAME</span>
+              <input
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                placeholder="Your player name"
+                autoComplete="username"
+                style={INPUT}
+              />
+            </label>
+          )}
+          <label style={{ display: "block" }}>
+            <span style={LABEL_TEXT}>EMAIL</span>
+            <input
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              type="email"
+              placeholder="you@example.com"
+              autoComplete="email"
+              style={INPUT}
+            />
+          </label>
+          <label style={{ display: "block" }}>
+            <span style={{ ...LABEL_TEXT, marginBottom: 6 }}>PASSWORD</span>
+            <input
+              value={pass}
+              onChange={(e) => setPass(e.target.value)}
+              type="password"
+              placeholder="••••••••"
+              autoComplete={isSignup ? "new-password" : "current-password"}
+              style={INPUT}
+            />
+          </label>
+
+          {error && <div style={{ font: "600 12px Inter", color: "#ff9aa8" }}>{error}</div>}
+
+          <button
+            type="submit"
+            className="btn btn-gold"
+            disabled={disabled}
+            style={{
+              width: "100%",
+              justifyContent: "center",
+              padding: 15,
+              fontSize: 15,
+              marginTop: 2,
+              opacity: disabled ? 0.7 : 1,
+              cursor: disabled ? "default" : "pointer",
+            }}
+          >
+            {disabled ? "Please wait…" : isSignup ? "Create Account" : "Sign In"}
+          </button>
+        </form>
+
+        {/* divider */}
+        <div style={{ display: "flex", alignItems: "center", gap: 12, margin: "20px 0" }}>
+          <div style={{ flex: 1, height: 1, background: "rgba(232,184,75,.16)" }} />
+          <span style={{ font: "600 11px Inter", color: "var(--ink2)" }}>or continue with</span>
+          <div style={{ flex: 1, height: 1, background: "rgba(232,184,75,.16)" }} />
+        </div>
+        <div style={{ display: "flex", gap: 10 }}>
+          {socials.map((so) => (
+            <button
+              key={so.key}
+              type="button"
+              disabled={!so.on}
+              title={so.on ? `Continue with ${so.label}` : `${so.label} sign-in is not configured yet.`}
+              onClick={() => {
+                if (!so.on) setError(`${so.label} sign-in is not configured yet.`);
+              }}
+              style={{
+                flex: 1,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                gap: 8,
+                padding: 12,
+                borderRadius: 11,
+                border: "1px solid rgba(232,184,75,.22)",
+                background: "rgba(0,0,0,.3)",
+                cursor: so.on ? "pointer" : "not-allowed",
+                opacity: so.on ? 1 : 0.45,
+              }}
+            >
+              <span style={{ font: "900 16px Inter", color: so.glyphColor }}>{so.glyph}</span>
+              <span style={{ font: "700 13px Inter", color: "#efe7fb" }}>{so.label}</span>
+            </button>
+          ))}
+        </div>
+
+        <button
+          type="button"
+          onClick={playAsGuest}
+          disabled={disabled}
+          style={{
+            width: "100%",
+            marginTop: 16,
+            padding: 12,
+            borderRadius: 11,
+            border: "1px dashed rgba(232,184,75,.3)",
+            background: "transparent",
+            color: "var(--ink)",
+            font: "700 13px Inter",
+            cursor: disabled ? "default" : "pointer",
+            opacity: disabled ? 0.7 : 1,
+          }}
+        >
+          Play as Guest
+        </button>
+        <p
+          style={{
+            margin: "18px 0 0",
+            textAlign: "center",
+            font: "400 10.5px Inter",
+            color: "var(--ink2)",
+            lineHeight: 1.5,
+          }}
+        >
+          By continuing you agree to our <b style={{ color: "var(--gold-lt)" }}>Terms</b> &amp;{" "}
+          <b style={{ color: "var(--gold-lt)" }}>Privacy Policy</b>.
+        </p>
+      </div>
+    </div>
+  );
+}
+
+export default AuthPage;

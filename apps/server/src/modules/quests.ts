@@ -1,0 +1,97 @@
+import type { FastifyInstance } from "fastify";
+import type { Quest, QuestProgress } from "@prisma/client";
+import { prisma } from "../db/client.js";
+import { ok, err } from "../lib/errors.js";
+import { applyLedger } from "../economy/ledger.js";
+import { requireAuth } from "../auth/guards.js";
+
+/**
+ * Progression: quests.
+ * GET  /api/quests            → daily + seasonal defs with the authed user's progress
+ * POST /api/quests/:id/claim  → grant reward gold once progress >= goal & unclaimed
+ *
+ * QuestProgress is keyed (userId, questId, periodKey). Daily quests reset per
+ * UTC day; seasonal quests use a single stable period. If a user has no row yet
+ * we report an honest 0 progress / unclaimed instead of fabricating one.
+ */
+
+/** Period bucket a quest currently belongs to (drives the daily reset). */
+function periodKeyFor(scope: string): string {
+  if (scope === "daily") return `daily:${new Date().toISOString().slice(0, 10)}`; // YYYY-MM-DD (UTC)
+  return `seasonal:current`;
+}
+
+function progressView(q: Quest, p: QuestProgress | undefined) {
+  const value = p?.value ?? 0;
+  const claimed = p?.claimed ?? false;
+  return {
+    id: q.id,
+    scope: q.scope,
+    title: q.title,
+    goal: q.goal,
+    rewardGold: q.rewardGold,
+    value,
+    completed: value >= q.goal,
+    claimed,
+    claimable: value >= q.goal && !claimed,
+  };
+}
+
+export async function questRoutes(app: FastifyInstance) {
+  // GET /api/quests — daily + seasonal quest defs with my progress
+  app.get("/quests", { preHandler: requireAuth }, async (req) => {
+    const userId = req.userId!;
+    const quests = await prisma.quest.findMany({
+      where: { active: true },
+      orderBy: [{ scope: "asc" }, { goal: "asc" }],
+    });
+    const periodKeys = [...new Set(quests.map((q) => periodKeyFor(q.scope)))];
+    const rows = await prisma.questProgress.findMany({
+      where: { userId, periodKey: { in: periodKeys } },
+    });
+    const byQuest = new Map<string, QuestProgress>();
+    for (const r of rows) byQuest.set(`${r.questId}:${r.periodKey}`, r);
+
+    const items = quests.map((q) => progressView(q, byQuest.get(`${q.id}:${periodKeyFor(q.scope)}`)));
+    return ok({
+      daily: items.filter((i) => i.scope === "daily"),
+      seasonal: items.filter((i) => i.scope !== "daily"),
+    });
+  });
+
+  // POST /api/quests/:id/claim — atomic gold grant + ledger, only if earned & unclaimed
+  app.post<{ Params: { id: string } }>("/quests/:id/claim", { preHandler: requireAuth }, async (req) => {
+    const userId = req.userId!;
+    const quest = await prisma.quest.findUnique({ where: { id: req.params.id } });
+    if (!quest || !quest.active) throw err.notFound("QUEST_NOT_FOUND", "Quest not found");
+
+    const periodKey = periodKeyFor(quest.scope);
+    const progress = await prisma.questProgress.findUnique({
+      where: { userId_questId_periodKey: { userId, questId: quest.id, periodKey } },
+    });
+    const value = progress?.value ?? 0;
+    if (value < quest.goal) throw err.badRequest("QUEST_INCOMPLETE", "Quest not completed yet");
+    if (progress?.claimed) throw err.conflict("QUEST_ALREADY_CLAIMED", "Reward already claimed");
+
+    // Flip claimed atomically before granting so a double request can't double-pay.
+    // upsert covers the (rare) case where the completing row was never written.
+    const claim = await prisma.questProgress.upsert({
+      where: { userId_questId_periodKey: { userId, questId: quest.id, periodKey } },
+      update: { claimed: true },
+      create: { userId, questId: quest.id, periodKey, value, claimed: true },
+    });
+
+    let balance = 0;
+    if (quest.rewardGold > 0) {
+      balance = await applyLedger(prisma, {
+        userId,
+        currency: "GOLD",
+        amount: quest.rewardGold,
+        reason: "quest",
+        refType: "quest",
+        refId: quest.id,
+      });
+    }
+    return ok({ claimed: true, rewardGold: quest.rewardGold, goldBalance: balance, questId: quest.id, value: claim.value });
+  });
+}

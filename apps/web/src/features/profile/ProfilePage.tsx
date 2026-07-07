@@ -1,15 +1,18 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAppStore } from "../../stores/appStore";
+import { useAuthStore } from "../../stores/authStore";
 
 /**
  * ProfilePage — /profile
  *
  * Faithful port of the prototype Profile screen (lines 1359-1472). Overview and
- * History tabs. Per the owner stale-data rule, all per-user stats are real/zero
- * (no fabricated win record), Trophy History and Match History show honest empty
- * states, and Achievements are shown as a "nothing unlocked yet" empty state.
- * Ambient identity (avatar, name, tier, trophy balance) comes from appStore.
+ * History tabs. Per the owner stale-data rule, all per-user stats are REAL (from
+ * the logged-in account) — zero only when the account is genuinely at zero.
+ * Trophy History and Match History still show honest empty states (no match
+ * history endpoint wired here). Identity (avatar, name, tier, trophy balance)
+ * comes from the real auth session (useAuthStore().me); when logged out we fall
+ * back to the appStore placeholder so the screen still renders sensibly.
  */
 
 // ── rank-tier ladder (art /assets/tier-*.png, floors from screen notes) ──
@@ -25,13 +28,17 @@ const TIERS: Tier[] = [
   { key: "alamat", name: "Alamat", sub: "Legend", floor: 1800, img: "/assets/tier-alamat.png" },
 ];
 
-// ── real/zero stats — no fabricated match record ──
-const STATS: { k: string; v: string; c: string }[] = [
-  { k: "Wins", v: "0", c: "var(--green)" },
-  { k: "Losses", v: "0", c: "var(--red)" },
-  { k: "Draws", v: "0", c: "var(--ink)" },
-  { k: "Win Rate", v: "0%", c: "var(--gold-lt)" },
-];
+// ── real stats derived from the account (zero only when genuinely zero) ──
+function statsFor(wins: number, losses: number, draws: number): { k: string; v: string; c: string }[] {
+  const total = wins + losses + draws;
+  const winRate = total > 0 ? Math.round((wins / total) * 100) : 0;
+  return [
+    { k: "Wins", v: wins.toLocaleString(), c: "var(--green)" },
+    { k: "Losses", v: losses.toLocaleString(), c: "var(--red)" },
+    { k: "Draws", v: draws.toLocaleString(), c: "var(--ink)" },
+    { k: "Win Rate", v: `${winRate}%`, c: "var(--gold-lt)" },
+  ];
+}
 
 /** Masked circular portrait — opaque pngs need the mask + brightness lift. */
 function Portrait({ src, size, alt }: { src: string; size: number; alt: string }) {
@@ -58,15 +65,29 @@ function Portrait({ src, size, alt }: { src: string; size: number; alt: string }
 
 export function ProfilePage() {
   const navigate = useNavigate();
-  const displayName = useAppStore((s) => s.displayName);
-  const playerTag = useAppStore((s) => s.playerTag);
-  const avatar = useAppStore((s) => s.avatar);
-  const trophies = useAppStore((s) => s.trophies);
+  const me = useAuthStore((s) => s.me);
+  const phName = useAppStore((s) => s.displayName);
+  const phTag = useAppStore((s) => s.playerTag);
+  const phAvatar = useAppStore((s) => s.avatar);
+  const phTrophies = useAppStore((s) => s.trophies);
   const showToast = useAppStore((s) => s.showToast);
 
   const [tab, setTab] = useState<"overview" | "history">("overview");
 
-  const avatarSrc = `/assets/avatars/${avatar}.png`;
+  // Real account takes precedence; fall back to the appStore placeholder when
+  // logged out so the screen never crashes or renders blank.
+  const displayName = me?.displayName ?? phName;
+  const playerTag = me?.tag ?? phTag;
+  const trophies = me?.trophies ?? phTrophies;
+  const STATS = statsFor(me?.wins ?? 0, me?.losses ?? 0, me?.draws ?? 0);
+
+  // me.avatarUrl may be a bare key ("champion"), a "/assets/..." path, or an
+  // uploaded URL — resolve all three to a renderable src.
+  const avatarSrc = me?.avatarUrl
+    ? me.avatarUrl.startsWith("/") || me.avatarUrl.startsWith("http")
+      ? me.avatarUrl
+      : `/assets/avatars/${me.avatarUrl}.png`
+    : `/assets/avatars/${phAvatar}.png`;
 
   // ── derive current tier + progress toward next from trophy balance ──
   let curIdx = 0;

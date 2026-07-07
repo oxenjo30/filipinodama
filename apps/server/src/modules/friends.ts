@@ -1,0 +1,239 @@
+import type { FastifyInstance } from "fastify";
+import { friendRequestSchema } from "@dama/shared";
+import { prisma } from "../db/client.js";
+import { ok, err } from "../lib/errors.js";
+import { requireAuth } from "../auth/guards.js";
+
+/** Public-safe user shape for friend lists / requests / suggestions. */
+function publicFriend(u: {
+  id: string;
+  username: string;
+  displayName: string;
+  tag: string;
+  avatarUrl: string | null;
+  frameId: string | null;
+  trophies: number;
+  rankTier: string;
+  lastSeenAt: Date;
+}) {
+  return {
+    id: u.id,
+    username: u.username,
+    displayName: u.displayName,
+    tag: u.tag,
+    avatarUrl: u.avatarUrl,
+    frameId: u.frameId,
+    trophies: u.trophies,
+    rankTier: u.rankTier,
+    lastSeenAt: u.lastSeenAt,
+    // presence is delivered live over sockets (presence:update); REST cannot
+    // know it authoritatively, so we report "unknown" here.
+    presence: "unknown" as const,
+  };
+}
+
+const friendSelect = {
+  id: true,
+  username: true,
+  displayName: true,
+  tag: true,
+  avatarUrl: true,
+  frameId: true,
+  trophies: true,
+  rankTier: true,
+  lastSeenAt: true,
+} as const;
+
+export async function friendRoutes(app: FastifyInstance) {
+  // GET /api/friends — accepted friends (presence unknown over REST)
+  app.get("/friends", { preHandler: requireAuth }, async (req) => {
+    const me = req.userId!;
+    const rows = await prisma.friendship.findMany({
+      where: { OR: [{ aId: me }, { bId: me }] },
+      include: {
+        a: { select: friendSelect },
+        b: { select: friendSelect },
+      },
+      orderBy: { createdAt: "desc" },
+    });
+    const friends = rows.map((f) => publicFriend(f.aId === me ? f.b : f.a));
+    return ok({ friends });
+  });
+
+  // GET /api/friends/requests — incoming + outgoing (pending only)
+  app.get("/friends/requests", { preHandler: requireAuth }, async (req) => {
+    const me = req.userId!;
+    const [incoming, outgoing] = await Promise.all([
+      prisma.friendRequest.findMany({
+        where: { toId: me, status: "pending" },
+        include: { from: { select: friendSelect } },
+        orderBy: { createdAt: "desc" },
+      }),
+      prisma.friendRequest.findMany({
+        where: { fromId: me, status: "pending" },
+        include: { to: { select: friendSelect } },
+        orderBy: { createdAt: "desc" },
+      }),
+    ]);
+    return ok({
+      incoming: incoming.map((r) => ({ id: r.id, createdAt: r.createdAt, user: publicFriend(r.from) })),
+      outgoing: outgoing.map((r) => ({ id: r.id, createdAt: r.createdAt, user: publicFriend(r.to) })),
+    });
+  });
+
+  // POST /api/friends/request  { toUserId }
+  app.post("/friends/request", { preHandler: requireAuth }, async (req) => {
+    const me = req.userId!;
+    const { toUserId } = friendRequestSchema.parse(req.body);
+    if (toUserId === me) throw err.badRequest("SELF_FRIEND", "You cannot friend yourself");
+
+    const target = await prisma.user.findUnique({ where: { id: toUserId }, select: { id: true } });
+    if (!target) throw err.notFound("USER_NOT_FOUND", "User not found");
+
+    // already friends?
+    const [aId, bId] = me < toUserId ? [me, toUserId] : [toUserId, me];
+    const existingFriendship = await prisma.friendship.findUnique({ where: { aId_bId: { aId, bId } } });
+    if (existingFriendship) throw err.conflict("ALREADY_FRIENDS", "You are already friends");
+
+    // reverse pending request? → auto-accept into a friendship
+    const reverse = await prisma.friendRequest.findUnique({
+      where: { fromId_toId: { fromId: toUserId, toId: me } },
+    });
+    if (reverse && reverse.status === "pending") {
+      await prisma.$transaction([
+        prisma.friendRequest.update({ where: { id: reverse.id }, data: { status: "accepted" } }),
+        prisma.friendship.create({ data: { aId, bId } }),
+      ]);
+      return ok({ status: "accepted" });
+    }
+
+    // upsert my outgoing request (re-send if previously declined)
+    const request = await prisma.friendRequest.upsert({
+      where: { fromId_toId: { fromId: me, toId: toUserId } },
+      update: { status: "pending", createdAt: new Date() },
+      create: { fromId: me, toId: toUserId, status: "pending" },
+    });
+
+    await prisma.notification.create({
+      data: {
+        userId: toUserId,
+        type: "friend_request",
+        title: "New friend request",
+        data: { requestId: request.id, fromUserId: me },
+      },
+    });
+
+    return ok({ status: "pending", requestId: request.id });
+  });
+
+  // POST /api/friends/request/:id/accept
+  app.post<{ Params: { id: string } }>(
+    "/friends/request/:id/accept",
+    { preHandler: requireAuth },
+    async (req) => {
+      const me = req.userId!;
+      const request = await prisma.friendRequest.findUnique({ where: { id: req.params.id } });
+      if (!request || request.toId !== me) throw err.notFound("REQUEST_NOT_FOUND", "Friend request not found");
+      if (request.status !== "pending") throw err.conflict("NOT_PENDING", "Request is no longer pending");
+
+      const [aId, bId] = request.fromId < request.toId
+        ? [request.fromId, request.toId]
+        : [request.toId, request.fromId];
+
+      await prisma.$transaction([
+        prisma.friendRequest.update({ where: { id: request.id }, data: { status: "accepted" } }),
+        prisma.friendship.upsert({
+          where: { aId_bId: { aId, bId } },
+          update: {},
+          create: { aId, bId },
+        }),
+      ]);
+
+      await prisma.notification.create({
+        data: {
+          userId: request.fromId,
+          type: "friend_accept",
+          title: "Friend request accepted",
+          data: { byUserId: me },
+        },
+      });
+
+      return ok({ status: "accepted" });
+    },
+  );
+
+  // POST /api/friends/request/:id/decline
+  app.post<{ Params: { id: string } }>(
+    "/friends/request/:id/decline",
+    { preHandler: requireAuth },
+    async (req) => {
+      const me = req.userId!;
+      const request = await prisma.friendRequest.findUnique({ where: { id: req.params.id } });
+      if (!request || request.toId !== me) throw err.notFound("REQUEST_NOT_FOUND", "Friend request not found");
+      if (request.status !== "pending") throw err.conflict("NOT_PENDING", "Request is no longer pending");
+
+      await prisma.friendRequest.update({ where: { id: request.id }, data: { status: "declined" } });
+      return ok({ status: "declined" });
+    },
+  );
+
+  // DELETE /api/friends/:userId — unfriend
+  app.delete<{ Params: { userId: string } }>(
+    "/friends/:userId",
+    { preHandler: requireAuth },
+    async (req) => {
+      const me = req.userId!;
+      const other = req.params.userId;
+      const [aId, bId] = me < other ? [me, other] : [other, me];
+      const friendship = await prisma.friendship.findUnique({ where: { aId_bId: { aId, bId } } });
+      if (!friendship) throw err.notFound("NOT_FRIENDS", "You are not friends with this user");
+
+      // also clear any resolved/pending request rows so a fresh request can be sent
+      await prisma.$transaction([
+        prisma.friendship.delete({ where: { id: friendship.id } }),
+        prisma.friendRequest.deleteMany({
+          where: {
+            OR: [
+              { fromId: me, toId: other },
+              { fromId: other, toId: me },
+            ],
+          },
+        }),
+      ]);
+      return ok({ removed: true });
+    },
+  );
+
+  // GET /api/friends/suggested — a few users who aren't already friends/pending/self
+  app.get("/friends/suggested", { preHandler: requireAuth }, async (req) => {
+    const me = req.userId!;
+
+    const [friendships, requests] = await Promise.all([
+      prisma.friendship.findMany({
+        where: { OR: [{ aId: me }, { bId: me }] },
+        select: { aId: true, bId: true },
+      }),
+      prisma.friendRequest.findMany({
+        where: { status: "pending", OR: [{ fromId: me }, { toId: me }] },
+        select: { fromId: true, toId: true },
+      }),
+    ]);
+
+    const exclude = new Set<string>([me]);
+    for (const f of friendships) exclude.add(f.aId === me ? f.bId : f.aId);
+    for (const r of requests) exclude.add(r.fromId === me ? r.toId : r.fromId);
+
+    const candidates = await prisma.user.findMany({
+      where: {
+        id: { notIn: [...exclude] },
+        isGuest: false,
+        deletedAt: null,
+      },
+      select: friendSelect,
+      orderBy: { trophies: "desc" },
+      take: 8,
+    });
+
+    return ok({ suggested: candidates.map(publicFriend) });
+  });
+}

@@ -1,0 +1,130 @@
+import type { FastifyInstance } from "fastify";
+import { z } from "zod";
+import { moveSchema } from "@dama/shared";
+import type { MatchMode, Prisma } from "@prisma/client";
+import { prisma } from "../db/client.js";
+import { ok, err } from "../lib/errors.js";
+import { requireAuth } from "../auth/guards.js";
+
+const matchQuerySchema = z.object({
+  userId: z.string().optional(),
+  mode: z.enum(["AI", "CASUAL", "RANKED", "PRIVATE", "LOCAL"]).optional(),
+  // filter by result relative to the requested userId: win | loss | draw
+  result: z.enum(["win", "loss", "draw"]).optional(),
+  cursor: z.string().optional(),
+  limit: z.coerce.number().int().min(1).max(50).default(20),
+});
+
+// POST /api/matches/local — client-reported finished offline game. mode is fixed
+// to LOCAL and never awards ranked currency, so we don't accept trophy/gold deltas.
+const localMatchSchema = z.object({
+  settings: z.object({
+    forcedMaxCapture: z.boolean(),
+    drawMoveLimit: z.number().int().positive(),
+    moveTimerSec: z.number().int().positive().optional(),
+  }),
+  moves: z.array(moveSchema),
+  winner: z.enum(["red", "blue", "draw"]).nullable().optional(),
+  reason: z.string().max(40).optional(),
+  startedAt: z.coerce.date().optional(),
+  endedAt: z.coerce.date().optional(),
+});
+
+const playerSelect = {
+  select: { id: true, username: true, displayName: true, tag: true, avatarUrl: true, frameId: true, rankTier: true, trophies: true },
+} as const;
+
+function serializeMatch(m: any) {
+  return {
+    id: m.id,
+    mode: m.mode,
+    settings: m.settings,
+    winner: m.winner,
+    reason: m.reason,
+    red: m.red ?? null,
+    blue: m.blue ?? null,
+    redTrophyDelta: m.redTrophyDelta,
+    blueTrophyDelta: m.blueTrophyDelta,
+    goldReward: m.goldReward,
+    startedAt: m.startedAt,
+    endedAt: m.endedAt,
+  };
+}
+
+export async function matchRoutes(app: FastifyInstance) {
+  // GET /api/matches?userId=&mode=&result= — paginated match history
+  app.get("/matches", { preHandler: requireAuth }, async (req) => {
+    const q = matchQuerySchema.parse(req.query);
+    const forUserId = q.userId ?? req.userId!;
+
+    const where: Prisma.MatchWhereInput = {
+      OR: [{ redId: forUserId }, { blueId: forUserId }],
+      ...(q.mode ? { mode: q.mode as MatchMode } : {}),
+    };
+
+    // result filter is relative to forUserId's side (red/blue).
+    if (q.result === "draw") {
+      where.winner = "draw";
+    } else if (q.result === "win") {
+      where.OR = [
+        { redId: forUserId, winner: "red" },
+        { blueId: forUserId, winner: "blue" },
+      ];
+      if (q.mode) where.mode = q.mode as MatchMode;
+    } else if (q.result === "loss") {
+      where.OR = [
+        { redId: forUserId, winner: "blue" },
+        { blueId: forUserId, winner: "red" },
+      ];
+      if (q.mode) where.mode = q.mode as MatchMode;
+    }
+
+    const rows = await prisma.match.findMany({
+      where,
+      orderBy: { startedAt: "desc" },
+      take: q.limit + 1,
+      ...(q.cursor ? { cursor: { id: q.cursor }, skip: 1 } : {}),
+      include: { red: playerSelect, blue: playerSelect },
+    });
+    const hasMore = rows.length > q.limit;
+    const items = hasMore ? rows.slice(0, q.limit) : rows;
+    return ok({
+      items: items.map(serializeMatch),
+      nextCursor: hasMore ? items[items.length - 1]!.id : null,
+    });
+  });
+
+  // GET /api/matches/:id — full match incl. moves[] for replay
+  app.get<{ Params: { id: string } }>("/matches/:id", { preHandler: requireAuth }, async (req) => {
+    const m = await prisma.match.findUnique({
+      where: { id: req.params.id },
+      include: { red: playerSelect, blue: playerSelect },
+    });
+    if (!m) throw err.notFound("MATCH_NOT_FOUND", "Match not found");
+    return ok({ match: { ...serializeMatch(m), moves: m.moves } });
+  });
+
+  // POST /api/matches/local — persist a finished LOCAL/offline game.
+  // mode is forced to LOCAL; NO trophy/gold is ever awarded here.
+  app.post("/matches/local", { preHandler: requireAuth }, async (req) => {
+    const input = localMatchSchema.parse(req.body);
+    const userId = req.userId!;
+    const match = await prisma.match.create({
+      data: {
+        mode: "LOCAL",
+        redId: userId, // the local player owns the record; opponent is offline
+        blueId: null,
+        settings: input.settings as unknown as Prisma.InputJsonValue,
+        moves: input.moves as unknown as Prisma.InputJsonValue,
+        winner: input.winner ?? null,
+        reason: input.reason ?? null,
+        redTrophyDelta: null,
+        blueTrophyDelta: null,
+        goldReward: 0,
+        startedAt: input.startedAt ?? new Date(),
+        endedAt: input.endedAt ?? new Date(),
+      },
+    });
+    return ok({ match: { ...serializeMatch(match), moves: match.moves } });
+  });
+}

@@ -1,51 +1,72 @@
-import { useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { api, ApiError } from "../../lib/api";
 import { useAppStore } from "../../stores/appStore";
+import { useAuthStore } from "../../stores/authStore";
 
 /**
  * SeasonPage (/season) — "Season Pass" / Ranked Season overview, ported from the
  * approved prototype (handoff/FilipinoDama Royal.dc.html lines 1549-1704).
  *
- * Sections reproduced from the prototype:
+ * Sections reproduced from the prototype (layout unchanged):
  *   • ← Home back button + "✦ RANKED SEASON ✦" eyebrow
- *   • Hero banner (season name, number, ends-in countdown, level progress, rank badge)
+ *   • Hero banner (season name, ends-in countdown, level/xp progress, rank badge)
  *   • Reward Track tab (free + premium tiers, Royal Pass unlock footer)
  *   • Season Standings tab (ranked board)
  *
- * STALE-DATA RULE: we have no real per-user progression or backend, so every
- * claim about what THIS player owns / has earned is replaced with an honest
- * empty state:
- *   - Level progress reads Level 1 · 0 XP (honest zero, 2% min bar) — no fake XP.
- *   - Rank badge shows "Unranked / Play placement matches" instead of a fake rank.
- *   - The season-end "claim your rewards" banner is removed (nothing earned).
- *   - The "Royal Pass Active" banner and per-tier "Claim/Claimed" states are
- *     removed; every reward tile shows the reward with a disabled "Locked" button
- *     (like QuestsPage), and the Unlock-Pass footer routes through showToast.
- *   - "X ready to claim" pill is removed (nothing claimable).
- *   - The Standings board is KEPT populated — that is global discovery data, like
- *     the leaderboard, not a claim the player owns a spot. The prototype's "YOU"
- *     row (a fake personal placement) is replaced with an honest "not yet ranked"
- *     footer row.
- * Season DEFINITIONS (name, tier catalog, reward labels) come straight from the
- * prototype and are catalog data, not per-user data.
+ * DATA: on mount (logged in) we GET /api/season/current → { season, hasPass, xp,
+ * tiers[] } where each tier is { tier, xp, freeReward, premiumReward, unlocked,
+ * claimed }. The hero banner shows the real season name / ends-in / xp; each
+ * reward tile shows the real reward and a Claim / Claimed / Locked button.
+ * Claiming POSTs /api/season/claim { tier } and unlocking the pass POSTs
+ * /api/season/pass — both then update balances and re-fetch. When the pass is
+ * owned the footer shows an honest "Royal Pass Active" state.
+ *
+ * LOGGED OUT / no season: no personal claim is fabricated — the banner reads
+ * Level 1 · 0 XP / Unranked and the Unlock-Pass footer prompts sign-in. The
+ * Standings board stays populated (global discovery data, like the leaderboard),
+ * with an honest "not yet ranked" YOU row.
  */
 
-const SEASON_NAME = "Season of the Rajah";
-const SEASON_NUM = "Season 12";
-const SEASON_ENDS = "18d 06h";
-
-// ── Reward-track tiers (catalog data — reward labels from the prototype) ──
+// ── reward → display cell (icon + label) from the real reward payload ──
+type Reward = { gold?: number; diamonds?: number } | null;
 type RewardCell = { tag: string; icon: string; label: string };
-type Tier = { lvl: number; free: RewardCell; prem: RewardCell };
 
-const TIERS: Tier[] = [
-  { lvl: 1, free: { tag: "FREE", icon: "🪙", label: "500 Gold" }, prem: { tag: "ROYAL", icon: "💎", label: "150 Diamonds" } },
-  { lvl: 5, free: { tag: "FREE", icon: "📦", label: "Common Chest" }, prem: { tag: "ROYAL", icon: "🎴", label: "Rajah Frame" } },
-  { lvl: 10, free: { tag: "FREE", icon: "🪙", label: "1,000 Gold" }, prem: { tag: "ROYAL", icon: "🎭", label: "Jade Piece Skin" } },
-  { lvl: 15, free: { tag: "FREE", icon: "💎", label: "80 Diamonds" }, prem: { tag: "ROYAL", icon: "📦", label: "Royal Chest" } },
-  { lvl: 20, free: { tag: "FREE", icon: "📦", label: "Rare Chest" }, prem: { tag: "ROYAL", icon: "🏵️", label: "Golden Emblem" } },
-  { lvl: 25, free: { tag: "FREE", icon: "🪙", label: "2,000 Gold" }, prem: { tag: "ROYAL", icon: "👑", label: "Rajah Crown Skin" } },
-];
+function rewardCell(r: Reward, premium: boolean): RewardCell {
+  const tag = premium ? "ROYAL" : "FREE";
+  if (!r) return { tag, icon: premium ? "👑" : "🎁", label: premium ? "Royal Reward" : "Reward" };
+  if (r.diamonds && r.diamonds > 0) return { tag, icon: "💎", label: `${r.diamonds.toLocaleString()} Diamonds` };
+  if (r.gold && r.gold > 0) return { tag, icon: "🪙", label: `${r.gold.toLocaleString()} Gold` };
+  return { tag, icon: premium ? "👑" : "🎁", label: premium ? "Royal Reward" : "Reward" };
+}
+
+// ── real season tier shape from GET /api/season/current ──
+type ApiTier = {
+  tier: number;
+  xp: number;
+  freeReward: Reward;
+  premiumReward: Reward;
+  unlocked: boolean;
+  claimed: boolean;
+};
+type SeasonData = {
+  season: { id: string; name: string; startsAt: string; endsAt: string };
+  hasPass: boolean;
+  xp: number;
+  tiers: ApiTier[];
+};
+
+// ── level model: level = number of tiers reached; XP-to-next uses tier xp gates ──
+const MAX_LEVEL_LABEL = 50;
+
+function endsInLabel(endsAt: string | undefined): string {
+  if (!endsAt) return "—";
+  const ms = new Date(endsAt).getTime() - Date.now();
+  if (!Number.isFinite(ms) || ms <= 0) return "Ended";
+  const d = Math.floor(ms / 86400000);
+  const h = Math.floor((ms % 86400000) / 3600000);
+  return `${d}d ${String(h).padStart(2, "0")}h`;
+}
 
 // ── Season standings — global discovery data (like the leaderboard). Not "yours". ──
 type BoardRow = { name: string; tier: string; tierColor: string; rating: number };
@@ -64,20 +85,55 @@ const BOARD: BoardRow[] = [
 
 const MEDALS = ["/assets/medal-1.png", "/assets/medal-2.png", "/assets/medal-3.png"];
 
-// ── locked reward button (matches QuestsPage "not started" convention) ──
-const LOCKED_BTN: React.CSSProperties = {
+// ── reward button states (matches QuestsPage claim conventions) ──
+const BTN_BASE: React.CSSProperties = {
   width: "100%",
   padding: "7px 10px",
   borderRadius: 8,
   font: "800 11px Inter",
   letterSpacing: ".3px",
+};
+const LOCKED_BTN: React.CSSProperties = {
+  ...BTN_BASE,
   border: "1px solid rgba(232,184,75,.2)",
   background: "rgba(15,8,32,.5)",
   color: "var(--ink2)",
   cursor: "default",
 };
+const CLAIM_BTN: React.CSSProperties = {
+  ...BTN_BASE,
+  border: "1px solid var(--gold)",
+  background: "linear-gradient(180deg,#f0c24b,#c98b2e)",
+  color: "#2a1607",
+  cursor: "pointer",
+};
+const CLAIMED_BTN: React.CSSProperties = {
+  ...BTN_BASE,
+  border: "1px solid rgba(63,191,111,.4)",
+  background: "rgba(47,143,91,.16)",
+  color: "#7ee6a4",
+  cursor: "default",
+};
 
-function RewardTile({ cell, premium, onClaim }: { cell: RewardCell; premium: boolean; onClaim: () => void }) {
+type TileState = "locked" | "claimable" | "claimed";
+
+function RewardTile({
+  cell,
+  premium,
+  state,
+  busy,
+  onClaim,
+}: {
+  cell: RewardCell;
+  premium: boolean;
+  state: TileState;
+  busy: boolean;
+  onClaim: () => void;
+}) {
+  let btn: { style: React.CSSProperties; label: string; disabled: boolean };
+  if (state === "claimed") btn = { style: CLAIMED_BTN, label: "Claimed", disabled: true };
+  else if (state === "claimable") btn = { style: CLAIM_BTN, label: busy ? "…" : "Claim", disabled: busy };
+  else btn = { style: LOCKED_BTN, label: "Locked", disabled: true };
   return (
     <div
       style={{
@@ -135,8 +191,8 @@ function RewardTile({ cell, premium, onClaim }: { cell: RewardCell; premium: boo
       >
         {cell.label}
       </div>
-      <button type="button" disabled onClick={onClaim} style={LOCKED_BTN}>
-        Locked
+      <button type="button" disabled={btn.disabled} onClick={onClaim} style={btn.style}>
+        {btn.label}
       </button>
     </div>
   );
@@ -144,11 +200,92 @@ function RewardTile({ cell, premium, onClaim }: { cell: RewardCell; premium: boo
 
 export function SeasonPage() {
   const navigate = useNavigate();
+  const me = useAuthStore((s) => s.me);
+  const patchMe = useAuthStore((s) => s.patchMe);
   const showToast = useAppStore((s) => s.showToast);
   const [tab, setTab] = useState<"rewards" | "ranking">("rewards");
 
-  const onLockedClaim = () => showToast("Reward-track rewards unlock with online play.");
-  const onUnlockPass = () => showToast("The Royal Season Pass arrives with online play.");
+  const [data, setData] = useState<SeasonData | null>(null);
+  const [claimingTier, setClaimingTier] = useState<number | null>(null);
+  const [buyingPass, setBuyingPass] = useState(false);
+
+  const load = useCallback(async () => {
+    if (!me) return;
+    try {
+      const d = await api.get<SeasonData>("/api/season/current");
+      setData(d);
+    } catch (e) {
+      if (!(e instanceof ApiError && (e.status === 401 || e.code === "NO_SEASON"))) {
+        showToast("Couldn't load the season. Try again in a moment.");
+      }
+    }
+  }, [me, showToast]);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  // Level = count of tiers whose xp gate is reached (min 1). XP shown is raw.
+  const xp = data?.xp ?? 0;
+  const hasPass = data?.hasPass ?? false;
+  const level = Math.max(1, (data?.tiers ?? []).filter((t) => xp >= t.xp).length);
+  const totalTiers = data?.tiers.length ?? 0;
+  const nextTier = (data?.tiers ?? []).find((t) => xp < t.xp);
+  const levelPct = nextTier && nextTier.xp > 0 ? Math.max(2, Math.min(100, Math.round((xp / nextTier.xp) * 100))) : xp > 0 ? 100 : 2;
+  const seasonName = data?.season.name ?? "Ranked Season";
+  const endsLabel = endsInLabel(data?.season.endsAt);
+  const passPrice = 400; // seeded season-pass diamond price
+
+  // Re-pull balances after a claim (gold/diamonds may both change).
+  const refreshBalances = useCallback(async () => {
+    try {
+      const { user } = await api.get<{ user: { gold: number; diamonds: number } }>("/api/auth/me");
+      patchMe({ gold: user.gold, diamonds: user.diamonds });
+    } catch {
+      /* non-fatal */
+    }
+  }, [patchMe]);
+
+  const onClaimTier = useCallback(
+    async (tier: number) => {
+      if (!me) {
+        showToast("Sign in to claim season rewards.");
+        return;
+      }
+      setClaimingTier(tier);
+      try {
+        const res = await api.post<{ freeReward: Reward; premiumReward: Reward }>("/api/season/claim", { tier });
+        const gold = (res.freeReward?.gold ?? 0) + (res.premiumReward?.gold ?? 0);
+        const diamonds = (res.freeReward?.diamonds ?? 0) + (res.premiumReward?.diamonds ?? 0);
+        const gained = gold ? `+${gold.toLocaleString()} Gold` : diamonds ? `+${diamonds.toLocaleString()} Diamonds` : "Reward claimed";
+        showToast(gained);
+        await Promise.all([load(), refreshBalances()]);
+      } catch (e) {
+        showToast(e instanceof ApiError ? e.message : "Couldn't claim reward.");
+      } finally {
+        setClaimingTier(null);
+      }
+    },
+    [me, showToast, load, refreshBalances],
+  );
+
+  const onUnlockPass = useCallback(async () => {
+    if (!me) {
+      showToast("Sign in to unlock the Royal Season Pass.");
+      return;
+    }
+    setBuyingPass(true);
+    try {
+      const res = await api.post<{ spentDiamonds: number; diamondBalance: number }>("/api/season/pass");
+      patchMe({ diamonds: res.diamondBalance });
+      showToast("Royal Season Pass unlocked!");
+      await load();
+    } catch (e) {
+      showToast(e instanceof ApiError ? e.message : "Couldn't unlock the season pass.");
+    } finally {
+      setBuyingPass(false);
+    }
+  }, [me, patchMe, showToast, load]);
 
   const tabStyle = (on: boolean): React.CSSProperties => ({
     padding: "10px 20px",
@@ -205,32 +342,35 @@ export function SeasonPage() {
           <div style={{ flex: 1, minWidth: 240 }}>
             <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
               <h1 style={{ margin: 0, font: "800 clamp(26px,3.4vw,38px) Cinzel,serif", color: "var(--gold-lt)" }}>
-                {SEASON_NAME}
+                {seasonName}
               </h1>
-              <span
-                style={{
-                  padding: "4px 11px",
-                  borderRadius: 100,
-                  border: "1px solid rgba(232,184,75,.3)",
-                  background: "rgba(15,8,32,.5)",
-                  font: "700 11px Inter",
-                  color: "var(--gold)",
-                }}
-              >
-                {SEASON_NUM}
-              </span>
+              {hasPass && (
+                <span
+                  style={{
+                    padding: "4px 11px",
+                    borderRadius: 100,
+                    border: "1px solid rgba(63,191,111,.4)",
+                    background: "rgba(47,143,91,.16)",
+                    font: "700 11px Inter",
+                    color: "#7ee6a4",
+                  }}
+                >
+                  ROYAL PASS
+                </span>
+              )}
             </div>
             <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 8, font: "600 13px Inter", color: "var(--ink)" }}>
               <span style={{ width: 7, height: 7, borderRadius: "50%", background: "#ff8fae", boxShadow: "0 0 8px #ff8fae" }} />
-              Ends in <b style={{ color: "#ffd0d8", fontFamily: "'JetBrains Mono',monospace" }}>{SEASON_ENDS}</b>
+              Ends in <b style={{ color: "#ffd0d8", fontFamily: "'JetBrains Mono',monospace" }}>{endsLabel}</b>
             </div>
-            {/* level progress — honest zero (no fake XP earned yet) */}
+            {/* level / xp progress — real per-user progression */}
             <div style={{ marginTop: 16, maxWidth: 460 }}>
               <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", marginBottom: 7 }}>
                 <span style={{ font: "800 15px Cinzel,serif", color: "#fff" }}>
-                  Level 1 <span style={{ font: "600 12px Inter", color: "var(--ink2)" }}>/ 50</span>
+                  Level {level}{" "}
+                  <span style={{ font: "600 12px Inter", color: "var(--ink2)" }}>/ {totalTiers || MAX_LEVEL_LABEL}</span>
                 </span>
-                <span style={{ font: "600 12px Inter", color: "var(--gold-lt)" }}>0 XP</span>
+                <span style={{ font: "600 12px Inter", color: "var(--gold-lt)" }}>{xp.toLocaleString()} XP</span>
               </div>
               <div
                 style={{
@@ -241,11 +381,11 @@ export function SeasonPage() {
                   overflow: "hidden",
                 }}
               >
-                <div style={{ height: "100%", width: "2%", background: "linear-gradient(90deg,#c98b2e,#f7e2a0)", borderRadius: 100 }} />
+                <div style={{ height: "100%", width: `${levelPct}%`, background: "linear-gradient(90deg,#c98b2e,#f7e2a0)", borderRadius: 100 }} />
               </div>
             </div>
           </div>
-          {/* rank badge — honest "unranked" (no fake placement) */}
+          {/* rank badge — real trophies drive the tier; honest "unranked" when none yet */}
           <div
             style={{
               flex: "none",
@@ -259,9 +399,19 @@ export function SeasonPage() {
             <div style={{ font: "600 10px Inter", letterSpacing: "1.5px", textTransform: "uppercase", color: "var(--ink2)", marginBottom: 8 }}>
               Your Rank
             </div>
-            <div style={{ fontSize: 34, lineHeight: 1 }}>❔</div>
-            <div style={{ font: "800 15px Cinzel,serif", color: "var(--gold-lt)", marginTop: 6 }}>Unranked</div>
-            <div style={{ font: "500 11px Inter", color: "var(--ink2)" }}>Play placement matches</div>
+            {me && (me.trophies ?? 0) > 0 ? (
+              <>
+                <div style={{ fontSize: 34, lineHeight: 1 }}>🏆</div>
+                <div style={{ font: "800 15px Cinzel,serif", color: "var(--gold-lt)", marginTop: 6 }}>{me.rankTier}</div>
+                <div style={{ font: "500 11px 'JetBrains Mono',monospace", color: "var(--ink2)" }}>{me.trophies.toLocaleString()} 🏆</div>
+              </>
+            ) : (
+              <>
+                <div style={{ fontSize: 34, lineHeight: 1 }}>❔</div>
+                <div style={{ font: "800 15px Cinzel,serif", color: "var(--gold-lt)", marginTop: 6 }}>Unranked</div>
+                <div style={{ font: "500 11px Inter", color: "var(--ink2)" }}>Play placement matches</div>
+              </>
+            )}
           </div>
         </div>
       </div>
@@ -284,27 +434,43 @@ export function SeasonPage() {
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, marginBottom: 16, flexWrap: "wrap" }}>
               <span style={{ font: "800 19px Cinzel,serif", color: "var(--gold-lt)" }}>Reward Track</span>
             </div>
-            <div style={{ display: "flex", gap: 14, overflowX: "auto", padding: "4px 2px 12px" }}>
-              {TIERS.map((t) => (
-                <div key={t.lvl} style={{ flex: "none", width: 138, display: "flex", flexDirection: "column", gap: 11 }}>
-                  <div
-                    style={{
-                      textAlign: "center",
-                      font: "800 13px 'JetBrains Mono',monospace",
-                      color: "var(--gold-lt)",
-                      padding: "6px 0",
-                      borderRadius: 8,
-                      background: "rgba(0,0,0,.28)",
-                      border: "1px solid rgba(232,184,75,.16)",
-                    }}
-                  >
-                    LV {t.lvl}
-                  </div>
-                  <RewardTile cell={t.free} premium={false} onClaim={onLockedClaim} />
-                  <RewardTile cell={t.prem} premium onClaim={onLockedClaim} />
-                </div>
-              ))}
-            </div>
+            {!me ? (
+              <div style={{ padding: "28px 4px", textAlign: "center", font: "500 13px Inter", color: "var(--ink2)" }}>
+                Sign in to view and claim your season reward track.
+              </div>
+            ) : !data ? (
+              <div style={{ padding: "28px 4px", textAlign: "center", font: "500 13px Inter", color: "var(--ink2)" }}>
+                No active season right now — check back soon.
+              </div>
+            ) : (
+              <div style={{ display: "flex", gap: 14, overflowX: "auto", padding: "4px 2px 12px" }}>
+                {data.tiers.map((t) => {
+                  const freeState: TileState = t.claimed ? "claimed" : t.unlocked ? "claimable" : "locked";
+                  // Premium reward is claimable only with the pass (and once claimed, the whole tier is marked claimed).
+                  const premState: TileState = t.claimed ? "claimed" : t.unlocked && hasPass ? "claimable" : "locked";
+                  const busy = claimingTier === t.tier;
+                  return (
+                    <div key={t.tier} style={{ flex: "none", width: 138, display: "flex", flexDirection: "column", gap: 11 }}>
+                      <div
+                        style={{
+                          textAlign: "center",
+                          font: "800 13px 'JetBrains Mono',monospace",
+                          color: "var(--gold-lt)",
+                          padding: "6px 0",
+                          borderRadius: 8,
+                          background: "rgba(0,0,0,.28)",
+                          border: "1px solid rgba(232,184,75,.16)",
+                        }}
+                      >
+                        LV {t.tier}
+                      </div>
+                      <RewardTile cell={rewardCell(t.freeReward, false)} premium={false} state={freeState} busy={busy} onClaim={() => onClaimTier(t.tier)} />
+                      <RewardTile cell={rewardCell(t.premiumReward, true)} premium state={premState} busy={busy} onClaim={() => onClaimTier(t.tier)} />
+                    </div>
+                  );
+                })}
+              </div>
+            )}
             <div style={{ font: "500 12px Inter", color: "var(--ink2)", marginTop: 6 }}>
               Free rewards unlock as you level up. <b style={{ color: "var(--gold-lt)" }}>Royal Pass</b> unlocks the premium reward on every level.
             </div>
@@ -325,30 +491,55 @@ export function SeasonPage() {
           >
             <span style={{ font: "800 34px", lineHeight: 1 }}>👑</span>
             <div style={{ flex: 1, minWidth: 220 }}>
-              <div style={{ font: "800 18px Cinzel,serif", color: "var(--gold-lt)" }}>Unlock the Royal Season Pass</div>
+              <div style={{ font: "800 18px Cinzel,serif", color: "var(--gold-lt)" }}>
+                {hasPass ? "Royal Season Pass Active" : "Unlock the Royal Season Pass"}
+              </div>
               <div style={{ font: "500 13px Inter", color: "var(--ink)", lineHeight: 1.5, marginTop: 4 }}>
-                Claim the premium reward on every level — exclusive skins, frames, and bonus Diamonds all season long.
+                {hasPass
+                  ? "You own the pass — claim the premium reward on every level you reach this season."
+                  : "Claim the premium reward on every level — exclusive skins, frames, and bonus Diamonds all season long."}
               </div>
             </div>
-            <button
-              onClick={onUnlockPass}
-              style={{
-                flex: "none",
-                display: "flex",
-                alignItems: "center",
-                gap: 8,
-                padding: "13px 24px",
-                borderRadius: 11,
-                border: "1px solid var(--gold)",
-                background: "linear-gradient(180deg,#f0c24b,#c98b2e)",
-                color: "#2a1607",
-                font: "800 14px Inter",
-                cursor: "pointer",
-              }}
-            >
-              <img src="/assets/ic-gem.png" alt="" style={{ width: 18, height: 18, objectFit: "contain" }} />
-              900 · Unlock
-            </button>
+            {hasPass ? (
+              <span
+                style={{
+                  flex: "none",
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 8,
+                  padding: "13px 24px",
+                  borderRadius: 11,
+                  border: "1px solid rgba(63,191,111,.4)",
+                  background: "rgba(47,143,91,.16)",
+                  color: "#7ee6a4",
+                  font: "800 14px Inter",
+                }}
+              >
+                ✓ Active
+              </span>
+            ) : (
+              <button
+                onClick={onUnlockPass}
+                disabled={buyingPass}
+                style={{
+                  flex: "none",
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 8,
+                  padding: "13px 24px",
+                  borderRadius: 11,
+                  border: "1px solid var(--gold)",
+                  background: "linear-gradient(180deg,#f0c24b,#c98b2e)",
+                  color: "#2a1607",
+                  font: "800 14px Inter",
+                  cursor: buyingPass ? "default" : "pointer",
+                  opacity: buyingPass ? 0.7 : 1,
+                }}
+              >
+                <img src="/assets/ic-gem.png" alt="" style={{ width: 18, height: 18, objectFit: "contain" }} />
+                {buyingPass ? "…" : `${passPrice} · Unlock`}
+              </button>
+            )}
           </div>
         </div>
       )}

@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Outlet, useLocation, useNavigate } from "react-router-dom";
 import { rankTierFor } from "@dama/shared";
 import { useAppStore } from "../../stores/appStore";
+import { useAuthStore } from "../../stores/authStore";
 import { ICONS, BRAND, avatar as avatarUrl } from "../../lib/assets";
 import { Toasts } from "../shared/Toasts";
 
@@ -27,29 +28,50 @@ function Icon({ src, alt, size = 18 }: { src: string; alt: string; size?: number
 export function AppLayout() {
   const navigate = useNavigate();
   const { pathname } = useLocation();
-  const displayName = useAppStore((s) => s.displayName);
-  const playerTag = useAppStore((s) => s.playerTag);
+
+  // Real logged-in user (from the auth session) takes precedence; fall back to the
+  // appStore placeholder only when logged out.
+  const me = useAuthStore((s) => s.me);
+  const logout = useAuthStore((s) => s.logout);
+
+  const phName = useAppStore((s) => s.displayName);
+  const phTag = useAppStore((s) => s.playerTag);
   const av = useAppStore((s) => s.avatar);
-  const gold = useAppStore((s) => s.gold);
-  const diamonds = useAppStore((s) => s.diamonds);
-  const trophies = useAppStore((s) => s.trophies);
+  const phGold = useAppStore((s) => s.gold);
+  const phDiamonds = useAppStore((s) => s.diamonds);
+  const phTrophies = useAppStore((s) => s.trophies);
   const showToast = useAppStore((s) => s.showToast);
   const [acctOpen, setAcctOpen] = useState(false);
 
+  const displayName = me?.displayName ?? phName;
+  const playerTag = me?.tag ?? phTag;
+  const gold = me?.gold ?? phGold;
+  const diamonds = me?.diamonds ?? phDiamonds;
+  const trophies = me?.trophies ?? phTrophies;
+  const avatarSrc = me?.avatarUrl ?? av;
+
   const tier = rankTierFor(trophies);
   const isOn = (to: string) => (to === "/" ? pathname === "/" : pathname.startsWith(to));
+
+  async function signOut() {
+    await logout();
+    showToast("Signed out.");
+    navigate("/login");
+  }
 
   const acctItems = [
     { icon: "👤", label: "My Profile", on: () => navigate("/profile") },
     { icon: "🎒", label: "Inventory", on: () => showToast("Inventory is coming soon.") },
     { icon: "🧾", label: "Orders", on: () => showToast("Orders are coming soon.") },
     { icon: "⚙️", label: "Settings", on: () => navigate("/settings") },
-    { icon: "🚪", label: "Sign Out", on: () => showToast("Accounts arrive with online play.") },
+    me
+      ? { icon: "🚪", label: "Sign Out", on: signOut }
+      : { icon: "🔑", label: "Sign In", on: () => navigate("/login") },
   ];
 
   const avatarToken = (
     <div style={{ width: 40, height: 40, borderRadius: "50%", overflow: "hidden", border: "2px solid var(--gold)", flex: "none" }}>
-      <img src={avatarUrl(av)} alt="" style={{ width: "100%", height: "100%", objectFit: "cover", filter: "brightness(1.25)" }} />
+      <img src={avatarUrl(avatarSrc)} alt="" style={{ width: "100%", height: "100%", objectFit: "cover", filter: "brightness(1.25)" }} />
     </div>
   );
 
@@ -88,6 +110,11 @@ export function AppLayout() {
               <button onClick={() => showToast("Notifications arrive with online play.")} title="Notifications" style={{ position: "relative", width: 40, height: 40, borderRadius: 10, border: "1px solid rgba(232,184,75,.35)", background: "rgba(15,8,32,.6)", color: "var(--gold-lt)", cursor: "pointer", fontSize: 18 }}>
                 🔔
               </button>
+              {!me && (
+                <button onClick={() => navigate("/login")} className="btn btn-gold fd-hide-narrow" style={{ padding: "9px 18px", fontSize: 13 }}>
+                  Sign In
+                </button>
+              )}
               <div style={{ position: "relative" }}>
                 <div onClick={() => setAcctOpen((v) => !v)} style={{ display: "flex", alignItems: "center", gap: 10, paddingLeft: 6, cursor: "pointer" }}>
                   {avatarToken}

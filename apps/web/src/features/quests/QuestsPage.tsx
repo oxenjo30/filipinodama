@@ -1,44 +1,43 @@
+import { useCallback, useEffect, useState } from "react";
+import { api, ApiError } from "../../lib/api";
 import { useAppStore } from "../../stores/appStore";
+import { useAuthStore } from "../../stores/authStore";
 
 /**
  * QuestsPage (/quests) — ported faithfully from the approved prototype
- * (handoff lines 1473-1548). Daily + seasonal quest definitions with progress
- * bars and gold rewards.
+ * (handoff lines 1473-1548). Daily + seasonal quest rows with progress bars and
+ * gold rewards. Same visual layout — now driven by REAL backend data.
  *
- * STALE-DATA RULE: we have no real per-user match activity yet, so ALL quest
- * progress is honest ZERO (0 / goal). Every quest therefore renders in the
- * "not started" state — purple bar at 2% (matches prototype's min-2% rule),
- * a disabled "Locked" claim button, and the muted row styling. No quest is
- * ever shown as done/claimable, so Claim never fires against fake progress.
- * The quest DEFINITIONS (titles, goals, rewards) come straight from the JS.
+ * DATA: on mount (when logged in) we GET /api/quests → { daily, seasonal } where
+ * each row has { id, title, goal, rewardGold, value, completed, claimed,
+ * claimable }. Progress bars, N/goal counters, and the claim button reflect the
+ * real per-user state. Claiming POSTs /api/quests/:id/claim, then updates the
+ * gold balance in the auth store and re-fetches so the row flips to "Claimed".
+ *
+ * LOGGED OUT: no fetch fires; every row renders in the honest "not started"
+ * state (0 / goal, Locked button) and the header prompts sign-in — no crash.
  */
 
 type Quest = {
   id: string;
+  scope: string;
   title: string;
-  desc: string;
   goal: number;
-  reward: number;
+  rewardGold: number;
+  value: number;
+  completed: boolean;
+  claimed: boolean;
+  claimable: boolean;
 };
 
-const dailyQuests: Quest[] = [
-  { id: "d_play", title: "Into the Arena", desc: "Play 2 matches today", goal: 2, reward: 150 },
-  { id: "d_win", title: "Taste of Victory", desc: "Win 2 matches today", goal: 2, reward: 300 },
-  { id: "d_cap", title: "Aggressor", desc: "Capture 12 pieces today", goal: 12, reward: 250 },
-];
-
-const seasonQuests: Quest[] = [
-  { id: "s_ranked", title: "Ranked Climber", desc: "Win 10 ranked matches", goal: 10, reward: 1000 },
-  { id: "s_play", title: "Centurion", desc: "Play 25 matches", goal: 25, reward: 1200 },
-  { id: "s_streak", title: "Unstoppable", desc: "Win 5 matches in a row", goal: 5, reward: 900 },
-  { id: "s_cap", title: "Grand Capturer", desc: "Capture 100 pieces", goal: 100, reward: 1500 },
-];
-
-// ── "not started" state styling (verbatim from the prototype mkQ else-branch) ──
+// ── row styling (verbatim from the prototype conventions) ──
 const ROW_BORDER = "rgba(232,184,75,.16)";
 const ROW_BG = "rgba(255,255,255,.02)";
 const BAR_FILL = "linear-gradient(90deg,#b98bff,#7a5bd6)";
-const BTN_STYLE: React.CSSProperties = {
+const BAR_FILL_DONE = "linear-gradient(90deg,#5fd48a,#2f8f5b)";
+
+// Locked / not-yet-claimable button (matches the prototype else-branch).
+const BTN_LOCKED: React.CSSProperties = {
   flex: "none",
   padding: "8px 15px",
   borderRadius: 9,
@@ -50,9 +49,38 @@ const BTN_STYLE: React.CSSProperties = {
   color: "var(--ink2)",
   cursor: "default",
 };
+// Claimable — active gold button.
+const BTN_CLAIM: React.CSSProperties = {
+  flex: "none",
+  padding: "8px 15px",
+  borderRadius: 9,
+  font: "800 12px Inter",
+  letterSpacing: ".4px",
+  whiteSpace: "nowrap",
+  border: "1px solid var(--gold)",
+  background: "linear-gradient(180deg,#f0c24b,#c98b2e)",
+  color: "#2a1607",
+  cursor: "pointer",
+};
+// Already claimed — muted "done" pill.
+const BTN_CLAIMED: React.CSSProperties = {
+  ...BTN_LOCKED,
+  border: "1px solid rgba(63,191,111,.4)",
+  background: "rgba(47,143,91,.16)",
+  color: "#7ee6a4",
+};
 
-function QuestRow({ q, onClaim }: { q: Quest; onClaim: () => void }) {
-  const cur = 0; // honest zero — no real activity yet
+function QuestRow({ q, busy, onClaim }: { q: Quest; busy: boolean; onClaim: (id: string) => void }) {
+  const cur = Math.min(q.value, q.goal);
+  // Prototype rule: min 2% so an empty bar is still visible.
+  const pct = Math.max(2, Math.min(100, Math.round((cur / Math.max(1, q.goal)) * 100)));
+  const done = q.completed;
+
+  let btn: { style: React.CSSProperties; label: string; disabled: boolean };
+  if (q.claimed) btn = { style: BTN_CLAIMED, label: "Claimed", disabled: true };
+  else if (q.claimable) btn = { style: BTN_CLAIM, label: busy ? "…" : "Claim", disabled: busy };
+  else btn = { style: BTN_LOCKED, label: "Locked", disabled: true };
+
   return (
     <div
       style={{
@@ -68,7 +96,6 @@ function QuestRow({ q, onClaim }: { q: Quest; onClaim: () => void }) {
       <div style={{ flex: 1, minWidth: 0 }}>
         <div style={{ display: "flex", alignItems: "baseline", gap: 10, marginBottom: 9, flexWrap: "wrap" }}>
           <span style={{ font: "700 15px Inter", color: "#f2e9d2" }}>{q.title}</span>
-          <span style={{ font: "500 12.5px Inter", color: "var(--ink2)" }}>{q.desc}</span>
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 11 }}>
           <div
@@ -81,7 +108,7 @@ function QuestRow({ q, onClaim }: { q: Quest; onClaim: () => void }) {
               border: "1px solid rgba(232,184,75,.12)",
             }}
           >
-            <div style={{ height: "100%", width: "2%", background: BAR_FILL, borderRadius: 6 }} />
+            <div style={{ height: "100%", width: `${pct}%`, background: done ? BAR_FILL_DONE : BAR_FILL, borderRadius: 6 }} />
           </div>
           <span style={{ flex: "none", font: "700 12px 'JetBrains Mono',monospace", color: "var(--ink)" }}>
             {cur} / {q.goal}
@@ -108,10 +135,10 @@ function QuestRow({ q, onClaim }: { q: Quest; onClaim: () => void }) {
             whiteSpace: "nowrap",
           }}
         >
-          +{q.reward} 🪙
+          +{q.rewardGold} 🪙
         </span>
-        <button type="button" disabled onClick={onClaim} style={BTN_STYLE}>
-          Locked
+        <button type="button" disabled={btn.disabled} onClick={() => onClaim(q.id)} style={btn.style}>
+          {btn.label}
         </button>
       </div>
     </div>
@@ -119,10 +146,59 @@ function QuestRow({ q, onClaim }: { q: Quest; onClaim: () => void }) {
 }
 
 export function QuestsPage() {
-  const gold = useAppStore((s) => s.gold);
+  const me = useAuthStore((s) => s.me);
+  const patchMe = useAuthStore((s) => s.patchMe);
+  const phGold = useAppStore((s) => s.gold);
   const showToast = useAppStore((s) => s.showToast);
+  const gold = me?.gold ?? phGold;
 
-  const onClaim = () => showToast("Quest rewards arrive with online play.");
+  const [daily, setDaily] = useState<Quest[]>([]);
+  const [seasonal, setSeasonal] = useState<Quest[]>([]);
+  const [loaded, setLoaded] = useState(false);
+  const [claiming, setClaiming] = useState<string | null>(null);
+
+  const load = useCallback(async () => {
+    if (!me) return;
+    try {
+      const data = await api.get<{ daily: Quest[]; seasonal: Quest[] }>("/api/quests");
+      setDaily(data.daily);
+      setSeasonal(data.seasonal);
+    } catch (e) {
+      if (!(e instanceof ApiError && e.status === 401)) {
+        showToast("Couldn't load quests. Try again in a moment.");
+      }
+    } finally {
+      setLoaded(true);
+    }
+  }, [me, showToast]);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  const onClaim = useCallback(
+    async (id: string) => {
+      if (!me) {
+        showToast("Sign in to claim quest rewards.");
+        return;
+      }
+      setClaiming(id);
+      try {
+        const res = await api.post<{ rewardGold: number; goldBalance: number }>(`/api/quests/${id}/claim`);
+        patchMe({ gold: res.goldBalance });
+        showToast(`Claimed +${res.rewardGold} Gold!`);
+        await load(); // reflect claimed state / any other rows
+      } catch (e) {
+        showToast(e instanceof ApiError ? e.message : "Couldn't claim reward.");
+      } finally {
+        setClaiming(null);
+      }
+    },
+    [me, patchMe, showToast, load],
+  );
+
+  const dailyClaimed = daily.filter((q) => q.claimed).length;
+  const seasonalClaimed = seasonal.filter((q) => q.claimed).length;
 
   return (
     <div
@@ -151,8 +227,9 @@ export function QuestsPage() {
             Quests &amp; Achievements
           </h1>
           <p style={{ margin: 0, maxWidth: 520, font: "400 14px Inter", color: "var(--ink)", lineHeight: 1.5 }}>
-            Complete goals to earn 🪙 Gold you can spend in the Store. Daily quests refresh at midnight; seasonal goals
-            last all season.
+            {me
+              ? "Complete goals to earn 🪙 Gold you can spend in the Store. Daily quests refresh at midnight; seasonal goals last all season."
+              : "Sign in to track your quest progress and claim 🪙 Gold rewards. Daily quests refresh at midnight; seasonal goals last all season."}
           </p>
         </div>
         <span className="pill" style={{ color: "#f2d493", whiteSpace: "nowrap" }}>
@@ -192,12 +269,22 @@ export function QuestsPage() {
               RESETS AT MIDNIGHT
             </span>
           </div>
-          <span style={{ font: "700 12px Inter", color: "var(--ink2)" }}>0 / {dailyQuests.length} claimed</span>
+          <span style={{ font: "700 12px Inter", color: "var(--ink2)" }}>
+            {dailyClaimed} / {daily.length} claimed
+          </span>
         </div>
         <div style={{ display: "flex", flexDirection: "column", gap: 12, paddingBottom: 14 }}>
-          {dailyQuests.map((q) => (
-            <QuestRow key={q.id} q={q} onClaim={onClaim} />
-          ))}
+          {!me ? (
+            <div style={{ padding: "22px 4px", textAlign: "center", font: "500 13px Inter", color: "var(--ink2)" }}>
+              Sign in to see your daily quests.
+            </div>
+          ) : loaded && daily.length === 0 ? (
+            <div style={{ padding: "22px 4px", textAlign: "center", font: "500 13px Inter", color: "var(--ink2)" }}>
+              No daily quests right now — check back soon.
+            </div>
+          ) : (
+            daily.map((q) => <QuestRow key={q.id} q={q} busy={claiming === q.id} onClaim={onClaim} />)
+          )}
         </div>
       </div>
 
@@ -228,12 +315,22 @@ export function QuestsPage() {
               SEASON OF THE RAJAH
             </span>
           </div>
-          <span style={{ font: "700 12px Inter", color: "var(--ink2)" }}>0 / {seasonQuests.length} claimed</span>
+          <span style={{ font: "700 12px Inter", color: "var(--ink2)" }}>
+            {seasonalClaimed} / {seasonal.length} claimed
+          </span>
         </div>
         <div style={{ display: "flex", flexDirection: "column", gap: 12, paddingBottom: 14 }}>
-          {seasonQuests.map((q) => (
-            <QuestRow key={q.id} q={q} onClaim={onClaim} />
-          ))}
+          {!me ? (
+            <div style={{ padding: "22px 4px", textAlign: "center", font: "500 13px Inter", color: "var(--ink2)" }}>
+              Sign in to see your seasonal goals.
+            </div>
+          ) : loaded && seasonal.length === 0 ? (
+            <div style={{ padding: "22px 4px", textAlign: "center", font: "500 13px Inter", color: "var(--ink2)" }}>
+              No seasonal goals right now — check back soon.
+            </div>
+          ) : (
+            seasonal.map((q) => <QuestRow key={q.id} q={q} busy={claiming === q.id} onClaim={onClaim} />)
+          )}
         </div>
       </div>
     </div>

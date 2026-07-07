@@ -7,6 +7,16 @@ import { env } from "./config/env.js";
 import { prisma } from "./db/client.js";
 import { ApiError, fail } from "./lib/errors.js";
 import { authRoutes } from "./auth/routes.js";
+import { userRoutes } from "./modules/users.js";
+import { friendRoutes } from "./modules/friends.js";
+import { guildRoutes } from "./modules/guilds.js";
+import { storeRoutes } from "./modules/store.js";
+import { questRoutes } from "./modules/quests.js";
+import { seasonRoutes } from "./modules/seasons.js";
+import { leaderboardRoutes } from "./modules/leaderboard.js";
+import { matchRoutes } from "./modules/matches.js";
+import { learnRoutes } from "./modules/learn.js";
+import { notificationRoutes } from "./modules/notifications.js";
 import { registerRealtime } from "./realtime/index.js";
 
 export { prisma };
@@ -30,7 +40,17 @@ async function main() {
 
   // ── feature modules (REST) ──
   await app.register(authRoutes, { prefix: "/api/auth" });
-  // more modules register here as they land (users, store, friends, guilds, …)
+  await app.register(userRoutes, { prefix: "/api" });
+  await app.register(friendRoutes, { prefix: "/api" });
+  await app.register(guildRoutes, { prefix: "/api" });
+  await app.register(storeRoutes, { prefix: "/api" });
+  await app.register(questRoutes, { prefix: "/api" });
+  await app.register(seasonRoutes, { prefix: "/api" });
+  await app.register(leaderboardRoutes, { prefix: "/api" });
+  await app.register(matchRoutes, { prefix: "/api" });
+  await app.register(learnRoutes, { prefix: "/api" });
+  await app.register(notificationRoutes, { prefix: "/api" });
+  // more modules register here as they land
 
   await app.listen({ port: env.PORT, host: "0.0.0.0" });
 
