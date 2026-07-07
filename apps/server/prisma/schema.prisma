@@ -288,6 +288,7 @@ model Guild {
   description  String?            @db.Text
   crestKey     String?
   minTrophies  Int                @default(0)
+  joinPolicy   String             @default("open") // open | request | invite
   weeklyPoints Int                @default(0)
   createdAt    DateTime           @default(now())
   members      GuildMember[]

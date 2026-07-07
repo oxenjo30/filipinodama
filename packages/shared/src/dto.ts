@@ -55,18 +55,22 @@ export const friendRequestByTagSchema = z.object({ tag: z.string().min(1).max(16
 /** The heraldic crest a guild displays (mirrors the client's CRESTS registry). */
 export const GUILD_CREST_KEYS = ["vanguard", "crown", "swords", "citadel", "marksman", "banner"] as const;
 export const guildCrestKeySchema = z.enum(GUILD_CREST_KEYS);
+export const GUILD_JOIN_POLICIES = ["open", "request", "invite"] as const;
+export const guildJoinPolicySchema = z.enum(GUILD_JOIN_POLICIES);
 export const createGuildSchema = z.object({
   name: z.string().min(3).max(LIMITS.guildNameMax),
   tag: z.string().min(2).max(5),
   description: z.string().max(LIMITS.guildDescMax).optional(),
   crestKey: guildCrestKeySchema.optional(),
   minTrophies: z.number().int().min(0).max(5000).optional(),
+  joinPolicy: guildJoinPolicySchema.optional(),
 });
 export const updateGuildSchema = z.object({
   name: z.string().min(3).max(LIMITS.guildNameMax).optional(),
   description: z.string().max(LIMITS.guildDescMax).optional(),
   minTrophies: z.number().int().min(0).max(5000).optional(),
   crestKey: guildCrestKeySchema.optional(),
+  joinPolicy: guildJoinPolicySchema.optional(),
 });
 
 // ── chat ──

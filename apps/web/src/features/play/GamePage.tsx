@@ -91,11 +91,15 @@ export function GamePage({ mode = "ai" }: { mode?: "ai" | "local" }) {
     status,
     redCaptured,
     blueCaptured,
+    flip,
     onSquareClick,
     newGame,
     newLocalGame,
     rematch,
     surrender,
+    undo,
+    canUndo,
+    swapSides,
   } = useGameStore();
 
   const [chatDraft, setChatDraft] = useState("");
@@ -137,11 +141,15 @@ export function GamePage({ mode = "ai" }: { mode?: "ai" | "local" }) {
     }
   };
 
-  function sendChat() {
-    const msg = chatDraft.trim();
+  // Offline echo only. There is NO match-chat socket yet (see task notes), so we
+  // cannot deliver a message to an opponent. Matching the prototype's
+  // `sendGameChat`, we locally echo the text via a toast and never claim it was
+  // delivered online. Wire to a real socket when online match-chat ships.
+  function sendChat(text?: string) {
+    const msg = (text ?? chatDraft).trim();
     if (!msg) return;
     setChatDraft("");
-    showToast("In-game chat arrives with online play.");
+    showToast(`Sent: ${msg}`);
   }
 
   // "Explore Game Modes" cards → real destinations where built.
@@ -410,6 +418,29 @@ export function GamePage({ mode = "ai" }: { mode?: "ai" | "local" }) {
           </div>
         )}
 
+        {/* Untimed pill. Offline AI/local matches have no clock, but rather than
+            omit it entirely we show a static "Untimed" chip for parity with the
+            timed online layout. This never fabricates a running timer. */}
+        <div
+          style={{
+            display: "inline-flex",
+            alignItems: "center",
+            gap: 8,
+            padding: "6px 14px",
+            borderRadius: 999,
+            border: "1px solid rgba(232,184,75,.3)",
+            background: "rgba(15,8,32,.6)",
+            font: "700 12px 'JetBrains Mono',monospace",
+            color: "var(--ink2)",
+          }}
+        >
+          <span aria-hidden>⏱</span>
+          <span style={{ letterSpacing: 1 }}>—:—</span>
+          <span style={{ font: "600 11px Inter", letterSpacing: ".5px", textTransform: "uppercase" }}>
+            Untimed
+          </span>
+        </div>
+
         <div style={{ width: "min(92vw,600px)", maxWidth: "100%" }}>
           <Board
             state={state}
@@ -420,7 +451,7 @@ export function GamePage({ mode = "ai" }: { mode?: "ai" | "local" }) {
             onSquareClick={onSquareClick}
             boardTheme={boardTheme}
             skin={skin}
-            flip={false}
+            flip={flip}
           />
         </div>
 
@@ -428,14 +459,29 @@ export function GamePage({ mode = "ai" }: { mode?: "ai" | "local" }) {
           <Button
             variant="purple"
             size="sm"
-            onClick={() => showToast("Undo is coming soon.")}
+            onClick={() => undo()}
+            disabled={!canUndo()}
           >
             ↶ Undo
           </Button>
           <Button
             variant="purple"
             size="sm"
-            onClick={() => showToast("Swap sides arrives with online play.")}
+            onClick={() => {
+              swapSides();
+              // Report the perspective AFTER the toggle. `flip` here is the
+              // pre-toggle value, so the new orientation is its inverse.
+              const nowFlipped = !flip;
+              showToast(
+                isLocal
+                  ? nowFlipped
+                    ? `${P2_NAME} now sits at the bottom — board flipped.`
+                    : `${P1_NAME} now sits at the bottom — board flipped.`
+                  : nowFlipped
+                    ? "Board flipped — you now view from Blue's side."
+                    : "Board flipped — you now view from Red's side.",
+              );
+            }}
           >
             ⇅ Swap Sides
           </Button>
@@ -525,7 +571,7 @@ export function GamePage({ mode = "ai" }: { mode?: "ai" | "local" }) {
             {GAME_EMOTES.map((ch) => (
               <button
                 key={ch}
-                onClick={() => showToast("In-game chat arrives with online play.")}
+                onClick={() => sendChat(ch)}
                 style={{
                   width: 38,
                   height: 38,
@@ -558,7 +604,7 @@ export function GamePage({ mode = "ai" }: { mode?: "ai" | "local" }) {
                 font: "500 13px Inter",
               }}
             />
-            <button onClick={sendChat} className="btn btn-gold" style={{ padding: "10px 12px" }}>
+            <button onClick={() => sendChat()} className="btn btn-gold" style={{ padding: "10px 12px" }}>
               ➤
             </button>
           </div>

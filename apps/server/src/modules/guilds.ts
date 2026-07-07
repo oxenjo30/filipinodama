@@ -95,6 +95,7 @@ export async function guildRoutes(app: FastifyInstance) {
           description: g.description,
           crestKey: g.crestKey,
           minTrophies: g.minTrophies,
+          joinPolicy: g.joinPolicy,
           weeklyPoints: g.weeklyPoints,
           memberCount: g._count.members,
           createdAt: g.createdAt,
@@ -129,6 +130,7 @@ export async function guildRoutes(app: FastifyInstance) {
         description: input.description,
         crestKey: input.crestKey,
         ...(input.minTrophies !== undefined ? { minTrophies: input.minTrophies } : {}),
+        ...(input.joinPolicy !== undefined ? { joinPolicy: input.joinPolicy } : {}),
         members: { create: { userId: me, role: "LEADER" } },
       },
       include: { _count: { select: { members: true } } },
@@ -142,6 +144,7 @@ export async function guildRoutes(app: FastifyInstance) {
         description: guild.description,
         crestKey: guild.crestKey,
         minTrophies: guild.minTrophies,
+        joinPolicy: guild.joinPolicy,
         weeklyPoints: guild.weeklyPoints,
         memberCount: guild._count.members,
         createdAt: guild.createdAt,
@@ -175,6 +178,7 @@ export async function guildRoutes(app: FastifyInstance) {
           description: guild.description,
           crestKey: guild.crestKey,
           minTrophies: guild.minTrophies,
+          joinPolicy: guild.joinPolicy,
           weeklyPoints: guild.weeklyPoints,
           createdAt: guild.createdAt,
           memberCount: guild.members.length,
@@ -210,6 +214,7 @@ export async function guildRoutes(app: FastifyInstance) {
           description: input.description,
           minTrophies: input.minTrophies,
           crestKey: input.crestKey,
+          ...(input.joinPolicy !== undefined ? { joinPolicy: input.joinPolicy } : {}),
         },
       });
       return ok({
@@ -220,6 +225,7 @@ export async function guildRoutes(app: FastifyInstance) {
           description: guild.description,
           crestKey: guild.crestKey,
           minTrophies: guild.minTrophies,
+          joinPolicy: guild.joinPolicy,
           weeklyPoints: guild.weeklyPoints,
           createdAt: guild.createdAt,
         },
@@ -277,10 +283,18 @@ export async function guildRoutes(app: FastifyInstance) {
       const user = await prisma.user.findUnique({ where: { id: me }, select: { trophies: true } });
       if (!user) throw err.notFound("USER_NOT_FOUND", "User not found");
 
-      if (user.trophies >= guild.minTrophies) {
+      // Below the trophy floor → never auto-join regardless of policy.
+      if (user.trophies < guild.minTrophies) {
+        // falls through to the request flow below
+      } else if (guild.joinPolicy === "invite") {
+        // Invite-only: no self-join and no open request — must be invited.
+        throw err.forbidden("INVITE_ONLY", "This guild is invite-only");
+      } else if (guild.joinPolicy === "open") {
+        // Open + meets trophies → join immediately.
         await prisma.guildMember.create({ data: { userId: me, guildId, role: "MEMBER" } });
         return ok({ status: "joined" });
       }
+      // "request" policy (or below-floor) → create a join request below.
 
       const request = await prisma.guildJoinRequest.upsert({
         where: { guildId_userId: { guildId, userId: me } },

@@ -1,8 +1,9 @@
-import { useMemo } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { createInitialState, legalMoves, applyMove } from "@dama/game-engine";
 import { DEFAULT_SETTINGS } from "@dama/shared";
 import { Board } from "../../components";
+import { api, ApiError, type Me } from "../../lib/api";
 import { useAppStore } from "../../stores/appStore";
 import { useAuthStore } from "../../stores/authStore";
 import { ICONS } from "../../lib/assets";
@@ -36,10 +37,89 @@ const QUICK_STATS = [
   { value: "87", label: "Countries", icon: "sb-modes.png" },
 ];
 
+// Daily Challenge card is driven by the first daily quest from GET /api/quests.
+// Shape matches the quests API (same as QuestsPage): id/title/description/goal/
+// rewardGold/value/completed/claimed/claimable.
+type Quest = {
+  id: string;
+  title: string;
+  description: string | null;
+  goal: number;
+  rewardGold: number;
+  value: number;
+  completed: boolean;
+  claimed: boolean;
+  claimable: boolean;
+};
+
+// "Ends in: HHh MMm" — daily quests reset at 00:00 UTC (matches the backend
+// period rollover), so this counts down honestly to that boundary.
+function timeUntilUtcMidnight(): string {
+  const now = new Date();
+  const next = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + 1, 0, 0, 0);
+  const ms = Math.max(0, next - now.getTime());
+  const h = Math.floor(ms / 3_600_000);
+  const m = Math.floor((ms % 3_600_000) / 60_000);
+  return `${String(h).padStart(2, "0")}h ${String(m).padStart(2, "0")}m`;
+}
+
 export function HomePage() {
   const navigate = useNavigate();
   const showToast = useAppStore((s) => s.showToast);
   const me = useAuthStore((s) => s.me);
+  const patchMe = useAuthStore((s) => s.patchMe);
+
+  // ── Daily Challenge: first daily quest from the real quests API ──
+  const [dailyQuest, setDailyQuest] = useState<Quest | null>(null);
+  const [questLoaded, setQuestLoaded] = useState(false);
+  const [claiming, setClaiming] = useState(false);
+  const [endsIn, setEndsIn] = useState(timeUntilUtcMidnight());
+
+  const loadQuest = useCallback(async () => {
+    if (!me) {
+      setDailyQuest(null);
+      setQuestLoaded(true);
+      return;
+    }
+    try {
+      const data = await api.get<{ daily: Quest[]; seasonal: Quest[] }>("/api/quests");
+      setDailyQuest(data.daily[0] ?? null);
+    } catch (e) {
+      if (!(e instanceof ApiError && e.status === 401)) {
+        showToast("Couldn't load the daily challenge. Try again in a moment.");
+      }
+      setDailyQuest(null);
+    } finally {
+      setQuestLoaded(true);
+    }
+  }, [me, showToast]);
+
+  useEffect(() => {
+    void loadQuest();
+  }, [loadQuest]);
+
+  // Tick the "Ends in" countdown once a minute.
+  useEffect(() => {
+    const t = setInterval(() => setEndsIn(timeUntilUtcMidnight()), 60_000);
+    return () => clearInterval(t);
+  }, []);
+
+  const onClaimDaily = useCallback(async () => {
+    if (!dailyQuest) return;
+    setClaiming(true);
+    try {
+      const res = await api.post<{ rewardGold: number; goldBalance: number }>(
+        `/api/quests/${dailyQuest.id}/claim`,
+      );
+      patchMe({ gold: res.goldBalance });
+      showToast(`Claimed +${res.rewardGold} Gold!`);
+      await loadQuest();
+    } catch (e) {
+      showToast(e instanceof ApiError ? e.message : "Couldn't claim reward.");
+    } finally {
+      setClaiming(false);
+    }
+  }, [dailyQuest, patchMe, showToast, loadQuest]);
 
   // hero board — a real GameState after a few opening moves, for a lived-in look.
   const heroState = useMemo(() => {
@@ -111,8 +191,12 @@ export function HomePage() {
           ))}
         </div>
 
-        {/* RECENT UPDATES (platform news — full width; "Continue Playing" removed:
-            no real saved match exists yet, so no fake resume card) */}
+        {/* CONTINUE PLAYING — intentionally removed (honest): there is NO
+            active-match resume backend yet, so a "Resume Game" card would be
+            fabricated data. It returns here once active-match persistence lands
+            (a real GET for the user's in-progress match).
+
+            RECENT UPDATES (platform news) fills this row full-width for now. */}
         <div className="frame" style={{ padding: 20 }}>
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 14 }}>
             <span className="ptitle" style={{ border: "none", padding: 0, margin: 0, textAlign: "left" }}>Recent Updates</span>
@@ -136,21 +220,15 @@ export function HomePage() {
 
       {/* RIGHT RAIL */}
       <div style={{ display: "flex", flexDirection: "column", gap: 18 }}>
-        <div className="frame" style={{ padding: 20, textAlign: "center" }}>
-          <div className="ptitle">Daily Challenge</div>
-          <div style={{ display: "flex", justifyContent: "center", margin: "4px 0" }}>
-            <img src={ICONS.chest} alt="Chest" width={92} height={92} style={{ objectFit: "contain" }} />
-          </div>
-          <div style={{ font: "600 13px Inter", color: "var(--ink)", margin: "12px 0 8px" }}>Win 3 matches today</div>
-          <div style={{ height: 12, borderRadius: 100, background: "rgba(0,0,0,.4)", border: "1px solid rgba(232,184,75,.25)", overflow: "hidden" }}>
-            <div style={{ width: "0%", height: "100%", background: "linear-gradient(90deg,#3f79d6,#6fa8ff)" }} />
-          </div>
-          <div style={{ font: "700 12px 'JetBrains Mono',monospace", color: "var(--ink)", marginTop: 6 }}>0 / 3</div>
-          <div className="pill" style={{ margin: "14px auto 8px", color: "#f2d493" }}>
-            <img src={ICONS.coin} alt="" width={16} height={16} style={{ objectFit: "contain" }} /> 500
-          </div>
-          <div style={{ font: "500 11px Inter", color: "var(--ink2)" }}>Reward on completion</div>
-        </div>
+        <DailyChallengeCard
+          me={me}
+          quest={dailyQuest}
+          loaded={questLoaded}
+          claiming={claiming}
+          endsIn={endsIn}
+          onClaim={onClaimDaily}
+          onSignIn={() => navigate(`/login?next=${encodeURIComponent("/")}`)}
+        />
 
         <div className="frame" style={{ padding: 20 }}>
           <div className="ptitle">Quick Stats</div>
@@ -167,34 +245,147 @@ export function HomePage() {
           </div>
         </div>
 
-        {/* FEATURED MATCH — a real feature slot: shows a live community match.
-            Sample match for now (ambient big-platform data, like Quick Stats);
-            wires to real live-match data once match history is available. */}
+        {/* FEATURED MATCH — honest: there is NO live-spectate backend yet (no
+            public live-match feed; presence is friends-scoped only). Fabricating
+            a "MasterLink vs Taktikero · Live Match" card here would contradict
+            SpectatePage, which honestly shows "No live matches to watch right
+            now". So this slot mirrors that empty state and routes to the real
+            Spectate screen. Populates with a real featured match once a
+            live-match feed exists. */}
         <div className="frame" style={{ padding: 20 }}>
           <div className="ptitle">Featured Match</div>
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
-            <div style={{ textAlign: "center", flex: 1 }}><PlayerChip name="MasterLink" trophies="1680" av="strategist" size={56} /></div>
-            <div style={{ textAlign: "center" }}>
-              <div style={{ font: "800 20px Cinzel,serif", color: "var(--gold)" }}>VS</div>
-              <div style={{ font: "600 10px Inter", color: "#ff6b6b" }}>● Live Match</div>
+          <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 6, padding: "18px 8px 8px", textAlign: "center" }}>
+            <div style={{ fontSize: 30 }}>👁</div>
+            <div style={{ font: "700 14px Cinzel,serif", color: "var(--gold-lt)" }}>No live matches</div>
+            <div style={{ font: "400 12px/1.5 Inter", color: "var(--ink2)" }}>
+              Live spectating turns on with online play.
             </div>
-            <div style={{ textAlign: "center", flex: 1 }}><PlayerChip name="Taktikero" trophies="1720" av="sovereign" size={56} /></div>
           </div>
-          <button className="btn btn-red" onClick={() => navigate("/spectate")} style={{ width: "100%", marginTop: 16 }}>Watch Live</button>
+          <button className="btn btn-purple" onClick={() => navigate("/spectate")} style={{ width: "100%", marginTop: 12 }}>Go to Spectate</button>
         </div>
       </div>
     </div>
   );
 }
 
-function PlayerChip({ name, trophies, av, size = 58 }: { name: string; trophies: string; av: string; size?: number }) {
+/**
+ * Daily Challenge card (prototype lines 258-272) — driven by the first daily
+ * quest from GET /api/quests. Progress bar / counter / reward pill all reflect
+ * real per-user state; claimable shows a Claim button, claimed shows "✓
+ * Claimed", otherwise progress. Logged out → honest signed-out prompt (no fake
+ * numbers). Footer counts down to the next 00:00 UTC daily reset.
+ */
+function DailyChallengeCard({
+  me,
+  quest,
+  loaded,
+  claiming,
+  endsIn,
+  onClaim,
+  onSignIn,
+}: {
+  me: Me | null;
+  quest: Quest | null;
+  loaded: boolean;
+  claiming: boolean;
+  endsIn: string;
+  onClaim: () => void;
+  onSignIn: () => void;
+}) {
+  const cur = quest ? Math.min(quest.value, quest.goal) : 0;
+  // Match the prototype/QuestsPage rule: min 2% so an empty bar is still visible.
+  const pct = quest ? Math.max(2, Math.min(100, Math.round((cur / Math.max(1, quest.goal)) * 100))) : 0;
+
   return (
-    <div style={{ textAlign: "center" }}>
-      <div style={{ width: size, height: size, margin: "0 auto", borderRadius: "50%", overflow: "hidden", border: "2px solid var(--gold)" }}>
-        <img src={`/assets/avatars/${av}.png`} alt="" style={{ width: "100%", height: "100%", objectFit: "cover", filter: "brightness(1.25)" }} />
+    <div className="frame" style={{ padding: 20, textAlign: "center" }}>
+      <div className="ptitle">Daily Challenge</div>
+      <div style={{ display: "flex", justifyContent: "center", margin: "4px 0" }}>
+        <img src={ICONS.chest} alt="Chest" width={92} height={92} style={{ objectFit: "contain" }} />
       </div>
-      <div style={{ font: "700 13px Inter", marginTop: 7 }}>{name}</div>
-      <div style={{ font: "600 11px 'JetBrains Mono',monospace", color: "var(--gold)" }}>🏆 {trophies}</div>
+
+      {!me ? (
+        <>
+          <div style={{ font: "600 13px Inter", color: "var(--ink)", margin: "12px 0 8px" }}>
+            Sign in to track your daily challenge.
+          </div>
+          <button className="btn btn-blue" onClick={onSignIn} style={{ width: "100%", marginTop: 4 }}>
+            Sign In
+          </button>
+        </>
+      ) : !loaded ? (
+        <div style={{ font: "600 13px Inter", color: "var(--ink2)", margin: "18px 0" }}>Loading…</div>
+      ) : !quest ? (
+        <div style={{ font: "600 13px Inter", color: "var(--ink2)", margin: "18px 0" }}>
+          No daily challenge right now — check back soon.
+        </div>
+      ) : (
+        <>
+          <div style={{ font: "600 13px Inter", color: "var(--ink)", margin: "12px 0 8px" }}>
+            {quest.title}
+            {quest.description ? (
+              <div style={{ font: "500 11px Inter", color: "var(--ink2)", marginTop: 4 }}>{quest.description}</div>
+            ) : null}
+          </div>
+          <div style={{ height: 12, borderRadius: 100, background: "rgba(0,0,0,.4)", border: "1px solid rgba(232,184,75,.25)", overflow: "hidden" }}>
+            <div style={{ width: `${pct}%`, height: "100%", background: "linear-gradient(90deg,#3f79d6,#6fa8ff)", transition: "width .4s ease" }} />
+          </div>
+          <div style={{ font: "700 12px 'JetBrains Mono',monospace", color: "var(--ink)", marginTop: 6 }}>
+            {cur} / {quest.goal}
+          </div>
+
+          {quest.claimed ? (
+            <div
+              style={{
+                margin: "14px auto 8px",
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 6,
+                padding: "9px 18px",
+                borderRadius: 100,
+                border: "1px solid rgba(63,191,111,.5)",
+                background: "rgba(50,150,100,.14)",
+                color: "#7fe0a6",
+                font: "800 12px Inter",
+              }}
+            >
+              ✓ Claimed · {quest.rewardGold} Gold
+            </div>
+          ) : quest.claimable ? (
+            <button
+              type="button"
+              disabled={claiming}
+              onClick={onClaim}
+              style={{
+                margin: "14px auto 8px",
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 7,
+                padding: "10px 20px",
+                borderRadius: 100,
+                border: "none",
+                background: "linear-gradient(180deg,#f7e2a0,#d5a63a)",
+                color: "#2a1a06",
+                font: "800 13px Inter",
+                letterSpacing: ".4px",
+                cursor: claiming ? "default" : "pointer",
+                boxShadow: "0 3px 14px rgba(232,184,75,.45)",
+              }}
+            >
+              {claiming ? "…" : "Claim"}
+              <img src={ICONS.coin} alt="" width={16} height={16} style={{ objectFit: "contain" }} /> {quest.rewardGold}
+            </button>
+          ) : (
+            <>
+              <div className="pill" style={{ margin: "14px auto 8px", color: "#f2d493" }}>
+                <img src={ICONS.coin} alt="" width={16} height={16} style={{ objectFit: "contain" }} /> {quest.rewardGold}
+              </div>
+              <div style={{ font: "500 11px Inter", color: "var(--ink2)" }}>Reward on completion</div>
+            </>
+          )}
+        </>
+      )}
+
+      <div style={{ font: "500 11px Inter", color: "var(--ink2)", marginTop: 10 }}>Ends in: {endsIn}</div>
     </div>
   );
 }

@@ -1,12 +1,53 @@
 import { useEffect, useRef, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { rankTierFor } from "@dama/shared";
+import type { Move, Square } from "@dama/shared";
 import { Board } from "../../components";
 import { useOnlineStore } from "../../stores/onlineStore";
 import { useAuthStore } from "../../stores/authStore";
 import { useAppStore } from "../../stores/appStore";
 import { Modal } from "../shared/Modal";
 import { avatar as avatarUrl } from "../../lib/assets";
+
+/** Quick-chat emotes (prototype `gameEmotes`). */
+const GAME_EMOTES = ["👋", "😄", "😮", "😢", "👍", "🔥"];
+
+/** Rotating strategy tips for the Tip of the Day panel (static, no backend). */
+const TIPS = [
+  "Control the center. Pieces in the middle give you more options and stronger defense.",
+  "Force captures to your advantage — a chain jump can swing the whole board.",
+  "Keep your back row intact to stop the opponent from crowning kings.",
+  "Trade pieces when you're ahead; simplify toward a winning endgame.",
+  "Advance in connected pairs so a lone piece is never left undefended.",
+];
+
+/** Board square → algebraic coordinate (col letter + row number, 8×8). */
+function coord(sq: Square): string {
+  return `${String.fromCharCode(97 + sq.c)}${8 - sq.r}`;
+}
+
+/** Compact notation for a move: `a3-b4` (quiet) or `a3xc5` (capture, joined by x). */
+function notation(m: Move): string {
+  const sep = m.captures.length > 0 ? "x" : "-";
+  const path = m.path.map(coord).join(sep);
+  return `${coord(m.from)}${sep}${path}`;
+}
+
+/** A history row: move number + the red/blue plies that make it up (red opens). */
+type HistoryRow = { n: number; red: string; blue: string };
+
+/** Pair the flat server move history into numbered rows. Red moves first, then blue. */
+function toRows(history: Move[]): HistoryRow[] {
+  const rows: HistoryRow[] = [];
+  for (let i = 0; i < history.length; i += 2) {
+    rows.push({
+      n: i / 2 + 1,
+      red: notation(history[i]),
+      blue: history[i + 1] ? notation(history[i + 1]) : "",
+    });
+  }
+  return rows;
+}
 
 /**
  * OnlineMatchPage — real-time ranked/casual play against another human.
@@ -62,6 +103,21 @@ export function OnlineMatchPage() {
 
   const myTurn = !!state && !state.result && state.turn === myColor && status === "playing";
   const flip = myColor === "blue"; // blue player views from their side
+
+  // In-match Quick Chat draft. There is NO match-chat socket backend yet, so
+  // sending is HONEST: we never fabricate a message thread or an opponent reply —
+  // we only surface a "coming soon" toast. See sendChat() below.
+  const [chatDraft, setChatDraft] = useState("");
+  // Static rotating Tip of the Day (no backend needed); rotates by day-of-year.
+  const tip = TIPS[Math.floor(Date.now() / 86_400_000) % TIPS.length];
+
+  function sendChat() {
+    // TODO(match-chat): no in-match chat socket exists server-side yet. Keep this
+    // honest — do NOT append a fake local message or fake an opponent reply.
+    if (!chatDraft.trim()) return;
+    setChatDraft("");
+    showToast("In-match chat arrives soon.");
+  }
 
   // ── MATCHMAKING screen (reproduced from prototype isMatchmaking, lines 345-423) ──
   if (status === "searching" || status === "found" || (status === "idle" && !state)) {
@@ -199,9 +255,24 @@ export function OnlineMatchPage() {
   const won = end && myColor && end.result.winner === myColor;
   const draw = end && end.result.winner === "draw";
 
+  // Move History from the server-authoritative state (real data).
+  const rows = toRows(state.history);
+  // Capture counts by parity of the final history: red opens (even indices = red
+  // plies, odd = blue). A ply's captures[] length is how many enemy pieces it took.
+  let redCaps = 0;
+  let blueCaps = 0;
+  state.history.forEach((m, i) => {
+    if (i % 2 === 0) redCaps += m.captures.length;
+    else blueCaps += m.captures.length;
+  });
+
   return (
-    <div className="fd-game-grid" style={{ maxWidth: 1200, margin: "0 auto", padding: "22px 26px", display: "grid", gridTemplateColumns: "300px minmax(0,1fr)", gap: 18, alignItems: "start" }}>
-      {/* LEFT: players + controls */}
+    <div className="fd-game-grid" style={{ maxWidth: 1560, margin: "0 auto", padding: "22px 26px", display: "grid", gridTemplateColumns: "300px minmax(0,1fr) 300px", gap: 18, alignItems: "start" }}>
+      {/* LEFT: players + controls.
+          NOTE: the prototype reuses one screen and shows the "Explore Game Modes"
+          grid here too, but that navigation is not appropriate mid-match (it would
+          abandon a live server match). We intentionally diverge: during an ACTIVE
+          online match we keep only the player panels + Resign/Leave. Acceptable. */}
       <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
         <div className="frame" style={{ padding: 16, textAlign: "center" }}>
           <div style={{ font: "700 13px Cinzel,serif", color: "#8ce0ad" }}>
@@ -250,12 +321,98 @@ export function OnlineMatchPage() {
         </div>
       </div>
 
+      {/* RIGHT: move history (real) + quick chat (honest) + tip of the day */}
+      <div className="fd-game-right" style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+        {/* Move History — rendered from the server-authoritative state.history. */}
+        <div className="frame" style={{ padding: 16 }}>
+          <div className="ptitle">Move History</div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 4, maxHeight: 190, overflowY: "auto" }}>
+            {rows.length === 0 ? (
+              <div style={{ font: "500 12px Inter", color: "var(--ink2)", textAlign: "center", padding: "18px 0" }}>
+                No moves yet. Red opens.
+              </div>
+            ) : (
+              rows.map((h) => (
+                <div
+                  key={h.n}
+                  style={{
+                    display: "grid", gridTemplateColumns: "26px 1fr 1fr", gap: 6, alignItems: "center",
+                    padding: "5px 8px", borderRadius: 6,
+                    background: h.n % 2 === 0 ? "rgba(0,0,0,.25)" : "rgba(232,184,75,.06)",
+                  }}
+                >
+                  <span style={{ font: "700 11px 'JetBrains Mono',monospace", color: "var(--ink2)" }}>{h.n}</span>
+                  <span style={{ display: "flex", alignItems: "center", gap: 6, font: "600 12px 'JetBrains Mono',monospace" }}>
+                    <span style={{ width: 8, height: 8, borderRadius: "50%", background: "var(--red)" }} />
+                    {h.red}
+                  </span>
+                  <span style={{ display: "flex", alignItems: "center", gap: 6, font: "600 12px 'JetBrains Mono',monospace" }}>
+                    <span style={{ width: 8, height: 8, borderRadius: "50%", background: "var(--blue)" }} />
+                    {h.blue}
+                  </span>
+                </div>
+              ))
+            )}
+          </div>
+        </div>
+
+        {/* Quick Chat — HONEST: no match-chat socket backend exists yet, so both the
+            emote buttons and the text send only surface a "coming soon" toast. We do
+            NOT render a fake message list or fabricate an opponent. */}
+        <div className="frame" style={{ padding: 16 }}>
+          <div className="ptitle">Quick Chat</div>
+          <div style={{ display: "flex", gap: 6, flexWrap: "wrap", justifyContent: "center", marginBottom: 12 }}>
+            {GAME_EMOTES.map((ch) => (
+              <button
+                key={ch}
+                onClick={() => showToast("In-match chat arrives soon.")}
+                style={{
+                  width: 38, height: 38, borderRadius: 9,
+                  border: "1px solid rgba(232,184,75,.3)", background: "rgba(15,8,32,.5)",
+                  fontSize: 18, cursor: "pointer",
+                }}
+              >
+                {ch}
+              </button>
+            ))}
+          </div>
+          <div style={{ display: "flex", gap: 8 }}>
+            <input
+              value={chatDraft}
+              onChange={(e) => setChatDraft(e.target.value)}
+              onKeyDown={(e) => { if (e.key === "Enter") sendChat(); }}
+              placeholder="Type a message..."
+              style={{
+                flex: 1, padding: "10px 12px", borderRadius: 8,
+                border: "1px solid rgba(232,184,75,.3)", background: "rgba(0,0,0,.3)",
+                color: "#fff", font: "500 13px Inter",
+              }}
+            />
+            <button onClick={sendChat} className="btn btn-gold" style={{ padding: "10px 12px" }}>➤</button>
+          </div>
+        </div>
+
+        {/* Tip of the Day — static rotating strategy tip (no backend). */}
+        <div className="frame" style={{ padding: 16, display: "flex", gap: 12, alignItems: "flex-start" }}>
+          <span style={{ color: "var(--gold)", flex: "none" }}>💡</span>
+          <div>
+            <div style={{ font: "700 12px Inter", letterSpacing: 1, color: "var(--gold-lt)", textTransform: "uppercase", marginBottom: 5 }}>
+              Tip of the Day
+            </div>
+            <div style={{ font: "400 13px/1.5 Inter", color: "var(--ink)" }}>{tip}</div>
+          </div>
+        </div>
+      </div>
+
       {/* RESULT MODAL */}
       <Modal open={!!end}>
         <div style={{ width: 76, height: 76, margin: "0 auto 16px", borderRadius: 20,
           background: draw ? "linear-gradient(180deg,#6b6480,#3b3550)" : won ? "linear-gradient(180deg,#f0cf72,#c99a2e)" : "linear-gradient(180deg,#a83744,#6e1b24)",
           display: "flex", alignItems: "center", justifyContent: "center", fontSize: 34 }}>
           {draw ? "🤝" : won ? "👑" : "⚔"}
+        </div>
+        <div style={{ font: "700 12px Inter", letterSpacing: 2, textTransform: "uppercase", color: "var(--gold)" }}>
+          Match Complete
         </div>
         <h2 style={{ font: "800 28px Cinzel,serif", color: "var(--gold-lt)", margin: "8px 0 4px" }}>
           {draw ? "Draw" : won ? "Victory" : "Defeat"}
@@ -273,8 +430,21 @@ export function OnlineMatchPage() {
             {won && end.goldReward > 0 && <span style={{ color: "#f2d493" }}>🪙 +{end.goldReward}</span>}
           </div>
         )}
+
+        {/* Stat grid — Moves + per-side captures derived from the real final history. */}
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 10, marginBottom: 20 }}>
+          <ResultStat value={state.history.length} label="Moves" color="var(--gold-lt)" />
+          <ResultStat value={redCaps} label="Red caps" color="#f27a86" />
+          <ResultStat value={blueCaps} label="Blue caps" color="#6fa8ff" />
+        </div>
+
+        {/* Play Again — HONEST re-queue. The rematch-offer socket (rematch the SAME
+            opponent) is NOT built server-side yet, so this re-enters matchmaking and
+            pairs you with the next available player, not necessarily this opponent.
+            TODO(rematch-offer): wire a socket rematch flow, then relabel to "Rematch".
+            Do NOT fake a same-opponent rematch here. */}
         <div style={{ display: "flex", flexDirection: "column", gap: 9 }}>
-          <button className="btn btn-gold" onClick={() => { reset(); joinQueue(mode); }}>↻ Play Again</button>
+          <button className="btn btn-gold" onClick={() => { reset(); joinQueue(mode); }}>↻ Play Again (find new opponent)</button>
           <button className="btn btn-purple" onClick={() => navigate("/")}>Home</button>
         </div>
       </Modal>
@@ -318,6 +488,16 @@ function StatCell({ value, label }: { value: string; label: string }) {
 
 function Sep() {
   return <div style={{ width: 1, height: 34, background: "rgba(232,184,75,.18)" }} />;
+}
+
+// Result-modal stat tile (mirrors the vs-AI modal's ResultStat).
+function ResultStat({ value, label, color }: { value: number; label: string; color: string }) {
+  return (
+    <div style={{ padding: "14px 8px", borderRadius: 10, border: "1px solid rgba(232,184,75,.25)", background: "rgba(0,0,0,.25)" }}>
+      <div style={{ font: "700 22px 'JetBrains Mono',monospace", color }}>{value}</div>
+      <div style={{ font: "500 11px Inter", color: "var(--ink2)" }}>{label}</div>
+    </div>
+  );
 }
 
 export default OnlineMatchPage;

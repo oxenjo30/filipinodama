@@ -45,6 +45,12 @@ export type GameStore = {
   /** captured-piece tallies for the player panels / result modal */
   redCaptured: number;
   blueCaptured: number;
+  /**
+   * Board orientation. false = RED seat at the bottom (default). Swap Sides
+   * toggles this so the local players / the human can flip perspective. Purely
+   * a view concern — it never changes whose turn it is or the engine state.
+   */
+  flip: boolean;
 
   /** start a fresh vs-AI match at the given difficulty */
   newGame: (difficulty?: AiDifficulty) => void;
@@ -54,6 +60,25 @@ export type GameStore = {
   rematch: () => void;
   /** handle a tap on any board square */
   onSquareClick: (sq: Square) => void;
+  /**
+   * Revert the last human move (offline AI/local only). In AI mode this rolls
+   * back two plies (the AI's reply + the human's move) so control returns to the
+   * human; in local mode it rolls back a single ply. No-op once the game is over
+   * or when there is nothing to undo — the caller keeps the button disabled.
+   */
+  undo: () => void;
+  /**
+   * Whether an undo is currently possible (used to enable/disable the button
+   * honestly rather than showing a fake toast). True only offline, mid-game,
+   * with enough plies to roll back to a human turn.
+   */
+  canUndo: () => boolean;
+  /**
+   * Flip the board orientation. In LOCAL mode this simply swaps which seat sits
+   * at the bottom so pass-and-play players can face the board from their side.
+   * View-only: the engine state and turn are untouched.
+   */
+  swapSides: () => void;
   /**
    * Resign the match. In vs-AI mode the human (RED) resigns → AI wins. In local
    * mode, pass the colour of the side that is resigning (defaults to the side to
@@ -140,9 +165,22 @@ export const useGameStore = create<GameStore>((set, get) => {
       difficulty,
       selected: null,
       status: "playing",
+      flip: false,
       ...derive(state, null),
     });
     // RED always moves first — the human (ai mode) or Player 1 (local). No kickoff.
+  }
+
+  /**
+   * Rebuild a live GameState by replaying the first `keep` plies of `history`
+   * over a fresh initial position. Used by undo: it is the honest inverse of the
+   * engine's forward-only applyMove (there is no engine unmake). Settings are
+   * preserved so a timed/untimed match stays consistent after the rollback.
+   */
+  function rebuild(history: Move[], keep: number, settings = DEFAULT_SETTINGS): GameState {
+    let s = createInitialState(settings);
+    for (let i = 0; i < keep; i++) s = applyMove(s, history[i]);
+    return s;
   }
 
   return {
@@ -156,6 +194,7 @@ export const useGameStore = create<GameStore>((set, get) => {
     status: "playing",
     redCaptured: 0,
     blueCaptured: 0,
+    flip: false,
 
     newGame: (difficulty) => start("ai", difficulty ?? get().difficulty),
     newLocalGame: () => start("local", get().difficulty),
@@ -179,6 +218,40 @@ export const useGameStore = create<GameStore>((set, get) => {
         moveTargets: [],
         captureTargets: [],
       });
+    },
+
+    canUndo: () => {
+      const { state, mode, status } = get();
+      // Online is server-authoritative and never routed here; undo is offline-only.
+      // Never mid-AI-think (status "thinking") and never after the game is over.
+      if (status !== "playing" || state.result) return false;
+      // Local: one human ply is enough. AI: need a completed human+AI exchange
+      // (two plies) so control can return to the human on RED's turn.
+      return mode === "local" ? state.history.length >= 1 : state.history.length >= 2;
+    },
+
+    undo: () => {
+      const { state, mode, status } = get();
+      if (status !== "playing" || state.result) return;
+      const n = state.history.length;
+      // AI mode: drop the AI reply + the human move (2 plies) to hand RED the
+      // turn again. Local mode: drop a single ply so the other seat replays.
+      const drop = mode === "local" ? 1 : 2;
+      if (n < drop) return;
+      const rolled = rebuild(state.history, n - drop, state.settings);
+      set({
+        state: rolled,
+        selected: null,
+        status: "playing",
+        ...derive(rolled, null),
+      });
+    },
+
+    swapSides: () => {
+      // View-only board flip (local perspective / human perspective). Does not
+      // touch the engine state or whose turn it is. Online is server-authoritative
+      // and disabled at the UI, so this only ever runs offline.
+      set((s) => ({ flip: !s.flip }));
     },
 
     onSquareClick: (sq) => {
