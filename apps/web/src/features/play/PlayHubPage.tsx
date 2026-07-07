@@ -1,6 +1,7 @@
 import type { CSSProperties, ReactNode } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAppStore } from "../../stores/appStore";
+import { useAuthStore } from "../../stores/authStore";
 
 /**
  * PlayHubPage — "/play" Choose-Mode hub, ported verbatim from the approved
@@ -83,6 +84,18 @@ type OverviewRow = { label: string; value: string; icon: ReactNode };
 export function PlayHubPage() {
   const navigate = useNavigate();
   const showToast = useAppStore((s) => s.showToast);
+  const me = useAuthStore((s) => s.me);
+
+  // Online modes require an account. A logged-out visitor is sent to sign in
+  // first (and returned to the game afterwards). Guests count as logged in.
+  const requireLogin = (next: string) => {
+    if (me) {
+      navigate(next);
+    } else {
+      showToast("Sign in to play online.");
+      navigate(`/login?next=${encodeURIComponent(next)}`);
+    }
+  };
 
   const playModes: PlayMode[] = [
     {
@@ -91,7 +104,7 @@ export function PlayHubPage() {
       tagStyle: pmTag("#f0e2b8", "rgba(232,184,75,.15)"),
       desc: "Jump into an online game against a similar-skill player. Unrated.",
       icon: <Medal src={`${ASSET}/mode-quick.webp`} size={62} />,
-      onSelect: () => navigate("/play/online?mode=casual"),
+      onSelect: () => requireLogin("/play/online?mode=casual"),
     },
     {
       title: "Ranked Match",
@@ -99,7 +112,7 @@ export function PlayHubPage() {
       tagStyle: pmTag("#ff9aa6", "rgba(180,60,70,.18)"),
       desc: "Compete on the ladder. Win for +25 trophies to climb the rankings.",
       icon: <Medal src={`${ASSET}/mode-ranked.webp`} size={62} />,
-      onSelect: () => navigate("/play/online?mode=ranked"),
+      onSelect: () => requireLogin("/play/online?mode=ranked"),
     },
     {
       title: "Play vs AI",

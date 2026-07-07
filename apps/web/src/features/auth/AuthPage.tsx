@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { useAuthStore, ApiError } from "../../stores/authStore";
 import { BRAND } from "../../lib/assets";
 
@@ -49,6 +49,8 @@ function tabStyle(active: boolean): React.CSSProperties {
 
 export function AuthPage({ initialMode = "signin" }: { initialMode?: Mode }) {
   const navigate = useNavigate();
+  const [params] = useSearchParams();
+  const next = params.get("next") || "/";
   const providers = useAuthStore((s) => s.providers);
   const loading = useAuthStore((s) => s.loading);
   const login = useAuthStore((s) => s.login);
@@ -79,7 +81,7 @@ export function AuthPage({ initialMode = "signin" }: { initialMode?: Mode }) {
       } else {
         await login({ email: email.trim(), password: pass });
       }
-      navigate("/");
+      navigate(next);
     } catch (e) {
       setError(e instanceof ApiError ? e.message : "Something went wrong. Please try again.");
     } finally {
@@ -92,7 +94,7 @@ export function AuthPage({ initialMode = "signin" }: { initialMode?: Mode }) {
     setBusy(true);
     try {
       await guest();
-      navigate("/");
+      navigate(next);
     } catch (e) {
       setError(e instanceof ApiError ? e.message : "Something went wrong. Please try again.");
     } finally {

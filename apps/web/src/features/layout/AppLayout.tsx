@@ -29,26 +29,21 @@ export function AppLayout() {
   const navigate = useNavigate();
   const { pathname } = useLocation();
 
-  // Real logged-in user (from the auth session) takes precedence; fall back to the
-  // appStore placeholder only when logged out.
+  // The nav ALWAYS reflects the real logged-in user. When logged out we show a
+  // neutral "Guest / Sign in" state with zeroed values — never a fake identity
+  // or fake balances (no placeholder DamaMaster / Bayani / 12,480 gold).
   const me = useAuthStore((s) => s.me);
   const logout = useAuthStore((s) => s.logout);
-
-  const phName = useAppStore((s) => s.displayName);
-  const phTag = useAppStore((s) => s.playerTag);
-  const av = useAppStore((s) => s.avatar);
-  const phGold = useAppStore((s) => s.gold);
-  const phDiamonds = useAppStore((s) => s.diamonds);
-  const phTrophies = useAppStore((s) => s.trophies);
   const showToast = useAppStore((s) => s.showToast);
   const [acctOpen, setAcctOpen] = useState(false);
 
-  const displayName = me?.displayName ?? phName;
-  const playerTag = me?.tag ?? phTag;
-  const gold = me?.gold ?? phGold;
-  const diamonds = me?.diamonds ?? phDiamonds;
-  const trophies = me?.trophies ?? phTrophies;
-  const avatarSrc = me?.avatarUrl ?? av;
+  const loggedIn = !!me;
+  const displayName = me?.displayName ?? "Guest";
+  const playerTag = me?.tag ?? "";
+  const gold = me?.gold ?? 0;
+  const diamonds = me?.diamonds ?? 0;
+  const trophies = me?.trophies ?? 0;
+  const avatarSrc = me?.avatarUrl ?? "champion";
 
   const tier = rankTierFor(trophies);
   const isOn = (to: string) => (to === "/" ? pathname === "/" : pathname.startsWith(to));
