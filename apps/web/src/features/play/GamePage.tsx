@@ -5,6 +5,7 @@ import { Board, Button, Divider } from "../../components";
 import { useGameStore, HUMAN_COLOR, AI_COLOR } from "../../stores/gameStore";
 import { useSettingsStore } from "../../stores/settingsStore";
 import { useAppStore } from "../../stores/appStore";
+import { useAuthStore } from "../../stores/authStore";
 import { PlayerPanel } from "./PlayerPanel";
 import { Modal } from "../shared/Modal";
 import { emblem } from "../../lib/emblems";
@@ -66,10 +67,15 @@ export function GamePage() {
   const difficulty = useSettingsStore((s) => s.difficulty);
   const boardTheme = useSettingsStore((s) => s.boardTheme);
   const skin = useSettingsStore((s) => s.skin);
-  const displayName = useAppStore((s) => s.displayName);
-  const trophies = useAppStore((s) => s.trophies);
-  const avatar = useAppStore((s) => s.avatar);
   const showToast = useAppStore((s) => s.showToast);
+
+  // Human panel reflects the REAL signed-in account (or a guest session) — never
+  // a fake identity. Falls back to a neutral "Guest" with a zeroed rating when
+  // nobody is logged in, matching the nav's convention (see AppLayout).
+  const me = useAuthStore((s) => s.me);
+  const displayName = me?.displayName ?? "Guest";
+  const trophies = me?.trophies ?? 0;
+  const avatar = me?.avatarUrl ?? "champion";
 
   const {
     state,

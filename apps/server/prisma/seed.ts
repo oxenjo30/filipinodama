@@ -22,7 +22,7 @@ const prisma = new PrismaClient();
 const STORE = [
   // ── free defaults (granted to every new player) ──
   { id: "board-marble-default", type: "BOARD", name: "Marble & Gold", description: "The classic default board.", assetKey: "board-marble.png", previewKey: "board:board-marble.png", priceGold: 0, sortOrder: 0 },
-  { id: "skin-classic", type: "SKIN", name: "Crimson & Royal", description: "The classic default pieces.", assetKey: "classic", previewKey: "skin:classic", priceGold: 0, sortOrder: 1 },
+  { id: "skin-classic", type: "SKIN", name: "Classic", description: "The classic default pieces.", assetKey: "classic", previewKey: "skin:classic", priceGold: 0, sortOrder: 1 },
   { id: "emote-resolve", type: "EMOTE", name: "Warrior's Resolve", assetKey: "victory", previewKey: "emote:💪", priceGold: 0, sortOrder: 2 },
 
   // ── Board Themes ──

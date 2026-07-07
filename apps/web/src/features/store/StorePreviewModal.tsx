@@ -74,11 +74,26 @@ function CurIcon({ cur, size = 20 }: { cur: "gold" | "gem"; size?: number }) {
  */
 function SkinCoin({ color, skinArt, pieceSkin, label, labelColor, delay }: { color: PieceColor; skinArt?: "crimson" | "jade" | "obsidian"; pieceSkin: PieceSkin; label: string; labelColor: string; delay: string }) {
   const S = 116;
-  // Real premium skin art path; the classic default uses the flat piece webp.
-  const artFor = (king: boolean) =>
-    skinArt
-      ? A(`pieces/skins/${skinArt}/${color}-${king ? "king" : "man"}.png`)
-      : A(`pieces/${color}-${king ? "king" : "man"}.webp`);
+
+  // Default "Classic" skin (no skinArt) → render the procedural CSS disc, which
+  // is exactly what the prototype's default pieces are. NO character webp art.
+  if (!skinArt) {
+    return (
+      <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 14 }}>
+        <div style={{ width: S, height: S, position: "relative", animation: "fdcoinbob 3s ease-in-out infinite", animationDelay: delay }}>
+          <Piece color={color} king={false} skin={pieceSkin} />
+        </div>
+        <span style={{ color: "var(--gold)", font: "700 18px Inter" }}>→</span>
+        <div style={{ width: S, height: S, position: "relative", animation: "fdcoinbob 3s ease-in-out infinite", animationDelay: delay }}>
+          <Piece color={color} king skin={pieceSkin} />
+        </div>
+        <div style={{ marginTop: 6, font: "700 11px Inter", letterSpacing: "2px", textTransform: "uppercase", color: labelColor }}>{label}</div>
+      </div>
+    );
+  }
+
+  // Premium skin: real coin art with the 3D flip.
+  const artFor = (king: boolean) => A(`pieces/skins/${skinArt}/${color}-${king ? "king" : "man"}.png`);
 
   const face = (src: string, back: boolean): CSSProperties => ({
     position: "absolute",

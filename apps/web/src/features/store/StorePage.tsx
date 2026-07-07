@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState, type CSSProperties, type Rea
 import { api, ApiError } from "../../lib/api";
 import { useAppStore } from "../../stores/appStore";
 import { useAuthStore } from "../../stores/authStore";
+import { Piece } from "../../components/Piece";
 import { StorePreviewModal, type StorePreview } from "./StorePreviewModal";
 
 /**
@@ -150,7 +151,7 @@ function PortraitThumb({ file, size }: { file: string; size: number }) {
 // ── thumbnails ── derived from the item's real assetKey (set from the prototype
 // catalog in the DB seed), so every item shows its true art. NOT a stand-in
 // catalog — price/currency/tag all come from the live API.
-type Thumb = { kind: "img"; file: string } | { kind: "portrait"; file: string };
+type Thumb = { kind: "img"; file: string } | { kind: "portrait"; file: string } | { kind: "disc" };
 
 /** Resolve the thumbnail from the item's real type + assetKey. */
 function thumbFor(it: StoreItemApi): Thumb {
@@ -160,10 +161,10 @@ function thumbFor(it: StoreItemApi): Thumb {
       // assetKey like "board-ebony.png"
       return { kind: "img", file: a.endsWith(".png") ? a : `board-${a}.png` };
     case "SKIN": {
-      // assetKey is a skin folder ("jade"/"crimson"/"obsidian"/"classic") →
-      // show the red king from that skin's real art (prototype path). The
-      // "classic" default has no skin folder, so it uses the default piece webp.
-      if (a === "classic") return { kind: "img", file: "pieces/red-king.webp" };
+      // The premium skins have real coin art at pieces/skins/<skin>/<color>-<rank>.
+      // The default "Classic" skin (assetKey "classic") has NO art in the
+      // prototype — it renders as the procedural CSS disc piece.
+      if (a === "classic") return { kind: "disc" };
       return { kind: "img", file: `pieces/skins/${a}/red-king.png` };
     }
     case "AVATAR":
@@ -184,6 +185,12 @@ function thumbFor(it: StoreItemApi): Thumb {
 }
 function renderThumb(t: Thumb, size: number): ReactNode {
   if (t.kind === "portrait") return <PortraitThumb file={t.file} size={size} />;
+  if (t.kind === "disc")
+    return (
+      <div style={{ position: "relative", width: size, height: size }}>
+        <Piece color="red" king />
+      </div>
+    );
   return <ImgThumb file={t.file} size={size} />;
 }
 
@@ -213,19 +220,12 @@ function resolve(it: StoreItemApi): ShopItem {
 // Flat piece-art PNGs that exist under public/assets for the built-in skins
 // (crimson-/jade-/obsidian-<color>-<man|king>.png). Portrait "skins" (babaylan
 // etc.) fall through to a portrait token instead.
-const SKIN_ART: Record<string, "crimson" | "jade" | "obsidian"> = {
-  "skin-classic": "crimson",
-  "skin-jade": "jade",
-  "skin-obsidian": "obsidian",
-};
-// The CSS <Piece> disc skin used when there is no flat art (only skin-classic
-// currently uses the CSS disc for its red side is handled by SKIN_ART; kept for
-// completeness / new items). "default" = classic crimson/royal disc.
-const PIECE_SKIN: Record<string, "default" | "crimson" | "jade" | "obsidian"> = {
-  "skin-classic": "default",
-  "skin-jade": "jade",
-  "skin-obsidian": "obsidian",
-};
+/** Premium skin folders that have real coin art under pieces/skins/<folder>/. */
+const SKIN_FOLDERS = new Set(["crimson", "jade", "obsidian"]);
+/** The premium skin folder for an item, from its assetKey; undefined = default. */
+function skinArtOf(assetKey: string): "crimson" | "jade" | "obsidian" | undefined {
+  return SKIN_FOLDERS.has(assetKey) ? (assetKey as "crimson" | "jade" | "obsidian") : undefined;
+}
 
 /**
  * Build the live-data StorePreview for an item. Everything visual is derived from
@@ -241,9 +241,9 @@ function previewFor(it: ShopItem, owned: boolean): StorePreview {
     return { ...base, kind: "board", boardFile: thumb.kind === "img" ? thumb.file : `${it.assetKey}` };
   }
   if (it.type === "SKIN") {
-    // Portrait-style skin (assetKey ends in .webp / thumb is a portrait) → token.
-    if (thumb.kind === "portrait") return { ...base, kind: "skin", portraitFile: thumb.file };
-    return { ...base, kind: "skin", skinArt: SKIN_ART[it.id], pieceSkin: PIECE_SKIN[it.id] ?? "default" };
+    // Premium skin → its real coin art (crimson/jade/obsidian). Default "Classic"
+    // (assetKey "classic") → the procedural CSS disc, NOT any character webp.
+    return { ...base, kind: "skin", skinArt: skinArtOf(it.assetKey), pieceSkin: "default" };
   }
   if (it.type === "AVATAR") {
     return { ...base, kind: "avatar", portraitFile: thumb.kind === "portrait" ? thumb.file : `avatars/${it.assetKey}` };
@@ -253,6 +253,7 @@ function previewFor(it: ShopItem, owned: boolean): StorePreview {
   }
   // SEASON_PASS / EMOTE / BUNDLE → fall back to the board-style big art of the thumb.
   if (thumb.kind === "portrait") return { ...base, kind: "avatar", portraitFile: thumb.file };
+  if (thumb.kind === "disc") return { ...base, kind: "skin", skinArt: undefined, pieceSkin: "default" };
   return { ...base, kind: "board", boardFile: thumb.file };
 }
 
