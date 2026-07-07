@@ -81,7 +81,7 @@ export function OnlineMatchPage() {
             </span>
           </h1>
           <p style={{ font: "400 14px Inter", color: "var(--ink)", margin: 0 }}>
-            {found ? "Get ready — your rival awaits." : "Pairing you with a player of similar skill…"}
+            {found ? "Get ready — your rival awaits." : "Finding the next available opponent…"}
           </p>
         </div>
 
@@ -160,7 +160,7 @@ export function OnlineMatchPage() {
                     <div style={{ position: "absolute", inset: 0, borderRadius: "50%", border: "3px dashed rgba(255,143,174,.4)", background: "rgba(15,8,32,.7)", display: "flex", alignItems: "center", justifyContent: "center", font: "800 30px Cinzel,serif", color: "rgba(255,143,174,.6)", animation: "fdpulse 1.6s ease-in-out infinite" }}>?</div>
                   </div>
                   <div style={{ font: "800 18px Cinzel,serif", color: "var(--ink2)" }}>Searching…</div>
-                  <div style={{ font: "600 12px Inter", color: "var(--ink)" }}>Matching your skill level</div>
+                  <div style={{ font: "600 12px Inter", color: "var(--ink)" }}>Finding an available player</div>
                 </>
               )}
             </div>
