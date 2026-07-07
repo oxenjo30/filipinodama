@@ -121,13 +121,19 @@ export function AppLayout() {
                 <div style={{ font: "900 26px Cinzel,serif", letterSpacing: "2px", background: "linear-gradient(180deg,#f7e2a0,#d5a63a)", WebkitBackgroundClip: "text", backgroundClip: "text", color: "transparent" }}>DAMA</div>
               </div>
             </div>
-            <nav className="fd-hide-narrow" style={{ flex: 1, alignItems: "center", justifyContent: "center", gap: 30 }}>
-              {NAV.map((n) => (
-                <button key={n.to} className={`navlink ${isOn(n.to) ? "on" : ""}`} onClick={() => navigate(n.to)}>
-                  {n.label}
-                </button>
-              ))}
-            </nav>
+            {/* Center nav links only for a signed-in session (registered OR guest).
+                A logged-out visitor sees a clean header: logo + Sign In + Play Now. */}
+            {me ? (
+              <nav className="fd-hide-narrow" style={{ flex: 1, alignItems: "center", justifyContent: "center", gap: 30 }}>
+                {NAV.map((n) => (
+                  <button key={n.to} className={`navlink ${isOn(n.to) ? "on" : ""}`} onClick={() => navigate(n.to)}>
+                    {n.label}
+                  </button>
+                ))}
+              </nav>
+            ) : (
+              <div style={{ flex: 1 }} />
+            )}
             <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 10 }}>
               {registered ? (
                 <>
@@ -215,9 +221,24 @@ export function AppLayout() {
                 </>
               ) : (
                 <>
-                  {/* ── LOGGED OUT: just Sign In ── */}
-                  <button onClick={() => navigate("/login")} className="btn btn-gold" style={{ padding: "9px 20px", fontSize: 13 }}>
+                  {/* ── LOGGED OUT: only Sign In (ghost) + Play Now (gold) ── */}
+                  <button
+                    onClick={() => navigate("/login")}
+                    style={{
+                      padding: "9px 18px",
+                      fontSize: 13,
+                      fontWeight: 700,
+                      borderRadius: 9,
+                      border: "1px solid rgba(232,184,75,.4)",
+                      background: "rgba(15,8,32,.6)",
+                      color: "var(--gold-lt)",
+                      cursor: "pointer",
+                    }}
+                  >
                     Sign In
+                  </button>
+                  <button onClick={() => navigate("/play")} className="btn btn-gold" style={{ padding: "9px 20px", fontSize: 13, letterSpacing: ".5px" }}>
+                    PLAY NOW
                   </button>
                 </>
               )}

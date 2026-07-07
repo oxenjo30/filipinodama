@@ -25,6 +25,8 @@ import { SpectatePage } from "./features/spectate/SpectatePage";
 import { PrivateRoomPage } from "./features/rooms/PrivateRoomPage";
 import { ContactPage } from "./features/contact/ContactPage";
 import { OrdersPage } from "./features/orders/OrdersPage";
+import { BlogPage } from "./features/blog/BlogPage";
+import { ArticlePage } from "./features/blog/ArticlePage";
 import { useAuthStore } from "./stores/authStore";
 
 /**
@@ -109,6 +111,8 @@ export function App() {
           <Route path="/community" element={<CommunityPage />} />
           <Route path="/data" element={<DataPage />} />
           <Route path="/contact" element={<ContactPage />} />
+          <Route path="/blog" element={<BlogPage />} />
+          <Route path="/blog/:slug" element={<ArticlePage />} />
           <Route path="/matchmaking" element={<ComingSoon title="Matchmaking" />} />
 
           {/* ── catch-all ── */}

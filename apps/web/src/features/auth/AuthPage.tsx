@@ -321,9 +321,11 @@ export function AuthPage({ initialMode = "signin" }: { initialMode?: Mode }) {
                     border: "none",
                     background: "transparent",
                     color: "var(--gold)",
-                    font: "600 11px Inter",
+                    font: "700 11px Inter",
                     cursor: "pointer",
                     padding: 0,
+                    textDecoration: "underline",
+                    whiteSpace: "nowrap",
                   }}
                 >
                   Forgot?
@@ -358,6 +360,26 @@ export function AuthPage({ initialMode = "signin" }: { initialMode?: Mode }) {
           >
             {disabled ? "Please wait…" : isSignup ? "Create Account" : "Sign In"}
           </button>
+
+          {/* Forgot-password — signin mode only, always visible under the button. */}
+          {!isSignup && (
+            <button
+              type="button"
+              onClick={openForgot}
+              style={{
+                display: "block",
+                margin: "12px auto 0",
+                border: "none",
+                background: "transparent",
+                color: "var(--gold)",
+                font: "600 12px Inter",
+                cursor: "pointer",
+                textDecoration: "underline",
+              }}
+            >
+              Forgot your password?
+            </button>
+          )}
         </form>
 
         {/* divider */}

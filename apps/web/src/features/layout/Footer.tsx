@@ -55,6 +55,7 @@ function SocialIcon({ label, children }: { label: string; children: React.ReactN
 }
 
 const LEGAL_LINKS: { label: string; to: string }[] = [
+  { label: "Blog", to: "/blog" },
   { label: "Privacy Policy", to: "/privacy" },
   { label: "Terms of Service", to: "/terms" },
   { label: "Community Guidelines", to: "/community" },

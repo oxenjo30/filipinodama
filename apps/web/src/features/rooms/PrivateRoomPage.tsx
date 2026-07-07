@@ -6,6 +6,7 @@ import { api, ApiError } from "../../lib/api";
 import { useAppStore } from "../../stores/appStore";
 import { useAuthStore } from "../../stores/authStore";
 import { useRoomStore, type RoomMember } from "../../stores/roomStore";
+import { ShareInviteModal } from "./ShareInviteModal";
 
 /**
  * PrivateRoomPage — Private Match / Invite lobby, ported from the approved
@@ -102,6 +103,7 @@ export function PrivateRoomPage() {
   const navigate = useNavigate();
   const [params, setParams] = useSearchParams();
   const me = useAuthStore((s) => s.me);
+  const guestSignIn = useAuthStore((s) => s.guest);
   const showToast = useAppStore((s) => s.showToast);
 
   // ── Live room state (server-owned via roomStore) ──
@@ -146,6 +148,7 @@ export function PrivateRoomPage() {
   const [time, setTime] = useState<TimeKey>("10");
   const [allowSpec, setAllowSpec] = useState(true);
   const [chatInput, setChatInput] = useState("");
+  const [shareOpen, setShareOpen] = useState(false);
 
   // The Move Timer reflects the AUTHORITATIVE room settings (server broadcast).
   const moveTimer = moveKeyFromSettings(settings);
@@ -166,13 +169,27 @@ export function PrivateRoomPage() {
   const querySpectate = params.get("spectate") === "1";
   const autoJoinedRef = useRef(false);
   useEffect(() => {
-    if (!me) return;
     if (autoJoinedRef.current) return;
     if (inRoom) return;
-    if (queryCode) {
-      autoJoinedRef.current = true;
-      void (querySpectate ? spectate(queryCode) : join(queryCode));
-    }
+    if (!queryCode) return;
+    // Guard immediately so the async guest() below can't re-trigger this effect
+    // (me flips from null → guest) into a double-join.
+    autoJoinedRef.current = true;
+    void (async () => {
+      // Zero-friction invite: a logged-out friend who clicks the shared link is
+      // dropped straight into the room as a guest (owner-approved). Create the
+      // guest account first, THEN join/spectate by the invite code.
+      if (!me) {
+        try {
+          await guestSignIn();
+        } catch {
+          autoJoinedRef.current = false;
+          showToast("Couldn't join as guest. Try signing in.");
+          return;
+        }
+      }
+      await (querySpectate ? spectate(queryCode) : join(queryCode));
+    })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [me, queryCode, querySpectate]);
 
@@ -521,7 +538,7 @@ export function PrivateRoomPage() {
               <button onClick={roomCopyLink} style={pillBtnStyle}>
                 🔗 Copy Link
               </button>
-              <button onClick={inviteFriend} style={pillBtnStyle}>
+              <button onClick={() => setShareOpen(true)} style={pillBtnStyle}>
                 ✉ Share Invite
               </button>
             </div>
@@ -913,6 +930,15 @@ export function PrivateRoomPage() {
           />
         </div>
       </div>
+
+      {/* Social-media invite sheet — opens from the "Share Invite" control. */}
+      <ShareInviteModal
+        open={shareOpen}
+        onClose={() => setShareOpen(false)}
+        roomLink={roomLink}
+        code={code ?? ""}
+        hostName={host?.name ?? "A friend"}
+      />
     </div>
   );
 }
