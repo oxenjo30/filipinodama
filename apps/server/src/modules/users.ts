@@ -1,6 +1,6 @@
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
-import { updateProfileSchema, equipSchema, deleteAccountSchema, rankTierFor } from "@dama/shared";
+import { updateProfileSchema, equipSchema, equipEmoteSchema, deleteAccountSchema, rankTierFor } from "@dama/shared";
 import type { Currency } from "@prisma/client";
 import { prisma } from "../db/client.js";
 import { ok, err } from "../lib/errors.js";
@@ -20,6 +20,7 @@ function publicProfile(u: {
   rankTier: string;
   equippedBoard: string | null;
   equippedSkin: string | null;
+  equippedEmotes: string[];
   wins: number;
   losses: number;
   draws: number;
@@ -42,6 +43,7 @@ function publicProfile(u: {
     tier: { key: tier.key, label: tier.label, sub: tier.sub, accent: tier.accent, img: tier.img },
     equippedBoard: u.equippedBoard,
     equippedSkin: u.equippedSkin,
+    equippedEmotes: u.equippedEmotes,
     wins: u.wins,
     losses: u.losses,
     draws: u.draws,
@@ -98,10 +100,11 @@ export async function userRoutes(app: FastifyInstance) {
     // Every referenced item id must be owned by the user (InventoryItem) AND
     // its ItemType must match the slot it's being equipped into — otherwise a
     // SKIN id could be dropped into the board slot (type confusion).
-    const slotType: Record<string, "BOARD" | "SKIN" | "FRAME"> = {};
+    const slotType: Record<string, "BOARD" | "SKIN" | "FRAME" | "AVATAR"> = {};
     if (input.board !== undefined && input.board) slotType[input.board] = "BOARD";
     if (input.skin !== undefined && input.skin) slotType[input.skin] = "SKIN";
     if (input.frame !== undefined && input.frame) slotType[input.frame] = "FRAME";
+    if (input.avatar !== undefined && input.avatar) slotType[input.avatar] = "AVATAR";
     const wanted = Object.keys(slotType);
     if (wanted.length) {
       const owned = await prisma.inventoryItem.findMany({
@@ -116,13 +119,48 @@ export async function userRoutes(app: FastifyInstance) {
         throw err.badRequest("WRONG_SLOT", `Item(s) wrong type for slot: ${mistyped.join(", ")}`);
     }
 
+    // The avatar slot stores the AVATAR item's assetKey on User.avatarUrl (that
+    // is how avatars render), not the item id — look it up when equipping one.
+    let avatarUrlUpdate: string | undefined;
+    if (input.avatar !== undefined && input.avatar) {
+      const item = await prisma.storeItem.findUnique({ where: { id: input.avatar }, select: { assetKey: true } });
+      avatarUrlUpdate = item?.assetKey ?? undefined;
+    }
+
     const user = await prisma.user.update({
       where: { id: userId },
       data: {
         ...(input.board !== undefined ? { equippedBoard: input.board } : {}),
         ...(input.skin !== undefined ? { equippedSkin: input.skin } : {}),
         ...(input.frame !== undefined ? { frameId: input.frame } : {}),
+        ...(avatarUrlUpdate !== undefined ? { avatarUrl: avatarUrlUpdate } : {}),
       },
+      include: guildInclude,
+    });
+    return ok({ user: publicProfile(user) });
+  });
+
+  // PATCH /api/users/me/equip-emote — toggle an owned EMOTE into/out of the
+  // equipped set (max 6, matching the prototype loadout). Must own the emote.
+  app.patch("/users/me/equip-emote", { preHandler: requireAuth }, async (req) => {
+    const input = equipEmoteSchema.parse(req.body);
+    const userId = req.userId!;
+    const owned = await prisma.inventoryItem.findFirst({
+      where: { userId, itemId: input.itemId, item: { type: "EMOTE" } },
+      select: { itemId: true },
+    });
+    if (!owned) throw err.forbidden("NOT_OWNED", "You don't own this emote");
+    const me = await prisma.user.findUniqueOrThrow({ where: { id: userId }, select: { equippedEmotes: true } });
+    const set = new Set(me.equippedEmotes);
+    if (input.equipped) {
+      if (!set.has(input.itemId) && set.size >= 6) throw err.badRequest("EMOTE_LIMIT", "You can equip up to 6 emotes");
+      set.add(input.itemId);
+    } else {
+      set.delete(input.itemId);
+    }
+    const user = await prisma.user.update({
+      where: { id: userId },
+      data: { equippedEmotes: [...set] },
       include: guildInclude,
     });
     return ok({ user: publicProfile(user) });

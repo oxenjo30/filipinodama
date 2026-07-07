@@ -73,7 +73,7 @@ export function AppLayout() {
     { icon: "👤", label: "View Profile", on: () => navigate("/profile") },
     { icon: "🛡️", label: "Guild Hall", on: () => navigate("/guilds") },
     { icon: "👥", label: "Friends", on: () => navigate("/friends") },
-    { icon: "🎒", label: "Locker", on: () => navigate("/inventory") },
+    { icon: "🎒", label: "Inventory", on: () => navigate("/inventory") },
     { icon: "🧾", label: "Purchase History", on: () => navigate("/orders") },
     { icon: "🎯", label: "Quests", on: () => navigate("/quests") },
     { icon: "✏️", label: "Edit Profile", on: () => navigate("/profile?edit=1") },

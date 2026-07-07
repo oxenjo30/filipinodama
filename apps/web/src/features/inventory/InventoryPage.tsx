@@ -118,11 +118,16 @@ const TYPE_META: Record<StoreItemApi["type"], { label: string; sub: string }> = 
 };
 const TYPE_ORDER: StoreItemApi["type"][] = ["BOARD", "SKIN", "AVATAR", "FRAME", "EMOTE", "BUNDLE", "SEASON_PASS"];
 
-// Only these cosmetic types are equippable (equip endpoint accepts board/skin/frame).
-const EQUIP_SLOT: Partial<Record<StoreItemApi["type"], "board" | "skin" | "frame">> = {
+// Equippable slots. board/skin/frame equip by item id; avatar equips by item id
+// too but the server persists the item's assetKey to User.avatarUrl (so equipped
+// state is compared against me.avatarUrl). Emotes are handled as a separate
+// toggle (equip-emote) since they're a multi-slot set, not a single slot.
+type EquipSlot = "board" | "skin" | "frame" | "avatar";
+const EQUIP_SLOT: Partial<Record<StoreItemApi["type"], EquipSlot>> = {
   BOARD: "board",
   SKIN: "skin",
   FRAME: "frame",
+  AVATAR: "avatar",
 };
 
 // A resolved owned item ready to render.
@@ -134,7 +139,7 @@ type OwnedItem = {
   assetKey: string;
   previewKey: string | null;
   thumb: Thumb;
-  slot: "board" | "skin" | "frame" | null;
+  slot: EquipSlot | null;
   hasPreview: boolean;
 };
 
@@ -203,6 +208,10 @@ export function InventoryPage() {
   const showToast = useAppStore((s) => s.showToast);
   const navigate = useNavigate();
 
+  // The server returns equippedEmotes on the user, but the client Me type predates
+  // it; read it defensively (never mutate) — this is the real equipped-emote set.
+  const equippedEmotes: string[] = (me as { equippedEmotes?: string[] } | null)?.equippedEmotes ?? [];
+
   // null = loading; [] = loaded, nothing owned
   const [items, setItems] = useState<OwnedItem[] | null>(null);
   const [loadError, setLoadError] = useState(false);
@@ -257,18 +266,31 @@ export function InventoryPage() {
     };
   }, [me]);
 
-  // What is currently equipped, from the real account.
-  const equippedFor = useCallback(
-    (slot: "board" | "skin" | "frame" | null): string | null => {
-      if (!me || !slot) return null;
-      if (slot === "board") return me.equippedBoard;
-      if (slot === "skin") return me.equippedSkin;
-      return me.frameId;
+  // Is this owned item currently equipped, per the real account? Board/skin/frame
+  // compare the equipped item id; avatar compares the equipped assetKey (avatars
+  // persist to User.avatarUrl as an assetKey); emotes check the equipped set.
+  const isEquipped = useCallback(
+    (it: OwnedItem): boolean => {
+      if (!me) return false;
+      switch (it.slot) {
+        case "board":
+          return me.equippedBoard === it.id;
+        case "skin":
+          return me.equippedSkin === it.id;
+        case "frame":
+          return me.frameId === it.id;
+        case "avatar":
+          return !!it.assetKey && me.avatarUrl === it.assetKey;
+        default:
+          return false;
+      }
     },
     [me],
   );
 
-  // Equip an owned cosmetic (server verifies ownership).
+  // Equip an owned board/skin/frame/avatar (server verifies ownership). All four
+  // go through PATCH /api/users/me/equip; the returned user carries the fresh
+  // equipped ids + avatarUrl, which we mirror into the auth store.
   const equip = useCallback(
     async (it: OwnedItem) => {
       if (!it.slot) {
@@ -277,14 +299,14 @@ export function InventoryPage() {
       }
       setEquipping(it.id);
       try {
-        const res = await api.patch<{ user: { equippedBoard: string | null; equippedSkin: string | null; frameId: string | null } }>(
-          "/api/users/me/equip",
-          { [it.slot]: it.id },
-        );
+        const res = await api.patch<{
+          user: { equippedBoard: string | null; equippedSkin: string | null; frameId: string | null; avatarUrl: string | null };
+        }>("/api/users/me/equip", { [it.slot]: it.id });
         patchMe({
           equippedBoard: res.user.equippedBoard,
           equippedSkin: res.user.equippedSkin,
           frameId: res.user.frameId,
+          avatarUrl: res.user.avatarUrl,
         });
         showToast(`${it.name} equipped!`);
       } catch (e) {
@@ -296,14 +318,45 @@ export function InventoryPage() {
     [patchMe, showToast],
   );
 
-  // Group owned items by type, in the canonical order.
+  // Toggle an owned emote into/out of the equipped set (max 6, server-enforced).
+  // The returned user carries the fresh equippedEmotes, which we mirror into the
+  // auth store so the toggle state stays in sync everywhere.
+  const toggleEmote = useCallback(
+    async (it: OwnedItem, equipped: boolean) => {
+      setEquipping(it.id);
+      try {
+        const res = await api.patch<{ user: { equippedEmotes: string[] } }>("/api/users/me/equip-emote", {
+          itemId: it.id,
+          equipped,
+        });
+        // equippedEmotes isn't on the client Me type yet; patch it through as an
+        // extra field (the store spreads it onto me, matching the server shape).
+        patchMe({ equippedEmotes: res.user.equippedEmotes } as unknown as Parameters<typeof patchMe>[0]);
+        showToast(equipped ? `${it.name} equipped!` : `${it.name} unequipped.`);
+      } catch (e) {
+        showToast(e instanceof ApiError ? e.message : "Couldn't update that emote.");
+      } finally {
+        setEquipping(null);
+      }
+    },
+    [patchMe, showToast],
+  );
+
+  // Group owned items by type, in the canonical order, tagging each group with
+  // how many of its items are currently equipped (for the "{eq} equipped · {n}
+  // owned" header). Emotes count each equipped-set member; the rest count the
+  // single equipped slot.
   const groups = useMemo(() => {
     if (!items) return [];
-    return TYPE_ORDER.map((t) => ({
-      cat: TYPE_META[t].label,
-      items: items.filter((i) => i.type === t),
-    })).filter((g) => g.items.length > 0);
-  }, [items]);
+    return TYPE_ORDER.map((t) => {
+      const groupItems = items.filter((i) => i.type === t);
+      const eq =
+        t === "EMOTE"
+          ? groupItems.filter((i) => equippedEmotes.includes(i.id)).length
+          : groupItems.filter((i) => isEquipped(i)).length;
+      return { cat: TYPE_META[t].label, items: groupItems, equipped: eq };
+    }).filter((g) => g.items.length > 0);
+  }, [items, isEquipped, equippedEmotes]);
 
   // ── logged-out: honest sign-in prompt (prototype chrome, never crash) ──
   if (!me) {
@@ -311,7 +364,7 @@ export function InventoryPage() {
       <div style={{ maxWidth: 1100, margin: "0 auto", padding: 26, display: "flex", flexDirection: "column", gap: 20 }}>
         {header(() => navigate("/store"))}
         <div className="frame" style={{ padding: 40, textAlign: "center" }}>
-          <div style={{ font: "700 15px Inter", color: "var(--gold-lt)", marginBottom: 8 }}>Sign in to view your Locker</div>
+          <div style={{ font: "700 15px Inter", color: "var(--gold-lt)", marginBottom: 8 }}>Sign in to view your Inventory</div>
           <div style={{ font: "500 13px Inter", color: "var(--ink2)", marginBottom: 18 }}>Your owned boards, skins, and frames live here once you're signed in.</div>
           <button className="btn btn-gold" onClick={() => navigate("/login")} style={{ padding: "12px 26px" }}>
             Sign In
@@ -329,13 +382,13 @@ export function InventoryPage() {
 
       {loading ? (
         <div className="frame" style={{ padding: 34, textAlign: "center", font: "500 13px Inter", color: "var(--ink2)" }}>
-          Loading your Locker…
+          Loading your Inventory…
         </div>
       ) : groups.length === 0 ? (
         <div className="frame" style={{ padding: 40, textAlign: "center" }}>
           <img src={A("ic-chest.png")} alt="" style={{ width: 84, height: 72, objectFit: "contain", margin: "0 auto 14px", display: "block", opacity: 0.85 }} />
           <div style={{ font: "700 15px Inter", color: "var(--gold-lt)", marginBottom: 6 }}>
-            {loadError ? "Your Locker is unavailable right now" : "Your Locker is empty"}
+            {loadError ? "Your Inventory is unavailable right now" : "Your Inventory is empty"}
           </div>
           <div style={{ font: "500 13px Inter", color: "var(--ink2)", marginBottom: 18 }}>
             {loadError ? "Please try again in a moment." : "Cosmetics you buy in the Store will land here."}
@@ -354,14 +407,17 @@ export function InventoryPage() {
                 {g.cat}
               </div>
               <span style={{ font: "600 11px Inter", color: "var(--ink2)" }}>
-                {g.items.length} {g.items.length === 1 ? "item" : "items"}
+                {g.equipped} equipped · {g.items.length} owned
               </span>
             </div>
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(220px,1fr))", gap: 14 }}>
               {g.items.map((it) => {
-                const isEquipped = it.slot != null && equippedFor(it.slot) === it.id;
-                const isEquipping = equipping === it.id;
-                const cardBorder = isEquipped ? "rgba(63,191,111,.55)" : "rgba(232,184,75,.18)";
+                const isEmote = it.type === "EMOTE";
+                const emoteEquipped = isEmote && equippedEmotes.includes(it.id);
+                const slotEquipped = it.slot != null && isEquipped(it);
+                const equipped = isEmote ? emoteEquipped : slotEquipped;
+                const isBusy = equipping === it.id;
+                const cardBorder = equipped ? "rgba(63,191,111,.55)" : "rgba(232,184,75,.18)";
                 const isPortrait = it.thumb.kind === "portrait";
                 return (
                   <div key={it.id} style={{ display: "flex", gap: 14, alignItems: "center", padding: 14, borderRadius: 12, border: `1px solid ${cardBorder}`, background: "rgba(0,0,0,.2)" }}>
@@ -369,17 +425,26 @@ export function InventoryPage() {
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <div style={{ font: "700 13px Inter", color: "#fff", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{it.name}</div>
                       <div style={{ font: "500 11px Inter", color: "var(--ink2)", margin: "2px 0 10px" }}>{it.sub}</div>
-                      {it.slot == null ? (
+                      {isEmote ? (
+                        // Owned emotes toggle into/out of the equipped loadout (max 6, server-enforced).
+                        <button
+                          onClick={() => toggleEmote(it, !emoteEquipped)}
+                          disabled={isBusy}
+                          style={{ ...(emoteEquipped ? equippedToggleBtn : equipBtn), opacity: isBusy ? 0.7 : 1 }}
+                        >
+                          {isBusy ? "…" : emoteEquipped ? "✓ Equipped" : "Equip"}
+                        </button>
+                      ) : it.slot == null ? (
                         <button disabled style={cosmeticBtn}>
                           Collected
                         </button>
-                      ) : isEquipped ? (
+                      ) : equipped ? (
                         <button disabled style={equippedBtn}>
                           ✓ Equipped
                         </button>
                       ) : (
-                        <button onClick={() => equip(it)} disabled={isEquipping} style={{ ...equipBtn, opacity: isEquipping ? 0.7 : 1 }}>
-                          {isEquipping ? "…" : "Equip"}
+                        <button onClick={() => equip(it)} disabled={isBusy} style={{ ...equipBtn, opacity: isBusy ? 0.7 : 1 }}>
+                          {isBusy ? "…" : "Equip"}
                         </button>
                       )}
                       {it.hasPreview && previewFor(it) != null && (
@@ -416,7 +481,7 @@ function header(goToStore: () => void) {
     <div style={{ display: "flex", alignItems: "flex-end", justifyContent: "space-between", gap: 16, flexWrap: "wrap" }}>
       <div>
         <div style={{ font: "700 12px Inter", letterSpacing: "2px", textTransform: "uppercase", color: "var(--gold)" }}>Your Collection</div>
-        <h1 style={{ margin: "6px 0 0", font: "800 32px Cinzel,serif", color: "var(--gold-lt)" }}>Locker</h1>
+        <h1 style={{ margin: "6px 0 0", font: "800 32px Cinzel,serif", color: "var(--gold-lt)" }}>Inventory</h1>
         <p style={{ margin: "8px 0 0", font: "400 13px Inter", color: "var(--ink2)" }}>Equip the cosmetics you own. Purchases from the Store land here.</p>
       </div>
       <button onClick={goToStore} className="btn btn-purple" style={{ padding: "12px 22px" }}>
@@ -447,6 +512,19 @@ const equippedBtn: CSSProperties = {
   font: "700 12px Inter",
   letterSpacing: ".5px",
   cursor: "default",
+};
+// Equipped emote: a live toggle (click to unequip) — green like equippedBtn but
+// interactive (pointer cursor), so the user can drop it from the loadout.
+const equippedToggleBtn: CSSProperties = {
+  display: "inline-block",
+  padding: "8px 18px",
+  borderRadius: 8,
+  border: "1px solid #3fbf6f",
+  background: "rgba(63,191,111,.14)",
+  color: "#3fbf6f",
+  font: "700 12px Inter",
+  letterSpacing: ".5px",
+  cursor: "pointer",
 };
 const cosmeticBtn: CSSProperties = {
   display: "inline-block",

@@ -7,36 +7,40 @@ import { useAuthStore } from "../../stores/authStore";
  * OrdersPage — reproduced from the prototype's Purchase History / Orders screen
  * (handoff/FilipinoDama Royal.dc.html, lines 1184-1241).
  *
- * FULLY LIVE-WIRED — there is NO hardcoded order data:
- *   - Every receipt comes from GET /api/orders (the authed user's real Order
- *     rows). A brand-new user with no purchases sees the honest empty state.
- *   - The order count, lifetime spend, per-order line items, prices, currency and
- *     dates are all derived from the fetched rows — nothing is faked.
+ * FULLY LIVE-WIRED — there is NO hardcoded receipt data:
+ *   - Every receipt comes from GET /api/orders, which returns receipts[] that
+ *     merge in-game Orders (Store items paid with Gold/Diamonds) and settled
+ *     Diamond top-ups (real-money Payments). A brand-new user with no purchases
+ *     sees the honest empty state.
+ *   - The receipt count, lifetime spend, per-line items, prices, method, currency
+ *     and dates are all derived from the fetched rows — nothing is faked.
  *   - Logged out (me === null): we show a sign-in prompt rather than crash, since
- *     orders belong to an account.
+ *     receipts belong to an account.
  *   - "Go to Store" / "Browse the Store" navigate to the real /store route.
  */
 
-// ── the real Order shape from GET /api/orders ──
-type OrderCurrency = "GOLD" | "DIAMONDS";
-type OrderItem = { itemId: string; name: string; price: number };
-type OrderApi = {
+// ── the real receipt shape from GET /api/orders ──
+type ReceiptKind = "item" | "topup";
+// item receipts use in-game currency; topup receipts use a real-money currency (e.g. PHP)
+type ReceiptCurrency = "GOLD" | "DIAMONDS" | "PHP" | string;
+type ReceiptItem = { name: string; price: number };
+type Receipt = {
   id: string;
-  userId: string;
-  items: OrderItem[];
-  currency: OrderCurrency;
-  total: number;
-  status: string;
+  kind: ReceiptKind;
   createdAt: string;
+  currency: ReceiptCurrency;
+  total: number;
+  method: string;
+  items: ReceiptItem[];
+  creditedDiamonds?: number | null;
 };
 
 const A = (n: string) => `/assets/${n}`;
 
 // ── currency helpers (mirrors StorePage curEl / curColor) ──
 type Cur = "gold" | "gem";
-const curOf = (c: OrderCurrency): Cur => (c === "DIAMONDS" ? "gem" : "gold");
+const curOf = (c: ReceiptCurrency): Cur => (c === "DIAMONDS" ? "gem" : "gold");
 const curColor = (c: Cur) => (c === "gem" ? "#ff9aa8" : "#f2d493");
-const curLabel = (c: OrderCurrency) => (c === "DIAMONDS" ? "Diamonds" : "Gold");
 
 function CurIcon({ cur, size = 16 }: { cur: Cur; size?: number }) {
   return (
@@ -48,7 +52,7 @@ function CurIcon({ cur, size = 16 }: { cur: Cur; size?: number }) {
   );
 }
 
-/** Price chip — the prototype's totalEl / priceEl (icon + colored amount). */
+/** In-game price chip — the prototype's totalEl / priceEl (icon + colored amount). */
 function PriceEl({ cur, amount, big }: { cur: Cur; amount: number; big?: boolean }) {
   return (
     <span
@@ -66,6 +70,25 @@ function PriceEl({ cur, amount, big }: { cur: Cur; amount: number; big?: boolean
   );
 }
 
+// ── real-money helpers (top-up receipts) ──
+// PHP totals arrive in centavos → ₱total/100.
+const fmtPeso = (centavos: number) =>
+  `₱${(centavos / 100).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+
+/** Real-money price chip for top-up receipts (peso amount, no in-game icon). */
+function MoneyEl({ centavos, big }: { centavos: number; big?: boolean }) {
+  return (
+    <span
+      style={{
+        font: big ? "800 17px 'JetBrains Mono',monospace" : "700 13px 'JetBrains Mono',monospace",
+        color: "var(--gold-lt)",
+      }}
+    >
+      {fmtPeso(centavos)}
+    </span>
+  );
+}
+
 const fmtDate = (iso: string) =>
   new Date(iso).toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" });
 
@@ -73,21 +96,22 @@ export function OrdersPage() {
   const me = useAuthStore((s) => s.me);
   const navigate = useNavigate();
 
-  const [orders, setOrders] = useState<OrderApi[] | null>(null);
+  const [receipts, setReceipts] = useState<Receipt[] | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!me) {
-      setOrders(null);
+      setReceipts(null);
       return;
     }
     let alive = true;
     setError(null);
-    setOrders(null);
+    setReceipts(null);
     api
-      .get<{ orders: OrderApi[] }>("/api/orders")
+      .get<{ receipts?: Receipt[]; orders?: Receipt[] }>("/api/orders")
       .then((res) => {
-        if (alive) setOrders(res.orders);
+        // receipts[] is the canonical field; data.orders is the same array (fallback).
+        if (alive) setReceipts(res.receipts ?? res.orders ?? []);
       })
       .catch((e) => {
         if (alive) setError(e instanceof ApiError ? e.message : "Could not load your orders.");
@@ -97,24 +121,35 @@ export function OrdersPage() {
     };
   }, [me]);
 
-  // lifetime spend, grouped by currency (honest — derived from real totals)
-  const spendByCur = useMemo(() => {
-    const acc: Record<OrderCurrency, number> = { GOLD: 0, DIAMONDS: 0 };
-    for (const o of orders ?? []) acc[o.currency] += o.total;
+  // lifetime spend, grouped by currency (honest — derived from real totals).
+  // In-game currencies (GOLD/DIAMONDS) and real money (PHP) are tallied separately.
+  const spend = useMemo(() => {
+    const acc = { GOLD: 0, DIAMONDS: 0, PHP: 0 };
+    for (const r of receipts ?? []) {
+      if (r.currency === "DIAMONDS") acc.DIAMONDS += r.total;
+      else if (r.currency === "GOLD") acc.GOLD += r.total;
+      else acc.PHP += r.total; // real-money top-ups (centavos)
+    }
     return acc;
-  }, [orders]);
+  }, [receipts]);
 
   const totalSpendEl: ReactNode = useMemo(() => {
     const parts: ReactNode[] = [];
-    if (spendByCur.GOLD > 0) parts.push(<PriceEl key="g" cur="gold" amount={spendByCur.GOLD} />);
-    if (spendByCur.DIAMONDS > 0) parts.push(<PriceEl key="d" cur="gem" amount={spendByCur.DIAMONDS} />);
+    if (spend.GOLD > 0) parts.push(<PriceEl key="g" cur="gold" amount={spend.GOLD} />);
+    if (spend.DIAMONDS > 0) parts.push(<PriceEl key="d" cur="gem" amount={spend.DIAMONDS} />);
+    if (spend.PHP > 0)
+      parts.push(
+        <span key="p" style={{ font: "700 13px 'JetBrains Mono',monospace", color: "var(--gold-lt)" }}>
+          {fmtPeso(spend.PHP)}
+        </span>,
+      );
     if (parts.length === 0) return <span style={{ color: "var(--gold-lt)" }}>—</span>;
     return (
       <span style={{ display: "inline-flex", alignItems: "center", gap: 12, verticalAlign: "middle" }}>
         {parts}
       </span>
     );
-  }, [spendByCur]);
+  }, [spend]);
 
   const goToStore = () => navigate("/store");
 
@@ -140,7 +175,7 @@ export function OrdersPage() {
     <div style={{ maxWidth: 1000, margin: "0 auto", padding: 26, display: "flex", flexDirection: "column", gap: 20 }}>
       {header}
 
-      {/* logged out — orders belong to an account; prompt sign-in, never crash */}
+      {/* logged out — receipts belong to an account; prompt sign-in, never crash */}
       {!me && (
         <div className="frame" style={{ padding: "56px 26px", textAlign: "center" }}>
           <div style={{ fontSize: 44, lineHeight: 1, marginBottom: 12 }}>🔒</div>
@@ -164,14 +199,14 @@ export function OrdersPage() {
       )}
 
       {/* loading */}
-      {me && !error && orders === null && (
+      {me && !error && receipts === null && (
         <div className="frame" style={{ padding: "56px 26px", textAlign: "center" }}>
           <div style={{ font: "700 13px Inter", letterSpacing: "1.5px", color: "var(--ink2)" }}>Loading your receipts…</div>
         </div>
       )}
 
       {/* empty — honest state for a user with no purchases */}
-      {me && !error && orders !== null && orders.length === 0 && (
+      {me && !error && receipts !== null && receipts.length === 0 && (
         <div className="frame" style={{ padding: "56px 26px", textAlign: "center" }}>
           <div style={{ fontSize: 44, lineHeight: 1, marginBottom: 12 }}>🧾</div>
           <div style={{ font: "800 19px Cinzel,serif", color: "var(--gold-lt)" }}>No purchases yet</div>
@@ -184,8 +219,8 @@ export function OrdersPage() {
         </div>
       )}
 
-      {/* orders list */}
-      {me && !error && orders !== null && orders.length > 0 && (
+      {/* receipts list */}
+      {me && !error && receipts !== null && receipts.length > 0 && (
         <>
           <div
             className="frame"
@@ -198,18 +233,22 @@ export function OrdersPage() {
               flexWrap: "wrap",
             }}
           >
-            <div style={{ font: "600 12px Inter", color: "var(--ink2)" }}>{orders.length} order(s) on record</div>
+            <div style={{ font: "600 12px Inter", color: "var(--ink2)" }}>{receipts.length} order(s) on record</div>
             <div style={{ font: "600 12px Inter", color: "var(--ink2)", display: "inline-flex", alignItems: "center", gap: 8 }}>
               Lifetime spend · <span style={{ display: "inline-flex", alignItems: "center" }}>{totalSpendEl}</span>
             </div>
           </div>
 
-          {orders.map((o) => {
-            const cur = curOf(o.currency);
-            const shortId = `#${o.id.slice(-8).toUpperCase()}`;
-            const items = Array.isArray(o.items) ? o.items : [];
+          {receipts.map((r) => {
+            const isTopup = r.kind === "topup";
+            const cur = curOf(r.currency);
+            const shortId = `#${r.id.slice(-8).toUpperCase()}`;
+            const items = Array.isArray(r.items) ? r.items : [];
+            const credited = r.creditedDiamonds ?? 0;
+            // Label pill: top-ups say "Top-up"; item orders count their lines.
+            const label = isTopup ? "Top-up" : items.length === 1 ? "Store item" : `${items.length} items`;
             return (
-              <div key={o.id} className="frame" style={{ padding: "20px 22px" }}>
+              <div key={r.id} className="frame" style={{ padding: "20px 22px" }}>
                 <div
                   style={{
                     display: "flex",
@@ -243,24 +282,27 @@ export function OrdersPage() {
                           padding: "3px 9px",
                         }}
                       >
-                        {items.length === 1 ? "Store item" : `${items.length} items`}
+                        {label}
                       </span>
                     </div>
                     <div style={{ marginTop: 6, font: "500 12px Inter", color: "var(--ink2)" }}>
-                      {fmtDate(o.createdAt)} · Paid with {curLabel(o.currency)}
+                      {fmtDate(r.createdAt)} · Paid with {r.method}
                     </div>
                   </div>
                   <div style={{ textAlign: "right" }}>
-                    <PriceEl cur={cur} amount={o.total} big />
-                    <div style={{ marginTop: 4, font: "600 11px Inter", color: "#7fe0a3" }}>
-                      {o.status === "completed" ? "Completed" : o.status}
-                    </div>
+                    {isTopup ? <MoneyEl centavos={r.total} big /> : <PriceEl cur={cur} amount={r.total} big />}
+                    {/* "Credited N 💎" line — top-up receipts credit Diamonds to the wallet */}
+                    {isTopup && credited > 0 && (
+                      <div style={{ marginTop: 4, font: "600 11px Inter", color: "#7fe0a3" }}>
+                        Credited {credited.toLocaleString()} 💎
+                      </div>
+                    )}
                   </div>
                 </div>
                 <div style={{ display: "flex", flexDirection: "column", gap: 2, marginTop: 12 }}>
-                  {items.map((it, i) => (
+                  {isTopup ? (
+                    // top-up receipts have no Store line items — show a human sub-label
                     <div
-                      key={`${o.id}-${it.itemId}-${i}`}
                       style={{
                         display: "flex",
                         alignItems: "center",
@@ -270,24 +312,46 @@ export function OrdersPage() {
                       }}
                     >
                       <div style={{ minWidth: 0 }}>
-                        <div
-                          style={{
-                            font: "700 13px Inter",
-                            color: "#fff",
-                            whiteSpace: "nowrap",
-                            overflow: "hidden",
-                            textOverflow: "ellipsis",
-                          }}
-                        >
-                          {it.name}
+                        <div style={{ font: "700 13px Inter", color: "#fff" }}>Currency top-up</div>
+                        <div style={{ font: "500 11px Inter", color: "var(--ink2)", marginTop: 1 }}>
+                          {credited > 0 ? `${credited.toLocaleString()} 💎 credited to your wallet` : "Diamond top-up"}
                         </div>
-                        <div style={{ font: "500 11px Inter", color: "var(--ink2)", marginTop: 1 }}>{it.itemId}</div>
                       </div>
                       <div style={{ flex: "none" }}>
-                        <PriceEl cur={cur} amount={it.price} />
+                        <MoneyEl centavos={r.total} />
                       </div>
                     </div>
-                  ))}
+                  ) : (
+                    items.map((it, i) => (
+                      <div
+                        key={`${r.id}-${i}`}
+                        style={{
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "space-between",
+                          gap: 12,
+                          padding: "9px 2px",
+                        }}
+                      >
+                        <div style={{ minWidth: 0 }}>
+                          <div
+                            style={{
+                              font: "700 13px Inter",
+                              color: "#fff",
+                              whiteSpace: "nowrap",
+                              overflow: "hidden",
+                              textOverflow: "ellipsis",
+                            }}
+                          >
+                            {it.name}
+                          </div>
+                        </div>
+                        <div style={{ flex: "none" }}>
+                          <PriceEl cur={cur} amount={it.price} />
+                        </div>
+                      </div>
+                    ))
+                  )}
                 </div>
               </div>
             );

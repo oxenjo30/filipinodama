@@ -76,14 +76,56 @@ export async function storeRoutes(app: FastifyInstance) {
     }
   });
 
-  // GET /api/orders — the authed user's purchase history
+  // GET /api/orders — the authed user's FULL purchase history: in-game item
+  // purchases (Order rows) AND real-money diamond top-ups (settled Payment rows),
+  // merged and sorted newest-first. The prototype lists both, with a "Credited
+  // N 💎" line + payment method for top-ups.
   app.get("/orders", { preHandler: requireAuth }, async (req) => {
-    const orders = await prisma.order.findMany({
-      where: { userId: req.userId! },
-      orderBy: { createdAt: "desc" },
-      take: 100,
-    });
-    return ok({ orders });
+    const userId = req.userId!;
+    const [orders, payments] = await Promise.all([
+      prisma.order.findMany({ where: { userId }, orderBy: { createdAt: "desc" }, take: 100 }),
+      prisma.payment.findMany({
+        where: { userId, status: "settled" },
+        orderBy: { settledAt: "desc" },
+        take: 100,
+      }),
+    ]);
+    // Normalize both into one receipt shape the UI can render uniformly.
+    type Receipt = {
+      id: string;
+      kind: "item" | "topup";
+      createdAt: Date;
+      currency: string; // GOLD | DIAMONDS | PHP
+      total: number; // in-game amount, or PHP centavos for top-ups
+      method: string; // "Gold Balance" | "Diamond Balance" | "GCash/Maya/Card"
+      items: unknown; // Order.items for purchases
+      creditedDiamonds: number | null; // top-ups credited N diamonds
+    };
+    const itemReceipts: Receipt[] = orders.map((o) => ({
+      id: o.id,
+      kind: "item",
+      createdAt: o.createdAt,
+      currency: o.currency,
+      total: o.total,
+      method: o.currency === "DIAMONDS" ? "Diamond Balance" : "Gold Balance",
+      items: o.items,
+      creditedDiamonds: null,
+    }));
+    const topupReceipts: Receipt[] = payments.map((p) => ({
+      id: p.id,
+      kind: "topup",
+      createdAt: p.settledAt ?? p.createdAt,
+      currency: p.currencyCode.toUpperCase(),
+      total: p.amountCents,
+      method: "GCash / Maya / Card",
+      items: [{ name: `${p.diamonds} Diamonds — top-up`, price: p.amountCents }],
+      creditedDiamonds: p.diamonds,
+    }));
+    const receipts = [...itemReceipts, ...topupReceipts].sort(
+      (a, b) => b.createdAt.getTime() - a.createdAt.getTime(),
+    );
+    // `orders` kept for backward-compat with any existing client field usage.
+    return ok({ orders: receipts, receipts });
   });
   // Diamond packs + checkout + webhook now live in modules/payments.ts.
 }

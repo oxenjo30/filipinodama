@@ -1,4 +1,5 @@
 import { useEffect, useState, type CSSProperties } from "react";
+import { useNavigate } from "react-router-dom";
 import { api, ApiError } from "../../lib/api";
 import { useAppStore } from "../../stores/appStore";
 import { useAuthStore } from "../../stores/authStore";
@@ -59,6 +60,7 @@ export type TopUpModalProps = {
 export function TopUpModal({ open, onClose }: TopUpModalProps) {
   const me = useAuthStore((s) => s.me);
   const showToast = useAppStore((s) => s.showToast);
+  const navigate = useNavigate();
 
   const [packs, setPacks] = useState<Pack[] | null>(null); // null = loading
   const [currency, setCurrency] = useState<string>("PHP");
@@ -175,7 +177,27 @@ export function TopUpModal({ open, onClose }: TopUpModalProps) {
             })
           )}
           <div style={{ font: "500 11px/1.55 Inter", color: "var(--ink2)", textAlign: "center", marginTop: 6 }}>
-            Payments are processed securely by PayMongo. Diamonds are a virtual currency with no cash value.
+            Payments are processed securely by PayMongo. Diamonds are a virtual currency with no cash value — see
+            our{" "}
+            <span
+              role="link"
+              tabIndex={0}
+              onClick={() => {
+                onClose();
+                navigate("/legal");
+              }}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" || e.key === " ") {
+                  e.preventDefault();
+                  onClose();
+                  navigate("/legal");
+                }
+              }}
+              style={termsLink}
+            >
+              Terms
+            </span>
+            .
           </div>
         </div>
       </div>
@@ -254,6 +276,12 @@ const bonusChip: CSSProperties = {
   background: "rgba(63,191,111,.18)",
   border: "1px solid rgba(63,191,111,.4)",
   color: "#7ee6a4",
+};
+const termsLink: CSSProperties = {
+  color: "var(--gold-lt)",
+  cursor: "pointer",
+  textDecoration: "underline",
+  textUnderlineOffset: 2,
 };
 const pricePill: CSSProperties = {
   flex: "none",

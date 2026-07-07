@@ -28,7 +28,10 @@ export const equipSchema = z.object({
   board: z.string().optional(),
   skin: z.string().optional(),
   frame: z.string().optional(),
+  avatar: z.string().optional(),
 });
+/** Toggle an owned emote in/out of the equipped set (max enforced server-side). */
+export const equipEmoteSchema = z.object({ itemId: z.string(), equipped: z.boolean() });
 
 // ── game / matchmaking ──
 export const squareSchema = z.object({ r: z.number().int().min(0).max(7), c: z.number().int().min(0).max(7) });

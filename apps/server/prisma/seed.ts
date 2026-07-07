@@ -26,14 +26,14 @@ const STORE = [
   { id: "emote-resolve", type: "EMOTE", name: "Warrior's Resolve", assetKey: "victory", previewKey: "emote:💪", priceGold: 0, sortOrder: 2 },
 
   // ── Board Themes ──
-  { id: "ebony", type: "BOARD", name: "Imperial Ebony Board", assetKey: "board-ebony.png", previewKey: "board:board-ebony.png", priceDiamonds: 480, tag: "NEW", sortOrder: 10 },
+  { id: "ebony", type: "BOARD", name: "Imperial Ebony Board", assetKey: "board-ebony.png", previewKey: "board:board-ebony.png", priceDiamonds: 480, tag: "NEW", featured: true, sortOrder: 10 },
   { id: "marble", type: "BOARD", name: "Marble Court Board", assetKey: "board-marble.png", previewKey: "board:board-marble.png", priceGold: 4200, sortOrder: 11 },
-  { id: "classicwood", type: "BOARD", name: "Classic Wood Board", assetKey: "board-wood.png", previewKey: "board:board-wood.png", priceGold: 3200, sortOrder: 12 },
+  { id: "classicwood", type: "BOARD", name: "Classic Wood Board", assetKey: "board-wood.png", previewKey: "board:board-wood.png", priceGold: 4500, salePrice: 2250, onSale: true, sortOrder: 12 },
   { id: "obsidian", type: "BOARD", name: "Obsidian Court Board", assetKey: "board-obsidian.png", previewKey: "board:board-obsidian.png", priceDiamonds: 520, tag: "PREMIUM", isPremium: true, sortOrder: 13 },
 
   // ── Piece Skins ──
-  { id: "jadeskin", type: "SKIN", name: "Jade Dragon Pieces", assetKey: "jade", previewKey: "skin:jade", priceDiamonds: 360, tag: "NEW", sortOrder: 20 },
-  { id: "crimsonskin", type: "SKIN", name: "Crimson Legion Pieces", assetKey: "crimson", previewKey: "skin:crimson", priceDiamonds: 380, sortOrder: 21 },
+  { id: "jadeskin", type: "SKIN", name: "Jade Dragon Pieces", assetKey: "jade", previewKey: "skin:jade", priceDiamonds: 360, tag: "NEW", featured: true, sortOrder: 20 },
+  { id: "crimsonskin", type: "SKIN", name: "Crimson Legion Pieces", assetKey: "crimson", previewKey: "skin:crimson", priceDiamonds: 300, salePrice: 180, onSale: true, featured: true, sortOrder: 21 },
   { id: "obsidianskin", type: "SKIN", name: "Obsidian Court Pieces", assetKey: "obsidian", previewKey: "skin:obsidian", priceDiamonds: 420, tag: "PREMIUM", isPremium: true, sortOrder: 22 },
 
   // ── Avatars ──
@@ -51,15 +51,15 @@ const STORE = [
 
   // ── Profile Frames ──
   { id: "laurel", type: "FRAME", name: "Golden Laurel Frame", assetKey: "laurel.png", previewKey: "frame:laurel.png", priceGold: 2200, sortOrder: 50 },
-  { id: "silver", type: "FRAME", name: "Silver Knight Frame", assetKey: "frames/silver.png", previewKey: "frame:frames/silver.png", priceGold: 1500, sortOrder: 51 },
+  { id: "silver", type: "FRAME", name: "Silver Knight Frame", assetKey: "frames/silver.png", previewKey: "frame:frames/silver.png", priceGold: 2500, salePrice: 1500, onSale: true, sortOrder: 51 },
   { id: "obsidianf", type: "FRAME", name: "Obsidian Sovereign Frame", assetKey: "frames/obsidian.png", previewKey: "frame:frames/obsidian.png", priceDiamonds: 340, tag: "PREMIUM", isPremium: true, sortOrder: 52 },
 
   // ── Emotes ──
   { id: "victory", type: "EMOTE", name: "Victory Royale", assetKey: "victory", previewKey: "emote:👑", priceGold: 1500, sortOrder: 60 },
-  { id: "focused", type: "EMOTE", name: "Focused", assetKey: "focused", previewKey: "emote:🎯", priceGold: 1200, sortOrder: 61 },
+  { id: "focused", type: "EMOTE", name: "Focused", assetKey: "focused", previewKey: "emote:🎯", priceGold: 2000, salePrice: 1200, onSale: true, sortOrder: 61 },
 
   // ── Bundles ──
-  { id: "heritage", type: "BUNDLE", name: "Royal Heritage Pack", assetKey: "me-banner.png", previewKey: "bundle:heritage", priceDiamonds: 1200, tag: "VALUE", isPremium: true, bundleItems: ["ebony", "crimsonskin", "laurel", "victory"], sortOrder: 70 },
+  { id: "heritage", type: "BUNDLE", name: "Royal Heritage Pack", assetKey: "me-banner.png", previewKey: "bundle:heritage", priceDiamonds: 1200, tag: "VALUE", isPremium: true, bundleItems: ["ebony", "crimsonskin", "laurel", "victory"], featured: true, sortOrder: 70 },
   { id: "lunar", type: "BUNDLE", name: "Lunar New Year Bundle", assetKey: "me-banner.png", previewKey: "bundle:lunar", priceDiamonds: 1080, tag: "-35%", isPremium: true, bundleItems: ["jadeskin", "marble", "focused"], sortOrder: 71 },
 
   // ── Season Pass ── active:false so it is NOT sold via the generic /store/purchase

@@ -41,6 +41,7 @@ model User {
   // equipped cosmetics
   equippedBoard String?
   equippedSkin  String?
+  equippedEmotes String[] // owned emote itemIds the player has equipped (max 6)
 
   // stats
   wins   Int @default(0)
@@ -139,6 +140,12 @@ model StoreItem {
   bundleItems   String[]
   isPremium     Boolean         @default(false)
   active        Boolean         @default(true)
+  // Daily Deals: when set, this is the discounted price and priceGold/priceDiamonds
+  // is the struck-through original. onSale gates the Daily Deals section.
+  salePrice     Int?
+  onSale        Boolean         @default(false)
+  // Featured: curated items shown on the store's Featured/All tab.
+  featured      Boolean         @default(false)
   sortOrder     Int             @default(0)
   createdAt     DateTime        @default(now())
   inventory     InventoryItem[]

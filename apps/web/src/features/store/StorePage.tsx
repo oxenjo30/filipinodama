@@ -1,10 +1,12 @@
 import { useCallback, useEffect, useMemo, useState, type CSSProperties, type ReactNode } from "react";
+import { useNavigate } from "react-router-dom";
 import { api, ApiError } from "../../lib/api";
 import { useAppStore } from "../../stores/appStore";
 import { useAuthStore } from "../../stores/authStore";
 import { Piece } from "../../components/Piece";
 import { StorePreviewModal, type StorePreview } from "./StorePreviewModal";
 import { TopUpModal } from "./TopUpModal";
+import { CheckoutModal, type CheckoutLine } from "./CheckoutModal";
 
 /**
  * StorePage — reproduced from the prototype's Store screen
@@ -42,6 +44,12 @@ type StoreItemApi = {
   description: string | null;
   priceGold: number | null;
   priceDiamonds: number | null;
+  /** Sale price (same currency as the item's base price) when onSale — from GET /api/store/items. */
+  salePrice: number | null;
+  /** Whether the item is currently discounted (drives the Daily Deals section). */
+  onSale: boolean;
+  /** Whether the item is curated onto the Featured tab. */
+  featured: boolean;
   assetKey: string;
   previewKey: string | null;
   tag: string | null;
@@ -251,12 +259,40 @@ const TYPE_META: Record<StoreItemApi["type"], { label: string; sub: string; icon
 const TYPE_ORDER: StoreItemApi["type"][] = ["BOARD", "SKIN", "AVATAR", "FRAME", "EMOTE", "BUNDLE", "SEASON_PASS"];
 
 // A real item resolved for display: real price + currency straight from the API.
-type ShopItem = StoreItemApi & { cur: Cur; price: number; free: boolean; sub: string; thumb: Thumb };
+// When onSale, `price` is the (discounted) sale price the buyer pays and adds to
+// cart; `origPrice` is the struck-through base price and `discountPct` the badge.
+type ShopItem = StoreItemApi & {
+  cur: Cur;
+  price: number;
+  free: boolean;
+  sub: string;
+  thumb: Thumb;
+  /** The item's base (pre-sale) price in `cur` — always the real priceGold/priceDiamonds. */
+  origPrice: number;
+  /** True only when the API flags it onSale AND a valid, cheaper salePrice exists. */
+  deal: boolean;
+  /** Whole-percent discount for the "-N%" badge (0 when not a deal). */
+  discountPct: number;
+};
 
 function resolve(it: StoreItemApi): ShopItem {
   const cur: Cur = it.priceDiamonds != null ? "gem" : "gold";
-  const price = it.priceDiamonds ?? it.priceGold ?? 0;
-  return { ...it, cur, price, free: price === 0, sub: TYPE_META[it.type].sub, thumb: thumbFor(it) };
+  const origPrice = it.priceDiamonds ?? it.priceGold ?? 0;
+  // A real deal: server says onSale, salePrice is present, positive, and below base.
+  const deal = it.onSale && it.salePrice != null && it.salePrice > 0 && it.salePrice < origPrice;
+  const price = deal ? (it.salePrice as number) : origPrice;
+  const discountPct = deal ? Math.round((1 - price / origPrice) * 100) : 0;
+  return {
+    ...it,
+    cur,
+    price,
+    free: price === 0,
+    sub: TYPE_META[it.type].sub,
+    thumb: thumbFor(it),
+    origPrice,
+    deal,
+    discountPct,
+  };
 }
 
 // ── preview resolution ──
@@ -344,9 +380,12 @@ export function StorePage() {
   const me = useAuthStore((s) => s.me);
   const patchMe = useAuthStore((s) => s.patchMe);
   const showToast = useAppStore((s) => s.showToast);
+  const navigate = useNavigate();
 
   const [tab, setTab] = useState<string>("All");
   const [cart, setCart] = useState<CartLine[]>([]);
+  const [checkoutOpen, setCheckoutOpen] = useState(false); // checkout confirmation modal
+  const [checkoutSeq, setCheckoutSeq] = useState(0); // bumped on each open to reset the modal's internal Review/Receipt state
 
   const [items, setItems] = useState<ShopItem[] | null>(null); // null = loading
   const [loadError, setLoadError] = useState(false);
@@ -440,6 +479,36 @@ export function StorePage() {
     [me, patchMe, showToast],
   );
 
+  // Checkout confirmation: run the REAL purchase loop for every cart line and
+  // report back exactly which items the server actually granted. Successful
+  // lines are removed from the cart; any line that fails (e.g. insufficient
+  // funds) — and every line after it — stays in the cart. The granted names are
+  // the real StoreItem names of the lines the server confirmed, never fabricated.
+  const checkoutConfirm = useCallback(async (): Promise<{ granted: string[] }> => {
+    const lines = [...cart];
+    const granted: string[] = [];
+    let failedFrom = -1;
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i];
+      const it = items?.find((x) => x.id === line.id);
+      const okBuy = it ? await buy(it) : false;
+      if (okBuy) {
+        granted.push(line.name);
+      } else {
+        // this line + all remaining lines stay in the cart
+        failedFrom = i;
+        break;
+      }
+    }
+    setCart(failedFrom >= 0 ? lines.slice(failedFrom) : []);
+    if (granted.length === 0) {
+      // Nothing was granted (e.g. first line failed) — surface it and keep the
+      // modal in Review so the CheckoutModal never shows an empty receipt.
+      throw new Error("CHECKOUT_NONE_GRANTED");
+    }
+    return { granted };
+  }, [cart, items, buy]);
+
   // Types actually present in the live catalog → drives rail + filter tabs.
   const presentTypes = useMemo(() => {
     if (!items) return [];
@@ -447,13 +516,21 @@ export function StorePage() {
     return TYPE_ORDER.filter((t) => set.has(t));
   }, [items]);
 
-  // Grid contents for the active tab. "All" = the whole live catalog.
+  const isFeaturedTab = tab === "All";
+
+  // On-sale items → the "Daily Deals" section (Featured/All tab only). Backed by
+  // real StoreItems flagged onSale with a valid salePrice; never fabricated.
+  const deals = useMemo(() => (items ? items.filter((i) => i.deal) : []), [items]);
+
+  // Grid contents for the active tab. The Featured/All tab shows only the CURATED
+  // featured items (featured===true), NOT the whole catalog. Every other tab shows
+  // the full contents of that item type.
   const grid = useMemo(() => {
     if (!items) return [];
-    if (tab === "All") return items;
+    if (isFeaturedTab) return items.filter((i) => i.featured);
     return items.filter((i) => TYPE_META[i.type].label === tab);
-  }, [items, tab]);
-  const gridTitle = tab === "All" ? "All Items" : tab;
+  }, [items, tab, isFeaturedTab]);
+  const gridTitle = isFeaturedTab ? "Featured Items" : tab;
 
   const cartGold = cart.filter((c) => c.cur === "gold").reduce((n, c) => n + c.price, 0);
   const cartGem = cart.filter((c) => c.cur === "gem").reduce((n, c) => n + c.price, 0);
@@ -645,6 +722,62 @@ export function StorePage() {
             })}
           </div>
         )}
+
+        {/* DAILY DEALS — on-sale items (Featured/All tab only). Each card shows the
+            discounted price (added to cart), the struck-through base price, and a
+            red "-N%" badge. Buying still POSTs /api/store/purchase {itemId}; the
+            server charges the real (sale) price. */}
+        {isFeaturedTab && deals.length > 0 && (
+          <>
+            <div className="divider">
+              <i />
+              <span>
+                <Diamond /> Daily Deals <Diamond />
+              </span>
+              <i />
+            </div>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(2,1fr)", gap: 14 }}>
+              {deals.map((it) => {
+                const isOwned = owned.has(it.id);
+                const isBuying = buying === it.id;
+                return (
+                  <div key={it.id} className="frame" style={{ padding: 16, display: "flex", alignItems: "center", gap: 14, position: "relative" }}>
+                    <div onClick={() => setPreview(it)} title="Preview" style={{ flex: "none", display: "flex", alignItems: "center", justifyContent: "center", width: 60, cursor: "pointer" }}>
+                      {renderThumb(it.thumb, it.thumb.kind === "portrait" ? 56 : 60)}
+                    </div>
+                    <div style={{ flex: 1 }}>
+                      <div style={{ font: "700 14px Inter", color: "#fff" }}>{it.name}</div>
+                      <div style={{ font: "500 11px Inter", color: "var(--ink2)", margin: "2px 0 8px" }}>{it.sub}</div>
+                      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                        <span style={{ display: "flex", alignItems: "center", gap: 5, font: "700 14px 'JetBrains Mono',monospace", color: curColor(it.cur) }}>
+                          <CurIcon cur={it.cur} /> {it.price.toLocaleString()}
+                        </span>
+                        <span style={{ font: "500 12px 'JetBrains Mono',monospace", color: "var(--ink2)", textDecoration: "line-through" }}>{it.origPrice.toLocaleString()}</span>
+                      </div>
+                      <div style={{ display: "flex", gap: 14, marginTop: 10 }}>
+                        <button onClick={() => setPreview(it)} style={{ background: "none", border: "none", padding: 0, color: "var(--gold)", font: "700 10px Inter", letterSpacing: ".8px", textTransform: "uppercase", cursor: "pointer" }}>
+                          🔍 Preview
+                        </button>
+                        {isOwned ? (
+                          <span style={{ font: "700 10px Inter", letterSpacing: ".8px", textTransform: "uppercase", color: "#3fbf6f" }}>✓ Owned</span>
+                        ) : (
+                          <button
+                            disabled={isBuying}
+                            onClick={() => addToCart(cartLineOf(it))}
+                            style={{ background: "none", border: "none", padding: 0, color: "#c9a6ff", font: "700 10px Inter", letterSpacing: ".8px", textTransform: "uppercase", cursor: isBuying ? "default" : "pointer", opacity: isBuying ? 0.6 : 1 }}
+                          >
+                            ＋ Add to Cart
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                    <span style={{ position: "absolute", top: 12, right: 12, font: "700 11px Inter", padding: "4px 8px", borderRadius: 6, background: "#a83744", color: "#fff" }}>-{it.discountPct}%</span>
+                  </div>
+                );
+              })}
+            </div>
+          </>
+        )}
       </div>
 
       {/* RIGHT: cart + seasonal */}
@@ -696,25 +829,12 @@ export function StorePage() {
                 showToast("Sign in to check out.");
                 return;
               }
-              // Buy every cart line through the real purchase endpoint. Keep any
-              // line that FAILS (e.g. insufficient funds) in the cart, and stop
-              // at the first failure so the buyer isn't charged past what they can
-              // afford — only successfully-purchased lines are removed.
-              void (async () => {
-                const lines = [...cart];
-                const failed: typeof lines = [];
-                for (let i = 0; i < lines.length; i++) {
-                  const line = lines[i];
-                  const it = items?.find((x) => x.id === line.id);
-                  const okBuy = it ? await buy(it) : false;
-                  if (!okBuy) {
-                    // this line + all remaining lines stay in the cart
-                    failed.push(...lines.slice(i));
-                    break;
-                  }
-                }
-                setCart(failed);
-              })();
+              // Open the prototype's Review Order → Confirm Purchase modal. The
+              // actual server-authoritative purchases run only when the buyer
+              // confirms inside the modal (see checkoutConfirm below). Bump the
+              // key so the modal always opens fresh on the Review state.
+              setCheckoutSeq((n) => n + 1);
+              setCheckoutOpen(true);
             }}
             style={{ width: "100%", marginTop: 12 }}
           >
@@ -751,7 +871,12 @@ export function StorePage() {
         </div>
       </div>
 
-      {/* Store item preview modal — opens on a tile's thumb / "🔍 Preview" link. */}
+      {/* Store item preview modal — opens on a tile's thumb / "🔍 Preview" link.
+          For an on-sale item the modal already receives the discounted price via
+          previewFor (base.price = it.price = salePrice). The struck-through ORIGINAL
+          price can't be shown here yet: StorePreview (StorePreviewModal.tsx, not in
+          this task's editable scope) exposes no old-price prop, so we skip it
+          gracefully rather than pass an unsupported field. */}
       <StorePreviewModal
         pv={preview ? previewFor(preview, owned.has(preview.id)) : null}
         onClose={() => setPreview(null)}
@@ -762,6 +887,23 @@ export function StorePage() {
             setPreview(null);
             void buy(it);
           }
+        }}
+      />
+
+      {/* Checkout confirmation modal (prototype Review Order → Purchase Complete).
+          Cart lines carry the real StoreItem name/sub/price/currency; confirming
+          runs the real POST /api/store/purchase loop and the receipt lists exactly
+          the items the server granted. */}
+      <CheckoutModal
+        key={checkoutSeq}
+        open={checkoutOpen}
+        cart={cart.map<CheckoutLine>((c) => ({ id: c.id, name: c.name, sub: c.sub, price: c.price, cur: c.cur }))}
+        onCancel={() => setCheckoutOpen(false)}
+        onConfirm={checkoutConfirm}
+        onKeepShopping={() => setCheckoutOpen(false)}
+        onViewLocker={() => {
+          setCheckoutOpen(false);
+          navigate("/inventory");
         }}
       />
 
