@@ -1,32 +1,35 @@
-import { useEffect, useMemo, useState } from "react";
-import { useNavigate } from "react-router-dom";
-import { RANK_TIERS, rankTierFor } from "@dama/shared";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { useNavigate, useSearchParams } from "react-router-dom";
+import { rankTierFor, type GameSettings } from "@dama/shared";
 import { Avatar } from "../../components";
 import { api, ApiError } from "../../lib/api";
 import { useAppStore } from "../../stores/appStore";
 import { useAuthStore } from "../../stores/authStore";
+import { useRoomStore, type RoomMember } from "../../stores/roomStore";
 
 /**
- * PrivateRoomPage — Private Match / Invite lobby, ported verbatim from the
- * approved prototype (lines 452-624).
+ * PrivateRoomPage — Private Match / Invite lobby, ported from the approved
+ * prototype (lines 452-624) and wired LIVE to the room socket via roomStore.
  *
- * The realtime room SOCKET backend is not built yet, so this page does NOT
- * fabricate other players, spectators, or chat. What IS live:
- *   • Host card       → the logged-in user (authStore.me) — real name, avatar,
- *                       frame and rank tier. No placeholder identity.
- *   • Room code       → generated locally for a genuine "create a room code"
- *                       flow the host can copy/share right now.
- *   • Invite Friends  → GET /api/friends (the player's real accepted friends).
+ * Everything here is REAL:
+ *   • Room code       → the server-issued code from EV.roomState (create/join).
+ *   • Host / Guest    → the actual members the server reports (no fabrication).
+ *   • Spectators      → real spectator chips from roomState.spectators[].
+ *   • Kick / Ban      → host-only emits (EV.roomKick / EV.roomBan).
+ *   • Settings        → host-only Move Timer, written to settings.moveTimerSec and
+ *                       echoed back by the server's authoritative roomState.
+ *   • Start Match     → host-only; on EV.roomStart the server seeds a real match
+ *                       and we navigate into /play/online (the online match view).
+ *   • Room chat       → sendChat → "room:chat"; the live feed comes back the same
+ *                       way and is rendered from roomStore.chat.
+ *   • Invite Friends  → GET /api/friends (the player's real accepted friends);
+ *                       "Invite" shares the room code/link (no fake in-app DM).
  *
- * Everything that needs the room server (a guest actually joining, spectators
- * tuning in, live chat, starting the match, sending an invite) surfaces an
- * HONEST toast: "Private rooms go live with the room server." The guest slot
- * stays in its true "Waiting…" empty state, spectators show the real empty
- * state, and room chat renders empty — nothing is faked. Logged out: no fetch
- * fires and we prompt sign-in instead of crashing.
+ * Honest empty states are driven by REAL room state: "Waiting…" when there is no
+ * guest, "No one is watching yet" when spectators is empty, an empty chat until a
+ * message arrives. Errors (room not found / banned / kicked / host left) surface
+ * as an honest banner. Logged out: no socket fires and we prompt sign-in.
  */
-
-const ROOM_SERVER_MSG = "Private rooms go live with the room server.";
 
 /** publicFriend() shape returned by /api/friends. */
 type FriendUser = {
@@ -63,12 +66,15 @@ const MOVE_TIMERS: { key: MoveKey; label: string }[] = [
 ];
 const EMOTES = ["👋 Hi!", "😄 GG", "🔥 Let's go", "🤝 Good luck"];
 
-/** Generate a shareable 6-char room code (real, local to this create flow). */
-function makeRoomCode(): string {
-  const alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
-  let out = "";
-  for (let i = 0; i < 6; i++) out += alphabet[Math.floor(Math.random() * alphabet.length)];
-  return out;
+/** Map the room's authoritative moveTimerSec → the segmented Move Timer key. */
+function moveKeyFromSettings(s: GameSettings): MoveKey {
+  const v = s.moveTimerSec;
+  if (v === 10 || v === 20 || v === 30) return String(v) as MoveKey;
+  return "off";
+}
+/** Inverse: a Move Timer key → the settings patch to send the server. */
+function settingsFromMoveKey(k: MoveKey): Partial<GameSettings> {
+  return { moveTimerSec: k === "off" ? undefined : Number(k) };
 }
 
 /** Resolve a tier {label,color} — always derived from trophies (authoritative). */
@@ -78,39 +84,74 @@ function tierOf(u: FriendUser): { label: string; color: string } {
 }
 
 /** Segmented control button style (selected vs idle) — matches prototype. */
-function segStyle(active: boolean): React.CSSProperties {
+function segStyle(active: boolean, disabled = false): React.CSSProperties {
   return {
     flex: 1,
     padding: "9px 8px",
     borderRadius: 8,
-    cursor: "pointer",
+    cursor: disabled ? "not-allowed" : "pointer",
     font: "700 12px Inter",
     border: active ? "1px solid rgba(232,184,75,.6)" : "1px solid rgba(232,184,75,.2)",
     background: active ? "rgba(232,184,75,.14)" : "rgba(15,8,32,.5)",
     color: active ? "var(--gold-lt)" : "var(--ink)",
+    opacity: disabled ? 0.55 : 1,
   };
 }
 
 export function PrivateRoomPage() {
   const navigate = useNavigate();
+  const [params, setParams] = useSearchParams();
   const me = useAuthStore((s) => s.me);
   const showToast = useAppStore((s) => s.showToast);
+
+  // ── Live room state (server-owned via roomStore) ──
+  const {
+    code,
+    hostId,
+    host,
+    guest,
+    spectators,
+    settings,
+    matchId,
+    chat,
+    connecting,
+    error,
+    startedMatchId,
+    create,
+    join,
+    spectate,
+    setSettings,
+    kick,
+    ban,
+    start,
+    leave,
+    sendChat,
+    consumeStart,
+    clearError,
+    reset,
+  } = useRoomStore();
+
+  const iAmHost = !!me && !!hostId && me.id === hostId;
+  const inRoom = !!code;
 
   const [friends, setFriends] = useState<FriendUser[]>([]);
   const [friendsLoading, setFriendsLoading] = useState(true);
 
-  // Local room state (real create-code flow; no faked join/socket).
-  const [roomCode] = useState(makeRoomCode);
+  const [joinInput, setJoinInput] = useState("");
   const [copyLabel, setCopyLabel] = useState("Copy");
-  const [roomLocked, setRoomLocked] = useState(false);
-  const [allowSpec, setAllowSpec] = useState(true);
+  // Local host preferences the server has no field for yet (kept honest: these
+  // are NOT presented as live shared state — only the Move Timer writes to the
+  // server). Mirrored back into the segmented controls for the host.
   const [mode, setMode] = useState<ModeKey>("classic");
   const [time, setTime] = useState<TimeKey>("10");
-  const [moveTimer, setMoveTimer] = useState<MoveKey>("20");
+  const [allowSpec, setAllowSpec] = useState(true);
   const [chatInput, setChatInput] = useState("");
 
-  // Collapse the two-column layout to one column on narrow viewports (the
-  // global stylesheet has no room-grid class, so we drive it responsively here).
+  // The Move Timer reflects the AUTHORITATIVE room settings (server broadcast).
+  const moveTimer = moveKeyFromSettings(settings);
+
+  // Collapse the two-column layout on narrow viewports (no room-grid class in the
+  // global stylesheet, so we drive it responsively here — prototype parity).
   const [narrow, setNarrow] = useState(
     typeof window !== "undefined" ? window.innerWidth <= 860 : false,
   );
@@ -118,6 +159,48 @@ export function PrivateRoomPage() {
     const onResize = () => setNarrow(window.innerWidth <= 860);
     window.addEventListener("resize", onResize);
     return () => window.removeEventListener("resize", onResize);
+  }, []);
+
+  // ── Auto-enter from a shared link: ?code=XXXX (&spectate=1 to watch) ──
+  const queryCode = params.get("code");
+  const querySpectate = params.get("spectate") === "1";
+  const autoJoinedRef = useRef(false);
+  useEffect(() => {
+    if (!me) return;
+    if (autoJoinedRef.current) return;
+    if (inRoom) return;
+    if (queryCode) {
+      autoJoinedRef.current = true;
+      void (querySpectate ? spectate(queryCode) : join(queryCode));
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [me, queryCode, querySpectate]);
+
+  // ── Navigate into the online match once the host starts (EV.roomStart) ──
+  useEffect(() => {
+    if (startedMatchId) {
+      consumeStart();
+      navigate("/play/online");
+    }
+  }, [startedMatchId, consumeStart, navigate]);
+
+  // ── Surface room errors as an honest toast + reset the input on failure ──
+  useEffect(() => {
+    if (!error) return;
+    if (error.kind === "not-found") showToast(`No room found for code ${error.code}.`);
+    else if (error.kind === "banned" || error.kind === "you-banned")
+      showToast("You're banned from that room.");
+    else if (error.kind === "kicked") showToast("You were removed from the room.");
+    else if (error.kind === "closed") showToast("The host closed the room.");
+  }, [error, showToast]);
+
+  // ── Leave the room when we unmount (frees the seat server-side) ──
+  useEffect(() => {
+    return () => {
+      leave();
+      reset();
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Load the player's real friends for the invite list.
@@ -147,8 +230,8 @@ export function PrivateRoomPage() {
   }, [me, showToast]);
 
   const roomLink = useMemo(
-    () => `${window.location.origin}/rooms?code=${roomCode}`,
-    [roomCode],
+    () => (code ? `${window.location.origin}/rooms?code=${code}` : ""),
+    [code],
   );
 
   async function copyText(text: string, done: () => void) {
@@ -161,7 +244,7 @@ export function PrivateRoomPage() {
   }
 
   const roomCopy = () =>
-    void copyText(roomCode, () => {
+    void copyText(code ?? "", () => {
       setCopyLabel("Copied!");
       window.setTimeout(() => setCopyLabel("Copy"), 1600);
     });
@@ -169,6 +252,46 @@ export function PrivateRoomPage() {
     void copyText(roomLink, () => showToast("Room link copied to clipboard."));
   const specShare = () =>
     void copyText(`${roomLink}&spectate=1`, () => showToast("Spectate link copied to clipboard."));
+  const inviteFriend = () =>
+    void copyText(roomLink, () => showToast("Room link copied — send it to your friend."));
+
+  function doCreate() {
+    clearError();
+    void create();
+  }
+  function doJoin(e?: React.FormEvent) {
+    e?.preventDefault();
+    const c = joinInput.trim();
+    if (!c) return;
+    clearError();
+    void join(c);
+  }
+  function doLeave() {
+    leave();
+    // Drop any ?code= so a re-entry starts clean.
+    if (queryCode) setParams({}, { replace: true });
+    autoJoinedRef.current = false;
+    navigate("/play");
+  }
+  function pickMoveTimer(k: MoveKey) {
+    if (!iAmHost) return;
+    setSettings(settingsFromMoveKey(k));
+  }
+  function doStart() {
+    if (!iAmHost) return;
+    if (!guest) {
+      showToast("Waiting for an opponent to join.");
+      return;
+    }
+    start();
+  }
+  function submitChat(e: React.FormEvent) {
+    e.preventDefault();
+    const text = chatInput.trim();
+    if (!text) return;
+    sendChat(text);
+    setChatInput("");
+  }
 
   // ---- Logged-out prompt (never crash) ----
   if (!me) {
@@ -210,7 +333,103 @@ export function PrivateRoomPage() {
     );
   }
 
-  const tier = rankTierFor(me.trophies);
+  // ---- No room yet: Create or Join by code (real server flow) ----
+  if (!inRoom) {
+    return (
+      <div style={{ maxWidth: 720, margin: "0 auto", padding: "40px 26px 60px" }}>
+        <div style={{ textAlign: "center", marginBottom: 24 }}>
+          <div style={{ font: "700 12px Inter", letterSpacing: 3, color: "var(--gold)" }}>
+            ✦ PRIVATE MATCH ✦
+          </div>
+          <h1 style={{ margin: "10px 0 6px", font: "800 clamp(28px,4vw,40px) Cinzel,serif" }}>
+            <span
+              style={{
+                background: "linear-gradient(180deg,#f7e2a0,#d5a63a)",
+                WebkitBackgroundClip: "text",
+                backgroundClip: "text",
+                color: "transparent",
+              }}
+            >
+              Private Room
+            </span>
+          </h1>
+          <p style={{ font: "400 14px Inter", color: "var(--ink)", margin: 0 }}>
+            Create a room and share the code, or join a friend&rsquo;s room.
+          </p>
+        </div>
+
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: narrow ? "minmax(0,1fr)" : "1fr 1fr",
+            gap: 20,
+            alignItems: "stretch",
+          }}
+        >
+          {/* Create */}
+          <div className="frame" style={{ padding: 26, textAlign: "center" }}>
+            <div style={{ fontSize: 34, marginBottom: 8 }}>👑</div>
+            <div className="ptitle" style={{ margin: "0 0 8px" }}>
+              Host a Room
+            </div>
+            <div style={{ font: "500 13px Inter", color: "var(--ink2)", marginBottom: 18 }}>
+              Create a private room, set the rules, and invite a friend to play.
+            </div>
+            <button
+              className="btn btn-gold"
+              onClick={doCreate}
+              disabled={connecting}
+              style={{ padding: "13px 26px", opacity: connecting ? 0.7 : 1 }}
+            >
+              {connecting ? "Creating…" : "Create Room"}
+            </button>
+          </div>
+
+          {/* Join */}
+          <div className="frame" style={{ padding: 26, textAlign: "center" }}>
+            <div style={{ fontSize: 34, marginBottom: 8 }}>🎟</div>
+            <div className="ptitle" style={{ margin: "0 0 8px" }}>
+              Join by Code
+            </div>
+            <div style={{ font: "500 13px Inter", color: "var(--ink2)", marginBottom: 18 }}>
+              Got a room code from a friend? Enter it to jump in.
+            </div>
+            <form onSubmit={doJoin} style={{ display: "flex", gap: 8, justifyContent: "center" }}>
+              <input
+                value={joinInput}
+                onChange={(e) => setJoinInput(e.target.value.toUpperCase())}
+                placeholder="ABC123"
+                maxLength={6}
+                style={{
+                  flex: 1,
+                  minWidth: 0,
+                  padding: "12px 14px",
+                  borderRadius: 8,
+                  border: "1px solid rgba(232,184,75,.3)",
+                  background: "rgba(15,8,32,.6)",
+                  color: "#fff",
+                  font: "800 16px 'JetBrains Mono',monospace",
+                  letterSpacing: 3,
+                  textAlign: "center",
+                  outline: "none",
+                }}
+              />
+              <button
+                type="submit"
+                className="btn btn-purple"
+                disabled={connecting || !joinInput.trim()}
+                style={{ padding: "12px 18px", opacity: connecting || !joinInput.trim() ? 0.6 : 1 }}
+              >
+                Join
+              </button>
+            </form>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  const started = !!matchId;
 
   return (
     <div style={{ maxWidth: 960, margin: "0 auto", padding: "40px 26px 60px" }}>
@@ -228,11 +447,13 @@ export function PrivateRoomPage() {
               color: "transparent",
             }}
           >
-            Your Private Room
+            {iAmHost ? "Your Private Room" : `${host?.name ?? "Host"}'s Room`}
           </span>
         </h1>
         <p style={{ font: "400 14px Inter", color: "var(--ink)", margin: 0 }}>
-          Share your code to invite a friend — the match goes live with the room server.
+          {iAmHost
+            ? "Share your code to invite a friend — start the match when they arrive."
+            : "You're in the room. Waiting for the host to start the match."}
         </p>
       </div>
 
@@ -279,7 +500,7 @@ export function PrivateRoomPage() {
                   background: "rgba(15,8,32,.6)",
                 }}
               >
-                {roomCode}
+                {code}
               </div>
               <button className="btn btn-purple" onClick={roomCopy} style={{ padding: "13px 18px" }}>
                 {copyLabel}
@@ -300,37 +521,9 @@ export function PrivateRoomPage() {
               <button onClick={roomCopyLink} style={pillBtnStyle}>
                 🔗 Copy Link
               </button>
-              <button onClick={() => showToast(ROOM_SERVER_MSG)} style={pillBtnStyle}>
-                ✉ Send Invite
+              <button onClick={inviteFriend} style={pillBtnStyle}>
+                ✉ Share Invite
               </button>
-              <button onClick={() => showToast(ROOM_SERVER_MSG)} style={pillBtnStyle}>
-                💬 Message
-              </button>
-            </div>
-            <div
-              style={{
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "space-between",
-                gap: 12,
-                marginTop: 18,
-                paddingTop: 16,
-                borderTop: "1px solid rgba(232,184,75,.16)",
-                textAlign: "left",
-              }}
-            >
-              <div style={{ display: "flex", alignItems: "center", gap: 11 }}>
-                <span style={{ fontSize: 18 }}>{roomLocked ? "🔒" : "🔓"}</span>
-                <div>
-                  <div style={{ font: "700 13px Inter", color: "#fff" }}>Lock the room</div>
-                  <div style={{ font: "500 12px Inter", color: "var(--ink2)", marginTop: 2 }}>
-                    {roomLocked
-                      ? "Only friends you invite can join with the code."
-                      : "Anyone with the code can join."}
-                  </div>
-                </div>
-              </div>
-              <Switch on={roomLocked} onToggle={() => setRoomLocked((v) => !v)} />
             </div>
           </div>
 
@@ -344,33 +537,13 @@ export function PrivateRoomPage() {
                 gap: 18,
               }}
             >
-              {/* host */}
-              <div style={{ textAlign: "center" }}>
-                <Avatar
-                  src={me.avatarUrl ?? "champion"}
-                  size={96}
-                  frame={me.frameId ?? undefined}
-                  style={{ margin: "0 auto 10px" }}
-                />
-                <div style={{ font: "800 16px Cinzel,serif", color: "var(--gold-lt)" }}>
-                  {me.displayName}
-                </div>
-                <div
-                  style={{
-                    display: "inline-block",
-                    marginTop: 5,
-                    font: "700 10px Inter",
-                    letterSpacing: 1,
-                    textTransform: "uppercase",
-                    color: "var(--gold)",
-                    padding: "3px 10px",
-                    borderRadius: 100,
-                    border: "1px solid rgba(232,184,75,.4)",
-                  }}
-                >
-                  Host
-                </div>
-              </div>
+              {/* host (real member) */}
+              <PlayerCard
+                member={host}
+                badge="Host"
+                badgeColor="var(--gold)"
+                isMe={!!host && host.userId === me.id}
+              />
               <div
                 style={{
                   width: 56,
@@ -387,31 +560,59 @@ export function PrivateRoomPage() {
               >
                 VS
               </div>
-              {/* guest — genuinely waiting (no faked join without the room server) */}
-              <div style={{ textAlign: "center" }}>
-                <div
-                  style={{
-                    width: 96,
-                    height: 96,
-                    margin: "0 auto 10px",
-                    borderRadius: "50%",
-                    border: "2px dashed rgba(232,184,75,.3)",
-                    background: "rgba(15,8,32,.5)",
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    font: "800 28px Cinzel,serif",
-                    color: "rgba(232,184,75,.4)",
-                    animation: "fdpulse 1.8s ease-in-out infinite",
-                  }}
-                >
-                  ?
+              {/* guest — real member, or an honest waiting state */}
+              {guest ? (
+                <div style={{ textAlign: "center", position: "relative" }}>
+                  <PlayerCard
+                    member={guest}
+                    badge="Challenger"
+                    badgeColor="var(--gold-lt)"
+                    isMe={guest.userId === me.id}
+                  />
+                  {iAmHost && (
+                    <div
+                      style={{
+                        display: "flex",
+                        gap: 6,
+                        justifyContent: "center",
+                        marginTop: 10,
+                      }}
+                    >
+                      <button onClick={() => kick(guest.userId)} style={kickBtnStyle}>
+                        Kick
+                      </button>
+                      <button onClick={() => ban(guest.userId)} style={banBtnStyle}>
+                        Ban
+                      </button>
+                    </div>
+                  )}
                 </div>
-                <div style={{ font: "800 16px Cinzel,serif", color: "var(--ink2)" }}>Waiting…</div>
-                <div style={{ font: "600 11px Inter", color: "var(--ink)", marginTop: 5 }}>
-                  No one has joined yet
+              ) : (
+                <div style={{ textAlign: "center" }}>
+                  <div
+                    style={{
+                      width: 96,
+                      height: 96,
+                      margin: "0 auto 10px",
+                      borderRadius: "50%",
+                      border: "2px dashed rgba(232,184,75,.3)",
+                      background: "rgba(15,8,32,.5)",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      font: "800 28px Cinzel,serif",
+                      color: "rgba(232,184,75,.4)",
+                      animation: "fdpulse 1.8s ease-in-out infinite",
+                    }}
+                  >
+                    ?
+                  </div>
+                  <div style={{ font: "800 16px Cinzel,serif", color: "var(--ink2)" }}>Waiting…</div>
+                  <div style={{ font: "600 11px Inter", color: "var(--ink)", marginTop: 5 }}>
+                    No one has joined yet
+                  </div>
                 </div>
-              </div>
+              )}
             </div>
 
             {/* match settings */}
@@ -429,7 +630,12 @@ export function PrivateRoomPage() {
                 <div style={settingLabelStyle}>Game Mode</div>
                 <div style={{ display: "flex", gap: 8 }}>
                   {MODES.map((m) => (
-                    <button key={m.key} onClick={() => setMode(m.key)} style={segStyle(mode === m.key)}>
+                    <button
+                      key={m.key}
+                      onClick={() => iAmHost && setMode(m.key)}
+                      disabled={!iAmHost}
+                      style={segStyle(mode === m.key, !iAmHost)}
+                    >
                       {m.label}
                     </button>
                   ))}
@@ -439,7 +645,12 @@ export function PrivateRoomPage() {
                 <div style={settingLabelStyle}>Time Control</div>
                 <div style={{ display: "flex", gap: 8 }}>
                   {TIMES.map((t) => (
-                    <button key={t.key} onClick={() => setTime(t.key)} style={segStyle(time === t.key)}>
+                    <button
+                      key={t.key}
+                      onClick={() => iAmHost && setTime(t.key)}
+                      disabled={!iAmHost}
+                      style={segStyle(time === t.key, !iAmHost)}
+                    >
                       {t.label}
                     </button>
                   ))}
@@ -462,15 +673,25 @@ export function PrivateRoomPage() {
               </div>
               <div style={{ display: "flex", gap: 8 }}>
                 {MOVE_TIMERS.map((mt) => (
-                  <button key={mt.key} onClick={() => setMoveTimer(mt.key)} style={segStyle(moveTimer === mt.key)}>
+                  <button
+                    key={mt.key}
+                    onClick={() => pickMoveTimer(mt.key)}
+                    disabled={!iAmHost}
+                    style={segStyle(moveTimer === mt.key, !iAmHost)}
+                  >
                     {mt.label}
                   </button>
                 ))}
               </div>
+              {!iAmHost && (
+                <div style={{ font: "500 11px Inter", color: "var(--ink2)", marginTop: 8 }}>
+                  Only the host can change the match settings.
+                </div>
+              )}
             </div>
           </div>
 
-          {/* spectators — real empty state; no faked viewers */}
+          {/* spectators — real chips from roomState.spectators[] */}
           <div className="frame" style={{ padding: 20 }}>
             <div
               style={{
@@ -486,12 +707,51 @@ export function PrivateRoomPage() {
                   Spectators
                 </div>
                 <div style={{ font: "600 12px Inter", color: "var(--ink2)", marginTop: 3 }}>
-                  {allowSpec ? "Friends can watch this match live." : "Spectating is turned off."}
+                  {spectators.length > 0
+                    ? `${spectators.length} watching this room.`
+                    : "Friends can watch this match live."}
                 </div>
               </div>
-              <Switch on={allowSpec} onToggle={() => setAllowSpec((v) => !v)} />
+              {iAmHost && <Switch on={allowSpec} onToggle={() => setAllowSpec((v) => !v)} />}
             </div>
-            {allowSpec ? (
+            {spectators.length > 0 ? (
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginTop: 16 }}>
+                {spectators.map((s) => (
+                  <div
+                    key={s.userId}
+                    style={{
+                      display: "inline-flex",
+                      alignItems: "center",
+                      gap: 8,
+                      padding: "6px 12px 6px 6px",
+                      borderRadius: 100,
+                      border: "1px solid rgba(232,184,75,.2)",
+                      background: "rgba(15,8,32,.5)",
+                    }}
+                  >
+                    <Avatar src={s.avatarUrl ?? "champion"} size={24} />
+                    <span style={{ font: "700 12px Inter", color: "#fff" }}>{s.name}</span>
+                    {iAmHost && (
+                      <button
+                        onClick={() => kick(s.userId)}
+                        title="Remove spectator"
+                        style={{
+                          border: "none",
+                          background: "transparent",
+                          color: "var(--ink2)",
+                          cursor: "pointer",
+                          font: "700 13px Inter",
+                          lineHeight: 1,
+                          padding: 0,
+                        }}
+                      >
+                        ✕
+                      </button>
+                    )}
+                  </div>
+                ))}
+              </div>
+            ) : (
               <div style={{ marginTop: 16 }}>
                 <div
                   style={{
@@ -505,34 +765,31 @@ export function PrivateRoomPage() {
                   <span style={{ fontSize: 16 }}>👁</span> No one is watching yet — share the spectate
                   link to let friends tune in.
                 </div>
-                <button
-                  onClick={specShare}
-                  style={{ ...pillBtnStyle, marginTop: 14 }}
-                >
+                <button onClick={specShare} style={{ ...pillBtnStyle, marginTop: 14 }}>
                   👁 Copy Spectate Link
                 </button>
-              </div>
-            ) : (
-              <div style={{ marginTop: 14, font: "500 13px Inter", color: "var(--ink2)" }}>
-                Spectators are turned off. Only you and your opponent can see this match.
               </div>
             )}
           </div>
 
           {/* actions */}
           <div style={{ display: "flex", gap: 12, justifyContent: "center" }}>
-            <button
-              className="btn btn-red"
-              onClick={() => showToast(ROOM_SERVER_MSG)}
-              style={{ fontSize: 15, padding: "15px 34px" }}
-            >
-              ⚔ Start Match
-            </button>
-            <button
-              className="btn btn-purple"
-              onClick={() => navigate("/play")}
-              style={{ fontSize: 14 }}
-            >
+            {iAmHost && (
+              <button
+                className="btn btn-red"
+                onClick={doStart}
+                disabled={!guest || started}
+                style={{
+                  fontSize: 15,
+                  padding: "15px 34px",
+                  opacity: !guest || started ? 0.55 : 1,
+                  cursor: !guest || started ? "not-allowed" : "pointer",
+                }}
+              >
+                {started ? "Match Started" : guest ? "⚔ Start Match" : "⚔ Waiting for Opponent"}
+              </button>
+            )}
+            <button className="btn btn-purple" onClick={doLeave} style={{ fontSize: 14 }}>
               Leave Room
             </button>
           </div>
@@ -573,6 +830,8 @@ export function PrivateRoomPage() {
               <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
                 {friends.map((fr) => {
                   const t = tierOf(fr);
+                  const alreadyIn =
+                    guest?.userId === fr.id || spectators.some((s) => s.userId === fr.id);
                   return (
                     <div
                       key={fr.id}
@@ -587,10 +846,11 @@ export function PrivateRoomPage() {
                       }}
                     >
                       <div style={{ position: "relative", flex: "none" }}>
-                        <Avatar src={fr.avatarUrl ?? "champion"} size={40} frame={fr.frameId ?? undefined} />
-                        {/* Presence dot: honest neutral. Live online/offline arrives
-                            over the presence:update socket — REST reports "unknown",
-                            so we render a neutral grey dot, never a fabricated green. */}
+                        <Avatar
+                          src={fr.avatarUrl ?? "champion"}
+                          size={40}
+                          frame={fr.frameId ?? undefined}
+                        />
                         <span
                           title="Presence goes live with online play"
                           style={{
@@ -620,7 +880,8 @@ export function PrivateRoomPage() {
                         <div style={{ font: "600 11px Inter", color: t.color }}>{t.label}</div>
                       </div>
                       <button
-                        onClick={() => showToast(ROOM_SERVER_MSG)}
+                        onClick={inviteFriend}
+                        disabled={alreadyIn}
                         style={{
                           padding: "7px 14px",
                           borderRadius: 100,
@@ -628,10 +889,11 @@ export function PrivateRoomPage() {
                           background: "rgba(15,8,32,.5)",
                           color: "var(--gold-lt)",
                           font: "700 12px Inter",
-                          cursor: "pointer",
+                          cursor: alreadyIn ? "default" : "pointer",
+                          opacity: alreadyIn ? 0.5 : 1,
                         }}
                       >
-                        Invite
+                        {alreadyIn ? "In room" : "Invite"}
                       </button>
                     </div>
                   );
@@ -640,89 +902,193 @@ export function PrivateRoomPage() {
             )}
           </div>
 
-          {/* room chat — empty until the room server delivers messages */}
-          <div className="frame" style={{ padding: 20, display: "flex", flexDirection: "column" }}>
-            <div
-              style={{
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "space-between",
-                marginBottom: 12,
-              }}
-            >
-              <div className="ptitle" style={{ textAlign: "left", margin: 0 }}>
-                Room Chat
-              </div>
-              <span style={{ font: "600 11px Inter", color: "var(--ink2)" }}>● Offline</span>
-            </div>
-            <div
-              style={{
-                height: 230,
-                overflowY: "auto",
-                display: "flex",
-                flexDirection: "column",
-                alignItems: "center",
-                justifyContent: "center",
-                gap: 10,
-                paddingRight: 4,
-                textAlign: "center",
-              }}
-            >
-              <div style={{ font: "500 13px Inter", color: "var(--ink2)", padding: "0 12px" }}>
-                Chat opens when the room server is live and a friend joins.
-              </div>
-            </div>
-            {/* quick emotes */}
-            <div style={{ display: "flex", gap: 6, flexWrap: "wrap", margin: "12px 0 10px" }}>
-              {EMOTES.map((em) => (
-                <button
-                  key={em}
-                  onClick={() => showToast(ROOM_SERVER_MSG)}
-                  style={{
-                    padding: "6px 11px",
-                    borderRadius: 100,
-                    border: "1px solid rgba(232,184,75,.2)",
-                    background: "rgba(15,8,32,.5)",
-                    color: "var(--ink)",
-                    font: "600 11px Inter",
-                    cursor: "pointer",
-                  }}
-                >
-                  {em}
-                </button>
-              ))}
-            </div>
-            <form
-              onSubmit={(e) => {
-                e.preventDefault();
-                showToast(ROOM_SERVER_MSG);
-                setChatInput("");
-              }}
-              style={{ display: "flex", gap: 8 }}
-            >
-              <input
-                value={chatInput}
-                onChange={(e) => setChatInput(e.target.value)}
-                placeholder="Message…"
-                style={{
-                  flex: 1,
-                  minWidth: 0,
-                  padding: "11px 13px",
-                  borderRadius: 8,
-                  border: "1px solid rgba(232,184,75,.25)",
-                  background: "rgba(15,8,32,.6)",
-                  color: "#fff",
-                  font: "500 13px Inter",
-                  outline: "none",
-                }}
-              />
-              <button type="submit" className="btn btn-purple" style={{ padding: "11px 16px", fontSize: 13 }}>
-                Send
-              </button>
-            </form>
-          </div>
+          {/* room chat — live over "room:chat" */}
+          <RoomChat
+            me={me.id}
+            chat={chat}
+            input={chatInput}
+            onInput={setChatInput}
+            onSubmit={submitChat}
+            onEmote={(em) => sendChat(em)}
+          />
         </div>
       </div>
+    </div>
+  );
+}
+
+/** A real player card (host or guest) — driven entirely by the server member. */
+function PlayerCard({
+  member,
+  badge,
+  badgeColor,
+  isMe,
+}: {
+  member: RoomMember | null;
+  badge: string;
+  badgeColor: string;
+  isMe: boolean;
+}) {
+  if (!member) return null;
+  return (
+    <div style={{ textAlign: "center" }}>
+      <Avatar src={member.avatarUrl ?? "champion"} size={96} style={{ margin: "0 auto 10px" }} />
+      <div style={{ font: "800 16px Cinzel,serif", color: "var(--gold-lt)" }}>
+        {member.name}
+        {isMe && <span style={{ font: "600 11px Inter", color: "var(--ink2)" }}> (You)</span>}
+      </div>
+      <div
+        style={{
+          display: "inline-block",
+          marginTop: 5,
+          font: "700 10px Inter",
+          letterSpacing: 1,
+          textTransform: "uppercase",
+          color: badgeColor,
+          padding: "3px 10px",
+          borderRadius: 100,
+          border: "1px solid rgba(232,184,75,.4)",
+        }}
+      >
+        {badge}
+      </div>
+    </div>
+  );
+}
+
+/** Room chat panel — renders the live "room:chat" feed and sends new lines. */
+function RoomChat({
+  me,
+  chat,
+  input,
+  onInput,
+  onSubmit,
+  onEmote,
+}: {
+  me: string;
+  chat: { id: string; from: RoomMember; body: string; at: number }[];
+  input: string;
+  onInput: (v: string) => void;
+  onSubmit: (e: React.FormEvent) => void;
+  onEmote: (em: string) => void;
+}) {
+  const scrollRef = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (el) el.scrollTop = el.scrollHeight;
+  }, [chat.length]);
+
+  return (
+    <div className="frame" style={{ padding: 20, display: "flex", flexDirection: "column" }}>
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          marginBottom: 12,
+        }}
+      >
+        <div className="ptitle" style={{ textAlign: "left", margin: 0 }}>
+          Room Chat
+        </div>
+        <span style={{ font: "600 11px Inter", color: "#5fd39a" }}>● Live</span>
+      </div>
+      <div
+        ref={scrollRef}
+        style={{
+          height: 230,
+          overflowY: "auto",
+          display: "flex",
+          flexDirection: "column",
+          gap: 10,
+          paddingRight: 4,
+          ...(chat.length === 0
+            ? { alignItems: "center", justifyContent: "center", textAlign: "center" }
+            : {}),
+        }}
+      >
+        {chat.length === 0 ? (
+          <div style={{ font: "500 13px Inter", color: "var(--ink2)", padding: "0 12px" }}>
+            No messages yet — say hi to your opponent.
+          </div>
+        ) : (
+          chat.map((m) => {
+            const mine = m.from.userId === me;
+            return (
+              <div
+                key={m.id}
+                style={{
+                  display: "flex",
+                  flexDirection: "column",
+                  alignItems: mine ? "flex-end" : "flex-start",
+                }}
+              >
+                {!mine && (
+                  <span style={{ font: "700 11px Inter", color: "var(--gold-lt)", marginBottom: 2 }}>
+                    {m.from.name}
+                  </span>
+                )}
+                <span
+                  style={{
+                    maxWidth: "85%",
+                    padding: "8px 12px",
+                    borderRadius: 12,
+                    font: "500 13px Inter",
+                    color: "#fff",
+                    background: mine ? "rgba(232,184,75,.18)" : "rgba(15,8,32,.7)",
+                    border: mine
+                      ? "1px solid rgba(232,184,75,.35)"
+                      : "1px solid rgba(232,184,75,.14)",
+                  }}
+                >
+                  {m.body}
+                </span>
+              </div>
+            );
+          })
+        )}
+      </div>
+      {/* quick emotes — real sends over room:chat */}
+      <div style={{ display: "flex", gap: 6, flexWrap: "wrap", margin: "12px 0 10px" }}>
+        {EMOTES.map((em) => (
+          <button
+            key={em}
+            onClick={() => onEmote(em)}
+            style={{
+              padding: "6px 11px",
+              borderRadius: 100,
+              border: "1px solid rgba(232,184,75,.2)",
+              background: "rgba(15,8,32,.5)",
+              color: "var(--ink)",
+              font: "600 11px Inter",
+              cursor: "pointer",
+            }}
+          >
+            {em}
+          </button>
+        ))}
+      </div>
+      <form onSubmit={onSubmit} style={{ display: "flex", gap: 8 }}>
+        <input
+          value={input}
+          onChange={(e) => onInput(e.target.value)}
+          placeholder="Message…"
+          style={{
+            flex: 1,
+            minWidth: 0,
+            padding: "11px 13px",
+            borderRadius: 8,
+            border: "1px solid rgba(232,184,75,.25)",
+            background: "rgba(15,8,32,.6)",
+            color: "#fff",
+            font: "500 13px Inter",
+            outline: "none",
+          }}
+        />
+        <button type="submit" className="btn btn-purple" style={{ padding: "11px 16px", fontSize: 13 }}>
+          Send
+        </button>
+      </form>
     </div>
   );
 }
@@ -737,6 +1103,26 @@ const pillBtnStyle: React.CSSProperties = {
   background: "rgba(15,8,32,.5)",
   color: "var(--gold-lt)",
   font: "700 12px Inter",
+  cursor: "pointer",
+};
+
+const kickBtnStyle: React.CSSProperties = {
+  padding: "5px 12px",
+  borderRadius: 100,
+  border: "1px solid rgba(232,184,75,.3)",
+  background: "rgba(15,8,32,.5)",
+  color: "var(--gold-lt)",
+  font: "700 11px Inter",
+  cursor: "pointer",
+};
+
+const banBtnStyle: React.CSSProperties = {
+  padding: "5px 12px",
+  borderRadius: 100,
+  border: "1px solid rgba(220,80,80,.4)",
+  background: "rgba(60,15,15,.4)",
+  color: "#f0a0a0",
+  font: "700 11px Inter",
   cursor: "pointer",
 };
 

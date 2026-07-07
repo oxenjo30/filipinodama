@@ -60,6 +60,17 @@ type SeasonData = {
   tiers: ApiTier[];
 };
 
+// ── season-end status from GET /api/season/end-status ──
+// { ended, season?, claimed?, reward?:{rank,gold,diamonds} }. When ended===true the
+// page renders the "Season has ended!" banner + Season Rewards claim modal.
+type SeasonEndReward = { rank: number; gold: number; diamonds: number };
+type SeasonEndStatus = {
+  ended: boolean;
+  season?: { id: string; name: string; endsAt: string };
+  claimed?: boolean;
+  reward?: SeasonEndReward;
+};
+
 // ── level model: level = number of tiers reached; XP-to-next uses tier xp gates ──
 const MAX_LEVEL_LABEL = 50;
 
@@ -210,6 +221,10 @@ export function SeasonPage() {
   const [seasonEndOpen, setSeasonEndOpen] = useState(false);
   const [claimingAll, setClaimingAll] = useState(false);
 
+  // Season-end rewards flow (real backend): GET /api/season/end-status drives the
+  // banner + modal; POST /api/season/end-claim grants the reward once.
+  const [endStatus, setEndStatus] = useState<SeasonEndStatus | null>(null);
+
   // Live season standings (real users, ranked by trophies).
   const [board, setBoard] = useState<LeaderboardData | null>(null);
   const [boardLoading, setBoardLoading] = useState(true);
@@ -229,6 +244,28 @@ export function SeasonPage() {
   useEffect(() => {
     void load();
   }, [load]);
+
+  // Season-end status — fetched on mount (and whenever auth changes). Only when
+  // ended===true do we surface the banner/modal. When claimed===true we render the
+  // claimed state so the reward can't be double-claimed.
+  const loadEndStatus = useCallback(async () => {
+    if (!me) {
+      setEndStatus(null);
+      return;
+    }
+    try {
+      const s = await api.get<SeasonEndStatus>("/api/season/end-status");
+      setEndStatus(s);
+    } catch {
+      // No season / not authed / transient error → simply no season-end UI (non-fatal);
+      // the rest of the season page stays fully usable.
+      setEndStatus(null);
+    }
+  }, [me]);
+
+  useEffect(() => {
+    void loadEndStatus();
+  }, [loadEndStatus]);
 
   // Standings require an authenticated leaderboard read; skip when logged out.
   useEffect(() => {
@@ -272,8 +309,14 @@ export function SeasonPage() {
   const claimableTiers = (data?.tiers ?? []).filter((t) => t.unlocked && !t.claimed);
   const claimableCount = claimableTiers.length;
 
-  // Season has ended once we pass its endsAt — drives the season-end banner + modal.
-  const seasonEnded = !!data && new Date(data.season.endsAt).getTime() <= Date.now();
+  // Season has ended — driven by the real GET /api/season/end-status (ended===true),
+  // NOT a client-side endsAt guess. The banner + modal only appear when this is true.
+  const seasonEnded = endStatus?.ended === true;
+  const endReward = endStatus?.reward ?? null;
+  const endClaimed = endStatus?.claimed === true;
+  // Prefer the season name from end-status (authoritative once ended); fall back to the
+  // reward-track season name so the banner/modal never render an empty title.
+  const endSeasonName = endStatus?.season?.name ?? seasonName;
 
   // Re-pull balances after a claim (gold/diamonds may both change).
   const refreshBalances = useCallback(async () => {
@@ -326,52 +369,62 @@ export function SeasonPage() {
     }
   }, [me, patchMe, showToast, load]);
 
-  // Season-end "Claim All" — claim every still-claimable tier via the existing per-tier endpoint.
+  // Season-end "Claim All Rewards" — grants the end-of-season placement reward via the
+  // real POST /api/season/end-claim, then patches the balances the server returns and
+  // flips into the claimed state (server guards against double-claim).
   const onClaimAll = useCallback(async () => {
     if (!me) {
       showToast("Sign in to claim season rewards.");
       return;
     }
-    if (claimableTiers.length === 0) return;
+    if (endClaimed) return;
     setClaimingAll(true);
     try {
-      let gold = 0;
-      let diamonds = 0;
-      // Claim sequentially so the ledger applies each tier cleanly.
-      for (const t of claimableTiers) {
-        const res = await api.post<{ freeReward: Reward; premiumReward: Reward }>("/api/season/claim", { tier: t.tier });
-        gold += (res.freeReward?.gold ?? 0) + (res.premiumReward?.gold ?? 0);
-        diamonds += (res.freeReward?.diamonds ?? 0) + (res.premiumReward?.diamonds ?? 0);
-      }
+      const res = await api.post<{
+        claimed: boolean;
+        reward: SeasonEndReward;
+        goldBalance: number;
+        diamondBalance: number;
+      }>("/api/season/end-claim");
+      // The server only returns a fresh balance for a currency it actually granted
+      // (>0). Patch only those fields so we never zero out an untouched balance.
+      const patch: { gold?: number; diamonds?: number } = {};
+      if (res.reward.gold > 0) patch.gold = res.goldBalance;
+      if (res.reward.diamonds > 0) patch.diamonds = res.diamondBalance;
+      if (patch.gold !== undefined || patch.diamonds !== undefined) patchMe(patch);
       const parts: string[] = [];
-      if (gold) parts.push(`+${gold.toLocaleString()} Gold`);
-      if (diamonds) parts.push(`+${diamonds.toLocaleString()} Diamonds`);
+      if (res.reward.gold > 0) parts.push(`+${res.reward.gold.toLocaleString()} Gold`);
+      if (res.reward.diamonds > 0) parts.push(`+${res.reward.diamonds.toLocaleString()} Diamonds`);
       showToast(parts.length ? parts.join(" · ") : "Rewards claimed");
-      await Promise.all([load(), refreshBalances()]);
+      // Reflect the claimed state locally + re-pull authoritative status.
+      setEndStatus((prev) => (prev ? { ...prev, claimed: true, reward: res.reward } : prev));
+      await loadEndStatus();
     } catch (e) {
-      showToast(e instanceof ApiError ? e.message : "Couldn't claim rewards.");
+      // If it was already claimed on the server, fold into the claimed state.
+      if (e instanceof ApiError && e.code === "ALREADY_CLAIMED") {
+        setEndStatus((prev) => (prev ? { ...prev, claimed: true } : prev));
+        await loadEndStatus();
+      } else {
+        showToast(e instanceof ApiError ? e.message : "Couldn't claim rewards.");
+      }
     } finally {
       setClaimingAll(false);
     }
-  }, [me, showToast, claimableTiers, load, refreshBalances]);
+  }, [me, showToast, endClaimed, patchMe, loadEndStatus]);
 
-  // Final placement for the season-end modal comes from the live leaderboard rank
-  // (no season-end backend endpoint yet). Honest "unranked" when the player has no standing.
-  const finalRank = board?.me?.rank ?? null;
+  // Final placement + rewards for the season-end modal come from the REAL end-status
+  // reward payload ({ rank, gold, diamonds }) — never fabricated.
+  const finalRank = endReward?.rank ?? null;
   const finalTierLabel = board?.me?.rankTier.label ?? (me && (me.trophies ?? 0) > 0 ? me.rankTier : "Unranked");
 
-  // Real reward tiles for the season-end grid — built from the tiers' actual rewards
-  // (no fabricated numbers). Shows each still-claimable reward the player earned.
-  const seasonEndItems = claimableTiers.flatMap((t) => {
-    const items: { icon: string; label: string; sub: string }[] = [];
-    const free = rewardCell(t.freeReward, false);
-    items.push({ icon: free.icon, label: free.label, sub: `Level ${t.tier} · Free` });
-    if (hasPass) {
-      const prem = rewardCell(t.premiumReward, true);
-      items.push({ icon: prem.icon, label: prem.label, sub: `Level ${t.tier} · Royal` });
-    }
-    return items;
-  });
+  // Reward tiles for the season-end grid — the real gold/diamonds the placement earned.
+  const seasonEndItems: { icon: string; label: string; sub: string }[] = [];
+  if (endReward) {
+    if (endReward.gold > 0)
+      seasonEndItems.push({ icon: "🪙", label: `${endReward.gold.toLocaleString()} Gold`, sub: "Season Reward" });
+    if (endReward.diamonds > 0)
+      seasonEndItems.push({ icon: "💎", label: `${endReward.diamonds.toLocaleString()} Diamonds`, sub: "Season Reward" });
+  }
 
   const tabStyle = (on: boolean): React.CSSProperties => ({
     padding: "10px 20px",
@@ -518,9 +571,9 @@ export function SeasonPage() {
         >
           <span style={{ font: "800 26px", lineHeight: 1 }}>🎉</span>
           <div style={{ flex: 1, minWidth: 200 }}>
-            <div style={{ font: "800 15px Cinzel,serif", color: "#8ff0b6" }}>{seasonName} has ended!</div>
+            <div style={{ font: "800 15px Cinzel,serif", color: "#8ff0b6" }}>{endSeasonName} has ended!</div>
             <div style={{ font: "500 12px Inter", color: "var(--ink2)" }}>
-              {claimableCount > 0 ? "Your end-of-season rewards are ready to claim." : "See where you finished this season."}
+              {endClaimed ? "You've claimed your end-of-season rewards." : "Your end-of-season rewards are ready to claim."}
             </div>
           </div>
           <button
@@ -537,7 +590,7 @@ export function SeasonPage() {
               cursor: "pointer",
             }}
           >
-            {claimableCount > 0 ? "Claim Rewards" : "View Results"}
+            {endClaimed ? "View Rewards" : "Claim Rewards"}
           </button>
         </div>
       )}
@@ -909,7 +962,7 @@ export function SeasonPage() {
               ✕
             </button>
             <div style={{ font: "700 11px Inter", letterSpacing: "3px", textTransform: "uppercase", color: "var(--gold)" }}>
-              ✦ {seasonName} Complete ✦
+              ✦ {endSeasonName} Complete ✦
             </div>
             <h2 style={{ margin: "9px 0 4px", font: "800 30px Cinzel,serif", color: "var(--gold-lt)" }}>Season Rewards</h2>
             <p style={{ margin: "0 0 22px", font: "400 13px Inter", color: "var(--ink)" }}>
@@ -980,11 +1033,11 @@ export function SeasonPage() {
               </div>
             ) : (
               <div style={{ marginBottom: 24, font: "500 13px Inter", color: "var(--ink2)" }}>
-                You've claimed every reward this season — nothing left to collect.
+                No end-of-season rewards for this placement.
               </div>
             )}
 
-            {claimableCount > 0 ? (
+            {!endClaimed ? (
               <button
                 type="button"
                 onClick={onClaimAll}

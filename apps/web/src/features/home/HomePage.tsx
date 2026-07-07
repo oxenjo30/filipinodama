@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import { useNavigate } from "react-router-dom";
 import { createInitialState, legalMoves, applyMove } from "@dama/game-engine";
 import { DEFAULT_SETTINGS } from "@dama/shared";
@@ -37,6 +37,42 @@ const QUICK_STATS = [
   { value: "87", label: "Countries", icon: "sb-modes.png" },
 ];
 
+// GET /api/matches/active — the caller's in-progress online match (endedAt
+// null), used to drive the "Continue Playing" resume card. red/blue mirror the
+// server player serializer (matches.ts playerSelect).
+type MatchPlayer = {
+  id: string;
+  username: string;
+  displayName: string;
+  tag: string;
+  avatarUrl: string | null;
+  rankTier: string;
+  trophies: number;
+} | null;
+
+type ActiveMatch = {
+  id: string;
+  mode: "CASUAL" | "RANKED" | "PRIVATE" | "AI" | "LOCAL";
+  red: MatchPlayer;
+  blue: MatchPlayer;
+  startedAt: string;
+};
+
+const MODE_LABEL: Record<string, string> = {
+  CASUAL: "Casual Match",
+  RANKED: "Ranked Match",
+  PRIVATE: "Private Match",
+  AI: "vs AI",
+  LOCAL: "Local Match",
+};
+
+/** Resolve a player's avatarUrl (bare key | "/assets/…" | full URL) to a src. */
+function avatarSrc(avatarUrl: string | null | undefined): string {
+  if (!avatarUrl) return "/assets/avatars/champion.png";
+  if (avatarUrl.startsWith("/") || avatarUrl.startsWith("http")) return avatarUrl;
+  return `/assets/avatars/${avatarUrl}.png`;
+}
+
 // Daily Challenge card is driven by the first daily quest from GET /api/quests.
 // Shape matches the quests API (same as QuestsPage): id/title/description/goal/
 // rewardGold/value/completed/claimed/claimable.
@@ -68,6 +104,30 @@ export function HomePage() {
   const showToast = useAppStore((s) => s.showToast);
   const me = useAuthStore((s) => s.me);
   const patchMe = useAuthStore((s) => s.patchMe);
+
+  // ── Continue Playing: the caller's in-progress online match, if any ──
+  const [activeMatch, setActiveMatch] = useState<ActiveMatch | null>(null);
+
+  useEffect(() => {
+    if (!me) {
+      setActiveMatch(null);
+      return;
+    }
+    let cancelled = false;
+    void (async () => {
+      try {
+        const data = await api.get<{ match: ActiveMatch | null }>("/api/matches/active");
+        if (!cancelled) setActiveMatch(data.match ?? null);
+      } catch {
+        // Silent: the resume card is purely opportunistic — a failed fetch
+        // simply means we don't show it (honest: no active match surfaced).
+        if (!cancelled) setActiveMatch(null);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [me]);
 
   // ── Daily Challenge: first daily quest from the real quests API ──
   const [dailyQuest, setDailyQuest] = useState<Quest | null>(null);
@@ -132,6 +192,19 @@ export function HomePage() {
     return s;
   }, []);
 
+  // mini board for the Continue Playing card — a real GameState after a couple
+  // of moves (the live board isn't fetched here; this is a decorative preview,
+  // and Resume rejoins the authoritative match via the onlineStore/EV.matchResync).
+  const miniState = useMemo(() => {
+    let s = createInitialState(DEFAULT_SETTINGS, "mini");
+    for (let i = 0; i < 6; i++) {
+      const mv = legalMoves(s);
+      if (!mv.length || s.result) break;
+      s = applyMove(s, mv[Math.floor(mv.length / 3)]);
+    }
+    return s;
+  }, []);
+
   const onMode = (title: string) => {
     if (title === "Play vs AI" || title === "Classic Mode") navigate("/play/ai");
     else if (title === "Ranked Mode") {
@@ -191,30 +264,46 @@ export function HomePage() {
           ))}
         </div>
 
-        {/* CONTINUE PLAYING — intentionally removed (honest): there is NO
-            active-match resume backend yet, so a "Resume Game" card would be
-            fabricated data. It returns here once active-match persistence lands
-            (a real GET for the user's in-progress match).
+        {/* CONTINUE PLAYING + RECENT UPDATES — the resume card renders only when
+            GET /api/matches/active returns a live match for the caller (honest:
+            no active match → no card, Recent Updates fills the row full-width).
+            When present, the two sit side-by-side as in the prototype. */}
+        <div
+          className="fd-continue-grid"
+          style={
+            activeMatch
+              ? { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 18 }
+              : undefined
+          }
+        >
+          {activeMatch ? (
+            <ContinuePlayingCard
+              match={activeMatch}
+              meId={me?.id ?? null}
+              miniBoard={<Board state={miniState} boardTheme="marble" />}
+              onResume={() => navigate("/play/online")}
+            />
+          ) : null}
 
-            RECENT UPDATES (platform news) fills this row full-width for now. */}
-        <div className="frame" style={{ padding: 20 }}>
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 14 }}>
-            <span className="ptitle" style={{ border: "none", padding: 0, margin: 0, textAlign: "left" }}>Recent Updates</span>
-            <span onClick={() => showToast("Full changelog is coming soon.")} style={{ font: "600 11px Inter", color: "var(--gold)", cursor: "pointer" }}>View All</span>
-          </div>
-          {UPDATES.map((u) => (
-            <div key={u.title} style={{ display: "flex", gap: 12, padding: "10px 0", borderTop: "1px solid rgba(232,184,75,.12)" }}>
-              <div style={{ width: 44, height: 44, flex: "none", borderRadius: 8, background: u.bg, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 20 }}>{u.glyph}</div>
-              <div>
-                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                  <span style={{ font: "700 9px Inter", letterSpacing: "1px", padding: "2px 6px", borderRadius: 4, background: u.tagbg, color: "#fff" }}>{u.tag}</span>
-                  <span style={{ font: "700 13px Inter" }}>{u.title}</span>
-                </div>
-                <div style={{ font: "400 12px Inter", color: "var(--ink)", marginTop: 3 }}>{u.body}</div>
-                <div style={{ font: "500 11px Inter", color: "var(--ink2)", marginTop: 3 }}>{u.time}</div>
-              </div>
+          <div className="frame" style={{ padding: 20 }}>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 14 }}>
+              <span className="ptitle" style={{ border: "none", padding: 0, margin: 0, textAlign: "left" }}>Recent Updates</span>
+              <span onClick={() => showToast("Full changelog is coming soon.")} style={{ font: "600 11px Inter", color: "var(--gold)", cursor: "pointer" }}>View All</span>
             </div>
-          ))}
+            {UPDATES.map((u) => (
+              <div key={u.title} style={{ display: "flex", gap: 12, padding: "10px 0", borderTop: "1px solid rgba(232,184,75,.12)" }}>
+                <div style={{ width: 44, height: 44, flex: "none", borderRadius: 8, background: u.bg, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 20 }}>{u.glyph}</div>
+                <div>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                    <span style={{ font: "700 9px Inter", letterSpacing: "1px", padding: "2px 6px", borderRadius: 4, background: u.tagbg, color: "#fff" }}>{u.tag}</span>
+                    <span style={{ font: "700 13px Inter" }}>{u.title}</span>
+                  </div>
+                  <div style={{ font: "400 12px Inter", color: "var(--ink)", marginTop: 3 }}>{u.body}</div>
+                  <div style={{ font: "500 11px Inter", color: "var(--ink2)", marginTop: 3 }}>{u.time}</div>
+                </div>
+              </div>
+            ))}
+          </div>
         </div>
       </div>
 
@@ -386,6 +475,69 @@ function DailyChallengeCard({
       )}
 
       <div style={{ font: "500 11px Inter", color: "var(--ink2)", marginTop: 10 }}>Ends in: {endsIn}</div>
+    </div>
+  );
+}
+
+/**
+ * Continue Playing card (prototype lines 228-242) — rendered only when
+ * GET /api/matches/active returns a live match for the caller. Shows the mini
+ * board preview, both players (me vs opponent, resolved from match.red/blue by
+ * my user id), the mode, and a Resume button that rejoins the authoritative
+ * online match (/play/online → onlineStore resyncs via EV.matchResync).
+ *
+ * Honest: no fabricated "your turn" claim — the active-match GET doesn't carry
+ * turn state, so the status reads a plain "Match in progress" live indicator.
+ */
+function ContinuePlayingCard({
+  match,
+  meId,
+  miniBoard,
+  onResume,
+}: {
+  match: ActiveMatch;
+  meId: string | null;
+  miniBoard: ReactNode;
+  onResume: () => void;
+}) {
+  // Order the seats so I'm on the left when identifiable; otherwise fall back to
+  // red-vs-blue as serialized. Either seat may be null (guest/AI/open slot).
+  const iAmRed = meId != null && match.red?.id === meId;
+  const iAmBlue = meId != null && match.blue?.id === meId;
+  const mine = iAmRed ? match.red : iAmBlue ? match.blue : match.red;
+  const other = iAmRed ? match.blue : iAmBlue ? match.red : match.blue;
+
+  const seat = (p: MatchPlayer, fallbackName: string) => (
+    <div style={{ textAlign: "center" }}>
+      <img
+        src={avatarSrc(p?.avatarUrl)}
+        alt=""
+        style={{ width: 58, height: 58, display: "block", margin: "0 auto", border: "2px solid var(--gold)", borderRadius: "50%", objectFit: "cover" }}
+      />
+      <div style={{ font: "700 13px Inter", marginTop: 7 }}>{p?.displayName ?? fallbackName}</div>
+      <div style={{ font: "600 11px 'JetBrains Mono',monospace", color: "var(--gold)" }}>🏆 {p?.trophies ?? 0}</div>
+    </div>
+  );
+
+  return (
+    <div className="frame" style={{ padding: 20 }}>
+      <div className="ptitle" style={{ textAlign: "left", border: "none", margin: "0 0 14px" }}>Continue Playing</div>
+      <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
+        <div style={{ width: 108, height: 108, flex: "none" }}>{miniBoard}</div>
+        <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", gap: 22 }}>
+          {seat(mine, "You")}
+          <span style={{ font: "800 14px Cinzel,serif", color: "var(--ink2)" }}>VS</span>
+          {seat(other, "Opponent")}
+        </div>
+      </div>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: 14 }}>
+        <span style={{ font: "600 12px Inter", color: "#3fbf6f" }}>
+          ● {MODE_LABEL[match.mode] ?? "Match"} in progress
+        </span>
+        <button className="btn btn-red" onClick={onResume} style={{ padding: "10px 18px", fontSize: 12 }}>
+          Resume Game
+        </button>
+      </div>
     </div>
   );
 }
