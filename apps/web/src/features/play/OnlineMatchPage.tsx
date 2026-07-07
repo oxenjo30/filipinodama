@@ -7,10 +7,14 @@ import { useOnlineStore } from "../../stores/onlineStore";
 import { useAuthStore } from "../../stores/authStore";
 import { useAppStore } from "../../stores/appStore";
 import { Modal } from "../shared/Modal";
+import { LoadingScreen } from "../shared/LoadingScreen";
 import { avatar as avatarUrl } from "../../lib/assets";
 
 /** Quick-chat emotes (prototype `gameEmotes`). */
 const GAME_EMOTES = ["👋", "😄", "😮", "😢", "👍", "🔥"];
+
+/** How long the branded pre-match loader shows before the search UI (handoff: 3.4s). */
+const ONLINE_LOADER_MS = 3400;
 
 /** Rotating strategy tips for the Tip of the Day panel (static, no backend). */
 const TIPS = [
@@ -121,6 +125,21 @@ export function OnlineMatchPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Branded pre-match loader, mirroring the prototype's playWithLoader: on a FRESH
+  // entry (not a resync into an existing match) show the themed LoadingScreen with
+  // the correct context — "ranked" for the ladder, "matchmaking" for casual — then
+  // reveal the matchmaking/search UI. Skipped when resuming a live match so a
+  // resync/rematch is instant.
+  const [entering, setEntering] = useState(() => {
+    const st = useOnlineStore.getState();
+    return !(st.matchId && (st.status === "playing" || st.status === "found"));
+  });
+  useEffect(() => {
+    if (!entering) return;
+    const t = window.setTimeout(() => setEntering(false), ONLINE_LOADER_MS);
+    return () => window.clearTimeout(t);
+  }, [entering]);
+
   const myTurn = !!state && !state.result && state.turn === myColor && status === "playing";
   const flip = myColor === "blue"; // blue player views from their side
 
@@ -142,6 +161,12 @@ export function OnlineMatchPage() {
     if (!text) return;
     sendMatchChat(text);
     setChatDraft("");
+  }
+
+  // ── Branded pre-match loader (prototype playWithLoader) — themed per mode:
+  //    ranked ladder vs casual matchmaking. Shown briefly on fresh entry only. ──
+  if (entering) {
+    return <LoadingScreen context={mode === "RANKED" ? "ranked" : "matchmaking"} />;
   }
 
   // ── MATCHMAKING screen (reproduced from prototype isMatchmaking, lines 345-423) ──
