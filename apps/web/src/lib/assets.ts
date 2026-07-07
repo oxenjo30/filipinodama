@@ -23,7 +23,12 @@ export type IconKey = keyof typeof ICONS;
  * NO image files — matching the approved redesign's round Dama discs. A skin just
  * re-tints the disc. `default` = classic crimson/royal.
  */
-export const PIECE_SKINS = ["crimson", "jade", "obsidian"] as const;
+export const PIECE_SKINS = [
+  "crimson", "jade", "obsidian",
+  // Meshy-generated premium skins (store shows real coin art; in-game they
+  // re-tint the disc via Piece.tsx SKIN_FACE).
+  "sarimanok", "bakunawa", "sunstars", "tamaraw", "baybayin",
+] as const;
 export type PieceSkin = (typeof PIECE_SKINS)[number] | "default";
 
 /** Board surface textures (full-image board themes, flat filenames per ASSETS.md). */
@@ -58,6 +63,12 @@ export const AVATARS = {
   dayang: `${BASE}/avatars/dayang.png`,
   priestess: `${BASE}/avatars/priestess.png`,
   sultan: `${BASE}/avatars/sultan.png`,
+  // New premium avatars (Meshy-generated portraits).
+  lakan: `${BASE}/avatars/lakan.png`,
+  binukot: `${BASE}/avatars/binukot.png`,
+  datu: `${BASE}/avatars/datu.png`,
+  magwayen: `${BASE}/avatars/magwayen.png`,
+  panday: `${BASE}/avatars/panday.png`,
 } as const;
 export type AvatarKey = keyof typeof AVATARS;
 
@@ -75,6 +86,12 @@ export const FRAMES = {
   silver: `${BASE}/frames/silver.png`,
   obsidian: `${BASE}/frames/obsidian.png`,
   filigree: `${BASE}/frames/filigree.webp`,
+  // New premium frames (Meshy-generated; transparent-center rings).
+  sunburst: `${BASE}/frames/sunburst.png`,
+  "jade-dragon": `${BASE}/frames/jade-dragon.png`,
+  kalasag: `${BASE}/frames/kalasag.png`,
+  sampaguita: `${BASE}/frames/sampaguita.png`,
+  capiz: `${BASE}/frames/capiz.png`,
 } as const;
 export type FrameKey = keyof typeof FRAMES;
 

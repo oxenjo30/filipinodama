@@ -41,8 +41,8 @@ export type StorePreview = {
   owned: boolean;
   /** board texture file (e.g. "board-marble.png") — for kind==="board" */
   boardFile?: string;
-  /** flat piece-art skin key ("crimson" | "jade" | "obsidian") if art PNGs exist */
-  skinArt?: "crimson" | "jade" | "obsidian";
+  /** flat piece-art skin folder key (e.g. "crimson"/"jade"/"sarimanok") if art PNGs exist */
+  skinArt?: string;
   /** CSS <Piece> disc skin fallback (default | crimson | jade | obsidian) */
   pieceSkin?: PieceSkin;
   /** portrait file (e.g. "avatars/sovereign.png" or "babaylan.webp") — avatar/skin-portrait */
@@ -76,7 +76,7 @@ function CurIcon({ cur, size = 20 }: { cur: "gold" | "gem"; size?: number }) {
  * the man on the front face and the king on the back, with a sheen sweep and a
  * pulsing ground shadow. `delay` offsets the red/blue coins.
  */
-function SkinCoin({ color, skinArt, pieceSkin, label, labelColor, delay }: { color: PieceColor; skinArt?: "crimson" | "jade" | "obsidian"; pieceSkin: PieceSkin; label: string; labelColor: string; delay: string }) {
+function SkinCoin({ color, skinArt, pieceSkin, label, labelColor, delay }: { color: PieceColor; skinArt?: string; pieceSkin: PieceSkin; label: string; labelColor: string; delay: string }) {
   const S = 116;
 
   // Default "Classic" skin (no skinArt) → render the procedural CSS disc, which

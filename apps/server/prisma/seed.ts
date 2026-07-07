@@ -36,6 +36,14 @@ const STORE = [
   { id: "crimsonskin", type: "SKIN", name: "Crimson Legion Pieces", assetKey: "crimson", previewKey: "skin:crimson", priceDiamonds: 300, salePrice: 180, onSale: true, featured: true, sortOrder: 21 },
   { id: "obsidianskin", type: "SKIN", name: "Obsidian Court Pieces", assetKey: "obsidian", previewKey: "skin:obsidian", priceDiamonds: 420, tag: "PREMIUM", isPremium: true, sortOrder: 22 },
 
+  // ── NEW premium Piece Skins (Meshy-generated; red+blue × man+king coin art
+  //    lives at pieces/skins/<assetKey>/<color>-<rank>.png) ──
+  { id: "sarimanokskin", type: "SKIN", name: "Sarimanok Legend", assetKey: "sarimanok", previewKey: "skin:sarimanok", priceDiamonds: 420, tag: "NEW", isPremium: true, sortOrder: 23 },
+  { id: "bakunawaskin", type: "SKIN", name: "Bakunawa Eclipse", assetKey: "bakunawa", previewKey: "skin:bakunawa", priceDiamonds: 460, tag: "PREMIUM", isPremium: true, sortOrder: 24 },
+  { id: "sunstarsskin", type: "SKIN", name: "Sun & Three Stars", assetKey: "sunstars", previewKey: "skin:sunstars", priceGold: 3400, sortOrder: 25 },
+  { id: "tamarawskin", type: "SKIN", name: "Golden Tamaraw", assetKey: "tamaraw", previewKey: "skin:tamaraw", priceGold: 3800, sortOrder: 26 },
+  { id: "baybayinskin", type: "SKIN", name: "Baybayin Ancestral", assetKey: "baybayin", previewKey: "skin:baybayin", priceDiamonds: 380, tag: "NEW", isPremium: true, sortOrder: 27 },
+
   // ── Avatars ──
   { id: "sovereign", type: "AVATAR", name: "Royal Sovereign", assetKey: "avatars/sovereign.png", previewKey: "avatar:avatars/sovereign.png", priceDiamonds: 280, tag: "NEW", sortOrder: 30 },
   { id: "dayang", type: "AVATAR", name: "Dayang Warrior", assetKey: "avatars/dayang.png", previewKey: "avatar:avatars/dayang.png", priceGold: 2600, sortOrder: 31 },
@@ -48,11 +56,23 @@ const STORE = [
   { id: "babaylan", type: "AVATAR", name: "Babaylan Elder", assetKey: "avatars/babaylan.png", previewKey: "avatar:avatars/babaylan.png", priceGold: 2000, sortOrder: 38 },
   { id: "diwata", type: "AVATAR", name: "Diwata Spirit", assetKey: "avatars/diwata.png", previewKey: "avatar:avatars/diwata.png", priceDiamonds: 260, sortOrder: 39 },
   { id: "ermitanyo", type: "AVATAR", name: "Ermitaño Hermit", assetKey: "avatars/ermitanyo.png", previewKey: "avatar:avatars/ermitanyo.png", priceGold: 1800, sortOrder: 40 },
+  // NEW premium avatars (Meshy-generated portraits at avatars/<key>.png)
+  { id: "lakan", type: "AVATAR", name: "Lakan Paramount", assetKey: "avatars/lakan.png", previewKey: "avatar:avatars/lakan.png", priceDiamonds: 340, tag: "NEW", isPremium: true, sortOrder: 41 },
+  { id: "binukot", type: "AVATAR", name: "Binukot Princess", assetKey: "avatars/binukot.png", previewKey: "avatar:avatars/binukot.png", priceDiamonds: 320, tag: "PREMIUM", isPremium: true, sortOrder: 42 },
+  { id: "datu", type: "AVATAR", name: "Datu Warlord", assetKey: "avatars/datu.png", previewKey: "avatar:avatars/datu.png", priceGold: 2800, sortOrder: 43 },
+  { id: "magwayen", type: "AVATAR", name: "Magwayen, Sea Goddess", assetKey: "avatars/magwayen.png", previewKey: "avatar:avatars/magwayen.png", priceDiamonds: 360, tag: "PREMIUM", isPremium: true, sortOrder: 44 },
+  { id: "panday", type: "AVATAR", name: "Panday Smith-King", assetKey: "avatars/panday.png", previewKey: "avatar:avatars/panday.png", priceGold: 3000, sortOrder: 45 },
 
   // ── Profile Frames ──
   { id: "laurel", type: "FRAME", name: "Golden Laurel Frame", assetKey: "laurel.png", previewKey: "frame:laurel.png", priceGold: 2200, sortOrder: 50 },
   { id: "silver", type: "FRAME", name: "Silver Knight Frame", assetKey: "frames/silver.png", previewKey: "frame:frames/silver.png", priceGold: 2500, salePrice: 1500, onSale: true, sortOrder: 51 },
   { id: "obsidianf", type: "FRAME", name: "Obsidian Sovereign Frame", assetKey: "frames/obsidian.png", previewKey: "frame:frames/obsidian.png", priceDiamonds: 340, tag: "PREMIUM", isPremium: true, sortOrder: 52 },
+  // NEW premium frames (Meshy-generated; transparent-center rings at frames/<key>.png)
+  { id: "sunburstf", type: "FRAME", name: "Golden Sunburst Frame", assetKey: "frames/sunburst.png", previewKey: "frame:frames/sunburst.png", priceGold: 2400, tag: "NEW", sortOrder: 53 },
+  { id: "jadedragonf", type: "FRAME", name: "Jade Dragon Frame", assetKey: "frames/jade-dragon.png", previewKey: "frame:frames/jade-dragon.png", priceDiamonds: 360, tag: "PREMIUM", isPremium: true, sortOrder: 54 },
+  { id: "kalasagf", type: "FRAME", name: "Kalasag War Frame", assetKey: "frames/kalasag.png", previewKey: "frame:frames/kalasag.png", priceGold: 2600, sortOrder: 55 },
+  { id: "sampaguitaf", type: "FRAME", name: "Sampaguita Bloom Frame", assetKey: "frames/sampaguita.png", previewKey: "frame:frames/sampaguita.png", priceGold: 2200, sortOrder: 56 },
+  { id: "capizf", type: "FRAME", name: "Capiz Pearl Frame", assetKey: "frames/capiz.png", previewKey: "frame:frames/capiz.png", priceDiamonds: 300, tag: "NEW", isPremium: true, sortOrder: 57 },
 
   // ── Emotes ──
   { id: "victory", type: "EMOTE", name: "Victory Royale", assetKey: "victory", previewKey: "emote:👑", priceGold: 1500, sortOrder: 60 },

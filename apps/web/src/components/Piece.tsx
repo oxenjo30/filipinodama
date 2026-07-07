@@ -33,6 +33,28 @@ const SKIN_FACE: Partial<Record<Exclude<PieceSkin, "default">, Record<PieceColor
     red: { face: "radial-gradient(circle at 36% 26%,#c98a92 0%,#7a3a44 34%,#4d222a 62%,#2a1218 100%)", rim: "#1a0c10", ringLo: "rgba(60,25,32,.85)" },
     blue: { face: "radial-gradient(circle at 36% 26%,#8a9ab8 0%,#3a4a6e 34%,#22304d 62%,#12182a 100%)", rim: "#0a0e18", ringLo: "rgba(25,35,55,.85)" },
   },
+  // ── New premium skins: ruby-red vs sapphire-blue enamel discs (matching the
+  //    generated coin art), each with a subtle motif-flavoured tint. ──
+  sarimanok: {
+    red: { face: "radial-gradient(circle at 36% 26%,#ffc9a0 0%,#e04a3a 34%,#a51f1f 62%,#5f0f12 100%)", rim: "#4a0c0e", ringLo: "rgba(110,20,20,.85)" },
+    blue: { face: "radial-gradient(circle at 36% 26%,#bfe0ff 0%,#3f7fe0 34%,#274fa5 62%,#132f5f 100%)", rim: "#0e1c4a", ringLo: "rgba(20,45,110,.85)" },
+  },
+  bakunawa: {
+    red: { face: "radial-gradient(circle at 36% 26%,#ffb8b0 0%,#d63b46 34%,#8f1f2b 62%,#54101a 100%)", rim: "#3d0c14", ringLo: "rgba(100,18,26,.85)" },
+    blue: { face: "radial-gradient(circle at 36% 26%,#aecdf5 0%,#3a6ae0 34%,#233f9c 62%,#12235f 100%)", rim: "#0c1a4a", ringLo: "rgba(18,35,100,.85)" },
+  },
+  sunstars: {
+    red: { face: "radial-gradient(circle at 36% 26%,#ffd0a0 0%,#e5502e 34%,#a83320 62%,#601a12 100%)", rim: "#4a1408", ringLo: "rgba(110,45,20,.85)" },
+    blue: { face: "radial-gradient(circle at 36% 26%,#bcdcff 0%,#3f78d8 34%,#274fa0 62%,#132f60 100%)", rim: "#0e1e50", ringLo: "rgba(20,45,100,.85)" },
+  },
+  tamaraw: {
+    red: { face: "radial-gradient(circle at 36% 26%,#ffc4a8 0%,#d84a2e 34%,#a3341e 62%,#5c1c10 100%)", rim: "#451408", ringLo: "rgba(105,40,20,.85)" },
+    blue: { face: "radial-gradient(circle at 36% 26%,#b6d4f0 0%,#3a6ac8 34%,#22406e 62%,#12233f 100%)", rim: "#0c1a3a", ringLo: "rgba(18,35,80,.85)" },
+  },
+  baybayin: {
+    red: { face: "radial-gradient(circle at 36% 26%,#ffbca8 0%,#d13b3b 34%,#9c1f28 62%,#5a1018 100%)", rim: "#420c12", ringLo: "rgba(105,18,24,.85)" },
+    blue: { face: "radial-gradient(circle at 36% 26%,#c0d8ff 0%,#4470e0 34%,#2a479c 62%,#152a5f 100%)", rim: "#101e4a", ringLo: "rgba(22,40,100,.85)" },
+  },
 };
 
 export type PieceProps = {

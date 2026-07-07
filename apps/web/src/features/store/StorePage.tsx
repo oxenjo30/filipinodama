@@ -300,10 +300,14 @@ function resolve(it: StoreItemApi): ShopItem {
 // (crimson-/jade-/obsidian-<color>-<man|king>.png). Portrait "skins" (babaylan
 // etc.) fall through to a portrait token instead.
 /** Premium skin folders that have real coin art under pieces/skins/<folder>/. */
-const SKIN_FOLDERS = new Set(["crimson", "jade", "obsidian"]);
+const SKIN_FOLDERS = new Set([
+  "crimson", "jade", "obsidian",
+  // Meshy-generated premium skins (red+blue × man+king coins present in each).
+  "sarimanok", "bakunawa", "sunstars", "tamaraw", "baybayin",
+]);
 /** The premium skin folder for an item, from its assetKey; undefined = default. */
-function skinArtOf(assetKey: string): "crimson" | "jade" | "obsidian" | undefined {
-  return SKIN_FOLDERS.has(assetKey) ? (assetKey as "crimson" | "jade" | "obsidian") : undefined;
+function skinArtOf(assetKey: string): string | undefined {
+  return SKIN_FOLDERS.has(assetKey) ? assetKey : undefined;
 }
 
 /**
