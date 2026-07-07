@@ -84,19 +84,5 @@ export async function storeRoutes(app: FastifyInstance) {
     });
     return ok({ orders });
   });
-
-  // GET /api/payments/packs — diamond top-up packs (hardcoded PH pricing)
-  app.get("/payments/packs", async () => {
-    return ok({ packs: DIAMOND_PACKS, currency: "PHP", enabled: features.payments });
-  });
-
-  // POST /api/payments/checkout — PayMongo checkout (not live yet → honest 503)
-  app.post("/payments/checkout", { preHandler: requireAuth }, async (req) => {
-    const { packId } = checkoutSchema.parse(req.body);
-    const pack = DIAMOND_PACKS.find((p) => p.id === packId);
-    if (!pack) throw err.notFound("PACK_NOT_FOUND", "Diamond pack not found");
-    if (!features.payments) throw err.notConfigured("Payments");
-    // PayMongo checkout session creation lands with the payments webhook task.
-    throw err.notConfigured("Payments");
-  });
+  // Diamond packs + checkout + webhook now live in modules/payments.ts.
 }
