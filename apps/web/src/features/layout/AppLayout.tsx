@@ -9,7 +9,9 @@ import { ICONS, BRAND, avatar as avatarUrl } from "../../lib/assets";
 import { Toasts } from "../shared/Toasts";
 import { TopUpModal } from "../store/TopUpModal";
 import { NotificationsMenu } from "../nav/NotificationsMenu";
+import { CookieConsent } from "../consent/CookieConsent";
 import { Footer } from "./Footer";
+import { OnboardingFlow } from "../onboarding/OnboardingFlow";
 
 /**
  * AppLayout — the top nav + mobile nav + fixed background, reproduced VERBATIM
@@ -350,6 +352,8 @@ export function AppLayout() {
         <Footer />
       </div>
       <Toasts />
+      <OnboardingFlow />
+      <CookieConsent />
       <TopUpModal open={topUpOpen} onClose={() => setTopUpOpen(false)} />
       <NotificationsMenu open={notifOpen} onClose={() => setNotifOpen(false)} onUnreadChange={setNotifUnread} />
     </>

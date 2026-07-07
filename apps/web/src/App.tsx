@@ -6,6 +6,7 @@ import { PlayHubPage } from "./features/play/PlayHubPage";
 import { AiSetupPage } from "./features/play/AiSetupPage";
 import { GamePage } from "./features/play/GamePage";
 import { ComingSoon } from "./features/shared/ComingSoon";
+import { NotFoundPage } from "./features/shared/NotFoundPage";
 import { FriendsPage } from "./features/friends/FriendsPage";
 import { ProfilePage } from "./features/profile/ProfilePage";
 import { QuestsPage } from "./features/quests/QuestsPage";
@@ -116,7 +117,7 @@ export function App() {
           <Route path="/matchmaking" element={<ComingSoon title="Matchmaking" />} />
 
           {/* ── catch-all ── */}
-          <Route path="*" element={<ComingSoon title="Not Found" eyebrow="✦ Off the Map ✦" blurb="This page doesn't exist yet. Head back and pick a battle." />} />
+          <Route path="*" element={<NotFoundPage />} />
         </Route>
       </Routes>
     </BrowserRouter>

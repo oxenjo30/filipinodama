@@ -493,126 +493,191 @@ export function AuthPage({ initialMode = "signin" }: { initialMode?: Mode }) {
             role="dialog"
             aria-modal="true"
             style={{
-              position: "absolute",
+              position: "fixed",
               inset: 0,
-              zIndex: 5,
-              borderRadius: "inherit",
-              background: "rgba(12,6,24,.92)",
+              zIndex: 400,
+              overflow: "auto",
+              background:
+                "radial-gradient(1200px 700px at 50% -8%,rgba(90,50,140,.6),#0c0618 60%),#0c0618",
               display: "flex",
-              flexDirection: "column",
+              alignItems: "center",
               justifyContent: "center",
-              gap: 14,
-              padding: "34px 32px",
+              padding: 24,
+              animation: "fdfade .25s ease",
             }}
           >
-            {forgotDone ? (
-              <>
-                <div style={{ textAlign: "center", fontSize: 30 }}>📧</div>
-                <h2
-                  style={{
-                    margin: 0,
-                    textAlign: "center",
-                    font: "800 20px Cinzel,serif",
-                    color: "var(--gold-lt)",
-                  }}
-                >
-                  Check your email
-                </h2>
-                <p
-                  style={{
-                    margin: 0,
-                    textAlign: "center",
-                    font: "400 12.5px/1.6 Inter",
-                    color: "var(--ink2)",
-                  }}
-                >
-                  If an account exists for <b style={{ color: "#fff" }}>{forgotEmail.trim()}</b>,
-                  we&rsquo;ve sent a password-reset link. It may take a minute to arrive — check
-                  your spam folder too.
-                </p>
-                <button
-                  type="button"
-                  className="btn btn-gold"
-                  onClick={() => setForgotOpen(false)}
-                  style={{ width: "100%", justifyContent: "center", padding: 13, marginTop: 4 }}
-                >
-                  Back to Sign In
-                </button>
-              </>
-            ) : (
-              <>
-                <h2
-                  style={{
-                    margin: 0,
-                    textAlign: "center",
-                    font: "800 20px Cinzel,serif",
-                    color: "var(--gold-lt)",
-                  }}
-                >
-                  Reset your password
-                </h2>
-                <p
-                  style={{
-                    margin: 0,
-                    textAlign: "center",
-                    font: "400 12.5px/1.6 Inter",
-                    color: "var(--ink2)",
-                  }}
-                >
-                  Enter your account email and we&rsquo;ll send you a link to set a new password.
-                </p>
-                <label style={{ display: "block" }}>
-                  <span style={LABEL_TEXT}>EMAIL</span>
-                  <input
-                    value={forgotEmail}
-                    onChange={(e) => setForgotEmail(e.target.value)}
-                    type="email"
-                    placeholder="you@example.com"
-                    autoComplete="email"
-                    autoFocus
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter" && !forgotBusy) submitForgot();
+            <div
+              style={{
+                position: "absolute",
+                inset: 0,
+                opacity: 0.4,
+                backgroundImage: "radial-gradient(rgba(232,184,75,.06) 1px,transparent 1px)",
+                backgroundSize: "30px 30px",
+                pointerEvents: "none",
+              }}
+            />
+            <div
+              className="frame"
+              style={{
+                position: "relative",
+                width: "min(94vw,420px)",
+                padding: "34px 32px 30px",
+                background: "linear-gradient(180deg,#1c1130,#140a24)",
+                display: "flex",
+                flexDirection: "column",
+                alignItems: "center",
+                gap: 14,
+                textAlign: "center",
+              }}
+            >
+              <button
+                type="button"
+                onClick={() => setForgotOpen(false)}
+                aria-label="Back to sign in"
+                style={{
+                  position: "absolute",
+                  top: 16,
+                  left: 16,
+                  width: 34,
+                  height: 34,
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  borderRadius: 9,
+                  border: "1px solid rgba(232,184,75,.25)",
+                  background: "rgba(0,0,0,.35)",
+                  color: "var(--gold-lt)",
+                  font: "700 16px Inter",
+                  cursor: "pointer",
+                }}
+              >
+                ‹
+              </button>
+
+              {forgotDone ? (
+                <>
+                  <div
+                    style={{
+                      width: 60,
+                      height: 60,
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      borderRadius: "50%",
+                      background: "rgba(63,191,111,.16)",
+                      border: "1px solid rgba(63,191,111,.5)",
+                      color: "#7ee6a4",
+                      fontSize: 30,
                     }}
-                    style={INPUT}
-                  />
-                </label>
-                {forgotError && (
-                  <div style={{ font: "600 12px Inter", color: "#ff9aa8" }}>{forgotError}</div>
-                )}
-                <button
-                  type="button"
-                  className="btn btn-gold"
-                  onClick={submitForgot}
-                  disabled={forgotBusy}
-                  style={{
-                    width: "100%",
-                    justifyContent: "center",
-                    padding: 13,
-                    opacity: forgotBusy ? 0.7 : 1,
-                    cursor: forgotBusy ? "default" : "pointer",
-                  }}
-                >
-                  {forgotBusy ? "Sending…" : "Send reset link"}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setForgotOpen(false)}
-                  disabled={forgotBusy}
-                  style={{
-                    width: "100%",
-                    padding: 10,
-                    borderRadius: 11,
-                    border: "1px solid rgba(232,184,75,.22)",
-                    background: "transparent",
-                    color: "var(--ink)",
-                    font: "700 12px Inter",
-                    cursor: forgotBusy ? "default" : "pointer",
-                  }}
-                >
-                  Cancel
-                </button>
-              </>
-            )}
+                  >
+                    ✓
+                  </div>
+                  <h1 style={{ margin: 0, font: "800 24px Cinzel,serif", color: "var(--gold-lt)" }}>
+                    Check your email
+                  </h1>
+                  <p
+                    style={{
+                      margin: 0,
+                      maxWidth: 300,
+                      font: "400 13px/1.6 Inter",
+                      color: "var(--ink)",
+                    }}
+                  >
+                    We&rsquo;ve sent a reset link to{" "}
+                    <b style={{ color: "var(--gold-lt)" }}>{forgotEmail}</b>. It may take a minute to
+                    arrive.
+                  </p>
+                  <button
+                    type="button"
+                    className="btn btn-gold"
+                    onClick={() => setForgotOpen(false)}
+                    style={{ width: "100%", justifyContent: "center", padding: 14, marginTop: 4 }}
+                  >
+                    Back to sign in
+                  </button>
+                  <button
+                    type="button"
+                    onClick={submitForgot}
+                    disabled={forgotBusy}
+                    style={{
+                      border: "none",
+                      background: "transparent",
+                      color: "var(--ink2)",
+                      font: "600 12px Inter",
+                      cursor: forgotBusy ? "default" : "pointer",
+                    }}
+                  >
+                    Didn&rsquo;t get it? Resend
+                  </button>
+                </>
+              ) : (
+                <>
+                  <div
+                    style={{
+                      width: 56,
+                      height: 56,
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      borderRadius: 16,
+                      background: "rgba(232,184,75,.12)",
+                      border: "1px solid rgba(232,184,75,.3)",
+                      fontSize: 26,
+                    }}
+                  >
+                    🔑
+                  </div>
+                  <h1 style={{ margin: 0, font: "800 24px Cinzel,serif", color: "var(--gold-lt)" }}>
+                    Reset your password
+                  </h1>
+                  <p style={{ margin: 0, font: "400 12.5px Inter", color: "var(--ink2)" }}>
+                    Enter your email and we&rsquo;ll send you a link to set a new password.
+                  </p>
+                  <label style={{ display: "block", width: "100%", textAlign: "left" }}>
+                    <span style={LABEL_TEXT}>EMAIL</span>
+                    <input
+                      value={forgotEmail}
+                      onChange={(e) => setForgotEmail(e.target.value)}
+                      type="email"
+                      placeholder="you@example.com"
+                      autoComplete="email"
+                      autoFocus
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" && !forgotBusy) submitForgot();
+                      }}
+                      style={INPUT}
+                    />
+                  </label>
+                  {forgotError && (
+                    <div
+                      style={{
+                        width: "100%",
+                        textAlign: "left",
+                        font: "600 12px Inter",
+                        color: "#ff9aa8",
+                      }}
+                    >
+                      {forgotError}
+                    </div>
+                  )}
+                  <button
+                    type="button"
+                    className="btn btn-gold"
+                    onClick={submitForgot}
+                    disabled={forgotBusy}
+                    style={{
+                      width: "100%",
+                      justifyContent: "center",
+                      padding: 15,
+                      opacity: forgotBusy ? 0.7 : 1,
+                      cursor: forgotBusy ? "default" : "pointer",
+                    }}
+                  >
+                    {forgotBusy ? "Sending…" : "Send reset link"}
+                  </button>
+                </>
+              )}
+            </div>
           </div>
         )}
       </div>

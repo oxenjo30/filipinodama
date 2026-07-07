@@ -14,6 +14,10 @@ export type AuthStore = {
   loading: boolean;
   ready: boolean; // bootstrap finished
   providers: Providers;
+  // Transient: true only in the session tick right after a successful register().
+  // The onboarding tour reads this once to know "this account just signed up",
+  // then clears it. Never persisted — a page reload leaves it false.
+  justRegistered: boolean;
 
   bootstrap: () => Promise<void>;
   refreshProviders: () => Promise<void>;
@@ -23,6 +27,7 @@ export type AuthStore = {
   logout: () => Promise<void>;
   setMe: (me: Me | null) => void;
   patchMe: (patch: Partial<Me>) => void;
+  clearJustRegistered: () => void;
 };
 
 export const useAuthStore = create<AuthStore>((set, get) => ({
@@ -30,6 +35,7 @@ export const useAuthStore = create<AuthStore>((set, get) => ({
   loading: false,
   ready: false,
   providers: { email: true, guest: true, google: false, facebook: false, emailDelivery: false },
+  justRegistered: false,
 
   bootstrap: async () => {
     try {
@@ -56,7 +62,7 @@ export const useAuthStore = create<AuthStore>((set, get) => ({
     set({ loading: true });
     try {
       const res = await api.post<{ user: Me; needsVerification: boolean; emailConfigured: boolean }>("/api/auth/register", input);
-      set({ me: res.user });
+      set({ me: res.user, justRegistered: true });
       return { needsVerification: res.needsVerification, emailConfigured: res.emailConfigured };
     } finally {
       set({ loading: false });
@@ -94,6 +100,7 @@ export const useAuthStore = create<AuthStore>((set, get) => ({
 
   setMe: (me) => set({ me }),
   patchMe: (patch) => set((s) => (s.me ? { me: { ...s.me, ...patch } } : s)),
+  clearJustRegistered: () => set({ justRegistered: false }),
 }));
 
 export { ApiError };
