@@ -1,10 +1,10 @@
 import type { Server as IOServer, Socket } from "socket.io";
-import { EV } from "@dama/shared";
 import { verifyAccess, COOKIE } from "../auth/tokens.js";
 import { prisma } from "../db/client.js";
 import { registerMatchmaking } from "./matchmaking.js";
 import { registerMatch } from "./match.js";
 import { registerGuildChat } from "./guild-chat.js";
+import { registerPresence } from "./presence.js";
 import { setIO } from "./io.js";
 
 /**
@@ -82,17 +82,13 @@ export function registerRealtime(io: IOServer) {
 
   io.on("connection", (socket: Socket) => {
     // socket.data.userId is guaranteed set by the io.use() guard above.
+    registerPresence(io, socket); // must run first — joins presence:<userId> room
     registerMatchmaking(io, socket);
     registerMatch(io, socket);
     registerGuildChat(io, socket);
 
-    socket.on(EV.presencePing, () => {
-      // refresh presence:<userId> TTL in redis, broadcast presence:update to friends
-    });
-
-    socket.on("disconnect", () => {
-      // matchmaking cleans its queue on disconnect; live matches keep their
-      // in-memory state so a reconnecting client can EV.matchResync.
-    });
+    // matchmaking cleans its queue on disconnect; presence.ts owns the
+    // online/offline transition on disconnect; live matches keep their in-memory
+    // state so a reconnecting client can EV.matchResync.
   });
 }

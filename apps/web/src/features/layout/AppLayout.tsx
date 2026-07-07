@@ -1,8 +1,9 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Outlet, useLocation, useNavigate } from "react-router-dom";
 import { rankTierFor } from "@dama/shared";
 import { useAppStore } from "../../stores/appStore";
 import { useAuthStore } from "../../stores/authStore";
+import { usePresenceStore } from "../../stores/presenceStore";
 import { ICONS, BRAND, avatar as avatarUrl } from "../../lib/assets";
 import { Toasts } from "../shared/Toasts";
 import { TopUpModal } from "../store/TopUpModal";
@@ -38,7 +39,16 @@ export function AppLayout() {
   const me = useAuthStore((s) => s.me);
   const logout = useAuthStore((s) => s.logout);
   const showToast = useAppStore((s) => s.showToast);
+  const startPresence = usePresenceStore((s) => s.start);
+  const stopPresence = usePresenceStore((s) => s.stop);
   const [acctOpen, setAcctOpen] = useState(false);
+
+  // Start live presence once signed in (guests included) so friends' online
+  // dots + presence-driven UI work app-wide; tear down on sign-out.
+  useEffect(() => {
+    if (me) void startPresence();
+    else stopPresence();
+  }, [me, startPresence, stopPresence]);
   const [topUpOpen, setTopUpOpen] = useState(false);
   const [notifOpen, setNotifOpen] = useState(false);
   const [notifUnread, setNotifUnread] = useState(0);
