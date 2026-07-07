@@ -5,6 +5,7 @@ import { registerMatchmaking } from "./matchmaking.js";
 import { registerMatch } from "./match.js";
 import { registerGuildChat } from "./guild-chat.js";
 import { registerPresence } from "./presence.js";
+import { registerRooms } from "./rooms.js";
 import { setIO } from "./io.js";
 
 /**
@@ -86,6 +87,7 @@ export function registerRealtime(io: IOServer) {
     registerMatchmaking(io, socket);
     registerMatch(io, socket);
     registerGuildChat(io, socket);
+    registerRooms(io, socket);
 
     // matchmaking cleans its queue on disconnect; presence.ts owns the
     // online/offline transition on disconnect; live matches keep their in-memory

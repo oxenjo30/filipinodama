@@ -215,4 +215,83 @@ export async function seasonRoutes(app: FastifyInstance) {
 
     return ok({ hasPass: true, spentDiamonds: price, diamondBalance, seasonId: season.id });
   });
+
+  // ── Season-end rewards ──────────────────────────────────────────────────────
+  // When a season has ended, a player claims a ONE-TIME bonus scaled to their
+  // final leaderboard placement. We use the sentinel -1 in SeasonProgress.claimed
+  // to mark the end-of-season reward as taken (never collides with real tiers ≥1).
+  const SEASON_END_TIER = -1;
+
+  /** Final placement + reward for a user in an ended season. */
+  async function seasonEndReward(userId: string, seasonId: string) {
+    // Final rank = position by trophies among all non-deleted users (the same
+    // ordering the global leaderboard uses).
+    const me = await prisma.user.findUnique({ where: { id: userId }, select: { trophies: true } });
+    const trophies = me?.trophies ?? 0;
+    const higher = await prisma.user.count({
+      where: { deletedAt: null, trophies: { gt: trophies } },
+    });
+    const rank = higher + 1;
+    // Reward brackets (gold + diamonds) by final placement.
+    let gold = 500;
+    let diamonds = 0;
+    if (rank === 1) { gold = 10000; diamonds = 200; }
+    else if (rank <= 3) { gold = 6000; diamonds = 100; }
+    else if (rank <= 10) { gold = 3000; diamonds = 50; }
+    else if (rank <= 50) { gold = 1500; diamonds = 20; }
+    else if (rank <= 100) { gold = 1000; diamonds = 10; }
+    return { rank, gold, diamonds, seasonId };
+  }
+
+  // GET /api/season/end-status — is the current season over, my placement + reward,
+  // and whether I've claimed it.
+  app.get("/season/end-status", { preHandler: requireAuth }, async (req) => {
+    const userId = req.userId!;
+    const season = await currentSeason();
+    if (!season) return ok({ ended: false });
+    const ended = season.endsAt.getTime() < Date.now();
+    if (!ended) return ok({ ended: false, season: { id: season.id, name: season.name, endsAt: season.endsAt } });
+    const progress = await prisma.seasonProgress.findUnique({
+      where: { userId_seasonId: { userId, seasonId: season.id } },
+    });
+    const claimed = (progress?.claimed ?? []).includes(SEASON_END_TIER);
+    const reward = await seasonEndReward(userId, season.id);
+    return ok({ ended: true, season: { id: season.id, name: season.name, endsAt: season.endsAt }, claimed, reward });
+  });
+
+  // POST /api/season/end-claim — grant the season-end reward once.
+  app.post("/season/end-claim", { preHandler: requireAuth }, async (req) => {
+    const userId = req.userId!;
+    const season = await currentSeason();
+    if (!season) throw err.notFound("NO_SEASON", "No season is configured");
+    if (season.endsAt.getTime() >= Date.now())
+      throw err.badRequest("SEASON_NOT_ENDED", "The season hasn't ended yet");
+
+    const reward = await seasonEndReward(userId, season.id);
+    // Atomic claim gate: conditional push of the -1 sentinel (only if absent).
+    const existing = await prisma.seasonProgress.findUnique({
+      where: { userId_seasonId: { userId, seasonId: season.id } },
+    });
+    if (existing) {
+      if (existing.claimed.includes(SEASON_END_TIER))
+        throw err.conflict("ALREADY_CLAIMED", "Season rewards already claimed");
+      const flipped = await prisma.seasonProgress.updateMany({
+        where: { userId, seasonId: season.id, NOT: { claimed: { has: SEASON_END_TIER } } },
+        data: { claimed: { push: SEASON_END_TIER } },
+      });
+      if (flipped.count === 0) throw err.conflict("ALREADY_CLAIMED", "Season rewards already claimed");
+    } else {
+      await prisma.seasonProgress.create({
+        data: { userId, seasonId: season.id, claimed: [SEASON_END_TIER] },
+      });
+    }
+
+    let goldBalance = 0;
+    let diamondBalance = 0;
+    if (reward.gold > 0)
+      goldBalance = await applyLedger(prisma, { userId, currency: "GOLD", amount: reward.gold, reason: "season_end", refType: "season_end", refId: season.id });
+    if (reward.diamonds > 0)
+      diamondBalance = await applyLedger(prisma, { userId, currency: "DIAMONDS", amount: reward.diamonds, reason: "season_end", refType: "season_end", refId: season.id });
+    return ok({ claimed: true, reward, goldBalance, diamondBalance });
+  });
 }

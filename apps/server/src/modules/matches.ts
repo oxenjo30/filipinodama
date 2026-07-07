@@ -117,6 +117,20 @@ export async function matchRoutes(app: FastifyInstance) {
     });
   });
 
+  // GET /api/matches/active — the caller's current in-progress match (endedAt
+  // null), if any, so the Home "Continue Playing" card can resume it. Online
+  // matches are server-authoritative + in-memory; the Match row exists with
+  // endedAt null while live, so this is an honest "you have a game going" signal.
+  app.get("/matches/active", { preHandler: requireAuth }, async (req) => {
+    const me = req.userId!;
+    const m = await prisma.match.findFirst({
+      where: { endedAt: null, mode: { in: ["CASUAL", "RANKED", "PRIVATE"] }, OR: [{ redId: me }, { blueId: me }] },
+      orderBy: { startedAt: "desc" },
+      include: { red: playerSelect, blue: playerSelect },
+    });
+    return ok({ match: m ? serializeMatch(m) : null });
+  });
+
   // GET /api/matches/:id — full match incl. moves[] for replay
   app.get<{ Params: { id: string } }>("/matches/:id", { preHandler: requireAuth }, async (req) => {
     const m = await prisma.match.findUnique({
