@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState, type CSSProperties, type Rea
 import { api, ApiError } from "../../lib/api";
 import { useAppStore } from "../../stores/appStore";
 import { useAuthStore } from "../../stores/authStore";
+import { StorePreviewModal, type StorePreview } from "./StorePreviewModal";
 
 /**
  * StorePage — reproduced from the prototype's Store screen
@@ -40,9 +41,19 @@ type StoreItemApi = {
   priceDiamonds: number | null;
   assetKey: string;
   previewKey: string | null;
+  tag: string | null;
   isPremium: boolean;
   sortOrder: number;
 };
+
+/** Store badge colour per tag (matches the prototype's tag styling). */
+function tagColor(tag: string): string {
+  if (tag === "NEW") return "#2f8f5b";
+  if (tag === "PREMIUM") return "#7a4fbf";
+  if (tag === "VALUE" || tag === "SEASON") return "#c99a2e";
+  if (tag.startsWith("-")) return "#a83744"; // discount, e.g. -35%
+  return "#7a4fbf";
+}
 
 const A = (n: string) => `/assets/${n}`;
 
@@ -136,42 +147,39 @@ function PortraitThumb({ file, size }: { file: string; size: number }) {
   );
 }
 
-// ── presentation: how a real StoreItem renders (thumb + short sub-label) ──
-// Keyed by real StoreItem id → the asset file that exists under public/assets.
-// This is display metadata for the live catalog, NOT a stand-in catalog: every
-// price, currency, and purchasable item still comes from the API.
+// ── thumbnails ── derived from the item's real assetKey (set from the prototype
+// catalog in the DB seed), so every item shows its true art. NOT a stand-in
+// catalog — price/currency/tag all come from the live API.
 type Thumb = { kind: "img"; file: string } | { kind: "portrait"; file: string };
 
-const ITEM_THUMB: Record<string, Thumb> = {
-  "board-marble": { kind: "img", file: "board-marble.png" },
-  "board-wood": { kind: "img", file: "board-wood.png" },
-  "board-obsidian": { kind: "img", file: "board-obsidian.png" },
-  "board-ebony": { kind: "img", file: "board-ebony.png" },
-  "skin-classic": { kind: "img", file: "crimson-king.png" },
-  "skin-jade": { kind: "img", file: "jade-king.png" },
-  "skin-obsidian": { kind: "img", file: "obsidian-king.png" },
-  "skin-babaylan": { kind: "portrait", file: "avatars/babaylan.png" },
-  "skin-bagani": { kind: "portrait", file: "avatars/bagani.png" },
-  "skin-mandirigma": { kind: "portrait", file: "avatars/mandirigma.png" },
-  "skin-diwata": { kind: "portrait", file: "avatars/diwata.png" },
-  "skin-ermitanyo": { kind: "portrait", file: "avatars/ermitanyo.png" },
-  "season-pass-s1": { kind: "img", file: "me-crown.png" },
-};
-
-// Fallback thumb per item type when an id is not individually mapped (so a
-// newly-seeded item still renders sensibly instead of a broken image).
-const TYPE_FALLBACK_THUMB: Record<StoreItemApi["type"], Thumb> = {
-  BOARD: { kind: "img", file: "board-marble.png" },
-  SKIN: { kind: "img", file: "crimson-king.png" },
-  AVATAR: { kind: "portrait", file: "avatars/sovereign.png" },
-  FRAME: { kind: "img", file: "frames/laurel.png" },
-  EMOTE: { kind: "img", file: "ic-chest.png" },
-  BUNDLE: { kind: "img", file: "ic-chest.png" },
-  SEASON_PASS: { kind: "img", file: "me-crown.png" },
-};
-
+/** Resolve the thumbnail from the item's real type + assetKey. */
 function thumbFor(it: StoreItemApi): Thumb {
-  return ITEM_THUMB[it.id] ?? TYPE_FALLBACK_THUMB[it.type];
+  const a = it.assetKey;
+  switch (it.type) {
+    case "BOARD":
+      // assetKey like "board-ebony.png"
+      return { kind: "img", file: a.endsWith(".png") ? a : `board-${a}.png` };
+    case "SKIN": {
+      // assetKey is a skin folder ("jade"/"crimson"/"obsidian"/"classic") →
+      // show the red king from that skin (classic = crimson).
+      const folder = a === "classic" ? "crimson" : a;
+      return { kind: "img", file: `${folder}-king.png` };
+    }
+    case "AVATAR":
+      // assetKey like "avatars/sovereign.png"
+      return { kind: "portrait", file: a.startsWith("avatars/") ? a : `avatars/${a}` };
+    case "FRAME":
+      // assetKey like "laurel.png" or "frames/silver.png"
+      return { kind: "img", file: a.includes("/") ? a : a };
+    case "EMOTE":
+      return { kind: "img", file: "ic-chest.png" };
+    case "BUNDLE":
+      return { kind: "img", file: a.endsWith(".png") ? a : "me-banner.png" };
+    case "SEASON_PASS":
+      return { kind: "img", file: "me-crown.png" };
+    default:
+      return { kind: "img", file: "ic-chest.png" };
+  }
 }
 function renderThumb(t: Thumb, size: number): ReactNode {
   if (t.kind === "portrait") return <PortraitThumb file={t.file} size={size} />;
@@ -200,6 +208,53 @@ function resolve(it: StoreItemApi): ShopItem {
   return { ...it, cur, price, free: price === 0, sub: TYPE_META[it.type].sub, thumb: thumbFor(it) };
 }
 
+// ── preview resolution ──
+// Flat piece-art PNGs that exist under public/assets for the built-in skins
+// (crimson-/jade-/obsidian-<color>-<man|king>.png). Portrait "skins" (babaylan
+// etc.) fall through to a portrait token instead.
+const SKIN_ART: Record<string, "crimson" | "jade" | "obsidian"> = {
+  "skin-classic": "crimson",
+  "skin-jade": "jade",
+  "skin-obsidian": "obsidian",
+};
+// The CSS <Piece> disc skin used when there is no flat art (only skin-classic
+// currently uses the CSS disc for its red side is handled by SKIN_ART; kept for
+// completeness / new items). "default" = classic crimson/royal disc.
+const PIECE_SKIN: Record<string, "default" | "crimson" | "jade" | "obsidian"> = {
+  "skin-classic": "default",
+  "skin-jade": "jade",
+  "skin-obsidian": "obsidian",
+};
+
+/**
+ * Build the live-data StorePreview for an item. Everything visual is derived from
+ * the item's real type + assetKey + our verified asset map; the price, currency,
+ * and owned flag are the real ones. Boards show the texture, skins show the
+ * red/blue man→king coins (flat art where it exists, else the CSS disc, or a
+ * portrait token for portrait-style "skins"), avatars/frames show their art.
+ */
+function previewFor(it: ShopItem, owned: boolean): StorePreview {
+  const base = { name: it.name, sub: it.sub, cur: it.cur, price: it.price, free: it.free, owned };
+  const thumb = it.thumb;
+  if (it.type === "BOARD") {
+    return { ...base, kind: "board", boardFile: thumb.kind === "img" ? thumb.file : `${it.assetKey}` };
+  }
+  if (it.type === "SKIN") {
+    // Portrait-style skin (assetKey ends in .webp / thumb is a portrait) → token.
+    if (thumb.kind === "portrait") return { ...base, kind: "skin", portraitFile: thumb.file };
+    return { ...base, kind: "skin", skinArt: SKIN_ART[it.id], pieceSkin: PIECE_SKIN[it.id] ?? "default" };
+  }
+  if (it.type === "AVATAR") {
+    return { ...base, kind: "avatar", portraitFile: thumb.kind === "portrait" ? thumb.file : `avatars/${it.assetKey}` };
+  }
+  if (it.type === "FRAME") {
+    return { ...base, kind: "frame", frameFile: thumb.kind === "img" ? thumb.file : `frames/${it.assetKey}` };
+  }
+  // SEASON_PASS / EMOTE / BUNDLE → fall back to the board-style big art of the thumb.
+  if (thumb.kind === "portrait") return { ...base, kind: "avatar", portraitFile: thumb.file };
+  return { ...base, kind: "board", boardFile: thumb.file };
+}
+
 // local cart line (name/price/currency all sourced from a real StoreItem)
 interface CartLine {
   id: string;
@@ -222,6 +277,7 @@ export function StorePage() {
   const [loadError, setLoadError] = useState(false);
   const [owned, setOwned] = useState<Set<string>>(new Set());
   const [buying, setBuying] = useState<string | null>(null);
+  const [preview, setPreview] = useState<ShopItem | null>(null); // open preview modal
 
   // Load the real catalog (public) once.
   useEffect(() => {
@@ -446,22 +502,21 @@ export function StorePage() {
               const isSkin = it.type === "SKIN";
               const isOwned = owned.has(it.id);
               const isBuying = buying === it.id;
-              const line: CartLine = { id: it.id, name: it.name, sub: it.sub, price: it.price, cur: it.cur, thumb: it.thumb };
               return (
                 <div key={it.id} className="frame" style={{ padding: "16px 14px", position: "relative", display: "flex", flexDirection: "column", gap: 10, alignItems: "center", textAlign: "center" }}>
                   {isOwned ? (
                     <span style={{ position: "absolute", top: 9, left: 9, font: "700 9px Inter", letterSpacing: "1px", padding: "3px 7px", borderRadius: 5, background: "#2f8f5b", color: "#fff", zIndex: 2 }}>OWNED</span>
-                  ) : it.isPremium ? (
-                    <span style={{ position: "absolute", top: 9, left: 9, font: "700 9px Inter", letterSpacing: "1px", padding: "3px 7px", borderRadius: 5, background: "#7a4fbf", color: "#fff", zIndex: 2 }}>PREMIUM</span>
+                  ) : it.tag ? (
+                    <span style={{ position: "absolute", top: 9, left: 9, font: "700 9px Inter", letterSpacing: "1px", padding: "3px 7px", borderRadius: 5, background: tagColor(it.tag), color: "#fff", zIndex: 2 }}>{it.tag}</span>
                   ) : null}
-                  <div onClick={() => showToast(`${it.name} preview arrives with online play.`)} title="Preview" style={{ height: 70, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", width: "100%" }}>
+                  <div onClick={() => setPreview(it)} title="Preview" style={{ height: 70, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", width: "100%" }}>
                     {renderThumb(it.thumb, isSkin && it.thumb.kind === "portrait" ? 56 : 64)}
                   </div>
                   <div>
                     <div style={{ font: "700 14px Inter", color: "#fff" }}>{it.name}</div>
                     <div style={{ font: "500 11px Inter", color: "var(--ink2)", marginTop: 2 }}>{it.sub}</div>
                   </div>
-                  <button onClick={() => showToast(`${it.name} preview arrives with online play.`)} style={{ display: "inline-flex", alignItems: "center", gap: 5, background: "none", border: "none", padding: 0, color: "var(--gold)", font: "700 10px Inter", letterSpacing: ".8px", textTransform: "uppercase", cursor: "pointer" }}>
+                  <button onClick={() => setPreview(it)} style={{ display: "inline-flex", alignItems: "center", gap: 5, background: "none", border: "none", padding: 0, color: "var(--gold)", font: "700 10px Inter", letterSpacing: ".8px", textTransform: "uppercase", cursor: "pointer" }}>
                     🔍 Preview
                   </button>
                   {isOwned ? (
@@ -572,6 +627,20 @@ export function StorePage() {
           </button>
         </div>
       </div>
+
+      {/* Store item preview modal — opens on a tile's thumb / "🔍 Preview" link. */}
+      <StorePreviewModal
+        pv={preview ? previewFor(preview, owned.has(preview.id)) : null}
+        onClose={() => setPreview(null)}
+        buyLabel={preview?.free ? "Claim" : "Buy"}
+        onBuy={() => {
+          if (preview) {
+            const it = preview;
+            setPreview(null);
+            void buy(it);
+          }
+        }}
+      />
     </div>
   );
 }
