@@ -74,10 +74,20 @@ export type AvatarKey = keyof typeof AVATARS;
 
 export function avatar(key: AvatarKey | (string & {})): string {
   if (key in AVATARS) return AVATARS[key as AvatarKey];
-  // Allow passing a full path / uploaded URL straight through.
-  return key.startsWith("/") || key.startsWith("http")
-    ? key
-    : `${BASE}/avatars/${key}`;
+  // Full path / uploaded URL → pass straight through.
+  if (key.startsWith("/") || key.startsWith("http")) return key;
+  // The server persists an equipped avatar as the store item's assetKey, which
+  // is already a folder-relative path like "avatars/lakan.png". Naively
+  // prefixing "avatars/" would double it → /assets/avatars/avatars/lakan.png
+  // (404, blank avatar). Normalize: if the value already points into avatars/
+  // (or carries an extension), just resolve it under BASE; otherwise treat it
+  // as a bare key and add the avatars/ folder.
+  if (key.startsWith("assets/")) return `/${key}`;
+  if (key.includes("/") || /\.\w+$/.test(key)) {
+    const rel = key.replace(/^avatars\//, "");
+    return `${BASE}/avatars/${rel}`;
+  }
+  return `${BASE}/avatars/${key}`;
 }
 
 /** Cosmetic profile frames (in the frames/ subfolder, per ASSETS.md). */
@@ -97,7 +107,12 @@ export type FrameKey = keyof typeof FRAMES;
 
 export function frameArt(key: FrameKey | (string & {})): string {
   if (key in FRAMES) return FRAMES[key as FrameKey];
-  return key.startsWith("/") ? key : `${BASE}/frames/${key}`;
+  if (key.startsWith("/") || key.startsWith("http")) return key;
+  if (key.startsWith("assets/")) return `/${key}`;
+  // Accept an assetKey path like "frames/jade-dragon.png" without doubling the
+  // frames/ segment; also accept a bare "jade-dragon" (adds folder + resolves).
+  const rel = key.replace(/^frames\//, "");
+  return `${BASE}/frames/${rel}`;
 }
 
 /** Brand marks (flat filename per ASSETS.md). */

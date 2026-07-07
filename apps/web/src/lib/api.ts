@@ -83,6 +83,7 @@ export type Me = {
   rankTier: string;
   equippedBoard: string | null;
   equippedSkin: string | null;
+  equippedEmotes: string[];
   frameId: string | null;
   wins: number;
   losses: number;

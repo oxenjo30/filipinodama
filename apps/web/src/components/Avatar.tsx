@@ -1,5 +1,6 @@
-import type { CSSProperties } from "react";
+import { useEffect, type CSSProperties } from "react";
 import { avatar as resolveAvatar, frameArt, type FrameKey } from "../lib/assets";
+import { useCosmeticsStore } from "../stores/cosmeticsStore";
 
 export type AvatarProps = {
   /** avatar key (e.g. "champion"), a full `/assets/...` path, or an uploaded URL */
@@ -38,6 +39,20 @@ export function Avatar({
   onClick,
 }: AvatarProps) {
   const url = resolveAvatar(src);
+
+  // The `frame` prop carries a FRAME ITEM ID (e.g. "jadedragonf"), which
+  // frameArt() can't resolve. Map it to its art key via the shared cosmetics
+  // catalog first. Subscribing to byId re-renders once the catalog loads;
+  // frameKey falls back to the raw id (so legacy frames like "laurel" still
+  // work) and returns null only for a missing/none frame → no overlay.
+  const frameKey = useCosmeticsStore((c) => c.frameKey);
+  const cosmeticsLoaded = useCosmeticsStore((c) => c.loaded);
+  const ensureCatalog = useCosmeticsStore((c) => c.load);
+  useEffect(() => {
+    if (!cosmeticsLoaded) void ensureCatalog();
+  }, [cosmeticsLoaded, ensureCatalog]);
+  const resolvedFrame = frame ? frameKey(frame) : null;
+
   return (
     <div
       className={className}
@@ -77,9 +92,9 @@ export function Avatar({
           }}
         />
       </div>
-      {frame && (
+      {resolvedFrame && (
         <img
-          src={frameArt(frame)}
+          src={frameArt(resolvedFrame)}
           alt=""
           aria-hidden
           draggable={false}

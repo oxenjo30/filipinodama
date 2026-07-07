@@ -6,6 +6,8 @@ import { Board } from "../../components";
 import { useOnlineStore } from "../../stores/onlineStore";
 import { useAuthStore } from "../../stores/authStore";
 import { useAppStore } from "../../stores/appStore";
+import { useSettingsStore } from "../../stores/settingsStore";
+import { useCosmeticsStore } from "../../stores/cosmeticsStore";
 import { Modal } from "../shared/Modal";
 import { LoadingScreen } from "../shared/LoadingScreen";
 import { avatar as avatarUrl } from "../../lib/assets";
@@ -63,6 +65,18 @@ export function OnlineMatchPage() {
   const [params] = useSearchParams();
   const me = useAuthStore((s) => s.me);
   const mode = (params.get("mode") === "ranked" ? "RANKED" : "CASUAL") as "RANKED" | "CASUAL";
+
+  // Equipped piece skin for the board. settingsStore.skin is kept in sync with the
+  // account's equipped skin by the core-sync agent, so reading it here is all the
+  // board needs to render the player's cosmetic (matches how GamePage feeds Board).
+  const skin = useSettingsStore((s) => s.skin);
+
+  // Equipped emote loadout → tray glyphs. Resolve each equipped store-item id to
+  // its glyph via the shared cosmetics resolver; fall back to the hardcoded
+  // GAME_EMOTES when nothing is equipped so the tray is never empty.
+  const emoteGlyph = useCosmeticsStore((s) => s.emoteGlyph);
+  const equippedEmotes = me?.equippedEmotes ?? [];
+  const emoteTray = equippedEmotes.length > 0 ? equippedEmotes.map(emoteGlyph) : GAME_EMOTES;
 
   const showToast = useAppStore((s) => s.showToast);
   const {
@@ -368,6 +382,7 @@ export function OnlineMatchPage() {
             selected={selected}
             mustCapture={mustCapture && myTurn}
             onSquareClick={onSquareClick}
+            skin={skin}
             flip={flip}
           />
         </div>
@@ -467,7 +482,7 @@ export function OnlineMatchPage() {
           </div>
 
           <div style={{ display: "flex", gap: 6, flexWrap: "wrap", justifyContent: "center", marginBottom: 12 }}>
-            {GAME_EMOTES.map((ch) => (
+            {emoteTray.map((ch) => (
               <button
                 key={ch}
                 onClick={() => sendEmote(ch)}

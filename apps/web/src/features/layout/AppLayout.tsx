@@ -5,6 +5,8 @@ import { useAppStore } from "../../stores/appStore";
 import { useAuthStore } from "../../stores/authStore";
 import { usePresenceStore } from "../../stores/presenceStore";
 import { useDmStore } from "../../stores/dmStore";
+import { useCosmeticsStore } from "../../stores/cosmeticsStore";
+import { useSettingsStore } from "../../stores/settingsStore";
 import { ICONS, BRAND, avatar as avatarUrl } from "../../lib/assets";
 import { Toasts } from "../shared/Toasts";
 import { TopUpModal } from "../store/TopUpModal";
@@ -45,6 +47,11 @@ export function AppLayout() {
   const showToast = useAppStore((s) => s.showToast);
   const startPresence = usePresenceStore((s) => s.start);
   const stopPresence = usePresenceStore((s) => s.stop);
+  // Cosmetics catalog (id → art-key resolvers) + the live game settings the
+  // renderers read. Subscribing to `cosmeticsLoaded` re-runs the sync once the
+  // catalog is available so equipped ids resolve to real art keys.
+  const loadCosmetics = useCosmeticsStore((s) => s.load);
+  const cosmeticsLoaded = useCosmeticsStore((s) => s.loaded);
   const dmUnread = useDmStore((s) => s.unread);
   const refreshDmUnread = useDmStore((s) => s.unreadTotal);
   const [acctOpen, setAcctOpen] = useState(false);
@@ -55,6 +62,29 @@ export function AppLayout() {
     if (me) void startPresence();
     else stopPresence();
   }, [me, startPresence, stopPresence]);
+
+  // Load the id→art-key catalog once, app-wide, so every surface (nav frame,
+  // board, piece skin) can resolve equipped store-item ids to art keys.
+  useEffect(() => {
+    void loadCosmetics();
+  }, [loadCosmetics]);
+
+  // Sync the account's equipped cosmetics into the live game settings so the
+  // board + pieces reflect the equipped skin/board after a reload (the game
+  // reads settingsStore, not `me`). Runs when `me` changes or the catalog
+  // finishes loading; only writes when the resolved value actually changed, so
+  // it can't loop and doesn't stomp an in-session override needlessly.
+  useEffect(() => {
+    if (!me || !cosmeticsLoaded) return;
+    const cosmetics = useCosmeticsStore.getState();
+    const settings = useSettingsStore.getState();
+    const skinKey = cosmetics.skinKey(me.equippedSkin);
+    if (skinKey !== settings.skin) settings.setSkin(skinKey as typeof settings.skin);
+    const boardKey = cosmetics.boardKey(me.equippedBoard);
+    if (boardKey && boardKey !== settings.boardTheme) {
+      settings.setBoardTheme(boardKey as typeof settings.boardTheme);
+    }
+  }, [me, cosmeticsLoaded]);
 
   // Keep the DM unread badge fresh: fetch on sign-in, and refresh on route
   // changes (cheap) so it reflects reads/new messages without extra plumbing.

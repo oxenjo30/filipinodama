@@ -6,6 +6,7 @@ import { useGameStore, HUMAN_COLOR, AI_COLOR } from "../../stores/gameStore";
 import { useSettingsStore } from "../../stores/settingsStore";
 import { useAppStore } from "../../stores/appStore";
 import { useAuthStore } from "../../stores/authStore";
+import { useCosmeticsStore } from "../../stores/cosmeticsStore";
 import { PlayerPanel } from "./PlayerPanel";
 import { Modal } from "../shared/Modal";
 import { LoadingScreen } from "../shared/LoadingScreen";
@@ -81,6 +82,13 @@ export function GamePage({ mode = "ai" }: { mode?: "ai" | "local" }) {
   const displayName = me?.displayName ?? "Guest";
   const trophies = me?.trophies ?? 0;
   const avatar = me?.avatarUrl ?? "champion";
+
+  // Equipped emote loadout → tray glyphs. When the player has equipped emotes we
+  // resolve each store-item id to its glyph via the shared cosmetics resolver;
+  // otherwise fall back to the hardcoded GAME_EMOTES so the tray is never empty.
+  const emoteGlyph = useCosmeticsStore((s) => s.emoteGlyph);
+  const equippedEmotes = me?.equippedEmotes ?? [];
+  const emoteTray = equippedEmotes.length > 0 ? equippedEmotes.map(emoteGlyph) : GAME_EMOTES;
 
   const {
     state,
@@ -567,7 +575,7 @@ export function GamePage({ mode = "ai" }: { mode?: "ai" | "local" }) {
         <div className="frame" style={{ padding: 16 }}>
           <div className="ptitle">Quick Chat</div>
           <div style={{ display: "flex", gap: 6, flexWrap: "wrap", justifyContent: "center", marginBottom: 12 }}>
-            {GAME_EMOTES.map((ch) => (
+            {emoteTray.map((ch) => (
               <button
                 key={ch}
                 onClick={() => sendChat(ch)}

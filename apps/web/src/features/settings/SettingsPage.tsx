@@ -4,6 +4,7 @@ import { api, ApiError } from "../../lib/api";
 import { useAuthStore } from "../../stores/authStore";
 import { useAppStore } from "../../stores/appStore";
 import { useSettingsStore } from "../../stores/settingsStore";
+import { useCosmeticsStore } from "../../stores/cosmeticsStore";
 
 /**
  * SettingsPage (/settings) — faithful port of the approved prototype
@@ -289,6 +290,17 @@ export function SettingsPage() {
         { [slot]: id },
       );
       patchMe({ equippedBoard: res.user.equippedBoard, equippedSkin: res.user.equippedSkin });
+      // Immediately reflect the equipped skin/board into the live game settings
+      // so the board + pieces update without waiting for a reload. Item ids →
+      // art keys via the shared cosmetics catalog.
+      const cosmetics = useCosmeticsStore.getState();
+      void cosmetics.load();
+      if (slot === "skin") {
+        s.setSkin(cosmetics.skinKey(res.user.equippedSkin) as Parameters<typeof s.setSkin>[0]);
+      } else {
+        const boardKey = cosmetics.boardKey(res.user.equippedBoard);
+        if (boardKey) s.setBoardTheme(boardKey as Parameters<typeof s.setBoardTheme>[0]);
+      }
       showToast(`${name} equipped!`);
     } catch (e) {
       showToast(e instanceof ApiError ? e.message : "Couldn't equip that. Try again.");

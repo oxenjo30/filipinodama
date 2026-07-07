@@ -3,6 +3,8 @@ import { useNavigate } from "react-router-dom";
 import { api, ApiError } from "../../lib/api";
 import { useAppStore } from "../../stores/appStore";
 import { useAuthStore } from "../../stores/authStore";
+import { useCosmeticsStore } from "../../stores/cosmeticsStore";
+import { useSettingsStore } from "../../stores/settingsStore";
 import { StorePreviewModal, type StorePreview } from "../store/StorePreviewModal";
 
 /**
@@ -308,6 +310,18 @@ export function InventoryPage() {
           frameId: res.user.frameId,
           avatarUrl: res.user.avatarUrl,
         });
+        // Immediately reflect the equipped skin/board into the live game
+        // settings so the board + pieces update without waiting for a reload.
+        // Boards/skins equip by item id → resolve to art keys via the catalog.
+        const cosmetics = useCosmeticsStore.getState();
+        void cosmetics.load();
+        const settings = useSettingsStore.getState();
+        if (it.slot === "skin") {
+          settings.setSkin(cosmetics.skinKey(res.user.equippedSkin) as Parameters<typeof settings.setSkin>[0]);
+        } else if (it.slot === "board") {
+          const boardKey = cosmetics.boardKey(res.user.equippedBoard);
+          if (boardKey) settings.setBoardTheme(boardKey as Parameters<typeof settings.setBoardTheme>[0]);
+        }
         showToast(`${it.name} equipped!`);
       } catch (e) {
         showToast(e instanceof ApiError ? e.message : "Couldn't equip that item.");

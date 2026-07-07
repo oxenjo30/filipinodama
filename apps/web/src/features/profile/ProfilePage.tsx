@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { RANK_TIERS, rankTierFor, type RankTier } from "@dama/shared";
 import { api, ApiError } from "../../lib/api";
+import { avatar } from "../../lib/assets";
 import { useAuthStore } from "../../stores/authStore";
 import { AvatarPickerModal } from "./AvatarPickerModal";
 import { EditProfileModal } from "./EditProfileModal";
@@ -133,13 +134,6 @@ function Portrait({ src, size, alt }: { src: string; size: number; alt: string }
       />
     </div>
   );
-}
-
-/** Resolve a Me.avatarUrl (bare key | "/assets/…" | full URL) to a renderable src. */
-function avatarSrc(avatarUrl: string | null): string {
-  if (!avatarUrl) return "/assets/avatars/champion.png";
-  if (avatarUrl.startsWith("/") || avatarUrl.startsWith("http")) return avatarUrl;
-  return `/assets/avatars/${avatarUrl}.png`;
 }
 
 export function ProfilePage() {
@@ -324,7 +318,7 @@ export function ProfilePage() {
       {/* ── identity header ── */}
       <div className="frame fd-card-m" style={{ padding: 28, display: "flex", alignItems: "center", gap: 22, flexWrap: "wrap" }}>
         <div style={{ position: "relative", flex: "none" }}>
-          <Portrait src={avatarSrc(me.avatarUrl)} size={92} alt={displayName} />
+          <Portrait src={avatar(me.avatarUrl ?? "champion")} size={92} alt={displayName} />
           <button
             onClick={() => setAvatarPickerOpen(true)}
             title="Change avatar"
