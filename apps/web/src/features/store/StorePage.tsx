@@ -418,6 +418,67 @@ export function StorePage() {
     };
   }, []);
 
+  // ── Post-payment reconciliation ──
+  // PayMongo redirects back to /store?purchase=success right after checkout, but
+  // the diamonds are credited ASYNCHRONOUSLY by the signature-verified webhook —
+  // which can land a few seconds AFTER the redirect. So on return we poll
+  // /api/auth/me until the diamond balance rises (or a timeout), updating the UI
+  // the moment the credit arrives instead of leaving the old balance on screen.
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const outcome = params.get("purchase");
+    if (!outcome) return;
+
+    // Clean the query param immediately so a refresh / back-nav doesn't re-trigger.
+    params.delete("purchase");
+    const clean = window.location.pathname + (params.toString() ? `?${params}` : "");
+    window.history.replaceState(null, "", clean);
+
+    if (outcome === "cancelled") {
+      showToast("Checkout cancelled — no charge was made.");
+      return;
+    }
+    if (outcome !== "success") return;
+
+    let alive = true;
+    let settled = false;
+    const startDiamonds = useAuthStore.getState().me?.diamonds ?? 0;
+    showToast("Payment received — crediting your Diamonds…");
+
+    // Poll ~every 2.5s for up to ~25s (webhook usually lands within a few seconds).
+    const MAX_TRIES = 10;
+    let tries = 0;
+    const tick = async () => {
+      if (!alive || settled) return;
+      tries += 1;
+      try {
+        const { user } = await api.get<{ user: { diamonds: number; gold: number } }>("/api/auth/me");
+        if (!alive) return;
+        if (user.diamonds > startDiamonds) {
+          settled = true;
+          patchMe({ diamonds: user.diamonds, gold: user.gold });
+          showToast(`✓ ${(user.diamonds - startDiamonds).toLocaleString()} Diamonds added!`);
+          return;
+        }
+      } catch {
+        /* transient — keep polling */
+      }
+      if (tries < MAX_TRIES) {
+        timer = window.setTimeout(tick, 2500);
+      } else if (alive) {
+        // Credit hadn't landed yet — reassure rather than alarm; it will appear.
+        showToast("Payment confirmed. Your Diamonds will appear shortly.");
+      }
+    };
+    let timer = window.setTimeout(tick, 1200);
+    return () => {
+      alive = false;
+      window.clearTimeout(timer);
+    };
+    // Run once on mount (the redirect is a full page load).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   // Load real ownership only when logged in.
   useEffect(() => {
     if (!me) {
