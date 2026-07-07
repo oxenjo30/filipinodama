@@ -16,6 +16,7 @@ import { LearnPage } from "./features/learn/LearnPage";
 import { SeasonPage } from "./features/season/SeasonPage";
 import { LeaderboardPage } from "./features/leaderboard/LeaderboardPage";
 import { AuthPage } from "./features/auth/AuthPage";
+import { OnlineMatchPage } from "./features/play/OnlineMatchPage";
 import { useAuthStore } from "./stores/authStore";
 
 /**
@@ -74,6 +75,7 @@ export function App() {
           <Route path="/play" element={<PlayHubPage />} />
           <Route path="/play/ai" element={<AiSetupPage />} />
           <Route path="/play/ai/game" element={<GamePage />} />
+          <Route path="/play/online" element={<OnlineMatchPage />} />
 
           {/* ── styled placeholders (no dead links) ── */}
           <Route path="/leaderboard" element={<LeaderboardPage />} />

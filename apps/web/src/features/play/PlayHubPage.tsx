@@ -91,7 +91,7 @@ export function PlayHubPage() {
       tagStyle: pmTag("#f0e2b8", "rgba(232,184,75,.15)"),
       desc: "Jump into an online game against a similar-skill player. Unrated.",
       icon: <Medal src={`${ASSET}/mode-quick.webp`} size={62} />,
-      onSelect: () => showToast("Quick Match arrives with online play."),
+      onSelect: () => navigate("/play/online?mode=casual"),
     },
     {
       title: "Ranked Match",
@@ -99,7 +99,7 @@ export function PlayHubPage() {
       tagStyle: pmTag("#ff9aa6", "rgba(180,60,70,.18)"),
       desc: "Compete on the ladder. Win for +25 trophies to climb the rankings.",
       icon: <Medal src={`${ASSET}/mode-ranked.webp`} size={62} />,
-      onSelect: () => showToast("Ranked matchmaking arrives with online play."),
+      onSelect: () => navigate("/play/online?mode=ranked"),
     },
     {
       title: "Play vs AI",
