@@ -55,6 +55,7 @@ type ApiTier = {
 type SeasonData = {
   season: { id: string; name: string; startsAt: string; endsAt: string };
   hasPass: boolean;
+  passPrice: number;
   xp: number;
   tiers: ApiTier[];
 };
@@ -206,6 +207,8 @@ export function SeasonPage() {
   const [data, setData] = useState<SeasonData | null>(null);
   const [claimingTier, setClaimingTier] = useState<number | null>(null);
   const [buyingPass, setBuyingPass] = useState(false);
+  const [seasonEndOpen, setSeasonEndOpen] = useState(false);
+  const [claimingAll, setClaimingAll] = useState(false);
 
   // Live season standings (real users, ranked by trophies).
   const [board, setBoard] = useState<LeaderboardData | null>(null);
@@ -261,7 +264,16 @@ export function SeasonPage() {
   const levelPct = nextTier && nextTier.xp > 0 ? Math.max(2, Math.min(100, Math.round((xp / nextTier.xp) * 100))) : xp > 0 ? 100 : 2;
   const seasonName = data?.season.name ?? "Ranked Season";
   const endsLabel = endsInLabel(data?.season.endsAt);
-  const passPrice = 400; // seeded season-pass diamond price
+  const passPrice = data?.passPrice ?? 900; // real price from the API (matches what /season/pass charges)
+
+  // Tiers still claimable: unlocked & not yet claimed. A tier is "claimable" if the
+  // free reward is available, or (with the pass) a premium reward is available.
+  // Since a claim marks the whole tier claimed, count each still-unclaimed unlocked tier once.
+  const claimableTiers = (data?.tiers ?? []).filter((t) => t.unlocked && !t.claimed);
+  const claimableCount = claimableTiers.length;
+
+  // Season has ended once we pass its endsAt — drives the season-end banner + modal.
+  const seasonEnded = !!data && new Date(data.season.endsAt).getTime() <= Date.now();
 
   // Re-pull balances after a claim (gold/diamonds may both change).
   const refreshBalances = useCallback(async () => {
@@ -313,6 +325,53 @@ export function SeasonPage() {
       setBuyingPass(false);
     }
   }, [me, patchMe, showToast, load]);
+
+  // Season-end "Claim All" — claim every still-claimable tier via the existing per-tier endpoint.
+  const onClaimAll = useCallback(async () => {
+    if (!me) {
+      showToast("Sign in to claim season rewards.");
+      return;
+    }
+    if (claimableTiers.length === 0) return;
+    setClaimingAll(true);
+    try {
+      let gold = 0;
+      let diamonds = 0;
+      // Claim sequentially so the ledger applies each tier cleanly.
+      for (const t of claimableTiers) {
+        const res = await api.post<{ freeReward: Reward; premiumReward: Reward }>("/api/season/claim", { tier: t.tier });
+        gold += (res.freeReward?.gold ?? 0) + (res.premiumReward?.gold ?? 0);
+        diamonds += (res.freeReward?.diamonds ?? 0) + (res.premiumReward?.diamonds ?? 0);
+      }
+      const parts: string[] = [];
+      if (gold) parts.push(`+${gold.toLocaleString()} Gold`);
+      if (diamonds) parts.push(`+${diamonds.toLocaleString()} Diamonds`);
+      showToast(parts.length ? parts.join(" · ") : "Rewards claimed");
+      await Promise.all([load(), refreshBalances()]);
+    } catch (e) {
+      showToast(e instanceof ApiError ? e.message : "Couldn't claim rewards.");
+    } finally {
+      setClaimingAll(false);
+    }
+  }, [me, showToast, claimableTiers, load, refreshBalances]);
+
+  // Final placement for the season-end modal comes from the live leaderboard rank
+  // (no season-end backend endpoint yet). Honest "unranked" when the player has no standing.
+  const finalRank = board?.me?.rank ?? null;
+  const finalTierLabel = board?.me?.rankTier.label ?? (me && (me.trophies ?? 0) > 0 ? me.rankTier : "Unranked");
+
+  // Real reward tiles for the season-end grid — built from the tiers' actual rewards
+  // (no fabricated numbers). Shows each still-claimable reward the player earned.
+  const seasonEndItems = claimableTiers.flatMap((t) => {
+    const items: { icon: string; label: string; sub: string }[] = [];
+    const free = rewardCell(t.freeReward, false);
+    items.push({ icon: free.icon, label: free.label, sub: `Level ${t.tier} · Free` });
+    if (hasPass) {
+      const prem = rewardCell(t.premiumReward, true);
+      items.push({ icon: prem.icon, label: prem.label, sub: `Level ${t.tier} · Royal` });
+    }
+    return items;
+  });
 
   const tabStyle = (on: boolean): React.CSSProperties => ({
     padding: "10px 20px",
@@ -443,6 +502,46 @@ export function SeasonPage() {
         </div>
       </div>
 
+      {/* Season-end rewards banner — shown once the season's endsAt has passed */}
+      {seasonEnded && (
+        <div
+          className="frame"
+          style={{
+            padding: "16px 20px",
+            display: "flex",
+            alignItems: "center",
+            gap: 15,
+            flexWrap: "wrap",
+            background: "linear-gradient(135deg,rgba(63,191,111,.16),rgba(232,184,75,.12))",
+            borderColor: "rgba(63,191,111,.45)",
+          }}
+        >
+          <span style={{ font: "800 26px", lineHeight: 1 }}>🎉</span>
+          <div style={{ flex: 1, minWidth: 200 }}>
+            <div style={{ font: "800 15px Cinzel,serif", color: "#8ff0b6" }}>{seasonName} has ended!</div>
+            <div style={{ font: "500 12px Inter", color: "var(--ink2)" }}>
+              {claimableCount > 0 ? "Your end-of-season rewards are ready to claim." : "See where you finished this season."}
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={() => setSeasonEndOpen(true)}
+            style={{
+              flex: "none",
+              padding: "11px 22px",
+              borderRadius: 100,
+              border: "1px solid rgba(63,191,111,.6)",
+              background: "linear-gradient(180deg,#3fbf6f,#2a8f52)",
+              color: "#fff",
+              font: "800 13px Inter",
+              cursor: "pointer",
+            }}
+          >
+            {claimableCount > 0 ? "Claim Rewards" : "View Results"}
+          </button>
+        </div>
+      )}
+
       {/* Tabs */}
       <div style={{ display: "flex", gap: 10 }}>
         <button onClick={() => setTab("rewards")} style={tabStyle(tab === "rewards")}>
@@ -456,10 +555,60 @@ export function SeasonPage() {
       {/* REWARD TRACK TAB */}
       {tab === "rewards" && (
         <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
+          {/* Royal Pass Active banner — shown above the Reward Track when the pass is owned */}
+          {hasPass && (
+            <div
+              className="frame"
+              style={{
+                padding: "16px 22px",
+                display: "flex",
+                alignItems: "center",
+                gap: 14,
+                flexWrap: "wrap",
+                background: "linear-gradient(135deg,rgba(232,184,75,.14),rgba(15,8,32,.1))",
+                borderColor: "rgba(232,184,75,.4)",
+              }}
+            >
+              <span style={{ font: "800 22px", lineHeight: 1 }}>👑</span>
+              <div style={{ flex: 1, minWidth: 200 }}>
+                <div style={{ font: "800 15px Cinzel,serif", color: "var(--gold-lt)" }}>Royal Pass Active</div>
+                <div style={{ font: "500 12px Inter", color: "var(--ink2)" }}>
+                  You're unlocking premium rewards on every level this season.
+                </div>
+              </div>
+              <span
+                style={{
+                  padding: "7px 16px",
+                  borderRadius: 100,
+                  background: "rgba(63,191,111,.16)",
+                  border: "1px solid rgba(63,191,111,.4)",
+                  font: "800 12px Inter",
+                  color: "#7fe0a3",
+                }}
+              >
+                ACTIVE
+              </span>
+            </div>
+          )}
+
           {/* Reward track */}
           <div className="frame" style={{ padding: 22 }}>
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, marginBottom: 16, flexWrap: "wrap" }}>
               <span style={{ font: "800 19px Cinzel,serif", color: "var(--gold-lt)" }}>Reward Track</span>
+              {claimableCount > 0 && (
+                <span
+                  style={{
+                    padding: "5px 12px",
+                    borderRadius: 100,
+                    background: "rgba(232,184,75,.16)",
+                    border: "1px solid rgba(232,184,75,.4)",
+                    font: "800 11px Inter",
+                    color: "#f2d493",
+                  }}
+                >
+                  {claimableCount} ready to claim
+                </span>
+              )}
             </div>
             {!me ? (
               <div style={{ padding: "28px 4px", textAlign: "center", font: "500 13px Inter", color: "var(--ink2)" }}>
@@ -707,6 +856,171 @@ export function SeasonPage() {
               )}
             </div>
           )}
+        </div>
+      )}
+
+      {/* Season Rewards modal — final placement (from the live leaderboard) + real earned rewards */}
+      {seasonEndOpen && (
+        <div
+          onClick={() => setSeasonEndOpen(false)}
+          style={{
+            position: "fixed",
+            inset: 0,
+            zIndex: 96,
+            background: "rgba(8,4,18,.82)",
+            backdropFilter: "blur(6px)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            padding: 24,
+          }}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className="frame"
+            style={{
+              width: 560,
+              maxWidth: "100%",
+              maxHeight: "92vh",
+              overflow: "auto",
+              padding: "34px 32px 28px",
+              textAlign: "center",
+              position: "relative",
+              background: "radial-gradient(130% 90% at 50% 0%,rgba(52,30,84,.97),rgba(20,11,36,.98))",
+            }}
+          >
+            <button
+              type="button"
+              onClick={() => setSeasonEndOpen(false)}
+              style={{
+                position: "absolute",
+                top: 14,
+                right: 14,
+                width: 34,
+                height: 34,
+                borderRadius: 9,
+                border: "1px solid rgba(232,184,75,.25)",
+                background: "rgba(0,0,0,.3)",
+                color: "var(--ink2)",
+                font: "700 16px Inter",
+                cursor: "pointer",
+              }}
+            >
+              ✕
+            </button>
+            <div style={{ font: "700 11px Inter", letterSpacing: "3px", textTransform: "uppercase", color: "var(--gold)" }}>
+              ✦ {seasonName} Complete ✦
+            </div>
+            <h2 style={{ margin: "9px 0 4px", font: "800 30px Cinzel,serif", color: "var(--gold-lt)" }}>Season Rewards</h2>
+            <p style={{ margin: "0 0 22px", font: "400 13px Inter", color: "var(--ink)" }}>
+              The season has ended — here's what your rank earned you.
+            </p>
+
+            {/* Final placement — real rank from the leaderboard */}
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                gap: 18,
+                marginBottom: 24,
+                padding: "18px 22px",
+                borderRadius: 16,
+                background: "rgba(0,0,0,.28)",
+                border: "1px solid rgba(232,184,75,.2)",
+              }}
+            >
+              <div style={{ fontSize: 40, lineHeight: 1 }}>{finalRank ? "🏆" : "❔"}</div>
+              <div style={{ textAlign: "left" }}>
+                <div style={{ font: "600 10px Inter", letterSpacing: "1.5px", textTransform: "uppercase", color: "var(--ink2)" }}>
+                  Final Placement
+                </div>
+                <div style={{ font: "800 26px 'JetBrains Mono',monospace", color: "var(--gold-lt)", lineHeight: 1.1, margin: "2px 0" }}>
+                  {finalRank ? `#${finalRank}` : "Unranked"}
+                </div>
+                <div style={{ font: "600 12px Inter", color: "#8ff0b6" }}>{finalTierLabel}</div>
+              </div>
+            </div>
+
+            {/* Rewards grid — real earned rewards (no fabricated numbers) */}
+            {seasonEndItems.length > 0 ? (
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 12, marginBottom: 24 }}>
+                {seasonEndItems.map((r, i) => (
+                  <div
+                    key={i}
+                    style={{
+                      display: "flex",
+                      flexDirection: "column",
+                      alignItems: "center",
+                      gap: 8,
+                      padding: "18px 10px 14px",
+                      borderRadius: 14,
+                      background: "rgba(232,184,75,.08)",
+                      border: "1px solid rgba(232,184,75,.25)",
+                    }}
+                  >
+                    <div
+                      style={{
+                        width: 56,
+                        height: 56,
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        borderRadius: 13,
+                        background: "rgba(0,0,0,.32)",
+                        fontSize: 26,
+                      }}
+                    >
+                      {r.icon}
+                    </div>
+                    <div style={{ font: "800 13px Inter", color: "#f2e9d2" }}>{r.label}</div>
+                    <div style={{ font: "500 10px Inter", color: "var(--ink2)" }}>{r.sub}</div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div style={{ marginBottom: 24, font: "500 13px Inter", color: "var(--ink2)" }}>
+                You've claimed every reward this season — nothing left to collect.
+              </div>
+            )}
+
+            {claimableCount > 0 ? (
+              <button
+                type="button"
+                onClick={onClaimAll}
+                disabled={claimingAll}
+                className="btn btn-gold"
+                style={{
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: 10,
+                  padding: "15px 40px",
+                  fontSize: 15,
+                  cursor: claimingAll ? "default" : "pointer",
+                  opacity: claimingAll ? 0.7 : 1,
+                }}
+              >
+                🎁 {claimingAll ? "Claiming…" : "Claim All Rewards"}
+              </button>
+            ) : (
+              <div
+                style={{
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: 9,
+                  padding: "14px 26px",
+                  borderRadius: 11,
+                  border: "1px solid rgba(63,191,111,.5)",
+                  background: "rgba(63,191,111,.14)",
+                  color: "#7ee6a4",
+                  font: "700 13px Inter",
+                  letterSpacing: ".5px",
+                }}
+              >
+                ✓ Rewards claimed — good luck next season!
+              </div>
+            )}
+          </div>
         </div>
       )}
     </div>

@@ -69,10 +69,10 @@ const STORE = [
 ] as const;
 
 const QUESTS = [
-  { id: "daily-win3", scope: "daily", title: "Win 3 matches", goal: 3, rewardGold: 500 },
-  { id: "daily-play5", scope: "daily", title: "Play 5 matches", goal: 5, rewardGold: 250 },
-  { id: "daily-capture20", scope: "daily", title: "Capture 20 pieces", goal: 20, rewardGold: 300 },
-  { id: "season-win50", scope: "seasonal", title: "Win 50 ranked matches", goal: 50, rewardGold: 5000 },
+  { id: "daily-win3", scope: "daily", title: "Win 3 matches", description: "Claim victory in 3 matches today", goal: 3, rewardGold: 500 },
+  { id: "daily-play5", scope: "daily", title: "Play 5 matches", description: "Play 5 matches of any mode today", goal: 5, rewardGold: 250 },
+  { id: "daily-capture20", scope: "daily", title: "Capture 20 pieces", description: "Capture 20 enemy pieces today", goal: 20, rewardGold: 300 },
+  { id: "season-win50", scope: "seasonal", title: "Win 50 ranked matches", description: "Win 50 ranked matches this season", goal: 50, rewardGold: 5000 },
 ];
 
 async function main() {

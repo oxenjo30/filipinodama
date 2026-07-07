@@ -22,6 +22,7 @@ type Quest = {
   id: string;
   scope: string;
   title: string;
+  description: string | null;
   goal: number;
   rewardGold: number;
   value: number;
@@ -105,9 +106,12 @@ function QuestRow({ q, busy, onClaim }: { q: Quest; busy: boolean; onClaim: (id:
       }}
     >
       <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{ display: "flex", alignItems: "baseline", gap: 10, marginBottom: 9, flexWrap: "wrap" }}>
+        <div style={{ display: "flex", alignItems: "baseline", gap: 10, marginBottom: q.description ? 3 : 9, flexWrap: "wrap" }}>
           <span style={{ font: "700 15px Inter", color: "#f2e9d2" }}>{q.title}</span>
         </div>
+        {q.description ? (
+          <div style={{ font: "500 12.5px Inter", color: "var(--ink2)", marginBottom: 9 }}>{q.description}</div>
+        ) : null}
         <div style={{ display: "flex", alignItems: "center", gap: 11 }}>
           <div
             style={{

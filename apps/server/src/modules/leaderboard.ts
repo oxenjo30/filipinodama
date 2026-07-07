@@ -14,7 +14,7 @@ const querySchema = z.object({
 
 /** Public leaderboard row shape. */
 function toRow(
-  u: { id: string; username: string; displayName: string; tag: string; avatarUrl: string | null; frameId: string | null; countryCode: string | null; trophies: number; wins: number; losses: number },
+  u: { id: string; username: string; displayName: string; tag: string; avatarUrl: string | null; frameId: string | null; countryCode: string | null; trophies: number; wins: number; losses: number; streak: number },
   rank: number,
 ) {
   const tier = rankTierFor(u.trophies);
@@ -30,6 +30,7 @@ function toRow(
     trophies: u.trophies,
     wins: u.wins,
     losses: u.losses,
+    streak: u.streak,
     rankTier: { key: tier.key, label: tier.label, sub: tier.sub, accent: tier.accent, img: tier.img },
   };
 }
@@ -45,6 +46,7 @@ const SELECT = {
   trophies: true,
   wins: true,
   losses: true,
+  streak: true,
 } satisfies Prisma.UserSelect;
 
 export async function leaderboardRoutes(app: FastifyInstance) {

@@ -317,13 +317,14 @@ model GuildJoinRequest {
 
 // ─────────────── Progression ───────────────
 model Quest {
-  id         String          @id
-  scope      String
-  title      String
-  goal       Int
-  rewardGold Int             @default(0)
-  active     Boolean         @default(true)
-  progress   QuestProgress[]
+  id          String          @id
+  scope       String
+  title       String
+  description String?
+  goal        Int
+  rewardGold  Int             @default(0)
+  active      Boolean         @default(true)
+  progress    QuestProgress[]
 }
 
 model QuestProgress {

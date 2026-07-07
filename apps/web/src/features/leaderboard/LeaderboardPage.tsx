@@ -38,6 +38,7 @@ type LbRow = {
   trophies: number;
   wins: number;
   losses: number;
+  streak: number;
   rankTier: TierInfo;
 };
 type LbResponse = { scope: string; season: string | null; rows: LbRow[]; me: LbRow | null };
@@ -90,6 +91,13 @@ export function LeaderboardPage() {
   const [season, setSeason] = useState<SeasonInfo["season"] | null>(null);
   const [now, setNow] = useState(() => Date.now());
 
+  // Season selector (proto 806-815). The backend exposes only the CURRENT season
+  // (GET /api/season/current) — there is no seasons-list endpoint — so we offer
+  // exactly the real current season as the selectable option. We never fabricate
+  // a list of past/future seasons. `selectedSeasonId === null` means "current".
+  const [selectedSeasonId, setSelectedSeasonId] = useState<string | null>(null);
+  const [seasonMenuOpen, setSeasonMenuOpen] = useState(false);
+
   // Live countdown tick (1s) — cosmetic; drives the season timer text only.
   useEffect(() => {
     const t = setInterval(() => setNow(Date.now()), 1000);
@@ -110,8 +118,9 @@ export function LeaderboardPage() {
     let cancelled = false;
     setLoading(true);
     setError(null);
+    const seasonQ = selectedSeasonId ? `&season=${encodeURIComponent(selectedSeasonId)}` : "";
     api
-      .get<LbResponse>(`/api/leaderboard?scope=${scope}`)
+      .get<LbResponse>(`/api/leaderboard?scope=${scope}${seasonQ}`)
       .then((res) => {
         if (!cancelled) setData(res);
       })
@@ -124,7 +133,7 @@ export function LeaderboardPage() {
     return () => {
       cancelled = true;
     };
-  }, [scope, me, needsAuth]);
+  }, [scope, me, needsAuth, selectedSeasonId]);
 
   // Ambient rails (real): top guilds + current season. Public — fetched once
   // for everyone, signed in or not.
@@ -161,7 +170,11 @@ export function LeaderboardPage() {
     ? `Season ends in: ${countdown(new Date(season.endsAt).getTime() - now)}`
     : "Season timing unavailable";
 
-  // Live Climbers: the real top movers on the GLOBAL board (honest — no fake deltas).
+  // Live Climbers: the real top movers on the GLOBAL board.
+  // NOTE (proto 880): the prototype shows a green "▲{c.up}" rank-movement delta
+  // per climber. There is NO real rank-movement/history source in the backend
+  // (no rank snapshots over time), so we intentionally OMIT the ▲delta rather
+  // than fabricate it. Restore it only once a real movement source exists.
   const [climbers, setClimbers] = useState<LbRow[]>([]);
   useEffect(() => {
     if (scope === "global" && rows.length) {
@@ -273,7 +286,44 @@ export function LeaderboardPage() {
               );
             })}
           </div>
-          <span className="pill" style={{ color: "var(--gold-lt)", border: "1px solid rgba(232,184,75,.4)", background: "rgba(232,184,75,.08)" }}>{seasonLabel}</span>
+          {/* Season selector (proto 806-815). Only the real current season is
+              offered — the backend has no seasons-list endpoint, so we never
+              fabricate a roster of other seasons. */}
+          <div style={{ position: "relative" }}>
+            <button
+              type="button"
+              onClick={() => season && setSeasonMenuOpen((v) => !v)}
+              className="pill"
+              style={{
+                color: "var(--gold-lt)", cursor: season ? "pointer" : "default",
+                display: "inline-flex", alignItems: "center", gap: 7,
+                border: "1px solid rgba(232,184,75,.4)", background: "rgba(232,184,75,.08)",
+              }}
+            >
+              {seasonLabel} <span style={{ fontSize: 9, opacity: 0.8 }}>▼</span>
+            </button>
+            {seasonMenuOpen && season && (
+              <div style={{ position: "absolute", top: "calc(100% + 6px)", left: 0, zIndex: 20, minWidth: 172, background: "#160c2b", border: "1px solid rgba(232,184,75,.3)", borderRadius: 10, padding: 6, boxShadow: "0 14px 34px rgba(0,0,0,.55)" }}>
+                {[{ id: season.id, name: season.name }].map((m) => {
+                  // `selectedSeasonId === null` and `=== season.id` both mean "current".
+                  const active = selectedSeasonId === null || selectedSeasonId === m.id;
+                  return (
+                    <button
+                      key={m.id}
+                      type="button"
+                      onClick={() => {
+                        setSelectedSeasonId(m.id);
+                        setSeasonMenuOpen(false);
+                      }}
+                      style={{ width: "100%", textAlign: "left", padding: "9px 11px", borderRadius: 7, border: "none", cursor: "pointer", background: active ? "rgba(232,184,75,.14)" : "transparent", color: active ? "var(--gold-lt)" : "var(--ink)", font: "600 13px Inter" }}
+                    >
+                      {m.name}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+          </div>
           <span style={{ display: "inline-flex", alignItems: "center", gap: 7, font: "600 12px Inter", color: "var(--ink)" }}>⏳ {endsText}</span>
         </div>
 
@@ -336,7 +386,7 @@ export function LeaderboardPage() {
             {/* TABLE */}
             <div className="frame" style={{ padding: "10px 6px" }}>
               <div style={{ display: "grid", gridTemplateColumns: GRID, gap: 8, padding: "12px 16px", font: "700 11px Inter", letterSpacing: "1px", textTransform: "uppercase", color: "var(--ink2)" }}>
-                <span>Rank</span><span>Player</span><span style={{ textAlign: "center" }}>🏆 Rating</span><span style={{ textAlign: "center" }}>Win Rate</span><span style={{ textAlign: "center" }}>Games</span>
+                <span>Rank</span><span>Player</span><span style={{ textAlign: "center" }}>🏆 Rating</span><span style={{ textAlign: "center" }}>Win Rate</span><span style={{ textAlign: "center" }}>Streak</span>
               </div>
               {tableRows.length === 0 ? (
                 <div style={{ padding: "16px", font: "500 13px Inter", color: "var(--ink2)", borderTop: "1px solid rgba(232,184,75,.1)" }}>Only the podium so far — more challengers coming.</div>
@@ -358,7 +408,7 @@ export function LeaderboardPage() {
                       </span>
                       <span style={{ textAlign: "center", font: "700 14px 'JetBrains Mono',monospace", color: "var(--gold-lt)" }}>{r.trophies.toLocaleString()}</span>
                       <span style={{ textAlign: "center", font: "600 13px 'JetBrains Mono',monospace", color: "var(--ink)" }}>{winRate(r.wins, r.losses)}</span>
-                      <span style={{ textAlign: "center", font: "600 13px 'JetBrains Mono',monospace", color: "var(--ink)" }}>{(r.wins + r.losses).toLocaleString()}</span>
+                      <span style={{ textAlign: "center", font: "600 13px Inter", color: r.streak > 0 ? "#ff9a5a" : "var(--ink2)" }}>{r.streak > 0 ? `🔥 ${r.streak}` : "—"}</span>
                     </div>
                   );
                 })

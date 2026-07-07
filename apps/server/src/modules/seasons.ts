@@ -79,10 +79,15 @@ export async function seasonRoutes(app: FastifyInstance) {
     const tiers = (season.tiers as unknown as Tier[]) ?? [];
     const xp = progress?.xp ?? 0;
     const claimed = progress?.claimed ?? [];
+    // Real pass price from the seeded SEASON_PASS item, so the UI never shows a
+    // number that differs from what /season/pass actually charges.
+    const passItem = await prisma.storeItem.findUnique({ where: { id: PASS_ITEM_ID } });
+    const passPrice = passItem?.priceDiamonds ?? 900;
 
     return ok({
       season: { id: season.id, name: season.name, startsAt: season.startsAt, endsAt: season.endsAt },
       hasPass: progress?.hasPass ?? false,
+      passPrice,
       xp,
       tiers: tiers.map((t) => ({
         tier: t.tier,

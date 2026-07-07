@@ -28,6 +28,7 @@ function progressView(q: Quest, p: QuestProgress | undefined) {
     id: q.id,
     scope: q.scope,
     title: q.title,
+    description: q.description,
     goal: q.goal,
     rewardGold: q.rewardGold,
     value,

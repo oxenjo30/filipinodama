@@ -6,6 +6,7 @@ import { useAuthStore } from "../../stores/authStore";
 import { AvatarPickerModal } from "./AvatarPickerModal";
 import { EditProfileModal } from "./EditProfileModal";
 import { ReplayModal } from "./ReplayModal";
+import AchievementsGrid from "./AchievementsGrid";
 
 /**
  * ProfilePage — /profile
@@ -45,6 +46,9 @@ type MatchRow = {
   redTrophyDelta: number | null;
   blueTrophyDelta: number | null;
   goldReward: number | null;
+  redCaptures: number;
+  blueCaptures: number;
+  moveCount: number;
   startedAt: string;
   endedAt: string | null;
 };
@@ -68,13 +72,16 @@ const MODE_LABEL: Record<string, string> = {
   LOCAL: "Local",
 };
 
-type HistoryFilter = "all" | "win" | "loss" | "draw";
+type HistoryFilter = "all" | "win" | "loss" | "RANKED" | "CASUAL" | "AI";
 const HISTORY_FILTERS: { key: HistoryFilter; label: string }[] = [
   { key: "all", label: "All" },
   { key: "win", label: "Wins" },
   { key: "loss", label: "Losses" },
-  { key: "draw", label: "Draws" },
+  { key: "RANKED", label: "Ranked" },
+  { key: "CASUAL", label: "Casual" },
+  { key: "AI", label: "AI" },
 ];
+const MODE_FILTERS: HistoryFilter[] = ["RANKED", "CASUAL", "AI"];
 
 /** Human "x ago" from an ISO timestamp. */
 function timeAgo(iso: string | null): string {
@@ -203,7 +210,11 @@ export function ProfilePage() {
     setMatches(null);
     setMatchErr(null);
     const params = new URLSearchParams({ userId: meId });
-    if (historyFilter !== "all") params.set("result", historyFilter);
+    if (historyFilter === "win" || historyFilter === "loss") {
+      params.set("result", historyFilter);
+    } else if (MODE_FILTERS.includes(historyFilter)) {
+      params.set("mode", historyFilter);
+    }
     api
       .get<{ items: MatchRow[]; nextCursor: string | null }>(`/api/matches?${params.toString()}`)
       .then((res) => {
@@ -268,11 +279,23 @@ export function ProfilePage() {
   const winRate = total > 0 ? Math.round((wins / total) * 100) : 0;
 
   const STATS: { k: string; v: string; c: string }[] = [
+    { k: "Matches", v: total.toLocaleString(), c: "#efe7fb" },
     { k: "Wins", v: wins.toLocaleString(), c: "var(--green)" },
     { k: "Losses", v: losses.toLocaleString(), c: "var(--red)" },
-    { k: "Draws", v: draws.toLocaleString(), c: "var(--ink)" },
     { k: "Win Rate", v: `${winRate}%`, c: "var(--gold-lt)" },
   ];
+
+  // Favorite faction — client preference mirrored from the prototype's localStorage.
+  const favFaction: "Red" | "Blue" | null = (() => {
+    try {
+      const raw = localStorage.getItem("fdr.profile");
+      if (!raw) return null;
+      const p = JSON.parse(raw) as { favFaction?: unknown };
+      return p?.favFaction === "Red" || p?.favFaction === "Blue" ? p.favFaction : null;
+    } catch {
+      return null;
+    }
+  })();
 
   // ── rank ladder from shared RANK_TIERS + progress from trophy balance ──
   const tierNow = rankTierFor(trophies);
@@ -336,6 +359,35 @@ export function ProfilePage() {
           <div style={{ font: "600 13px Inter", color: "var(--gold)", margin: "4px 0 12px" }}>
             {tierNow.label} · 🏆 {trophies.toLocaleString()}
           </div>
+          {favFaction &&
+            (() => {
+              const red = favFaction === "Red";
+              return (
+                <span
+                  style={{
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: 8,
+                    padding: "6px 14px",
+                    borderRadius: 100,
+                    border: `1px solid ${red ? "rgba(180,60,70,.4)" : "rgba(60,110,190,.45)"}`,
+                    background: red ? "rgba(160,48,58,.14)" : "rgba(48,90,170,.16)",
+                    font: "600 13px Inter",
+                    color: red ? "#ff9aa2" : "#9ac4ff",
+                  }}
+                >
+                  <span
+                    style={{
+                      width: 10,
+                      height: 10,
+                      borderRadius: "50%",
+                      background: `radial-gradient(circle at 35% 30%,${red ? "#ff8790,#8f1b28" : "#8fb6ff,#22468f"})`,
+                    }}
+                  />
+                  Favorite faction · {favFaction}
+                </span>
+              );
+            })()}
         </div>
         <div style={{ display: "flex", gap: 10, flexWrap: "wrap", width: "100%", justifyContent: "flex-end" }}>
           <button className="btn btn-gold" onClick={() => setEditOpen(true)} style={{ padding: "12px 22px" }}>
@@ -566,15 +618,8 @@ export function ProfilePage() {
             )}
           </div>
 
-          {/* achievements — honest empty (no achievements endpoint exists) */}
-          <div className="frame" style={{ padding: 24 }}>
-            <div className="ptitle">Achievements</div>
-            <div style={{ textAlign: "center", padding: "34px 12px", color: "var(--ink2)", font: "500 13px/1.6 Inter" }}>
-              No achievements unlocked yet.
-              <br />
-              Keep climbing the ranks to unlock more achievements.
-            </div>
-          </div>
+          {/* achievements — real, computed client-side from the live account stats */}
+          <AchievementsGrid />
         </div>
       )}
 
@@ -620,7 +665,9 @@ export function ProfilePage() {
             </div>
 
             <div style={{ font: "400 12px Inter", color: "var(--ink2)", marginBottom: 2 }}>
-              {matches === null ? "Loading…" : `${matches.length} match${matches.length === 1 ? "" : "es"}`}
+              {matches === null
+                ? "Loading…"
+                : `${matches.length} match${matches.length === 1 ? "" : "es"}${historyFilter !== "all" ? " · filtered" : ""}`}
             </div>
 
             {matches === null ? (
@@ -697,11 +744,14 @@ export function ProfilePage() {
                       <div style={{ flex: 1, minWidth: 0 }}>
                         <div style={{ font: "700 14px Inter", color: "#efe7fb" }}>vs {oppName}</div>
                         <div style={{ font: "400 12px Inter", color: "var(--ink2)", marginTop: 2 }}>
-                          {MODE_LABEL[m.mode] ?? m.mode} · {timeAgo(m.startedAt)} · {duration(m.startedAt, m.endedAt)}
+                          {MODE_LABEL[m.mode] ?? m.mode} · {timeAgo(m.startedAt)} · {duration(m.startedAt, m.endedAt)} · {m.moveCount} moves
                         </div>
                       </div>
                       <div style={{ textAlign: "right", flex: "none" }}>
                         <div style={{ font: "700 13px 'JetBrains Mono',monospace", color: rc }}>{deltaStr}</div>
+                        <div style={{ font: "600 11px 'JetBrains Mono',monospace", color: "var(--ink2)", marginTop: 3 }}>
+                          Score {m.redCaptures}–{m.blueCaptures}
+                        </div>
                       </div>
                       <span style={{ flex: "none", color: "var(--ink2)", fontSize: 20, lineHeight: 1 }}>›</span>
                     </button>

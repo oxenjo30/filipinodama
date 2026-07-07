@@ -34,7 +34,27 @@ const playerSelect = {
   select: { id: true, username: true, displayName: true, tag: true, avatarUrl: true, frameId: true, rankTier: true, trophies: true },
 } as const;
 
+/**
+ * Capture tally per side, derived from moves[]. Red moves first, so red owns the
+ * even-indexed plies and blue the odd ones (mirrors the prototype's redCap/blueCap).
+ */
+function captureCounts(moves: unknown): { redCaptures: number; blueCaptures: number } {
+  let redCaptures = 0;
+  let blueCaptures = 0;
+  if (Array.isArray(moves)) {
+    moves.forEach((mv, i) => {
+      const caps = (mv && typeof mv === "object" && Array.isArray((mv as any).captures))
+        ? (mv as any).captures.length
+        : 0;
+      if (i % 2 === 0) redCaptures += caps;
+      else blueCaptures += caps;
+    });
+  }
+  return { redCaptures, blueCaptures };
+}
+
 function serializeMatch(m: any) {
+  const { redCaptures, blueCaptures } = captureCounts(m.moves);
   return {
     id: m.id,
     mode: m.mode,
@@ -46,6 +66,9 @@ function serializeMatch(m: any) {
     redTrophyDelta: m.redTrophyDelta,
     blueTrophyDelta: m.blueTrophyDelta,
     goldReward: m.goldReward,
+    redCaptures,
+    blueCaptures,
+    moveCount: Array.isArray(m.moves) ? m.moves.length : 0,
     startedAt: m.startedAt,
     endedAt: m.endedAt,
   };

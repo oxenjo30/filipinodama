@@ -17,9 +17,40 @@ import { useAuthStore } from "../../stores/authStore";
  *   • Player Tag         → server-assigned, not editable via the API, so it is
  *                          shown read-only (matches the real account handle).
  *   • Favorite Faction   → a cosmetic client-side preference in the prototype
- *                          (localStorage only, no server field) — kept as local
- *                          UI state so the toggle stays faithful.
+ *                          (localStorage only, no server field) — persisted to the
+ *                          "fdr.profile" localStorage object on Save and seeded back
+ *                          on open, matching the prototype (line 2364). The header
+ *                          faction chip reads the same key.
  */
+
+const PROFILE_KEY = "fdr.profile";
+
+/** Read the client-only favorite faction from the shared "fdr.profile" object. */
+function readFavFaction(): Faction {
+  try {
+    const raw = localStorage.getItem(PROFILE_KEY);
+    if (!raw) return "Red";
+    const p = JSON.parse(raw) as { favFaction?: unknown };
+    return p.favFaction === "Blue" ? "Blue" : "Red";
+  } catch {
+    return "Red";
+  }
+}
+
+/** Persist the favorite faction into the shared "fdr.profile" object, preserving siblings. */
+function writeFavFaction(fav: Faction): void {
+  try {
+    let prev: Record<string, unknown> = {};
+    const raw = localStorage.getItem(PROFILE_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (parsed && typeof parsed === "object") prev = parsed as Record<string, unknown>;
+    }
+    localStorage.setItem(PROFILE_KEY, JSON.stringify({ ...prev, favFaction: fav }));
+  } catch {
+    /* localStorage unavailable — preference simply not persisted */
+  }
+}
 
 /** Resolve a Me.avatarUrl (bare key | "/assets/…" | full URL) to a renderable src. */
 function avatarSrc(avatarUrl: string | null): string {
@@ -58,11 +89,13 @@ export function EditProfileModal({
   const [faction, setFaction] = useState<Faction>("Red");
   const [saving, setSaving] = useState(false);
 
-  // Seed the draft from the live account each time the modal opens.
+  // Seed the draft from the live account each time the modal opens; the favorite
+  // faction is a client-only preference so it seeds from localStorage.
   useEffect(() => {
     if (open && me) {
       setName(me.displayName ?? "");
       setBio(me.bio ?? "");
+      setFaction(readFavFaction());
     }
   }, [open, me]);
 
@@ -78,6 +111,9 @@ export function EditProfileModal({
         bio: nextBio,
       });
       patchMe({ displayName: res.user.displayName, bio: res.user.bio });
+      // Favorite Faction is a client-only preference (no server field) — persist it
+      // to the shared "fdr.profile" localStorage object, matching the prototype.
+      writeFavFaction(faction);
       showToast("Profile updated.");
       onClose();
     } catch (e) {
@@ -256,9 +292,12 @@ export function EditProfileModal({
             }}
           />
         </div>
-        <div style={{ font: "500 11px Inter", color: "var(--ink2)", marginBottom: 20 }}>
+        <div style={{ font: "500 11px Inter", color: "var(--ink2)", marginBottom: 4 }}>
           Your unique handle — shown as {name.trim() || me.displayName}{" "}
           <span style={{ color: "var(--gold)" }}>{me.tag}</span>
+        </div>
+        <div style={{ font: "500 11px Inter", color: "var(--ink2)", marginBottom: 20, opacity: 0.85 }}>
+          Tags are assigned automatically.
         </div>
 
         {/* favorite faction */}

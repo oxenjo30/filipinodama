@@ -210,15 +210,22 @@ export function ReplayModal({ matchId, meId, onClose }: ReplayModalProps) {
     return { oppName, resultLabel, resultColor, redCap, blueCap };
   }, [match, meId]);
 
-  // ── per-ply move buttons (replayMoveList, line 2400) ──
+  // ── per-ply move buttons (replayMoveList, prototype line 4087) ──
+  // Prototype prepends a "Start" chip that jumps to ply 0, then labels each move
+  // "n. text" (1-based). ply is the jump target; color distinguishes the mover.
   const moveButtons = useMemo(() => {
     if (!match) return [];
+    const rows: { ply: number; label: string; color: string }[] = [
+      { ply: 0, label: "Start", color: "var(--ink2)" },
+    ];
     let mover: PieceColor = "red";
-    return (match.moves ?? []).map((mv, i) => {
-      const color = mover === "red" ? "#ff9aa2" : "#8fbcff";
+    (match.moves ?? []).forEach((mv, i) => {
+      const n = i + 1;
+      const color = mover === "red" ? "#ff9aa2" : "#9ac4ff";
       mover = mover === "red" ? "blue" : "red";
-      return { idx: i + 1, label: moveLabel(mv), color };
+      rows.push({ ply: n, label: `${n}. ${moveLabel(mv)}`, color });
     });
+    return rows;
   }, [match]);
 
   const share = useCallback(() => {
@@ -378,17 +385,17 @@ export function ReplayModal({ matchId, meId, onClose }: ReplayModalProps) {
                     Moves — tap to jump
                   </div>
                   <div style={{ display: "flex", flexWrap: "wrap", gap: 6, maxHeight: 230, overflow: "auto", padding: 2 }}>
-                    {moveButtons.length === 0 ? (
+                    {(match.moves ?? []).length === 0 ? (
                       <div style={{ color: "var(--ink2)", font: "500 12px Inter" }}>No moves recorded.</div>
                     ) : (
                       moveButtons.map((mv) => {
-                        const active = ply === mv.idx;
+                        const active = ply === mv.ply;
                         return (
                           <button
-                            key={mv.idx}
+                            key={mv.ply}
                             onClick={() => {
                               setPlaying(false);
-                              setPly(mv.idx);
+                              setPly(mv.ply);
                             }}
                             style={{
                               padding: "5px 9px",
