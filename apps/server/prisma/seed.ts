@@ -147,20 +147,27 @@ async function main() {
     ["Diwata", 1000, "binukot", "baybayinskin"],
     ["Panday", 860, "panday", "jadeskin"],
   ] as const;
-  for (const [name, trophies, avatar, skinId] of bots) {
+  for (let i = 0; i < bots.length; i++) {
+    const [name, trophies, avatar, skinId] = bots[i];
+    // A bot-namespaced tag ("#NPC1"…) that can't collide with a real player's
+    // random 4-char hex tag or with another bot's tag (the previous "#1000+T"
+    // scheme could clash with an existing row → unique-constraint failure).
+    const tag = `#NPC${i + 1}`;
     await prisma.user.upsert({
       where: { username: name.toLowerCase() },
-      // backfill the avatar + equipped skin on existing rows too, so re-seeding
-      // fixes the ladder faces and gives bots their piece skins.
-      update: { avatarUrl: avatar, equippedSkin: skinId },
+      // backfill avatar + skin + tag + isBot on existing rows too, so re-seeding
+      // fixes faces/skins/tags AND flags the previously-unflagged bots so they
+      // drop off the public leaderboard + season ranking.
+      update: { avatarUrl: avatar, equippedSkin: skinId, tag, isBot: true },
       create: {
         username: name.toLowerCase(),
         displayName: name,
-        tag: `#${1000 + trophies}`,
+        tag,
         avatarUrl: avatar,
         equippedSkin: skinId,
         trophies,
         isGuest: false,
+        isBot: true,
         wins: Math.floor(trophies / 20),
         losses: Math.floor(trophies / 40),
       },

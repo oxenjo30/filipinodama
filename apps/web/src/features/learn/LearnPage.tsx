@@ -242,6 +242,7 @@ export function LearnPage() {
   const [total, setTotal] = useState(0);
   const [doneCount, setDoneCount] = useState(0);
   const [loading, setLoading] = useState(true);
+  const [search, setSearch] = useState("");
 
   // Open the real interactive lesson player (prototype's openLesson()).
   const openLesson = useCallback((id: string) => navigate(`/learn/${id}`), [navigate]);
@@ -284,6 +285,18 @@ export function LearnPage() {
   const resumeLesson = lessons.find((l) => !l.completed);
   const resumeIndex = resumeLesson ? lessons.indexOf(resumeLesson) : -1;
   const allDone = learnTotal > 0 && doneCount >= learnTotal;
+
+  // Client-side lesson search — filter the already-loaded list by title, summary
+  // or tag as the user types. Empty query shows everything.
+  const query = search.trim().toLowerCase();
+  const filteredLessons = query
+    ? lessons.filter(
+        (l) =>
+          l.title.toLowerCase().includes(query) ||
+          l.summary.toLowerCase().includes(query) ||
+          l.tag.toLowerCase().includes(query),
+      )
+    : lessons;
 
   return (
     <div
@@ -483,8 +496,13 @@ export function LearnPage() {
             <div style={{ font: "500 12px Inter", color: "var(--ink2)", paddingTop: 8 }}>
               No lessons available yet.
             </div>
+          ) : filteredLessons.length === 0 ? (
+            <div style={{ font: "500 12px Inter", color: "var(--ink2)", paddingTop: 8 }}>
+              No lessons match “{search.trim()}”.
+            </div>
           ) : (
-            lessons.map((l, i) => {
+            filteredLessons.map((l) => {
+              const i = lessons.indexOf(l);
               const done = l.completed;
               const badgeBorder = done ? "rgba(63,191,111,.5)" : "rgba(232,184,75,.3)";
               const badgeBg = done ? "rgba(47,143,91,.2)" : "rgba(0,0,0,.25)";
@@ -634,7 +652,8 @@ export function LearnPage() {
             <input
               placeholder="Search rules, tactics, topics..."
               className="fd-nozoom"
-              onFocus={() => showToast("Lesson search arrives with online play.")}
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
               style={{
                 flex: 1,
                 padding: "11px 13px",

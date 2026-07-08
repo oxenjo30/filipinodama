@@ -103,6 +103,7 @@ export async function leaderboardRoutes(app: FastifyInstance) {
     const where: Prisma.UserWhereInput = {
       deletedAt: null,
       isGuest: false,
+      isBot: false, // matchmaking NPCs never appear on the public ladder
       ...(userIds !== null ? { id: { in: userIds } } : {}),
     };
 

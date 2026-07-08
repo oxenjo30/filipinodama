@@ -84,8 +84,17 @@ export async function questRoutes(app: FastifyInstance) {
     });
     if (flipped.count === 0) {
       if (!progress) {
-        // no row existed → create it claimed (the completer of this claim)
-        await prisma.questProgress.create({ data: { userId, questId: quest.id, periodKey, value, claimed: true } });
+        // no row existed → create it claimed (the completer of this claim). A
+        // unique (userId,questId,periodKey) makes a concurrent first-time claim
+        // throw P2002; the loser of that race treats it as already claimed.
+        try {
+          await prisma.questProgress.create({ data: { userId, questId: quest.id, periodKey, value, claimed: true } });
+        } catch (e) {
+          if (typeof e === "object" && e !== null && (e as { code?: string }).code === "P2002") {
+            throw err.conflict("QUEST_ALREADY_CLAIMED", "Reward already claimed");
+          }
+          throw e;
+        }
       } else {
         // someone else already claimed it in a race
         throw err.conflict("QUEST_ALREADY_CLAIMED", "Reward already claimed");

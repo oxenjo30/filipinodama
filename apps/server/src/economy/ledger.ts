@@ -49,7 +49,23 @@ export async function applyLedgerTx(tx: Tx, g: Grant): Promise<number> {
  * spendable funds (GOLD/DIAMONDS cannot go negative; TROPHIES may).
  */
 export async function applyLedger(prisma: PrismaClient, g: Grant) {
-  return prisma.$transaction((tx) => applyLedgerTx(tx, g));
+  try {
+    return await prisma.$transaction((tx) => applyLedgerTx(tx, g));
+  } catch (e) {
+    // Idempotency backstop: the (user, currency, reason, ref) unique index means
+    // a duplicate ref'd grant (e.g. a re-delivered webhook / retried settle)
+    // fails with P2002 — treat it as already-applied and return the live balance
+    // instead of erroring or double-crediting. Only ref'd grants can hit this.
+    if (
+      typeof e === "object" && e !== null && (e as { code?: string }).code === "P2002" &&
+      g.refId != null && g.refType != null
+    ) {
+      const col = COL[g.currency];
+      const user = await prisma.user.findUniqueOrThrow({ where: { id: g.userId } });
+      return (user as unknown as Record<string, number>)[col];
+    }
+    throw e;
+  }
 }
 
 /** Spend gold/diamonds on a store item + grant the item, atomically. */

@@ -351,25 +351,6 @@ export function HomePage() {
             ))}
           </div>
         </div>
-
-        {/* FEATURED MATCH — honest: there is NO live-spectate backend yet (no
-            public live-match feed; presence is friends-scoped only). Fabricating
-            a "MasterLink vs Taktikero · Live Match" card here would contradict
-            SpectatePage, which honestly shows "No live matches to watch right
-            now". So this slot mirrors that empty state and routes to the real
-            Spectate screen. Populates with a real featured match once a
-            live-match feed exists. */}
-        <div className="frame" style={{ padding: 20 }}>
-          <div className="ptitle">Featured Match</div>
-          <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 6, padding: "18px 8px 8px", textAlign: "center" }}>
-            <div style={{ fontSize: 30 }}>👁</div>
-            <div style={{ font: "700 14px Cinzel,serif", color: "var(--gold-lt)" }}>No live matches</div>
-            <div style={{ font: "400 12px/1.5 Inter", color: "var(--ink2)" }}>
-              Live spectating turns on with online play.
-            </div>
-          </div>
-          <button className="btn btn-purple" onClick={() => navigate("/spectate")} style={{ width: "100%", marginTop: 12 }}>Go to Spectate</button>
-        </div>
       </div>
     </div>
   );

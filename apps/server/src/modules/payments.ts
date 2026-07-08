@@ -116,49 +116,98 @@ export async function paymentRoutes(app: FastifyInstance) {
       return reply.status(401).send({ ok: false, error: { code: "BAD_SIGNATURE", message: "Invalid signature" } });
     }
 
-    const evt = JSON.parse(raw) as {
-      data: { id: string; attributes: { type: string; data: { attributes: { metadata?: Record<string, string> } } } };
-    };
-    const eventId = evt.data.id;
-    const type = evt.data.attributes.type;
+    // Signature is valid. From here on, ANY event we cannot process (unknown
+    // type, malformed body, missing fields) must still return 200 so PayMongo
+    // stops retrying — only a bad signature earns a non-2xx (the 401 above).
+    try {
+      const evt = JSON.parse(raw) as {
+        data: {
+          id: string;
+          attributes: {
+            type: string;
+            data: {
+              id?: string;
+              attributes: {
+                metadata?: Record<string, string>;
+                // On a refund event this is the Refund resource; it carries the
+                // id of the payment it reverses (shape varies by API version).
+                payment_id?: string;
+                checkout_session_id?: string;
+                payment?: { id?: string; attributes?: { checkout_session_id?: string; metadata?: Record<string, string> } };
+              };
+            };
+          };
+        };
+      };
+      const eventId = evt.data.id;
+      const type = evt.data.attributes.type;
+      const inner = evt.data.attributes.data;
 
-    // Credit ONLY on checkout_session.payment.paid (ignore payment.paid → no double-credit).
-    if (type === "checkout_session.payment.paid") {
-      const meta = evt.data.attributes.data.attributes.metadata ?? {};
-      const paymentId = meta.paymentId;
+      // Credit ONLY on checkout_session.payment.paid (ignore payment.paid → no double-credit).
+      if (type === "checkout_session.payment.paid") {
+        const meta = inner.attributes.metadata ?? {};
+        const paymentId = meta.paymentId;
 
-      if (paymentId) {
-        const payment = await prisma.payment.findUnique({ where: { id: paymentId } });
-        if (payment) {
-          // Settle + credit in ONE transaction, gated by a conditional
-          // compare-and-swap on the Payment status. PayMongo retries and may
-          // deliver the same event concurrently; only the ONE delivery that
-          // actually flips pending→settled (count===1) credits diamonds — the
-          // status column is the idempotency key, so no double-credit is
-          // possible even without a DB-level ledger uniqueness constraint.
-          await prisma.$transaction(async (tx) => {
-            const flip = await tx.payment.updateMany({
-              where: { id: payment.id, status: { not: "settled" } },
-              data: { status: "settled", settledAt: new Date() },
+        if (paymentId) {
+          const payment = await prisma.payment.findUnique({ where: { id: paymentId } });
+          if (payment) {
+            // Settle + credit in ONE transaction, gated by a conditional
+            // compare-and-swap on the Payment status. PayMongo retries and may
+            // deliver the same event concurrently; only the ONE delivery that
+            // actually flips pending→settled (count===1) credits diamonds — the
+            // status column is the idempotency key, so no double-credit is
+            // possible even without a DB-level ledger uniqueness constraint.
+            await prisma.$transaction(async (tx) => {
+              const flip = await tx.payment.updateMany({
+                where: { id: payment.id, status: { not: "settled" } },
+                data: { status: "settled", settledAt: new Date() },
+              });
+              if (flip.count === 0) return; // already settled by another delivery
+              await applyLedgerTx(tx, {
+                userId: payment.userId,
+                currency: "DIAMONDS",
+                amount: payment.diamonds,
+                reason: "purchase",
+                refType: "payment",
+                refId: eventId,
+              });
             });
-            if (flip.count === 0) return; // already settled by another delivery
-            await applyLedgerTx(tx, {
-              userId: payment.userId,
-              currency: "DIAMONDS",
-              amount: payment.diamonds,
-              reason: "purchase",
-              refType: "payment",
-              refId: eventId,
-            });
+          }
+        }
+      } else if (type === "payment.refunded") {
+        // Reverse a settled purchase: revoke the credited diamonds.
+        //
+        // Refund events do NOT carry the original checkout metadata, so we
+        // canNOT rely on metadata.paymentId here — that lookup would no-op and
+        // diamonds would never be clawed back. Instead we resolve the Payment
+        // by its providerRef, which at checkout we set to the PayMongo checkout
+        // session id (see the checkout handler's payment.update). We pull every
+        // provider id the refund payload might expose and match on any of them.
+        const a = inner.attributes;
+        const candidateRefs = [
+          a.checkout_session_id,
+          a.payment?.attributes?.checkout_session_id,
+          a.payment_id,
+          a.payment?.id,
+          inner.id, // the refund/payment resource id itself
+        ].filter((v): v is string => typeof v === "string" && v.length > 0);
+
+        // Best-effort: metadata may still ride along on the nested payment resource.
+        const refundMeta = a.payment?.attributes?.metadata ?? a.metadata ?? {};
+        const metaPaymentId = refundMeta.paymentId;
+
+        let payment = metaPaymentId
+          ? await prisma.payment.findUnique({ where: { id: metaPaymentId } })
+          : null;
+        if (!payment && candidateRefs.length > 0) {
+          payment = await prisma.payment.findFirst({
+            where: { provider: "paymongo", providerRef: { in: candidateRefs } },
           });
         }
-      }
-    } else if (type === "payment.refunded") {
-      // Reverse a settled purchase: revoke the credited diamonds.
-      const meta = evt.data.attributes.data.attributes.metadata ?? {};
-      const paymentId = meta.paymentId;
-      if (paymentId) {
-        const payment = await prisma.payment.findUnique({ where: { id: paymentId } });
+        // TODO: if candidateRefs is empty AND no metadata is present for a given
+        // PayMongo API version, the refund cannot be matched to a Payment here;
+        // reconcile such refunds out-of-band (e.g. a periodic PayMongo refund sync).
+
         if (payment && payment.status === "settled") {
           await prisma.payment.update({ where: { id: payment.id }, data: { status: "refunded" } });
           await applyLedger(prisma, {
@@ -171,6 +220,9 @@ export async function paymentRoutes(app: FastifyInstance) {
           }).catch(() => {/* if they already spent them, balance guard applies */});
         }
       }
+    } catch {
+      // Malformed/unexpected payload — acknowledge so PayMongo stops retrying.
+      return reply.send({ ok: true });
     }
 
     return reply.send({ ok: true });

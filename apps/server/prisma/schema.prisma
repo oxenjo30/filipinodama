@@ -14,6 +14,9 @@ model User {
   emailVerified DateTime?
   passwordHash  String?
   isGuest       Boolean   @default(false)
+  // Matchmaking NPC/bot account (fills empty queues). Excluded from the public
+  // leaderboard + season-end reward ranking so bots never pollute real standings.
+  isBot         Boolean   @default(false)
   username      String    @unique
   displayName   String
   tag           String    @unique
@@ -114,6 +117,11 @@ model LedgerEntry {
   createdAt DateTime @default(now())
 
   @@index([userId, currency, createdAt])
+  // Idempotency: a given (user, reason, ref) credit can only be applied once.
+  // Postgres treats NULL refType/refId as distinct, so unref'd adjustments are
+  // unaffected — this only guards ref'd grants (match/quest/payment) from double
+  // application. applyLedger treats a unique-violation as an already-done no-op.
+  @@unique([userId, currency, reason, refType, refId])
 }
 
 // ─────────────── Store & inventory ───────────────

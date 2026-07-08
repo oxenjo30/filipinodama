@@ -94,7 +94,11 @@ export async function dmRoutes(app: FastifyInstance) {
   });
 
   // POST /api/dm/:userId — send a message; persists + live-delivers to recipient.
-  app.post<{ Params: { userId: string } }>("/dm/:userId", { preHandler: requireAuth }, async (req) => {
+  // Per-route throttle on top of the global IP ceiling: caps DM spam/flooding.
+  app.post<{ Params: { userId: string } }>(
+    "/dm/:userId",
+    { preHandler: requireAuth, config: { rateLimit: { max: 30, timeWindow: "1 minute" } } },
+    async (req) => {
     const me = req.userId!;
     const other = req.params.userId;
     if (other === me) throw err.badRequest("SELF_DM", "You can't message yourself");

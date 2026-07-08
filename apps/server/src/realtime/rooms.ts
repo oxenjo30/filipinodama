@@ -2,7 +2,7 @@ import type { Server as IOServer, Socket } from "socket.io";
 import { EV, DEFAULT_SETTINGS, type GameSettings } from "@dama/shared";
 import type { MatchMode as PrismaMatchMode } from "@prisma/client";
 import { prisma } from "../db/client.js";
-import { createLiveMatch, endLiveMatch } from "./match.js";
+import { createLiveMatch, endLiveMatch, forfeitLiveMatch } from "./match.js";
 import { allow } from "./rate-limit.js";
 
 /**
@@ -116,10 +116,20 @@ function removeMember(io: IOServer, userId: string) {
   if (member) detachSockets(io, room, member);
 
   if (room.hostId === userId) {
-    // Host left → close the room for everyone (and clean up a started match's
-    // in-memory state so it doesn't leak — the match is abandoned when the host
-    // who created the lobby leaves).
-    if (room.matchId) endLiveMatch(room.matchId);
+    // Host left → close the room for everyone. If a match had already STARTED,
+    // the host abandoning it must settle the guest's in-progress game as a WIN
+    // for the guest (forfeit) rather than silently discarding it. Only an
+    // unstarted lobby (or a match with no guest) is cleaned up without settling.
+    if (room.matchId) {
+      if (room.guest) {
+        // Host = red, guest = blue (see roomStart) → guest wins as blue.
+        void forfeitLiveMatch(io, room.matchId, "blue").catch((e) =>
+          console.error("[rooms] host-abandon forfeit failed", room.matchId, e),
+        );
+      } else {
+        endLiveMatch(room.matchId);
+      }
+    }
     io.to(ROOM_PREFIX(code)).emit(EV.roomState, { code, closed: true });
     for (const m of [room.guest, ...room.spectators.values()]) if (m) userRoom.delete(m.userId);
     rooms.delete(code);

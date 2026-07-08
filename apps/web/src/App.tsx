@@ -6,6 +6,7 @@ import { PlayHubPage } from "./features/play/PlayHubPage";
 import { AiSetupPage } from "./features/play/AiSetupPage";
 import { GamePage } from "./features/play/GamePage";
 import { NotFoundPage } from "./features/shared/NotFoundPage";
+import { ErrorBoundary } from "./features/shared/ErrorBoundary";
 import { FriendsPage } from "./features/friends/FriendsPage";
 import { ProfilePage } from "./features/profile/ProfilePage";
 import { QuestsPage } from "./features/quests/QuestsPage";
@@ -21,7 +22,6 @@ import { LeaderboardPage } from "./features/leaderboard/LeaderboardPage";
 import { AuthPage } from "./features/auth/AuthPage";
 import { OnlineMatchPage } from "./features/play/OnlineMatchPage";
 import { MessagesPage } from "./features/messages/MessagesPage";
-import { SpectatePage } from "./features/spectate/SpectatePage";
 import { PrivateRoomPage } from "./features/rooms/PrivateRoomPage";
 import { ContactPage } from "./features/contact/ContactPage";
 import { OrdersPage } from "./features/orders/OrdersPage";
@@ -74,7 +74,8 @@ export function App() {
 
   return (
     <BrowserRouter>
-      <Routes>
+      <ErrorBoundary>
+        <Routes>
         {/* ── auth (no AppLayout chrome — full-screen) ── */}
         <Route path="/login" element={<AuthPage initialMode="signin" />} />
         <Route path="/register" element={<AuthPage initialMode="signup" />} />
@@ -87,7 +88,6 @@ export function App() {
           <Route path="/play/ai/game" element={<GamePage />} />
           <Route path="/play/local" element={<GamePage mode="local" />} />
           <Route path="/play/online" element={<OnlineMatchPage />} />
-          <Route path="/spectate" element={<SpectatePage />} />
           <Route path="/rooms" element={<PrivateRoomPage />} />
 
           {/* ── styled placeholders (no dead links) ── */}
@@ -116,8 +116,9 @@ export function App() {
 
           {/* ── catch-all ── */}
           <Route path="*" element={<NotFoundPage />} />
-        </Route>
-      </Routes>
+          </Route>
+        </Routes>
+      </ErrorBoundary>
     </BrowserRouter>
   );
 }

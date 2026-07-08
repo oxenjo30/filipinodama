@@ -160,6 +160,34 @@ function QuestRow({ q, busy, onClaim }: { q: Quest; busy: boolean; onClaim: (id:
   );
 }
 
+/** Distinct fetch-error state (NOT the honest-empty state) — a real load
+ *  failure shows this instead of "no quests", with a retry that re-fetches. */
+function QuestsErrorState({ onRetry }: { onRetry: () => void }) {
+  return (
+    <div style={{ padding: "22px 4px", textAlign: "center", display: "flex", flexDirection: "column", alignItems: "center", gap: 12 }}>
+      <div style={{ font: "500 13px Inter", color: "var(--ink2)" }}>
+        Couldn&rsquo;t load your quests — try again.
+      </div>
+      <button
+        type="button"
+        onClick={onRetry}
+        style={{
+          padding: "9px 20px",
+          borderRadius: 9,
+          font: "800 12px Inter",
+          letterSpacing: ".4px",
+          border: "1px solid var(--gold)",
+          background: "linear-gradient(180deg,#f0c24b,#c98b2e)",
+          color: "#2a1607",
+          cursor: "pointer",
+        }}
+      >
+        Retry
+      </button>
+    </div>
+  );
+}
+
 export function QuestsPage() {
   const me = useAuthStore((s) => s.me);
   const patchMe = useAuthStore((s) => s.patchMe);
@@ -170,6 +198,7 @@ export function QuestsPage() {
   const [daily, setDaily] = useState<Quest[]>([]);
   const [seasonal, setSeasonal] = useState<Quest[]>([]);
   const [loaded, setLoaded] = useState(false);
+  const [loadError, setLoadError] = useState(false);
   const [claiming, setClaiming] = useState<string | null>(null);
   const [resetLabel, setResetLabel] = useState(timeUntilUtcMidnight());
 
@@ -181,12 +210,17 @@ export function QuestsPage() {
 
   const load = useCallback(async () => {
     if (!me) return;
+    setLoadError(false);
     try {
       const data = await api.get<{ daily: Quest[]; seasonal: Quest[] }>("/api/quests");
       setDaily(data.daily);
       setSeasonal(data.seasonal);
     } catch (e) {
+      // A 401 just means the session lapsed (handled by the logged-out state);
+      // any other failure is a real fetch error → surface a retryable error
+      // state instead of the misleading honest-empty "no quests" copy.
       if (!(e instanceof ApiError && e.status === 401)) {
+        setLoadError(true);
         showToast("Couldn't load quests. Try again in a moment.");
       }
     } finally {
@@ -302,6 +336,8 @@ export function QuestsPage() {
             <div style={{ padding: "22px 4px", textAlign: "center", font: "500 13px Inter", color: "var(--ink2)" }}>
               Sign in to see your daily quests.
             </div>
+          ) : loadError ? (
+            <QuestsErrorState onRetry={load} />
           ) : loaded && daily.length === 0 ? (
             <div style={{ padding: "22px 4px", textAlign: "center", font: "500 13px Inter", color: "var(--ink2)" }}>
               No daily quests right now — check back soon.
@@ -349,6 +385,8 @@ export function QuestsPage() {
             <div style={{ padding: "22px 4px", textAlign: "center", font: "500 13px Inter", color: "var(--ink2)" }}>
               Sign in to see your seasonal goals.
             </div>
+          ) : loadError ? (
+            <QuestsErrorState onRetry={load} />
           ) : loaded && seasonal.length === 0 ? (
             <div style={{ padding: "22px 4px", textAlign: "center", font: "500 13px Inter", color: "var(--ink2)" }}>
               No seasonal goals right now — check back soon.

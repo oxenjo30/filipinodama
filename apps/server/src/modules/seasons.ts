@@ -228,8 +228,10 @@ export async function seasonRoutes(app: FastifyInstance) {
     // ordering the global leaderboard uses).
     const me = await prisma.user.findUnique({ where: { id: userId }, select: { trophies: true } });
     const trophies = me?.trophies ?? 0;
+    // Rank among REAL players only — guests and matchmaking bots don't occupy
+    // ladder positions or reward brackets.
     const higher = await prisma.user.count({
-      where: { deletedAt: null, trophies: { gt: trophies } },
+      where: { deletedAt: null, isGuest: false, isBot: false, trophies: { gt: trophies } },
     });
     const rank = higher + 1;
     // Reward brackets (gold + diamonds) by final placement.

@@ -14,13 +14,15 @@ export const loginSchema = z.object({ email: z.string().email(), password: z.str
 export const updateProfileSchema = z.object({
   displayName: z.string().min(1).max(24).optional(),
   bio: z.string().max(LIMITS.bioMax).optional(),
-  // Either a bare avatar key ("champion"), an app-relative asset path
-  // ("/assets/avatars/champion.png"), or a full URL — but NOT an origin-baked
-  // absolute URL we'd have to store forever. Bare keys are the portable form.
+  // Either a bare avatar key ("champion") or an app-relative asset path
+  // ("/assets/avatars/champion.png"). Arbitrary external URLs are rejected:
+  // avatars are uploaded to R2 and referenced as /assets paths, and an attacker
+  // could otherwise point this at a tracking/NSFW URL rendered in other players'
+  // views. Bare keys are the portable form.
   avatarUrl: z
     .string()
     .max(200)
-    .regex(/^([a-z0-9-]+|\/assets\/[\w./-]+|https?:\/\/[\w./:-]+)$/i, "invalid avatar reference")
+    .regex(/^([a-z0-9-]+|\/assets\/[\w./-]+)$/i, "invalid avatar reference")
     .optional(),
   countryCode: z.string().length(2).optional(),
 });

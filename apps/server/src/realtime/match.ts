@@ -100,6 +100,25 @@ export function endLiveMatch(matchId: string): void {
   live.delete(matchId);
 }
 
+/**
+ * Forfeit a live match to `winnerColor` and settle it exactly once (persist +
+ * ledger + broadcast matchEnded), then drop it from memory. Used when a
+ * private-room host abandons a STARTED match: the guest's in-progress game must
+ * settle as a WIN for the guest rather than being silently discarded. No-op for
+ * an unknown/already-settled/already-finished match (so a normal endLiveMatch
+ * path and this never double-settle).
+ */
+export async function forfeitLiveMatch(
+  io: IOServer,
+  matchId: string,
+  winnerColor: PieceColor,
+): Promise<void> {
+  const lm = live.get(matchId);
+  if (!lm || lm.settled || lm.state.result) return;
+  lm.state = { ...lm.state, result: { winner: winnerColor, reason: "abandon" } };
+  await settleMatch(io, lm);
+}
+
 export function createLiveMatch(
   matchId: string,
   redId: string | null,
@@ -257,7 +276,10 @@ async function settleMatch(io: IOServer, lm: LiveMatch): Promise<void> {
   if (!result) return;
   lm.settled = true;
 
-  const isRanked = lm.mode === "RANKED";
+  // Ranked trophies move only in a RANKED match between two HUMANS. A bot-filled
+  // ranked match (empty-queue fallback) awards gold but NOT trophies, so the
+  // ladder can't be farmed against bots. `botColor` is set iff a seat is a bot.
+  const isRanked = lm.mode === "RANKED" && lm.botColor == null;
   const goldPerWin =
     ECONOMY.goldPerWin[lm.mode as keyof typeof ECONOMY.goldPerWin] ?? 0;
 
