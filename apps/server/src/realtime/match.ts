@@ -11,6 +11,7 @@ import {
 import { createInitialState, isLegal, applyMove, bestMove } from "@dama/game-engine";
 import type { MatchMode as PrismaMatchMode } from "@prisma/client";
 import { prisma } from "../db/client.js";
+import { isMuted } from "../lib/mute.js";
 import { applyLedger } from "../economy/ledger.js";
 import { allow } from "./rate-limit.js";
 
@@ -567,7 +568,7 @@ export function registerMatch(io: IOServer, socket: Socket) {
 
   // ── In-match quick chat / emote — relay to the match room (persisted lightly
   // via the match room; no separate channel needed for ephemeral match chat). ──
-  socket.on(EV.matchChat, (payload: { matchId?: unknown; body?: unknown; emote?: unknown } = {}) => {
+  socket.on(EV.matchChat, async (payload: { matchId?: unknown; body?: unknown; emote?: unknown } = {}) => {
     if (!allow(socket, "match:chat", 8, 4000)) return; // anti-flood
     const matchId = typeof payload?.matchId === "string" ? payload.matchId : null;
     if (!matchId) return;
@@ -575,7 +576,10 @@ export function registerMatch(io: IOServer, socket: Socket) {
     // Only the two players may chat, and only in a live match.
     if (!lm || !colorOf(lm, userId)) return;
     const emote = typeof payload?.emote === "string" ? payload.emote.slice(0, 8) : null;
-    const body = typeof payload?.body === "string" ? payload.body.trim().slice(0, 200) : "";
+    let body = typeof payload?.body === "string" ? payload.body.trim().slice(0, 200) : "";
+    if (!emote && !body) return;
+    // Muted players can still send emotes, but not text.
+    if (body && (await isMuted(userId))) body = "";
     if (!emote && !body) return;
     io.to(matchId).emit(EV.matchChat, {
       matchId,

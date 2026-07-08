@@ -2,6 +2,7 @@ import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { prisma } from "../db/client.js";
 import { ok, err } from "../lib/errors.js";
+import { isMuted } from "../lib/mute.js";
 import { requireAuth } from "../auth/guards.js";
 import { getIO } from "../realtime/io.js";
 import { EV } from "@dama/shared";
@@ -102,6 +103,7 @@ export async function dmRoutes(app: FastifyInstance) {
     const me = req.userId!;
     const other = req.params.userId;
     if (other === me) throw err.badRequest("SELF_DM", "You can't message yourself");
+    if (await isMuted(me)) throw err.forbidden("MUTED", "You are muted and can't send messages.");
     await assertFriends(me, other);
     const { body } = sendSchema.parse(req.body);
     const channelId = await ensureChannel("DM", dmRefId(me, other), [me, other]);

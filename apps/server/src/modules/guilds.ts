@@ -4,6 +4,7 @@ import { z } from "zod";
 import { createGuildSchema, updateGuildSchema, guildChatSendSchema } from "@dama/shared";
 import { prisma } from "../db/client.js";
 import { ok, err } from "../lib/errors.js";
+import { isMuted } from "../lib/mute.js";
 import { requireAuth, attachUser } from "../auth/guards.js";
 import { EV } from "@dama/shared";
 import { getIO } from "../realtime/io.js";
@@ -255,6 +256,7 @@ export async function guildRoutes(app: FastifyInstance) {
       const me = req.userId!;
       const guildId = req.params.id;
       const membership = await requireGuildRole(me, guildId, "MEMBER");
+      if (await isMuted(me)) throw err.forbidden("MUTED", "You are muted and can't send messages.");
       const { body } = guildChatSendSchema.parse(req.body);
 
       const message = await postGuildMessage(guildId, me, body, membership.role);
