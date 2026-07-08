@@ -10,6 +10,7 @@ import { useSettingsStore } from "../../stores/settingsStore";
 import { useCosmeticsStore } from "../../stores/cosmeticsStore";
 import { Modal } from "../shared/Modal";
 import { LoadingScreen } from "../shared/LoadingScreen";
+import { useGameSounds } from "../../lib/useGameSounds";
 import { avatar as avatarUrl, PIECE_SKINS, type PieceSkin } from "../../lib/assets";
 
 /** Quick-chat emotes (prototype `gameEmotes`). */
@@ -86,6 +87,10 @@ export function OnlineMatchPage() {
     joinQueue, leaveQueue, resync, onSquareClick, resign, reset,
     sendChat: sendMatchChat, sendEmote, offerRematch, acceptRematch, declineRematch,
   } = useOnlineStore();
+
+  // Board SFX on each state transition (move/capture/king/win/lose/draw). myColor
+  // picks win vs lose; a spectator has myColor null → neutral flourish.
+  useGameSounds(state, myColor);
 
   // Preferred side. Honoured vs bots (you always get it) and vs humans when
   // compatible; "either" = no preference (fastest match). Changing it while

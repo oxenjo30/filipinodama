@@ -7,6 +7,7 @@ import { useSettingsStore } from "../../stores/settingsStore";
 import { useAppStore } from "../../stores/appStore";
 import { useAuthStore } from "../../stores/authStore";
 import { useCosmeticsStore } from "../../stores/cosmeticsStore";
+import { useGameSounds } from "../../lib/useGameSounds";
 import { PlayerPanel } from "./PlayerPanel";
 import { Modal } from "../shared/Modal";
 import { LoadingScreen } from "../shared/LoadingScreen";
@@ -131,6 +132,11 @@ export function GamePage({ mode = "ai" }: { mode?: "ai" | "local" }) {
     return () => window.clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mode]);
+
+  // Board SFX: play move/capture/king/win/lose/draw on each state transition. In
+  // vs-AI the human is HUMAN_COLOR (real win/lose); local is pass-and-play so we
+  // pass null → both sides just get the neutral victory flourish.
+  useGameSounds(state, isLocal ? null : HUMAN_COLOR);
 
   const result = state.result;
   // "Thinking" only exists in vs-AI mode — a local (pass-and-play) match has no AI,

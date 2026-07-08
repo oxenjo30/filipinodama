@@ -8,6 +8,7 @@ import { useAuthStore } from "../../stores/authStore";
 import { useRoomStore, type RoomMember } from "../../stores/roomStore";
 import { useOnlineStore } from "../../stores/onlineStore";
 import { useSettingsStore } from "../../stores/settingsStore";
+import { useGameSounds } from "../../lib/useGameSounds";
 import { Board } from "../../components";
 import { ShareInviteModal } from "./ShareInviteModal";
 
@@ -1242,6 +1243,8 @@ function Switch({ on, onToggle }: { on: boolean; onToggle: () => void }) {
 function SpectatorBoard({ hostName, guestName }: { hostName: string; guestName: string }) {
   const state = useOnlineStore((s) => s.state);
   const skin = useSettingsStore((s) => s.skin);
+  // Spectators hear the game too (myColor null → neutral end flourish).
+  useGameSounds(state, null);
 
   if (!state) {
     return (
