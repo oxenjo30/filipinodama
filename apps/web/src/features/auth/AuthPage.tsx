@@ -98,9 +98,13 @@ export function AuthPage({ initialMode = "signin" }: { initialMode?: Mode }) {
     setError(null);
   }
 
-  /** Every path that creates or enters an account first requires accepting Terms. */
+  /**
+   * Accepting Terms is required only when CREATING an account (sign-up / guest /
+   * first Google sign-up). Returning users signing in have already accepted them,
+   * so we never gate sign-in on the checkbox (which isn't shown in sign-in mode).
+   */
   function requireTerms(): boolean {
-    if (agreed) return true;
+    if (!isSignup || agreed) return true;
     setError("Please accept the Terms & Conditions to continue.");
     return false;
   }
@@ -480,56 +484,61 @@ export function AuthPage({ initialMode = "signin" }: { initialMode?: Mode }) {
         >
           Continue as Guest
         </button>
-        <label
-          style={{
-            display: "flex",
-            alignItems: "flex-start",
-            gap: 9,
-            margin: "18px 0 0",
-            font: "400 11px Inter",
-            color: "var(--ink2)",
-            lineHeight: 1.5,
-            cursor: "pointer",
-          }}
-        >
-          <input
-            type="checkbox"
-            checked={agreed}
-            onChange={(e) => {
-              setAgreed(e.target.checked);
-              if (e.target.checked) setError(null);
-            }}
+        {/* Terms & Conditions — required only when CREATING an account, so it's
+            shown in sign-up mode only. Returning users signing in have already
+            accepted them. The Terms/Privacy links also live in the footer. */}
+        {isSignup && (
+          <label
             style={{
-              width: 16,
-              height: 16,
-              marginTop: 1,
-              flex: "none",
-              accentColor: "#c99a2e",
+              display: "flex",
+              alignItems: "flex-start",
+              gap: 9,
+              margin: "18px 0 0",
+              font: "400 11px Inter",
+              color: "var(--ink2)",
+              lineHeight: 1.5,
               cursor: "pointer",
             }}
-          />
-          <span>
-            I agree to the{" "}
-            <a
-              href="/terms"
-              target="_blank"
-              rel="noopener noreferrer"
-              style={{ color: "var(--gold-lt)", fontWeight: 700, textDecoration: "underline" }}
-            >
-              Terms &amp; Conditions
-            </a>{" "}
-            and{" "}
-            <a
-              href="/privacy"
-              target="_blank"
-              rel="noopener noreferrer"
-              style={{ color: "var(--gold-lt)", fontWeight: 700, textDecoration: "underline" }}
-            >
-              Privacy Policy
-            </a>
-            .
-          </span>
-        </label>
+          >
+            <input
+              type="checkbox"
+              checked={agreed}
+              onChange={(e) => {
+                setAgreed(e.target.checked);
+                if (e.target.checked) setError(null);
+              }}
+              style={{
+                width: 16,
+                height: 16,
+                marginTop: 1,
+                flex: "none",
+                accentColor: "#c99a2e",
+                cursor: "pointer",
+              }}
+            />
+            <span>
+              I agree to the{" "}
+              <a
+                href="/terms"
+                target="_blank"
+                rel="noopener noreferrer"
+                style={{ color: "var(--gold-lt)", fontWeight: 700, textDecoration: "underline" }}
+              >
+                Terms &amp; Conditions
+              </a>{" "}
+              and{" "}
+              <a
+                href="/privacy"
+                target="_blank"
+                rel="noopener noreferrer"
+                style={{ color: "var(--gold-lt)", fontWeight: 700, textDecoration: "underline" }}
+              >
+                Privacy Policy
+              </a>
+              .
+            </span>
+          </label>
+        )}
 
         {/* Forgot-password panel — a real, wired reset flow. */}
         {forgotOpen && (
