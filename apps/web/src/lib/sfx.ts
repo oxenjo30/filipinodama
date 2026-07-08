@@ -192,150 +192,72 @@ export function playSfx(name: Sfx) {
   }
 }
 
-// ── War-drum voices (for the loading-screen loop) ────────────────────────────
-// Deep, resonant tribal toms — a booming battle drum. Each schedules itself at
-// absolute time `t` on the destination node.
+// ── Loading-screen music ─────────────────────────────────────────────────────
+// A looping battle-theme MP3 (public/assets/audio/loading-theme.mp3, a ~10s clip)
+// played while a LoadingScreen is mounted, then faded out on unmount. Uses an
+// HTMLAudioElement (simpler + more reliable for a real track than Web Audio).
 
-/**
- * warTom — a big membrane hit: a low pitch-dropping sine "boom" + a burst of
- * band-passed noise for the skin/attack, with a long resonant tail. `freq` sets
- * the drum size (lower = bigger/deeper).
- */
-function warTom(ac: AudioContext, dest: AudioNode, t: number, freq: number, gain = 1) {
-  // Tonal boom
-  const o = ac.createOscillator();
-  const g = ac.createGain();
-  o.type = "sine";
-  o.frequency.setValueAtTime(freq * 1.6, t);
-  o.frequency.exponentialRampToValueAtTime(freq, t + 0.06);
-  o.frequency.exponentialRampToValueAtTime(freq * 0.7, t + 0.35);
-  g.gain.setValueAtTime(0.0001, t);
-  g.gain.exponentialRampToValueAtTime(gain, t + 0.006);
-  g.gain.exponentialRampToValueAtTime(0.0001, t + 0.42); // long resonant tail
-  o.connect(g).connect(dest);
-  o.start(t);
-  o.stop(t + 0.45);
-
-  // Skin attack — short band-passed noise thwack
-  const dur = 0.12;
-  const buf = ac.createBuffer(1, Math.floor(ac.sampleRate * dur), ac.sampleRate);
-  const d = buf.getChannelData(0);
-  for (let i = 0; i < d.length; i++) d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / d.length, 2.5);
-  const src = ac.createBufferSource();
-  src.buffer = buf;
-  const bp = ac.createBiquadFilter();
-  bp.type = "bandpass";
-  bp.frequency.value = freq * 3;
-  bp.Q.value = 0.7;
-  const ng = ac.createGain();
-  ng.gain.setValueAtTime(gain * 0.5, t);
-  ng.gain.exponentialRampToValueAtTime(0.0001, t + dur);
-  src.connect(bp).connect(ng).connect(dest);
-  src.start(t);
-}
-
-// ── Loading-screen drum loop ─────────────────────────────────────────────────
-// A driving drum groove looped while a LoadingScreen is mounted, scheduled with
-// a look-ahead so it stays tight. startLoadingAmbience() returns a stop().
-
+const LOADING_TRACK = "/assets/audio/loading-theme.mp3";
 let ambience: { stop: () => void } | null = null;
 
-/** Begin the loading-screen drum loop (idempotent). Returns a stop() function. */
+/** Begin the loading-screen music (idempotent). Returns a stop() function. */
 export function startLoadingAmbience(): () => void {
   if (!useSettingsStore.getState().sound) return () => {};
-  const ac = audio();
-  if (!ac) return () => {};
-  // If one is already playing, stop it first (avoid stacking).
-  ambience?.stop();
+  if (typeof window === "undefined") return () => {};
+  ambience?.stop(); // never stack
 
-  // A caller-visible stop that also cancels a not-yet-started ambience (in case
-  // the loader unmounts before the context finishes resuming).
   let stopped = false;
-  let realStop: (() => void) | null = null;
+  const el = new Audio(LOADING_TRACK);
+  el.loop = true;
+  el.volume = 0; // fade in
+  el.preload = "auto";
+
+  // Fade the volume via a small interval (HTMLAudio has no envelope).
+  let fade: number | null = null;
+  const rampTo = (target: number, ms: number, onDone?: () => void) => {
+    if (fade) window.clearInterval(fade);
+    const from = el.volume;
+    const t0 = performance.now();
+    fade = window.setInterval(() => {
+      const k = Math.min(1, (performance.now() - t0) / ms);
+      el.volume = Math.max(0, Math.min(1, from + (target - from) * k));
+      if (k >= 1) {
+        if (fade) window.clearInterval(fade);
+        fade = null;
+        onDone?.();
+      }
+    }, 30);
+  };
+
+  // play() can reject if audio isn't unlocked yet; retry once shortly after (by
+  // then the gesture-unlock has usually run). Best-effort — never throws.
+  const tryPlay = () => {
+    el.play()
+      .then(() => rampTo(0.75, 400))
+      .catch(() => {
+        if (!stopped) window.setTimeout(() => el.play().then(() => rampTo(0.75, 400)).catch(() => {}), 350);
+      });
+  };
+  tryPlay();
+
   const publicStop = () => {
     stopped = true;
-    realStop?.();
+    // Fade out, then pause + release.
+    rampTo(0, 250, () => {
+      try {
+        el.pause();
+        el.src = "";
+      } catch {
+        /* ignore */
+      }
+    });
     ambience = null;
   };
   ambience = { stop: publicStop };
-
-  // The context may be SUSPENDED (autoplay policy) — scheduling against a frozen
-  // clock produces silence. Resume first, THEN build the graph, so `currentTime`
-  // is actually advancing.
-  const build = () => {
-    if (stopped) return;
-    try {
-      // Bus: drums → gain → limiter → out. Fade in quickly so it kicks in.
-      const bus = ac.createGain();
-      bus.gain.setValueAtTime(0.0001, ac.currentTime);
-      bus.gain.exponentialRampToValueAtTime(0.9, ac.currentTime + 0.25);
-      const lim = ac.createDynamicsCompressor();
-      lim.threshold.value = -8;
-      lim.ratio.value = 12;
-      lim.attack.value = 0.002;
-      lim.release.value = 0.12;
-      bus.connect(lim).connect(ac.destination);
-
-      // WAR-DRUM battle rhythm. A driving 8-step (eighth-note) marching pattern,
-      // BPM ~92 — heavy and relentless, like drums before a battle. Only deep toms:
-      // BIG = the large low war drum, MID = a smaller accent tom. The classic
-      // "BOOM ... boom-boom BOOM" call, repeated, builds tension.
-      const bpm = 92;
-      const step = 60 / bpm / 2; // seconds per eighth note
-      //             1  &  2  &  3  &  4  &
-      const BIG = [1, 0, 0, 0, 1, 0, 1, 0]; // deep war drum on 1, 3, and the "4"
-      const MID = [0, 0, 1, 1, 0, 0, 0, 1]; // mid-tom fills between the big hits
-      const BIG_FREQ = 58; // deep boom
-      const MID_FREQ = 98; // smaller tom
-
-      let nextStep = 0;
-      let nextTime = ac.currentTime + 0.08;
-
-      // Look-ahead scheduler: every 25ms, schedule any steps due within 140ms.
-      const timer = window.setInterval(() => {
-        if (stopped) return;
-        const horizon = ac.currentTime + 0.14;
-        while (nextTime < horizon) {
-          const i = nextStep % 8;
-          const t = nextTime;
-          // A touch of human swing on the off-beats keeps it from sounding robotic.
-          const swing = i % 2 === 1 ? step * 0.06 : 0;
-          if (BIG[i]) warTom(ac, bus, t + swing, BIG_FREQ, i === 0 ? 1.3 : 1.05); // downbeat loudest
-          if (MID[i]) warTom(ac, bus, t + swing, MID_FREQ, 0.75);
-          nextStep++;
-          nextTime += step;
-        }
-      }, 25);
-
-      realStop = () => {
-        try {
-          window.clearInterval(timer);
-          const t = ac.currentTime;
-          bus.gain.cancelScheduledValues(t);
-          bus.gain.setValueAtTime(Math.max(0.0001, bus.gain.value), t);
-          bus.gain.exponentialRampToValueAtTime(0.0001, t + 0.25); // quick fade tail
-        } catch {
-          /* ignore */
-        }
-      };
-    } catch {
-      /* ignore */
-    }
-  };
-
-  try {
-    if (ac.state === "suspended") {
-      void ac.resume().then(build).catch(() => {});
-    } else {
-      build();
-    }
-  } catch {
-    build();
-  }
   return publicStop;
 }
 
-/** Stop any playing loading ambience immediately-ish (fade out). */
+/** Stop any playing loading music immediately-ish (fade out). */
 export function stopLoadingAmbience() {
   ambience?.stop();
 }
