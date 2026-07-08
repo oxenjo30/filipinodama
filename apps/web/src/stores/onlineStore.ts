@@ -21,6 +21,8 @@ type Opponent = {
   avatarUrl: string | null;
   trophies: number;
   rankTier: string;
+  /** opponent's equipped piece-skin art key (null = default discs) */
+  skin?: string | null;
 } | null;
 
 export type MMStatus = "idle" | "searching" | "found" | "playing" | "ended";

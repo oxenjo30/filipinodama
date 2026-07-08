@@ -98,7 +98,11 @@ export function Piece({ color, king = false, skin = "default", selected = false,
         width: "82%",
         height: "82%",
         borderRadius: "50%",
-        filter: "drop-shadow(0 5px 7px rgba(0,0,0,.6))",
+        // Drop-shadow separates the disc from LIGHT squares; a faint bright halo
+        // separates it from DARK squares (e.g. an obsidian skin on the obsidian
+        // board). Together they keep EVERY skin legible on EVERY board theme.
+        filter:
+          "drop-shadow(0 5px 7px rgba(0,0,0,.6)) drop-shadow(0 0 1.5px rgba(255,255,255,.5))",
       }}
     >
       {/* outer disc: glossy face + dark bevel rim */}

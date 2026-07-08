@@ -10,13 +10,41 @@ const MARBLE = {
   light: "radial-gradient(120% 120% at 25% 20%,#faf6ec 0%,#ece5d5 45%,#d4cbb6 100%)",
 } as const;
 
-/** Inset % for image board themes so the grid lands inside the printed frame. */
-const IMAGE_INSET: Record<BoardTextureKey, number> = {
-  marble: 3.6,
-  classic: 3.6,
-  wood: 6.4,
-  ebony: 11.5,
-  obsidian: 9.8,
+/**
+ * Per-theme playing field. The framed board IMAGES (ebony/obsidian/wood) are
+ * hand-rendered with slightly irregular printed squares, so overlaying an 8×8
+ * grid on their squares never lines up. Instead we render OUR OWN mathematically
+ * perfect 8×8 checkerboard (pieces always sit dead-centre) and use the image only
+ * as the decorative FRAME behind it. `frameInset` is how far in the flat playing
+ * field begins (measured from each 1024² source) — our grid fills that region so
+ * the ornate border stays visible around it; `dark`/`light` tint the squares to
+ * match the theme.
+ */
+type ImageTheme = { frameInset: number; dark: string; light: string };
+const IMAGE_THEMES: Record<Exclude<BoardTextureKey, "marble">, ImageTheme> = {
+  // Wood: warm walnut/maple checker inside a plain wood frame.
+  classic: {
+    frameInset: 6.8,
+    dark: "radial-gradient(120% 120% at 25% 20%,#6b4a2c 0%,#4e3417 55%,#3a2410 100%)",
+    light: "radial-gradient(120% 120% at 25% 20%,#f0dcb0 0%,#e6c98c 55%,#d8b673 100%)",
+  },
+  wood: {
+    frameInset: 6.8,
+    dark: "radial-gradient(120% 120% at 25% 20%,#6b4a2c 0%,#4e3417 55%,#3a2410 100%)",
+    light: "radial-gradient(120% 120% at 25% 20%,#f0dcb0 0%,#e6c98c 55%,#d8b673 100%)",
+  },
+  // Ebony: cream vs deep-ebony inside the gold-filigree black frame.
+  ebony: {
+    frameInset: 11.5,
+    dark: "radial-gradient(120% 120% at 25% 20%,#3a2c22 0%,#241812 55%,#160d09 100%)",
+    light: "radial-gradient(120% 120% at 25% 20%,#f4e7c8 0%,#e8d6a8 55%,#dcc890 100%)",
+  },
+  // Obsidian: charcoal vs near-black slate inside the purple-rimmed stone frame.
+  obsidian: {
+    frameInset: 10.5,
+    dark: "radial-gradient(120% 120% at 25% 20%,#1c1c22 0%,#101014 55%,#08080b 100%)",
+    light: "radial-gradient(120% 120% at 25% 20%,#3a3a44 0%,#2a2a32 55%,#1e1e24 100%)",
+  },
 };
 
 export type BoardProps = {
@@ -37,8 +65,14 @@ export type BoardProps = {
    * any other key uses that full-image texture with the grid inset over it.
    */
   boardTheme?: "marble" | BoardTextureKey;
-  /** equipped piece skin ("default" = glossy webp art) */
+  /** equipped piece skin ("default" = glossy webp art). Used for BOTH colours
+   *  unless per-colour skins are given (redSkin/blueSkin) — e.g. online, where
+   *  each player's pieces show their own equipped skin. */
   skin?: PieceSkin;
+  /** per-colour skin overrides (online PvP: my pieces = my skin, opponent's =
+   *  theirs). Falls back to `skin` when a side's override is undefined. */
+  redSkin?: PieceSkin;
+  blueSkin?: PieceSkin;
   /** flip the board 180° (view from red's side) */
   flip?: boolean;
   className?: string;
@@ -85,17 +119,22 @@ export function Board({
   onSquareClick,
   boardTheme = "marble",
   skin = "default",
+  redSkin,
+  blueSkin,
   flip = false,
   className,
   style,
 }: BoardProps) {
+  // Resolve the skin for each colour: a per-colour override wins, else the shared
+  // `skin`. Lets online matches paint each player's own pieces in their own skin.
+  const skinFor = (color: PieceModel["color"]): PieceSkin =>
+    (color === "red" ? redSkin : blueSkin) ?? skin;
   const grid = toGrid(state.pieces);
   const turn = state.turn;
   // Only render the image board for a KNOWN texture key. An unknown/invalid
-  // boardTheme falls back to the marble/CSS board rather than a broken image
-  // (missing IMAGE_INSET → undefined% insets → a blank board). Defensive: keeps
-  // the board visible no matter what value reaches it.
-  const useImage = boardTheme !== "marble" && boardTheme in IMAGE_INSET;
+  // boardTheme falls back to the marble/CSS board rather than a broken image.
+  // Defensive: keeps the board visible no matter what value reaches it.
+  const useImage = boardTheme !== "marble" && boardTheme in IMAGE_THEMES;
   const order = flip ? [7, 6, 5, 4, 3, 2, 1, 0] : [0, 1, 2, 3, 4, 5, 6, 7];
 
   const cells: JSX.Element[] = [];
@@ -154,26 +193,26 @@ export function Board({
             key="piece"
             color={p.color}
             king={p.king}
-            skin={skin}
+            skin={skinFor(p.color)}
             selected={isSel}
             glow={glow}
           />,
         );
       }
 
-      const cellBg = useImage ? "transparent" : playable ? MARBLE.dark : MARBLE.light;
-      const cellShadow = useImage
-        ? isSel
-          ? "inset 0 0 0 3px rgba(245,215,131,.95)"
-          : glow
-            ? "inset 0 0 0 3px rgba(245,215,131,.7)"
-            : ""
-        : (playable
-            ? "inset 0 0 18px rgba(0,0,0,.45), "
-            : "inset 0 0 12px rgba(180,165,130,.3), ") +
-          "inset 0 0 0 1px rgba(232,184,75,.28)" +
-          (isSel ? ", inset 0 0 0 3px rgba(245,215,131,.95)" : "") +
-          (glow && !isSel ? ", inset 0 0 0 3px rgba(245,215,131,.6)" : "");
+      // Squares are always drawn by US (perfect 8×8). For image themes we use the
+      // theme's own tints (the image behind is just the frame); for marble the
+      // procedural marble. This guarantees pieces sit dead-centre on real squares
+      // regardless of the framed image's irregular printed field.
+      const squares = useImage ? IMAGE_THEMES[boardTheme as Exclude<BoardTextureKey, "marble">] : MARBLE;
+      const cellBg = playable ? squares.dark : squares.light;
+      const cellShadow =
+        (playable
+          ? "inset 0 0 18px rgba(0,0,0,.45), "
+          : "inset 0 0 12px rgba(0,0,0,.25), ") +
+        "inset 0 0 0 1px rgba(232,184,75,.22)" +
+        (isSel ? ", inset 0 0 0 3px rgba(245,215,131,.95)" : "") +
+        (glow && !isSel ? ", inset 0 0 0 3px rgba(245,215,131,.6)" : "");
 
       cells.push(
         <div
@@ -202,43 +241,42 @@ export function Board({
         aspectRatio: "1/1",
         width: "100%",
         height: useImage ? "100%" : undefined,
-        borderRadius: useImage ? undefined : 4,
+        borderRadius: useImage ? 3 : 4,
         overflow: "hidden",
-        boxShadow: useImage
-          ? "none"
-          : "inset 0 0 0 2px rgba(232,184,75,.4), inset 0 0 46px rgba(0,0,0,.55)",
+        // A thin gold hairline + inner shadow frames OUR grid on both the marble
+        // and image boards, so the perfect 8×8 reads as inset in the surround.
+        boxShadow: "inset 0 0 0 2px rgba(232,184,75,.4), inset 0 0 46px rgba(0,0,0,.55)",
       }}
     >
       {cells}
     </div>
   );
 
-  // Image-textured themes: place the grid inside the printed frame inset.
+  // Image themes: the image is the FRAME/backdrop; OUR perfect grid sits in the
+  // flat playing field (frameInset from each edge), so pieces always line up and
+  // the ornate border stays visible around them.
   const surface = useImage ? (
-    <div
-      style={{
-        position: "relative",
-        width: "100%",
-        aspectRatio: "1/1",
-        backgroundImage: `url(${boardTexture(boardTheme as BoardTextureKey)})`,
-        backgroundSize: "100% 100%",
-        backgroundRepeat: "no-repeat",
-        borderRadius: 10,
-        boxShadow: "0 10px 34px rgba(0,0,0,.5)",
-      }}
-    >
-      <div
-        style={{
-          position: "absolute",
-          top: `${IMAGE_INSET[boardTheme as BoardTextureKey]}%`,
-          left: `${IMAGE_INSET[boardTheme as BoardTextureKey]}%`,
-          right: `${IMAGE_INSET[boardTheme as BoardTextureKey]}%`,
-          bottom: `${IMAGE_INSET[boardTheme as BoardTextureKey]}%`,
-        }}
-      >
-        {gridEl}
-      </div>
-    </div>
+    (() => {
+      const inset = IMAGE_THEMES[boardTheme as Exclude<BoardTextureKey, "marble">].frameInset;
+      return (
+        <div
+          style={{
+            position: "relative",
+            width: "100%",
+            aspectRatio: "1/1",
+            backgroundImage: `url(${boardTexture(boardTheme as BoardTextureKey)})`,
+            backgroundSize: "100% 100%",
+            backgroundRepeat: "no-repeat",
+            borderRadius: 10,
+            boxShadow: "0 10px 34px rgba(0,0,0,.5)",
+          }}
+        >
+          <div style={{ position: "absolute", top: `${inset}%`, left: `${inset}%`, right: `${inset}%`, bottom: `${inset}%` }}>
+            {gridEl}
+          </div>
+        </div>
+      );
+    })()
   ) : (
     // Marble default: wrap the grid in the gold-bevel frame.
     <div

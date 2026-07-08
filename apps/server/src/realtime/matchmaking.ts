@@ -52,6 +52,10 @@ type PublicUser = {
   avatarUrl: string | null;
   trophies: number;
   rankTier: string;
+  /** Equipped piece-skin ART KEY (e.g. "sarimanok"), resolved from the equipped
+   *  SKIN item's assetKey so the opponent's board shows their real skin. null =
+   *  default discs. */
+  skin: string | null;
 };
 
 async function publicUser(userId: string): Promise<PublicUser | null> {
@@ -65,9 +69,22 @@ async function publicUser(userId: string): Promise<PublicUser | null> {
       avatarUrl: true,
       trophies: true,
       rankTier: true,
+      equippedSkin: true,
     },
   });
-  return u;
+  if (!u) return null;
+  // equippedSkin is a store-item id; the board needs the item's assetKey (the
+  // PieceSkin art key). Resolve it, treating the classic skin as default.
+  let skin: string | null = null;
+  if (u.equippedSkin) {
+    const item = await prisma.storeItem.findUnique({
+      where: { id: u.equippedSkin },
+      select: { assetKey: true },
+    });
+    if (item?.assetKey && item.assetKey !== "classic") skin = item.assetKey;
+  }
+  const { equippedSkin: _omit, ...rest } = u;
+  return { ...rest, skin };
 }
 
 /**

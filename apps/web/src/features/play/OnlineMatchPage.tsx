@@ -10,7 +10,7 @@ import { useSettingsStore } from "../../stores/settingsStore";
 import { useCosmeticsStore } from "../../stores/cosmeticsStore";
 import { Modal } from "../shared/Modal";
 import { LoadingScreen } from "../shared/LoadingScreen";
-import { avatar as avatarUrl } from "../../lib/assets";
+import { avatar as avatarUrl, PIECE_SKINS, type PieceSkin } from "../../lib/assets";
 
 /** Quick-chat emotes (prototype `gameEmotes`). */
 const GAME_EMOTES = ["👋", "😄", "😮", "😢", "👍", "🔥"];
@@ -156,6 +156,13 @@ export function OnlineMatchPage() {
 
   const myTurn = !!state && !state.result && state.turn === myColor && status === "playing";
   const flip = myColor === "blue"; // blue player views from their side
+
+  // The OPPONENT's equipped skin (art key sent in mmFound) → a valid PieceSkin so
+  // their pieces show their own cosmetic on my board. Unknown/none → default disc.
+  const oppSkin: PieceSkin =
+    opponent?.skin && (PIECE_SKINS as readonly string[]).includes(opponent.skin)
+      ? (opponent.skin as PieceSkin)
+      : "default";
 
   // In-match Quick Chat draft. This is REAL: the text/emote is emitted over the
   // match socket (EV.matchChat) and the server relays it back to both players,
@@ -382,7 +389,8 @@ export function OnlineMatchPage() {
             selected={selected}
             mustCapture={mustCapture && myTurn}
             onSquareClick={onSquareClick}
-            skin={skin}
+            redSkin={myColor === "red" ? skin : oppSkin}
+            blueSkin={myColor === "blue" ? skin : oppSkin}
             flip={flip}
           />
         </div>
