@@ -17,4 +17,9 @@ FilipinoDama Web Game Design.zip
 
 # TS build info
 *.tsbuildinfo
+
+# Design-review reference material — not needed to build/run the app.
+# Shipped cosmetics live in apps/web/public/assets/. Kept on disk, out of the repo.
 handoffv2/
+handoff/
+_asset-previews/
