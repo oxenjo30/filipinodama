@@ -6,6 +6,7 @@ import { ok, err } from "../lib/errors.js";
 import { features } from "../config/env.js";
 import { requireAuth } from "../auth/guards.js";
 import { purchaseItem } from "../economy/ledger.js";
+import { sendEmail, receiptEmailHtml } from "../lib/email.js";
 
 /**
  * Diamond top-up packs. PayMongo is not live yet, so these are hardcoded with
@@ -60,10 +61,32 @@ export async function storeRoutes(app: FastifyInstance) {
     const { itemId } = purchaseSchema.parse(req.body);
     try {
       const result = await purchaseItem(prisma, req.userId!, itemId);
-      const [user, inventory] = await Promise.all([
+      const [user, inventory, item] = await Promise.all([
         prisma.user.findUniqueOrThrow({ where: { id: req.userId! } }),
         prisma.inventoryItem.findUnique({ where: { userId_itemId: { userId: req.userId!, itemId } } }),
+        prisma.storeItem.findUnique({ where: { id: itemId }, select: { name: true, priceGold: true, priceDiamonds: true } }),
       ]);
+      // Best-effort receipt email — fire-and-forget so a mail failure can never
+      // fail the (already-committed) purchase. Only for real accounts with an
+      // email; guests have none. `total` is the item's price in the charged
+      // currency (what was actually spent).
+      if (user.email && !user.isGuest && item) {
+        const total = result.currency === "DIAMONDS" ? item.priceDiamonds ?? 0 : item.priceGold ?? 0;
+        void sendEmail(
+          user.email,
+          "Your FilipinoDama Royal receipt",
+          receiptEmailHtml({
+            username: user.username,
+            orderId: itemId,
+            items: [{ name: item.name, price: total }],
+            total,
+            currency: result.currency,
+            when: new Date(),
+          }),
+        ).catch(() => {
+          /* non-fatal — purchase already committed */
+        });
+      }
       return ok({
         itemId,
         currency: result.currency,

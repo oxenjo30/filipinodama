@@ -6,6 +6,7 @@ import { ok, err } from "../lib/errors.js";
 import { requireAdmin } from "../auth/guards.js";
 import { audit } from "../lib/audit.js";
 import { applyLedger } from "../economy/ledger.js";
+import { sendEmail, banEmailHtml } from "../lib/email.js";
 
 /**
  * Admin console API — /api/admin/*. Every route is role-gated by requireAdmin()
@@ -194,11 +195,21 @@ export async function adminRoutes(app: FastifyInstance) {
   // ── 1.4 Sanctions: ban / unban / mute / unlock / notify ────────────────────
   app.post<{ Params: { id: string } }>("/admin/users/:id/ban", { preHandler: requireAdmin("MODERATOR") }, async (req) => {
     const { durationHours, reason } = durationSchema.parse(req.body);
-    const before = await prisma.user.findUnique({ where: { id: req.params.id }, select: { bannedUntil: true } });
+    const before = await prisma.user.findUnique({ where: { id: req.params.id }, select: { bannedUntil: true, email: true, username: true, isGuest: true } });
     if (!before) throw err.notFound("NO_USER", "Player not found");
     const bannedUntil = untilFrom(durationHours);
     await prisma.user.update({ where: { id: req.params.id }, data: { bannedUntil } });
-    await audit(prisma, { actorId: req.userId!, action: "user.ban", targetType: "user", targetId: req.params.id, before, after: { bannedUntil }, reason });
+    await audit(prisma, { actorId: req.userId!, action: "user.ban", targetType: "user", targetId: req.params.id, before: { bannedUntil: before.bannedUntil }, after: { bannedUntil }, reason });
+    // Notify the suspended player by email (best-effort; never fail the sanction).
+    if (before.email && !before.isGuest) {
+      void sendEmail(
+        before.email,
+        "Your FilipinoDama Royal account has been suspended",
+        banEmailHtml({ username: before.username, reason, until: bannedUntil.getTime() === PERMANENT.getTime() ? null : bannedUntil }),
+      ).catch(() => {
+        /* non-fatal — the ban is already applied */
+      });
+    }
     return ok({ bannedUntil });
   });
 

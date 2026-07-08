@@ -2,7 +2,7 @@ import type { PrismaClient, User } from "@prisma/client";
 import { hashPassword, verifyPassword, opaqueToken, randomTag, newRefreshToken } from "./tokens.js";
 import { err } from "../lib/errors.js";
 import { env } from "../config/env.js";
-import { sendEmail, verifyEmailHtml, resetEmailHtml } from "../lib/email.js";
+import { sendEmail, verifyEmailHtml, resetEmailHtml, welcomeEmailHtml } from "../lib/email.js";
 
 const VERIFY_TTL_MS = 24 * 3600 * 1000;
 const RESET_TTL_MS = 60 * 60 * 1000;
@@ -106,10 +106,24 @@ export async function verifyEmail(prisma: PrismaClient, token: string) {
   const user = await prisma.user.findUnique({ where: { verifyToken: token } });
   if (!user || !user.verifyExpires || user.verifyExpires < new Date())
     throw err.badRequest("BAD_TOKEN", "Verification link invalid or expired");
-  return prisma.user.update({
+  const updated = await prisma.user.update({
     where: { id: user.id },
     data: { emailVerified: new Date(), verifyToken: null, verifyExpires: null },
   });
+  // Fire the one-time Welcome email now the account is live. Best-effort: a mail
+  // failure must never block the (already-committed) verification.
+  if (updated.email) {
+    try {
+      await sendEmail(
+        updated.email,
+        "Welcome to FilipinoDama Royal",
+        welcomeEmailHtml(updated.username, `${env.WEB_ORIGIN}/play`),
+      );
+    } catch {
+      /* non-fatal — verification already succeeded */
+    }
+  }
+  return updated;
 }
 
 export async function login(prisma: PrismaClient, input: { email: string; password: string }) {
