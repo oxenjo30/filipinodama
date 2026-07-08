@@ -27,6 +27,9 @@ type Opponent = {
 
 export type MMStatus = "idle" | "searching" | "found" | "playing" | "ended";
 
+/** How long the "Match Found!" VS reveal shows before the board loads. */
+const MATCH_FOUND_REVEAL_MS = 1800;
+
 type EndInfo = {
   result: GameResult;
   winnerId: string | null;
@@ -117,8 +120,16 @@ export const useOnlineStore = create<OnlineStore>((set, get) => {
         offeredByOpponent: false,
         rematchDeclined: false,
       });
-      // ask for the authoritative opening state
-      s.emit(EV.matchResync, { matchId: p.matchId });
+      // Hold on the "Match Found!" VS reveal for a beat so the player actually
+      // sees who they're facing, THEN request the authoritative opening state
+      // (which flips status → "playing" and loads the board). Without this the
+      // board loads instantly and the reveal flashes by.
+      window.setTimeout(() => {
+        // Only proceed if we're still on this found match (not cancelled/left).
+        if (useOnlineStore.getState().matchId === p.matchId) {
+          s.emit(EV.matchResync, { matchId: p.matchId });
+        }
+      }, MATCH_FOUND_REVEAL_MS);
     });
 
     s.on(EV.mmCancelled, (p: { reason?: string }) => {
