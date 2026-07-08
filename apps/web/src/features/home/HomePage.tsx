@@ -11,10 +11,13 @@ import { ICONS } from "../../lib/assets";
 import { recentUpdates, timeAgo } from "./updates";
 
 /**
- * HomePage — reproduced VERBATIM from the prototype's Home screen
- * (handoff/FilipinoDama Royal.dc.html, lines 186-293): hero (with the
- * "players online" pill), Featured Game Modes (4), Continue Playing + Recent
- * Updates, and the right rail (Daily Challenge / Quick Stats / Featured Match).
+ * HomePage — adapted from the prototype's Home screen (handoff/FilipinoDama
+ * Royal.dc.html, lines 186-293): hero (with the "players online" pill),
+ * Featured Game Modes (the 3 shipped modes — Classic / Ranked / Play vs AI;
+ * the prototype's coming-soon Kingdom/Featured Match tiles were dropped),
+ * Continue Playing + Recent Updates, and the right rail (Daily Challenge /
+ * Quick Stats). The modes grid derives its column count from MODES.length so
+ * it stays balanced regardless of how many modes ship.
  */
 
 const SB = (n: string) => `/assets/${n}`;
@@ -259,7 +262,7 @@ export function HomePage() {
 
         {/* FEATURED MODES */}
         <div className="divider"><i /><span>✦ Featured Game Modes ✦</span><i /></div>
-        <div className="fd-modes-grid" style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 14 }}>
+        <div className="fd-modes-grid" style={{ display: "grid", gridTemplateColumns: `repeat(${MODES.length},minmax(0,1fr))`, gap: 14 }}>
           {MODES.map((m) => (
             <div key={m.title} className="frame" style={{ padding: 18, display: "flex", flexDirection: "column", gap: 11, borderColor: m.border }}>
               <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
