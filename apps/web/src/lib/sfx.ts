@@ -55,6 +55,41 @@ function audio(): AudioContext | null {
   return ctx;
 }
 
+/**
+ * Unlock audio on the FIRST real user gesture anywhere in the app. Browsers only
+ * honor AudioContext.resume() inside a user-activation window — a later
+ * route-change resume() (e.g. when a LoadingScreen mounts) is ignored, which is
+ * why the loading ambience was silent. Calling this once on app boot primes the
+ * context so every subsequent sound just works. Idempotent.
+ */
+let unlockAttached = false;
+export function initAudioUnlock() {
+  if (unlockAttached || typeof window === "undefined") return;
+  unlockAttached = true;
+  const unlock = () => {
+    const ac = audio(); // creates + resumes inside the gesture
+    // A silent 1-sample blip forces iOS/Safari to fully "start" the context.
+    if (ac) {
+      try {
+        const b = ac.createBufferSource();
+        b.buffer = ac.createBuffer(1, 1, ac.sampleRate);
+        b.connect(ac.destination);
+        b.start(0);
+      } catch {
+        /* ignore */
+      }
+    }
+    if (ac && ac.state === "running") {
+      window.removeEventListener("pointerdown", unlock);
+      window.removeEventListener("keydown", unlock);
+      window.removeEventListener("touchstart", unlock);
+    }
+  };
+  window.addEventListener("pointerdown", unlock, { passive: true });
+  window.addEventListener("keydown", unlock);
+  window.addEventListener("touchstart", unlock, { passive: true });
+}
+
 /** A single voiced note: osc → gain (perc envelope) → master (+hall send). */
 function note(ac: AudioContext, o: { freq: number; type?: OscillatorType; start?: number; dur: number; gain?: number; glideTo?: number; hall?: boolean }) {
   const { freq, type = "sine", start = 0, dur, gain = 0.14, glideTo, hall = true } = o;

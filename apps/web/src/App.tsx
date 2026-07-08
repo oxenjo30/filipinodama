@@ -30,6 +30,7 @@ import { OrdersPage } from "./features/orders/OrdersPage";
 import { BlogPage } from "./features/blog/BlogPage";
 import { ArticlePage } from "./features/blog/ArticlePage";
 import { useAuthStore } from "./stores/authStore";
+import { initAudioUnlock } from "./lib/sfx";
 
 /**
  * App — router + shared layout.
@@ -51,6 +52,10 @@ export function App() {
 
   useEffect(() => {
     bootstrap();
+    // Prime audio on the first user gesture so the loading-screen ambience + SFX
+    // aren't blocked by the browser autoplay policy (a route-change resume() is
+    // ignored; a gesture-time one is honored).
+    initAudioUnlock();
   }, [bootstrap]);
 
   if (!ready) {
