@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useState, type ReactNode, type CSSProperties } from "react";
 import { useNavigate } from "react-router-dom";
 import { createInitialState, legalMoves, applyMove } from "@dama/game-engine";
 import { DEFAULT_SETTINGS } from "@dama/shared";
@@ -7,7 +7,7 @@ import { api, ApiError, type Me } from "../../lib/api";
 import { useAppStore } from "../../stores/appStore";
 import { useAuthStore } from "../../stores/authStore";
 import { useOnlineStore } from "../../stores/onlineStore";
-import { ICONS } from "../../lib/assets";
+import { ICONS, avatar as avatarSrc } from "../../lib/assets";
 import { recentUpdates, timeAgo } from "./updates";
 
 /**
@@ -72,13 +72,6 @@ const MODE_LABEL: Record<string, string> = {
   LOCAL: "Local Match",
 };
 
-/** Resolve a player's avatarUrl (bare key | "/assets/…" | full URL) to a src. */
-function avatarSrc(avatarUrl: string | null | undefined): string {
-  if (!avatarUrl) return "/assets/avatars/champion.png";
-  if (avatarUrl.startsWith("/") || avatarUrl.startsWith("http")) return avatarUrl;
-  return `/assets/avatars/${avatarUrl}.png`;
-}
-
 // Daily Challenge card is driven by the first daily quest from GET /api/quests.
 // Shape matches the quests API (same as QuestsPage): id/title/description/goal/
 // rewardGold/value/completed/claimed/claimable.
@@ -93,6 +86,62 @@ type Quest = {
   claimed: boolean;
   claimable: boolean;
 };
+
+// ── Featured store items (subset of the /api/store/items shape) ──
+type HomeStoreItem = {
+  id: string;
+  type: "BOARD" | "SKIN" | "AVATAR" | "FRAME" | "EMOTE" | "BUNDLE" | "SEASON_PASS";
+  name: string;
+  priceGold: number | null;
+  salePrice: number | null;
+  onSale: boolean;
+  featured: boolean;
+  assetKey: string;
+  previewKey: string | null;
+};
+
+/**
+ * Resolve a store item's thumbnail to a renderable node — mirrors StorePage's
+ * thumbFor() so Home shows the SAME art (no placeholder-thumbnail bugs). Emotes
+ * render as their emoji glyph; the default Classic skin renders a coin disc;
+ * everything else resolves to a real image under /assets.
+ */
+function StoreThumb({ it }: { it: HomeStoreItem }) {
+  const wrap: CSSProperties = { width: 40, height: 40, flex: "none", borderRadius: 8, objectFit: "cover", background: "rgba(74,45,122,.35)" };
+  const a = it.assetKey;
+  if (it.type === "EMOTE") {
+    const glyph = it.previewKey?.startsWith("emote:") ? it.previewKey.slice(6) : "👑";
+    return <div style={{ ...wrap, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 22 }}>{glyph}</div>;
+  }
+  let file: string;
+  switch (it.type) {
+    case "BOARD":
+      file = a.endsWith(".png") ? a : `board-${a}.png`;
+      break;
+    case "SKIN":
+      // Premium skins have coin art at pieces/skins/<key>/red-king.png; the
+      // default "classic" skin has no art → show a simple gold disc glyph.
+      if (a === "classic") return <div style={{ ...wrap, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 22 }}>🔴</div>;
+      file = `pieces/skins/${a}/red-king.png`;
+      break;
+    case "AVATAR":
+      file = a.startsWith("avatars/") ? a : `avatars/${a}`;
+      break;
+    case "FRAME":
+      file = a; // "laurel.png" or "frames/silver.png"
+      break;
+    default:
+      file = "me-banner.png"; // BUNDLE / SEASON_PASS marketing art
+  }
+  return (
+    <img
+      src={`/assets/${file}`}
+      alt=""
+      onError={(e) => { e.currentTarget.style.visibility = "hidden"; }}
+      style={{ ...wrap, filter: it.type === "AVATAR" ? "brightness(1.15)" : undefined }}
+    />
+  );
+}
 
 // "Ends in: HHh MMm" — daily quests reset at 00:00 UTC (matches the backend
 // period rollover), so this counts down honestly to that boundary.
@@ -135,8 +184,9 @@ export function HomePage() {
     };
   }, [me]);
 
-  // ── Daily Challenge: first daily quest from the real quests API ──
+  // ── Daily Challenge (first quest) + Today's Quests (full daily list) ──
   const [dailyQuest, setDailyQuest] = useState<Quest | null>(null);
+  const [dailyQuests, setDailyQuests] = useState<Quest[]>([]);
   const [questLoaded, setQuestLoaded] = useState(false);
   const [claiming, setClaiming] = useState(false);
   const [endsIn, setEndsIn] = useState(timeUntilUtcMidnight());
@@ -144,17 +194,20 @@ export function HomePage() {
   const loadQuest = useCallback(async () => {
     if (!me) {
       setDailyQuest(null);
+      setDailyQuests([]);
       setQuestLoaded(true);
       return;
     }
     try {
       const data = await api.get<{ daily: Quest[]; seasonal: Quest[] }>("/api/quests");
       setDailyQuest(data.daily[0] ?? null);
+      setDailyQuests(data.daily ?? []);
     } catch (e) {
       if (!(e instanceof ApiError && e.status === 401)) {
         showToast("Couldn't load the daily challenge. Try again in a moment.");
       }
       setDailyQuest(null);
+      setDailyQuests([]);
     } finally {
       setQuestLoaded(true);
     }
@@ -163,6 +216,30 @@ export function HomePage() {
   useEffect(() => {
     void loadQuest();
   }, [loadQuest]);
+
+  // ── Featured store items (public catalog; curated featured cosmetics) ──
+  const [featuredItems, setFeaturedItems] = useState<HomeStoreItem[]>([]);
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      try {
+        const data = await api.get<{ items: HomeStoreItem[] }>("/api/store/items");
+        if (cancelled) return;
+        // Prefer curated featured items; fall back to on-sale, then the cheapest
+        // few — always real catalog rows, never fabricated. Cap at 3 for the card.
+        const items = data.items ?? [];
+        let pool = items.filter((i) => i.featured);
+        if (!pool.length) pool = items.filter((i) => i.onSale);
+        if (!pool.length) pool = [...items].sort((a, b) => (a.priceGold ?? 0) - (b.priceGold ?? 0));
+        setFeaturedItems(pool.slice(0, 3));
+      } catch {
+        if (!cancelled) setFeaturedItems([]);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   // Tick the "Ends in" countdown once a minute.
   useEffect(() => {
@@ -354,6 +431,74 @@ export function HomePage() {
             ))}
           </div>
         </div>
+
+        {/* HOT IN THE STORE — real featured/on-sale cosmetics (gold-only). Renders
+            only when the public catalog returns items, so it never shows an empty
+            frame. Same thumbnail resolver as the Store, and every price is gold. */}
+        {featuredItems.length > 0 && (
+          <div className="frame" style={{ padding: 20 }}>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
+              <span className="ptitle" style={{ border: "none", padding: 0, margin: 0, textAlign: "left" }}>Hot in the Store</span>
+              <span onClick={() => navigate("/store")} style={{ font: "600 11px Inter", color: "var(--gold)", cursor: "pointer" }}>Shop All</span>
+            </div>
+            {featuredItems.map((it) => {
+              const price = it.onSale && it.salePrice != null ? it.salePrice : it.priceGold ?? 0;
+              return (
+                <div
+                  key={it.id}
+                  onClick={() => navigate("/store")}
+                  style={{ display: "flex", alignItems: "center", gap: 12, padding: "9px 0", borderTop: "1px solid rgba(232,184,75,.12)", cursor: "pointer" }}
+                >
+                  <StoreThumb it={it} />
+                  <div style={{ minWidth: 0, flex: 1 }}>
+                    <div style={{ font: "700 13px Inter", color: "var(--gold-lt)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{it.name}</div>
+                    <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 3 }}>
+                      <img src={ICONS.coin} alt="" width={14} height={14} style={{ objectFit: "contain" }} />
+                      <span style={{ font: "700 12px 'JetBrains Mono',monospace", color: "#f2d493" }}>{price.toLocaleString()}</span>
+                      {it.onSale && it.salePrice != null && it.priceGold != null && (
+                        <span style={{ font: "500 11px 'JetBrains Mono',monospace", color: "var(--ink2)", textDecoration: "line-through" }}>{it.priceGold.toLocaleString()}</span>
+                      )}
+                    </div>
+                  </div>
+                  {it.featured ? (
+                    <span style={{ font: "700 9px Inter", letterSpacing: "1px", padding: "2px 6px", borderRadius: 4, background: "#7a4fbf", color: "#fff", flex: "none" }}>FEATURED</span>
+                  ) : it.onSale ? (
+                    <span style={{ font: "700 9px Inter", letterSpacing: "1px", padding: "2px 6px", borderRadius: 4, background: "#a83744", color: "#fff", flex: "none" }}>SALE</span>
+                  ) : null}
+                </div>
+              );
+            })}
+          </div>
+        )}
+
+        {/* TODAY'S QUESTS — the full daily quest list with real progress bars
+            (the single Daily Challenge above is just the first one). Signed-in
+            only; a logged-out visitor sees the sign-in prompt on the Daily card. */}
+        {me && dailyQuests.length > 0 && (
+          <div className="frame" style={{ padding: 20 }}>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
+              <span className="ptitle" style={{ border: "none", padding: 0, margin: 0, textAlign: "left" }}>Today's Quests</span>
+              <span onClick={() => navigate("/quests")} style={{ font: "600 11px Inter", color: "var(--gold)", cursor: "pointer" }}>View All</span>
+            </div>
+            {dailyQuests.map((q) => {
+              const cur = Math.min(q.value, q.goal);
+              const pct = Math.max(2, Math.min(100, Math.round((cur / Math.max(1, q.goal)) * 100)));
+              return (
+                <div key={q.id} style={{ padding: "9px 0", borderTop: "1px solid rgba(232,184,75,.12)" }}>
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
+                    <span style={{ font: "600 12px Inter", color: "var(--ink)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{q.title}</span>
+                    <span style={{ font: "700 11px 'JetBrains Mono',monospace", color: q.claimed ? "var(--ink2)" : q.claimable ? "#8ce0ad" : "var(--gold)", flex: "none" }}>
+                      {q.claimed ? "✓ Claimed" : q.claimable ? "Claim ready" : `${cur}/${q.goal}`}
+                    </span>
+                  </div>
+                  <div style={{ height: 5, borderRadius: 3, background: "rgba(255,255,255,.08)", marginTop: 6, overflow: "hidden" }}>
+                    <div style={{ width: `${q.claimed ? 100 : pct}%`, height: "100%", borderRadius: 3, background: q.claimed ? "rgba(140,224,173,.5)" : "linear-gradient(90deg,#f0c24b,#c98b2e)" }} />
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
       </div>
     </div>
   );
@@ -512,8 +657,13 @@ function ContinuePlayingCard({
   const seat = (p: MatchPlayer, fallbackName: string) => (
     <div style={{ textAlign: "center" }}>
       <img
-        src={avatarSrc(p?.avatarUrl)}
+        src={avatarSrc(p?.avatarUrl ?? "champion")}
         alt=""
+        onError={(e) => {
+          // Never leave a blank circle if an equipped avatar file is missing.
+          const img = e.currentTarget;
+          if (!img.src.endsWith("/avatars/champion.png")) img.src = "/assets/avatars/champion.png";
+        }}
         style={{ width: 58, height: 58, display: "block", margin: "0 auto", border: "2px solid var(--gold)", borderRadius: "50%", objectFit: "cover" }}
       />
       <div style={{ font: "700 13px Inter", marginTop: 7 }}>{p?.displayName ?? fallbackName}</div>
