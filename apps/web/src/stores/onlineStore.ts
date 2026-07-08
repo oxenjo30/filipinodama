@@ -36,6 +36,9 @@ type EndInfo = {
   redTrophyDelta: number;
   blueTrophyDelta: number;
   goldReward: number;
+  /** true when the match ended because it became unreachable (connection lost /
+   *  server dropped the in-memory match), not through a real result. */
+  interrupted?: boolean;
 } | null;
 
 /**
@@ -185,7 +188,29 @@ export const useOnlineStore = create<OnlineStore>((set, get) => {
     });
 
     s.on(EV.matchIllegal, (p: { reason?: string }) => {
-      // Server rejected our intent — clear selection; keep the server's state.
+      // "no-such-match" is not a move rejection — the match is GONE from the
+      // server (a bot match after a server restart, or an expired session). Don't
+      // leave the player staring at a frozen board with cryptic red text: end the
+      // game cleanly with an honest, friendly message so they can move on.
+      if (p?.reason === "no-such-match") {
+        set((st) => ({
+          selected: null,
+          connectionLost: false,
+          error: null,
+          ...derive(st.state, null, st.myColor),
+          status: "ended",
+          end: st.end ?? {
+            result: { winner: "draw", reason: "abandon" },
+            winnerId: null,
+            redTrophyDelta: 0,
+            blueTrophyDelta: 0,
+            goldReward: 0,
+            interrupted: true, // marks a connection-lost end (no win/lose claim)
+          },
+        }));
+        return;
+      }
+      // Any other rejection (e.g. an illegal move) — clear selection, keep state.
       set((st) => ({ selected: null, ...derive(st.state, null, st.myColor), error: p?.reason ?? null }));
     });
 

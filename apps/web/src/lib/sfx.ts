@@ -192,67 +192,45 @@ export function playSfx(name: Sfx) {
   }
 }
 
-// ── Drum voices (for the loading-screen loop) ────────────────────────────────
-// Each schedules itself at absolute time `t` on the given destination node.
+// ── War-drum voices (for the loading-screen loop) ────────────────────────────
+// Deep, resonant tribal toms — a booming battle drum. Each schedules itself at
+// absolute time `t` on the destination node.
 
-/** Kick: a punchy pitch-dropping sine + a short click transient. */
-function kick(ac: AudioContext, dest: AudioNode, t: number, gain = 1) {
+/**
+ * warTom — a big membrane hit: a low pitch-dropping sine "boom" + a burst of
+ * band-passed noise for the skin/attack, with a long resonant tail. `freq` sets
+ * the drum size (lower = bigger/deeper).
+ */
+function warTom(ac: AudioContext, dest: AudioNode, t: number, freq: number, gain = 1) {
+  // Tonal boom
   const o = ac.createOscillator();
   const g = ac.createGain();
   o.type = "sine";
-  o.frequency.setValueAtTime(150, t);
-  o.frequency.exponentialRampToValueAtTime(48, t + 0.12);
+  o.frequency.setValueAtTime(freq * 1.6, t);
+  o.frequency.exponentialRampToValueAtTime(freq, t + 0.06);
+  o.frequency.exponentialRampToValueAtTime(freq * 0.7, t + 0.35);
   g.gain.setValueAtTime(0.0001, t);
-  g.gain.exponentialRampToValueAtTime(gain, t + 0.004);
-  g.gain.exponentialRampToValueAtTime(0.0001, t + 0.22);
+  g.gain.exponentialRampToValueAtTime(gain, t + 0.006);
+  g.gain.exponentialRampToValueAtTime(0.0001, t + 0.42); // long resonant tail
   o.connect(g).connect(dest);
   o.start(t);
-  o.stop(t + 0.25);
-}
+  o.stop(t + 0.45);
 
-/** Snare: filtered noise burst + a body tone. */
-function snare(ac: AudioContext, dest: AudioNode, t: number, gain = 0.7) {
-  const dur = 0.18;
+  // Skin attack — short band-passed noise thwack
+  const dur = 0.12;
   const buf = ac.createBuffer(1, Math.floor(ac.sampleRate * dur), ac.sampleRate);
   const d = buf.getChannelData(0);
-  for (let i = 0; i < d.length; i++) d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / d.length, 2);
+  for (let i = 0; i < d.length; i++) d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / d.length, 2.5);
   const src = ac.createBufferSource();
   src.buffer = buf;
-  const hp = ac.createBiquadFilter();
-  hp.type = "highpass";
-  hp.frequency.value = 1400;
-  const g = ac.createGain();
-  g.gain.setValueAtTime(gain, t);
-  g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
-  src.connect(hp).connect(g).connect(dest);
-  src.start(t);
-  // a little body
-  const o = ac.createOscillator();
-  const og = ac.createGain();
-  o.type = "triangle";
-  o.frequency.setValueAtTime(220, t);
-  og.gain.setValueAtTime(gain * 0.4, t);
-  og.gain.exponentialRampToValueAtTime(0.0001, t + 0.1);
-  o.connect(og).connect(dest);
-  o.start(t);
-  o.stop(t + 0.12);
-}
-
-/** Hi-hat: very short high-passed noise. */
-function hat(ac: AudioContext, dest: AudioNode, t: number, gain = 0.28, open = false) {
-  const dur = open ? 0.12 : 0.04;
-  const buf = ac.createBuffer(1, Math.floor(ac.sampleRate * dur), ac.sampleRate);
-  const d = buf.getChannelData(0);
-  for (let i = 0; i < d.length; i++) d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / d.length, 1.5);
-  const src = ac.createBufferSource();
-  src.buffer = buf;
-  const hp = ac.createBiquadFilter();
-  hp.type = "highpass";
-  hp.frequency.value = 7000;
-  const g = ac.createGain();
-  g.gain.setValueAtTime(gain, t);
-  g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
-  src.connect(hp).connect(g).connect(dest);
+  const bp = ac.createBiquadFilter();
+  bp.type = "bandpass";
+  bp.frequency.value = freq * 3;
+  bp.Q.value = 0.7;
+  const ng = ac.createGain();
+  ng.gain.setValueAtTime(gain * 0.5, t);
+  ng.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+  src.connect(bp).connect(ng).connect(dest);
   src.start(t);
 }
 
@@ -298,45 +276,32 @@ export function startLoadingAmbience(): () => void {
       lim.release.value = 0.12;
       bus.connect(lim).connect(ac.destination);
 
-      // A driving 16th-note groove (BPM ~104). Each step index 0..15; a step is a
-      // 16th note. Pattern arrays mark which steps hit. Bass pulse adds momentum.
-      const bpm = 104;
-      const step = 60 / bpm / 4; // seconds per 16th
-      const K = [1, 0, 0, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 0, 0]; // kick
-      const S = [0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0]; // snare (2 & 4)
-      const H = [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]; // hats every 16th
-      const OPEN = [0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 1, 0]; // open hats
-      const BASS = [55, 0, 0, 0, 55, 0, 82.4, 0, 55, 0, 0, 0, 82.4, 0, 65.4, 0]; // Hz or 0
+      // WAR-DRUM battle rhythm. A driving 8-step (eighth-note) marching pattern,
+      // BPM ~92 — heavy and relentless, like drums before a battle. Only deep toms:
+      // BIG = the large low war drum, MID = a smaller accent tom. The classic
+      // "BOOM ... boom-boom BOOM" call, repeated, builds tension.
+      const bpm = 92;
+      const step = 60 / bpm / 2; // seconds per eighth note
+      //             1  &  2  &  3  &  4  &
+      const BIG = [1, 0, 0, 0, 1, 0, 1, 0]; // deep war drum on 1, 3, and the "4"
+      const MID = [0, 0, 1, 1, 0, 0, 0, 1]; // mid-tom fills between the big hits
+      const BIG_FREQ = 58; // deep boom
+      const MID_FREQ = 98; // smaller tom
 
       let nextStep = 0;
       let nextTime = ac.currentTime + 0.08;
-      const bassNote = (t: number, freq: number) => {
-        const o = ac.createOscillator();
-        const g = ac.createGain();
-        o.type = "sawtooth";
-        o.frequency.value = freq;
-        g.gain.setValueAtTime(0.0001, t);
-        g.gain.exponentialRampToValueAtTime(0.5, t + 0.01);
-        g.gain.exponentialRampToValueAtTime(0.0001, t + step * 1.8);
-        const lp = ac.createBiquadFilter();
-        lp.type = "lowpass";
-        lp.frequency.value = 500;
-        o.connect(g).connect(lp).connect(bus);
-        o.start(t);
-        o.stop(t + step * 2);
-      };
 
-      // Look-ahead scheduler: every 25ms, schedule any steps due within 120ms.
+      // Look-ahead scheduler: every 25ms, schedule any steps due within 140ms.
       const timer = window.setInterval(() => {
         if (stopped) return;
-        const horizon = ac.currentTime + 0.12;
+        const horizon = ac.currentTime + 0.14;
         while (nextTime < horizon) {
-          const i = nextStep % 16;
+          const i = nextStep % 8;
           const t = nextTime;
-          if (K[i]) kick(ac, bus, t, 1.2);
-          if (S[i]) snare(ac, bus, t, 0.8);
-          if (H[i]) hat(ac, bus, t, i % 4 === 0 ? 0.3 : 0.18, !!OPEN[i]);
-          if (BASS[i]) bassNote(t, BASS[i]);
+          // A touch of human swing on the off-beats keeps it from sounding robotic.
+          const swing = i % 2 === 1 ? step * 0.06 : 0;
+          if (BIG[i]) warTom(ac, bus, t + swing, BIG_FREQ, i === 0 ? 1.3 : 1.05); // downbeat loudest
+          if (MID[i]) warTom(ac, bus, t + swing, MID_FREQ, 0.75);
           nextStep++;
           nextTime += step;
         }

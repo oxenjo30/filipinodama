@@ -644,22 +644,23 @@ export function OnlineMatchPage() {
       {/* RESULT MODAL */}
       <Modal open={!!end}>
         <div style={{ width: 76, height: 76, margin: "0 auto 16px", borderRadius: 20,
-          background: draw ? "linear-gradient(180deg,#6b6480,#3b3550)" : won ? "linear-gradient(180deg,#f0cf72,#c99a2e)" : "linear-gradient(180deg,#a83744,#6e1b24)",
+          background: end?.interrupted ? "linear-gradient(180deg,#5a5570,#33304a)" : draw ? "linear-gradient(180deg,#6b6480,#3b3550)" : won ? "linear-gradient(180deg,#f0cf72,#c99a2e)" : "linear-gradient(180deg,#a83744,#6e1b24)",
           display: "flex", alignItems: "center", justifyContent: "center", fontSize: 34 }}>
-          {draw ? "🤝" : won ? "👑" : "⚔"}
+          {end?.interrupted ? "📡" : draw ? "🤝" : won ? "👑" : "⚔"}
         </div>
         <div style={{ font: "700 12px Inter", letterSpacing: 2, textTransform: "uppercase", color: "var(--gold)" }}>
-          Match Complete
+          {end?.interrupted ? "Match Interrupted" : "Match Complete"}
         </div>
         <h2 style={{ font: "800 28px Cinzel,serif", color: "var(--gold-lt)", margin: "8px 0 4px" }}>
-          {draw ? "Draw" : won ? "Victory" : "Defeat"}
+          {end?.interrupted ? "Connection Lost" : draw ? "Draw" : won ? "Victory" : "Defeat"}
         </h2>
         <p style={{ font: "400 14px Inter", color: "var(--ink)", margin: "0 0 18px" }}>
-          {end?.result.reason === "resign" ? (won ? "Your opponent resigned." : "You resigned.")
+          {end?.interrupted ? "The match dropped and couldn't be recovered — no rating was affected. Start a new one below."
+            : end?.result.reason === "resign" ? (won ? "Your opponent resigned." : "You resigned.")
             : end?.result.reason === "capture-all" ? (won ? "You captured every enemy piece." : "The enemy captured all your pieces.")
             : draw ? "A hard-fought draw." : won ? "Well played." : "Better luck next time."}
         </p>
-        {end && (mode === "RANKED") && (
+        {end && !end.interrupted && (mode === "RANKED") && (
           <div style={{ display: "flex", justifyContent: "center", gap: 16, marginBottom: 20, font: "700 14px 'JetBrains Mono',monospace" }}>
             <span style={{ color: (myColor === "red" ? end.redTrophyDelta : end.blueTrophyDelta) >= 0 ? "#3fbf6f" : "#ff8fae" }}>
               🏆 {(myColor === "red" ? end.redTrophyDelta : end.blueTrophyDelta) >= 0 ? "+" : ""}{myColor === "red" ? end.redTrophyDelta : end.blueTrophyDelta}
