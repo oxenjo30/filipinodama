@@ -48,7 +48,10 @@ type StoreItemApi = {
 type InventoryLine = { itemId: string; equipped: boolean; acquiredAt: string };
 
 // ── thumbnails (portraits are opaque → masked circle + brightness lift) ──
-type Thumb = { kind: "img"; file: string } | { kind: "portrait"; file: string };
+type Thumb =
+  | { kind: "img"; file: string }
+  | { kind: "portrait"; file: string }
+  | { kind: "emoji"; glyph: string };
 
 function ImgThumb({ file, size }: { file: string; size: number }) {
   return <img src={A(file)} alt="" style={{ width: size, height: size, objectFit: "contain", filter: "drop-shadow(0 6px 14px rgba(0,0,0,.5))" }} />;
@@ -60,8 +63,30 @@ function PortraitThumb({ file, size }: { file: string; size: number }) {
     </div>
   );
 }
+function EmojiThumb({ glyph, size }: { glyph: string; size: number }) {
+  return (
+    <div
+      style={{
+        width: size,
+        height: size,
+        borderRadius: 12,
+        flex: "none",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        fontSize: Math.round(size * 0.62),
+        lineHeight: 1,
+        background: "radial-gradient(circle at 50% 35%,rgba(232,184,75,.14),rgba(0,0,0,.25))",
+        border: "1px solid rgba(232,184,75,.3)",
+      }}
+    >
+      {glyph}
+    </div>
+  );
+}
 function renderThumb(t: Thumb, size: number): ReactNode {
   if (t.kind === "portrait") return <PortraitThumb file={t.file} size={size} />;
+  if (t.kind === "emoji") return <EmojiThumb glyph={t.glyph} size={size} />;
   return <ImgThumb file={t.file} size={size} />;
 }
 
@@ -98,7 +123,14 @@ function thumbFor(it: StoreItemApi): Thumb {
     case "FRAME":
       return { kind: "img", file: a.includes("/") ? a : a };
     case "EMOTE":
-      return TYPE_FALLBACK_THUMB.EMOTE;
+      // Emotes are emoji glyphs — show the real glyph (from previewKey
+      // "emote:<glyph>", else a per-id fallback) instead of a generic chest icon.
+      return {
+        kind: "emoji",
+        glyph: it.previewKey?.startsWith("emote:")
+          ? it.previewKey.slice("emote:".length)
+          : EMOTE_EMOJI[it.id] ?? "🎭",
+      };
     case "BUNDLE":
       return { kind: "img", file: a.endsWith(".png") ? a : "me-banner.png" };
     case "SEASON_PASS":

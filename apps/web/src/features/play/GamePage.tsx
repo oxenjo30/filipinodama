@@ -333,81 +333,88 @@ export function GamePage({ mode = "ai" }: { mode?: "ai" | "local" }) {
             thinking={aiThinking}
           />
         </div>
-        {/* Local pass-and-play: a clear whose-turn banner so players know who acts. */}
-        {isLocal && !result && (
-          <div
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: 10,
-              padding: "10px 20px",
-              borderRadius: 100,
-              border: `1px solid ${redToMove ? "rgba(200,70,80,.6)" : "rgba(70,110,200,.6)"}`,
-              background: redToMove ? "rgba(160,48,58,.22)" : "rgba(46,107,198,.2)",
-              color: "#fff",
-              font: "800 14px Cinzel,serif",
-            }}
-          >
-            <span
+        {/* Transient status banner slot. These states are mutually exclusive
+            (local turn / must-capture / AI-thinking), so we reserve a FIXED-height
+            row for whichever is active — the banner appears/disappears WITHOUT
+            shifting the board up and down (that jitter was the annoyance). */}
+        <div style={{ minHeight: 42, display: "flex", alignItems: "center", justifyContent: "center", width: "100%" }}>
+          {/* must-capture takes priority over the plain turn banner, so at most one
+              banner ever shows in this fixed-height slot. */}
+          {isLocal && !result && !(mustCapture && humanTurn) && (
+            <div
               style={{
-                width: 12,
-                height: 12,
-                borderRadius: "50%",
-                background: redToMove
-                  ? "radial-gradient(circle at 35% 30%,#e0555f,#8f1b28)"
-                  : "radial-gradient(circle at 35% 30%,#5f97e6,#1f4a92)",
-                boxShadow: "0 0 8px rgba(232,184,75,.4)",
+                display: "flex",
+                alignItems: "center",
+                gap: 10,
+                padding: "10px 20px",
+                borderRadius: 100,
+                border: `1px solid ${redToMove ? "rgba(200,70,80,.6)" : "rgba(70,110,200,.6)"}`,
+                background: redToMove ? "rgba(160,48,58,.22)" : "rgba(46,107,198,.2)",
+                color: "#fff",
+                font: "800 14px Cinzel,serif",
               }}
-            />
-            {(redToMove ? P1_NAME : P2_NAME)}'s turn
-          </div>
-        )}
-        {mustCapture && humanTurn && (
-          <div
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: 9,
-              padding: "10px 18px",
-              borderRadius: 100,
-              border: "1px solid rgba(232,184,75,.5)",
-              background: "rgba(160,48,58,.25)",
-              color: "var(--gold-lt)",
-              font: "700 13px Inter",
-              animation: "fdglow 2s ease infinite",
-            }}
-          >
-            ⚠ {isLocal ? `${redToMove ? P1_NAME : P2_NAME} must capture this turn.` : "You must capture this turn."}
-          </div>
-        )}
-        {aiThinking && (
-          <div
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: 9,
-              padding: "10px 18px",
-              borderRadius: 100,
-              border: "1px solid rgba(232,184,75,.4)",
-              background: "rgba(15,8,32,.6)",
-              color: "var(--gold-lt)",
-              font: "700 13px Inter",
-            }}
-          >
-            <span
+            >
+              <span
+                style={{
+                  width: 12,
+                  height: 12,
+                  borderRadius: "50%",
+                  background: redToMove
+                    ? "radial-gradient(circle at 35% 30%,#e0555f,#8f1b28)"
+                    : "radial-gradient(circle at 35% 30%,#5f97e6,#1f4a92)",
+                  boxShadow: "0 0 8px rgba(232,184,75,.4)",
+                }}
+              />
+              {(redToMove ? P1_NAME : P2_NAME)}'s turn
+            </div>
+          )}
+          {mustCapture && humanTurn && (
+            <div
               style={{
-                width: 14,
-                height: 14,
-                borderRadius: "50%",
-                border: "2px solid rgba(232,184,75,.3)",
-                borderTopColor: "var(--gold)",
-                display: "inline-block",
-                animation: "fdspin .8s linear infinite",
+                display: "flex",
+                alignItems: "center",
+                gap: 9,
+                padding: "10px 18px",
+                borderRadius: 100,
+                border: "1px solid rgba(232,184,75,.5)",
+                background: "rgba(160,48,58,.25)",
+                color: "var(--gold-lt)",
+                font: "700 13px Inter",
+                animation: "fdglow 2s ease infinite",
               }}
-            />
-            The AI is thinking…
-          </div>
-        )}
+            >
+              ⚠ {isLocal ? `${redToMove ? P1_NAME : P2_NAME} must capture this turn.` : "You must capture this turn."}
+            </div>
+          )}
+          {aiThinking && (
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 9,
+                padding: "10px 18px",
+                borderRadius: 100,
+                border: "1px solid rgba(232,184,75,.4)",
+                background: "rgba(15,8,32,.6)",
+                color: "var(--gold-lt)",
+                font: "700 13px Inter",
+              }}
+            >
+              <span
+                style={{
+                  width: 14,
+                  height: 14,
+                  borderRadius: "50%",
+                  border: "2px solid rgba(232,184,75,.3)",
+                  borderTopColor: "var(--gold)",
+                  display: "inline-block",
+                  animation: "fdspin .8s linear infinite",
+                }}
+              />
+              The AI is thinking…
+            </div>
+          )}
+        </div>
 
         {/* Untimed pill. Offline AI/local matches have no clock, but rather than
             omit it entirely we show a static "Untimed" chip for parity with the
