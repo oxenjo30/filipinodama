@@ -192,13 +192,77 @@ export function playSfx(name: Sfx) {
   }
 }
 
-// ── Loading-screen ambience ──────────────────────────────────────────────────
-// A soft, slowly-evolving pad + a faint shimmer, looped while a LoadingScreen is
-// mounted. startLoadingAmbience() returns a stop() you call on unmount.
+// ── Drum voices (for the loading-screen loop) ────────────────────────────────
+// Each schedules itself at absolute time `t` on the given destination node.
+
+/** Kick: a punchy pitch-dropping sine + a short click transient. */
+function kick(ac: AudioContext, dest: AudioNode, t: number, gain = 1) {
+  const o = ac.createOscillator();
+  const g = ac.createGain();
+  o.type = "sine";
+  o.frequency.setValueAtTime(150, t);
+  o.frequency.exponentialRampToValueAtTime(48, t + 0.12);
+  g.gain.setValueAtTime(0.0001, t);
+  g.gain.exponentialRampToValueAtTime(gain, t + 0.004);
+  g.gain.exponentialRampToValueAtTime(0.0001, t + 0.22);
+  o.connect(g).connect(dest);
+  o.start(t);
+  o.stop(t + 0.25);
+}
+
+/** Snare: filtered noise burst + a body tone. */
+function snare(ac: AudioContext, dest: AudioNode, t: number, gain = 0.7) {
+  const dur = 0.18;
+  const buf = ac.createBuffer(1, Math.floor(ac.sampleRate * dur), ac.sampleRate);
+  const d = buf.getChannelData(0);
+  for (let i = 0; i < d.length; i++) d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / d.length, 2);
+  const src = ac.createBufferSource();
+  src.buffer = buf;
+  const hp = ac.createBiquadFilter();
+  hp.type = "highpass";
+  hp.frequency.value = 1400;
+  const g = ac.createGain();
+  g.gain.setValueAtTime(gain, t);
+  g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+  src.connect(hp).connect(g).connect(dest);
+  src.start(t);
+  // a little body
+  const o = ac.createOscillator();
+  const og = ac.createGain();
+  o.type = "triangle";
+  o.frequency.setValueAtTime(220, t);
+  og.gain.setValueAtTime(gain * 0.4, t);
+  og.gain.exponentialRampToValueAtTime(0.0001, t + 0.1);
+  o.connect(og).connect(dest);
+  o.start(t);
+  o.stop(t + 0.12);
+}
+
+/** Hi-hat: very short high-passed noise. */
+function hat(ac: AudioContext, dest: AudioNode, t: number, gain = 0.28, open = false) {
+  const dur = open ? 0.12 : 0.04;
+  const buf = ac.createBuffer(1, Math.floor(ac.sampleRate * dur), ac.sampleRate);
+  const d = buf.getChannelData(0);
+  for (let i = 0; i < d.length; i++) d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / d.length, 1.5);
+  const src = ac.createBufferSource();
+  src.buffer = buf;
+  const hp = ac.createBiquadFilter();
+  hp.type = "highpass";
+  hp.frequency.value = 7000;
+  const g = ac.createGain();
+  g.gain.setValueAtTime(gain, t);
+  g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+  src.connect(hp).connect(g).connect(dest);
+  src.start(t);
+}
+
+// ── Loading-screen drum loop ─────────────────────────────────────────────────
+// A driving drum groove looped while a LoadingScreen is mounted, scheduled with
+// a look-ahead so it stays tight. startLoadingAmbience() returns a stop().
 
 let ambience: { stop: () => void } | null = null;
 
-/** Begin the loading-screen ambience (idempotent). Returns a stop() function. */
+/** Begin the loading-screen drum loop (idempotent). Returns a stop() function. */
 export function startLoadingAmbience(): () => void {
   if (!useSettingsStore.getState().sound) return () => {};
   const ac = audio();
@@ -223,51 +287,68 @@ export function startLoadingAmbience(): () => void {
   const build = () => {
     if (stopped) return;
     try {
-      const now = ac.currentTime;
-      // Fixed base level; a SEPARATE lfo gain does the breathing so we never fight
-      // an automation ramp on the same param.
-      const out = ac.createGain();
-      out.gain.setValueAtTime(0.0001, now);
-      out.gain.exponentialRampToValueAtTime(0.18, now + 0.6); // louder, audible fade-in
-      out.connect(ac.destination);
+      // Bus: drums → gain → limiter → out. Fade in quickly so it kicks in.
+      const bus = ac.createGain();
+      bus.gain.setValueAtTime(0.0001, ac.currentTime);
+      bus.gain.exponentialRampToValueAtTime(0.9, ac.currentTime + 0.25);
+      const lim = ac.createDynamicsCompressor();
+      lim.threshold.value = -8;
+      lim.ratio.value = 12;
+      lim.attack.value = 0.002;
+      lim.release.value = 0.12;
+      bus.connect(lim).connect(ac.destination);
 
-      const oscs: OscillatorNode[] = [];
-      const mk = (freq: number, type: OscillatorType, g: number) => {
+      // A driving 16th-note groove (BPM ~104). Each step index 0..15; a step is a
+      // 16th note. Pattern arrays mark which steps hit. Bass pulse adds momentum.
+      const bpm = 104;
+      const step = 60 / bpm / 4; // seconds per 16th
+      const K = [1, 0, 0, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 0, 0]; // kick
+      const S = [0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0]; // snare (2 & 4)
+      const H = [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]; // hats every 16th
+      const OPEN = [0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 1, 0]; // open hats
+      const BASS = [55, 0, 0, 0, 55, 0, 82.4, 0, 55, 0, 0, 0, 82.4, 0, 65.4, 0]; // Hz or 0
+
+      let nextStep = 0;
+      let nextTime = ac.currentTime + 0.08;
+      const bassNote = (t: number, freq: number) => {
         const o = ac.createOscillator();
-        const gain = ac.createGain();
-        o.type = type;
+        const g = ac.createGain();
+        o.type = "sawtooth";
         o.frequency.value = freq;
-        gain.gain.value = g;
-        o.connect(gain).connect(out);
-        o.start(now);
-        oscs.push(o);
+        g.gain.setValueAtTime(0.0001, t);
+        g.gain.exponentialRampToValueAtTime(0.5, t + 0.01);
+        g.gain.exponentialRampToValueAtTime(0.0001, t + step * 1.8);
+        const lp = ac.createBiquadFilter();
+        lp.type = "lowpass";
+        lp.frequency.value = 500;
+        o.connect(g).connect(lp).connect(bus);
+        o.start(t);
+        o.stop(t + step * 2);
       };
-      mk(110, "sine", 0.6); // A2 root
-      mk(110.4, "sine", 0.5); // slight detune → shimmer/beat
-      mk(164.8, "triangle", 0.3); // E3 fifth
-      mk(330, "sine", 0.1); // faint high sparkle
 
-      // Breathing LFO on its OWN gain node between `out` and destination so it
-      // modulates volume without colliding with the fade-in automation above.
-      const breathe = ac.createGain();
-      breathe.gain.setValueAtTime(1, now);
-      out.disconnect();
-      out.connect(breathe).connect(ac.destination);
-      const lfo = ac.createOscillator();
-      const lfoGain = ac.createGain();
-      lfo.frequency.value = 0.14; // ~7s cycle
-      lfoGain.gain.value = 0.25; // ±25% volume swell
-      lfo.connect(lfoGain).connect(breathe.gain);
-      lfo.start(now);
-      oscs.push(lfo);
+      // Look-ahead scheduler: every 25ms, schedule any steps due within 120ms.
+      const timer = window.setInterval(() => {
+        if (stopped) return;
+        const horizon = ac.currentTime + 0.12;
+        while (nextTime < horizon) {
+          const i = nextStep % 16;
+          const t = nextTime;
+          if (K[i]) kick(ac, bus, t, 1.2);
+          if (S[i]) snare(ac, bus, t, 0.8);
+          if (H[i]) hat(ac, bus, t, i % 4 === 0 ? 0.3 : 0.18, !!OPEN[i]);
+          if (BASS[i]) bassNote(t, BASS[i]);
+          nextStep++;
+          nextTime += step;
+        }
+      }, 25);
 
       realStop = () => {
         try {
+          window.clearInterval(timer);
           const t = ac.currentTime;
-          out.gain.cancelScheduledValues(t);
-          out.gain.setValueAtTime(Math.max(0.0001, out.gain.value), t);
-          out.gain.exponentialRampToValueAtTime(0.0001, t + 0.4);
-          for (const o of oscs) o.stop(t + 0.45);
+          bus.gain.cancelScheduledValues(t);
+          bus.gain.setValueAtTime(Math.max(0.0001, bus.gain.value), t);
+          bus.gain.exponentialRampToValueAtTime(0.0001, t + 0.25); // quick fade tail
         } catch {
           /* ignore */
         }
