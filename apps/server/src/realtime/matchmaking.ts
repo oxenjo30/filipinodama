@@ -8,8 +8,18 @@ import { createLiveMatch, maybePlayBotMove } from "./match.js";
  * How long a player waits for a REAL human before we fill the match with a
  * highly-skilled bot. Gives humans a fair chance to queue up first; only falls
  * back to a bot when nobody arrives (empty-queue fill).
+ *
+ * The wait is RANDOMIZED per queue attempt within [min,max] (default 7–20s) so
+ * the bot never joins at a predictable moment — a fixed delay would make it
+ * obvious the opponent is a bot. Tunable via env without a code change.
  */
-const BOT_FILL_MS = 7000;
+const BOT_FILL_MIN_MS = Number(process.env.BOT_FILL_MIN_MS) || 7000;
+const BOT_FILL_MAX_MS = Number(process.env.BOT_FILL_MAX_MS) || 20000;
+function botFillDelay(): number {
+  const min = Math.min(BOT_FILL_MIN_MS, BOT_FILL_MAX_MS);
+  const max = Math.max(BOT_FILL_MIN_MS, BOT_FILL_MAX_MS);
+  return min + Math.floor(Math.random() * (max - min + 1));
+}
 
 /** Pending bot-fill timers keyed by userId, so a real match cancels the fallback. */
 const botTimers: Map<string, NodeJS.Timeout> = new Map();
@@ -315,7 +325,8 @@ export function registerMatchmaking(io: IOServer, socket: Socket) {
     }
 
     // If a human didn't pair us during tryMatch (we're still queued), arm the
-    // grace-window bot fallback: after BOT_FILL_MS, if STILL waiting, fill with a
+    // grace-window bot fallback: after a RANDOMIZED delay (7–20s, so the bot
+    // never joins at a predictable moment), if STILL waiting, fill with a
     // highly-skilled bot so the player is never stuck on an empty queue.
     if (queuedIn.get(userId) === mode) {
       cancelBotTimer(userId); // replace any stale timer from a previous join
@@ -326,7 +337,7 @@ export function registerMatchmaking(io: IOServer, socket: Socket) {
         void startBotMatch(io, userId, socket.id, mode, colorPref).catch((err) =>
           console.error("[matchmaking] startBotMatch failed", err),
         );
-      }, BOT_FILL_MS);
+      }, botFillDelay());
       botTimers.set(userId, timer);
     }
   });
