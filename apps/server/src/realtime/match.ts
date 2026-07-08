@@ -218,10 +218,14 @@ function questPeriodKey(scope: "daily" | "seasonal"): string {
 }
 
 /**
- * Advance a quest's progress by `by`, capped at the quest goal, without ever
- * touching an already-claimed row. Upsert makes the first event create the row.
+ * Advance a quest's progress, capped at the quest goal, without ever touching an
+ * already-claimed row. Two modes:
+ *   - default (setTo=false): value += by  — for counting quests (played/won/caps)
+ *   - setTo=true:            value = max(value, by)  — for "reach N" quests where
+ *     `by` is an absolute measure (e.g. a win streak), so a later smaller value
+ *     never lowers the best-so-far and the goal, once hit, stays hit.
  */
-async function advanceQuest(userId: string, questId: string, scope: "daily" | "seasonal", by: number) {
+async function advanceQuest(userId: string, questId: string, scope: "daily" | "seasonal", by: number, setTo = false) {
   if (by <= 0) return;
   const quest = await prisma.quest.findUnique({ where: { id: questId } });
   if (!quest || !quest.active) return;
@@ -230,7 +234,8 @@ async function advanceQuest(userId: string, questId: string, scope: "daily" | "s
     where: { userId_questId_periodKey: { userId, questId, periodKey } },
   });
   if (existing?.claimed) return; // don't reset/relift a claimed reward
-  const value = Math.min(quest.goal, (existing?.value ?? 0) + by);
+  const prev = existing?.value ?? 0;
+  const value = Math.min(quest.goal, setTo ? Math.max(prev, by) : prev + by);
   await prisma.questProgress.upsert({
     where: { userId_questId_periodKey: { userId, questId, periodKey } },
     update: { value },
@@ -261,12 +266,28 @@ async function recordPlayerOutcome(
         : { losses: { increment: 1 }, streak: 0 },
   });
 
-  // Quests: play/win/capture dailies + the seasonal ranked-win.
+  // Read the freshly-updated streak so the streak quest reflects the new value.
+  const fresh = await prisma.user.findUnique({ where: { id: userId }, select: { streak: true } });
+  const streak = fresh?.streak ?? 0;
+
+  // Quests: every id here has a matching def in seed.ts QUESTS. Progress is only
+  // ever advanced by real match outcomes — played / won / captured / ranked / streak.
   await Promise.allSettled([
+    // Daily
     advanceQuest(userId, "daily-play5", "daily", 1),
+    won ? advanceQuest(userId, "daily-win1", "daily", 1) : Promise.resolve(),
     won ? advanceQuest(userId, "daily-win3", "daily", 1) : Promise.resolve(),
+    captures > 0 ? advanceQuest(userId, "daily-capture10", "daily", captures) : Promise.resolve(),
     captures > 0 ? advanceQuest(userId, "daily-capture20", "daily", captures) : Promise.resolve(),
+    isRanked ? advanceQuest(userId, "daily-ranked3", "daily", 1) : Promise.resolve(),
+    // Seasonal
     won && isRanked ? advanceQuest(userId, "season-win50", "seasonal", 1) : Promise.resolve(),
+    advanceQuest(userId, "season-play100", "seasonal", 1),
+    captures > 0 ? advanceQuest(userId, "season-capture500", "seasonal", captures) : Promise.resolve(),
+    // Streak quest tracks the PEAK reached: advance to the current streak if higher
+    // (advanceQuest caps at goal and never decreases, so passing `streak` sets the
+    // best-so-far without a losing streak resetting it).
+    won && streak > 0 ? advanceQuest(userId, "season-streak5", "seasonal", streak, /*setTo*/ true) : Promise.resolve(),
   ]);
 }
 

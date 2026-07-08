@@ -744,8 +744,8 @@ export function StorePage() {
               </button>
             </div>
           </div>
-          <div style={{ position: "relative", display: "flex", alignItems: "center", justifyContent: "center", padding: 20, background: "radial-gradient(circle at 60% 45%,rgba(120,80,180,.4),transparent 70%)" }}>
-            <img src={A("me-banner.png")} alt="Royal Heritage Pack" style={{ width: "min(80%,180px)", objectFit: "contain", filter: "drop-shadow(0 14px 26px rgba(0,0,0,.5))" }} />
+          <div style={{ position: "relative", display: "flex", alignItems: "center", justifyContent: "center", padding: 20, minWidth: 0, background: "radial-gradient(circle at 60% 45%,rgba(120,80,180,.4),transparent 70%)" }}>
+            <img src={A("me-banner.png")} alt="Royal Heritage Pack" style={{ width: "min(80%,180px)", maxWidth: "100%", objectFit: "contain", filter: "drop-shadow(0 14px 26px rgba(0,0,0,.5))" }} />
           </div>
         </div>
 
