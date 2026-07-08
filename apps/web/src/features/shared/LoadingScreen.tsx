@@ -1,6 +1,8 @@
+import { useEffect } from "react";
 import { BRAND, loadingArt } from "../../lib/assets";
 import type { LoadingContext } from "../../lib/assets";
 import type { PieceSkin } from "../../lib/assets";
+import { startLoadingAmbience } from "../../lib/sfx";
 
 /**
  * LoadingScreen — the handoff's pre-match loader (dc-import "Loading Screen",
@@ -61,6 +63,13 @@ export type LoadingScreenProps = {
 export function LoadingScreen({ context = "default", skin = "default" }: LoadingScreenProps) {
   const copy = COPY[context];
   const art = loadingArt(context, skin);
+
+  // Soft ambient pad while the loader is on screen; fades out on unmount (i.e.
+  // when the match/board takes over). Respects the Sound Effects toggle.
+  useEffect(() => {
+    const stop = startLoadingAmbience();
+    return stop;
+  }, []);
 
   return (
     <div

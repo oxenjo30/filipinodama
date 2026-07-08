@@ -1,18 +1,20 @@
 /**
- * sfx — tiny Web Audio sound effects for the board game, synthesized in-code (no
- * asset files). Gated by the settings `sound` flag (read at call time). A single
- * lazily-created AudioContext is reused; the first sound after a user gesture
- * resumes it (browsers block audio until the user interacts).
+ * sfx — Web Audio sound effects for the board game + a loading ambience loop,
+ * synthesized in-code (no asset files). Everything is gated by the settings
+ * `sound` flag (read at call time). A single AudioContext is reused; it resumes
+ * on the first user gesture (browsers block audio until then).
  *
- * Sounds: move (soft click), capture (heavier thunk), king (rising chime),
- * win (bright arpeggio), lose (falling tone), draw (neutral two-note).
+ * The one-shots route through a shared master gain + a light "hall" (a short
+ * feedback delay) so notes feel warmer and less dry than raw oscillators.
  */
 
 import { useSettingsStore } from "../stores/settingsStore";
 
-export type Sfx = "move" | "capture" | "king" | "win" | "lose" | "draw";
+export type Sfx = "move" | "capture" | "king" | "win" | "lose" | "draw" | "select";
 
 let ctx: AudioContext | null = null;
+let master: GainNode | null = null; // one-shot bus (post: → hall + dry → out)
+let hallIn: GainNode | null = null; // send into the delay "hall"
 
 function audio(): AudioContext | null {
   if (typeof window === "undefined") return null;
@@ -24,86 +26,197 @@ function audio(): AudioContext | null {
     } catch {
       return null;
     }
+    // Master bus with a subtle stereo "hall": dry + two short feedback delays.
+    master = ctx.createGain();
+    master.gain.value = 0.9;
+    master.connect(ctx.destination);
+
+    hallIn = ctx.createGain();
+    hallIn.gain.value = 0.28; // send level into the hall
+    const d1 = ctx.createDelay();
+    d1.delayTime.value = 0.09;
+    const d2 = ctx.createDelay();
+    d2.delayTime.value = 0.14;
+    const fb = ctx.createGain();
+    fb.gain.value = 0.32; // decays quickly — a room, not an echo
+    const wet = ctx.createGain();
+    wet.gain.value = 0.5;
+    hallIn.connect(d1);
+    hallIn.connect(d2);
+    d1.connect(fb);
+    d2.connect(fb);
+    fb.connect(d1);
+    fb.connect(d2);
+    d1.connect(wet);
+    d2.connect(wet);
+    wet.connect(ctx.destination);
   }
-  // Autoplay policy: the context starts suspended until a user gesture; resume it.
   if (ctx.state === "suspended") void ctx.resume();
   return ctx;
 }
 
-/** One oscillator note with a short percussive envelope. */
-function note(ac: AudioContext, opts: { freq: number; type?: OscillatorType; start: number; dur: number; gain?: number; glideTo?: number }) {
-  const { freq, type = "sine", start, dur, gain = 0.14, glideTo } = opts;
+/** A single voiced note: osc → gain (perc envelope) → master (+hall send). */
+function note(ac: AudioContext, o: { freq: number; type?: OscillatorType; start?: number; dur: number; gain?: number; glideTo?: number; hall?: boolean }) {
+  const { freq, type = "sine", start = 0, dur, gain = 0.14, glideTo, hall = true } = o;
+  const t = ac.currentTime + start;
   const osc = ac.createOscillator();
   const g = ac.createGain();
   osc.type = type;
-  osc.frequency.setValueAtTime(freq, ac.currentTime + start);
-  if (glideTo) osc.frequency.exponentialRampToValueAtTime(glideTo, ac.currentTime + start + dur);
-  // Fast attack, exponential decay — a clean, non-harsh blip.
-  g.gain.setValueAtTime(0.0001, ac.currentTime + start);
-  g.gain.exponentialRampToValueAtTime(gain, ac.currentTime + start + 0.008);
-  g.gain.exponentialRampToValueAtTime(0.0001, ac.currentTime + start + dur);
-  osc.connect(g).connect(ac.destination);
-  osc.start(ac.currentTime + start);
-  osc.stop(ac.currentTime + start + dur + 0.02);
+  osc.frequency.setValueAtTime(freq, t);
+  if (glideTo) osc.frequency.exponentialRampToValueAtTime(Math.max(1, glideTo), t + dur);
+  g.gain.setValueAtTime(0.0001, t);
+  g.gain.exponentialRampToValueAtTime(gain, t + 0.01);
+  g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+  osc.connect(g);
+  if (master) g.connect(master);
+  if (hall && hallIn) g.connect(hallIn);
+  osc.start(t);
+  osc.stop(t + dur + 0.03);
 }
 
-/** Short filtered-noise burst — gives the capture a woody "thunk". */
-function thunk(ac: AudioContext) {
-  const dur = 0.16;
+/** A short, filtered noise burst — the woody body of a capture. */
+function thunk(ac: AudioContext, o: { dur?: number; cutoff?: number; gain?: number } = {}) {
+  const { dur = 0.18, cutoff = 1100, gain = 0.28 } = o;
   const buffer = ac.createBuffer(1, Math.floor(ac.sampleRate * dur), ac.sampleRate);
   const data = buffer.getChannelData(0);
-  for (let i = 0; i < data.length; i++) {
-    // decaying noise
-    data[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / data.length, 3);
-  }
+  for (let i = 0; i < data.length; i++) data[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / data.length, 3.2);
   const src = ac.createBufferSource();
   src.buffer = buffer;
   const filter = ac.createBiquadFilter();
   filter.type = "lowpass";
-  filter.frequency.value = 900;
+  filter.frequency.value = cutoff;
   const g = ac.createGain();
-  g.gain.value = 0.22;
-  src.connect(filter).connect(g).connect(ac.destination);
+  g.gain.value = gain;
+  src.connect(filter).connect(g);
+  if (master) g.connect(master);
+  if (hallIn) g.connect(hallIn);
   src.start();
 }
 
-/** Play a named effect, respecting the user's Sound Effects toggle. */
+/** Play a named effect, respecting the Sound Effects toggle. */
 export function playSfx(name: Sfx) {
-  // Read the live setting each call — no stale closure, no play when muted.
   if (!useSettingsStore.getState().sound) return;
   const ac = audio();
   if (!ac) return;
   try {
     switch (name) {
+      case "select":
+        // tiny, dry tick when you pick up a piece
+        note(ac, { freq: 660, type: "sine", dur: 0.05, gain: 0.05, hall: false });
+        break;
       case "move":
-        note(ac, { freq: 320, type: "triangle", start: 0, dur: 0.09, gain: 0.10 });
+        // warm wooden tap — two quick layered blips a fifth apart
+        note(ac, { freq: 300, type: "triangle", dur: 0.10, gain: 0.11 });
+        note(ac, { freq: 450, type: "sine", start: 0.005, dur: 0.08, gain: 0.06 });
         break;
       case "capture":
-        thunk(ac);
-        note(ac, { freq: 160, type: "square", start: 0, dur: 0.12, gain: 0.10, glideTo: 90 });
+        // satisfying thump: noise body + a low pitched-down tone + a bright click
+        thunk(ac, { dur: 0.2, cutoff: 1200, gain: 0.3 });
+        note(ac, { freq: 180, type: "square", dur: 0.16, gain: 0.11, glideTo: 70 });
+        note(ac, { freq: 900, type: "triangle", start: 0.01, dur: 0.06, gain: 0.07, hall: false });
         break;
       case "king":
-        // rising three-note chime
-        note(ac, { freq: 523, type: "sine", start: 0.0, dur: 0.14, gain: 0.13 });
-        note(ac, { freq: 659, type: "sine", start: 0.09, dur: 0.14, gain: 0.13 });
-        note(ac, { freq: 880, type: "sine", start: 0.18, dur: 0.22, gain: 0.14 });
+        // sparkling ascending arpeggio (C-E-G-C) with a shimmer on top
+        note(ac, { freq: 523, type: "triangle", start: 0.0, dur: 0.16, gain: 0.13 });
+        note(ac, { freq: 659, type: "triangle", start: 0.08, dur: 0.16, gain: 0.13 });
+        note(ac, { freq: 784, type: "triangle", start: 0.16, dur: 0.18, gain: 0.13 });
+        note(ac, { freq: 1047, type: "sine", start: 0.24, dur: 0.34, gain: 0.14 });
+        note(ac, { freq: 1568, type: "sine", start: 0.26, dur: 0.30, gain: 0.05 }); // shimmer
         break;
       case "win":
-        note(ac, { freq: 523, type: "triangle", start: 0.0, dur: 0.14, gain: 0.14 });
-        note(ac, { freq: 659, type: "triangle", start: 0.11, dur: 0.14, gain: 0.14 });
-        note(ac, { freq: 784, type: "triangle", start: 0.22, dur: 0.16, gain: 0.14 });
-        note(ac, { freq: 1047, type: "triangle", start: 0.34, dur: 0.30, gain: 0.15 });
+        // full major fanfare (C-E-G-C-E) with a held root underneath
+        note(ac, { freq: 262, type: "sine", start: 0.0, dur: 0.7, gain: 0.06 }); // pad root
+        note(ac, { freq: 523, type: "triangle", start: 0.0, dur: 0.16, gain: 0.14 });
+        note(ac, { freq: 659, type: "triangle", start: 0.12, dur: 0.16, gain: 0.14 });
+        note(ac, { freq: 784, type: "triangle", start: 0.24, dur: 0.16, gain: 0.14 });
+        note(ac, { freq: 1047, type: "triangle", start: 0.36, dur: 0.20, gain: 0.15 });
+        note(ac, { freq: 1319, type: "sine", start: 0.5, dur: 0.4, gain: 0.12 });
         break;
       case "lose":
-        note(ac, { freq: 392, type: "sawtooth", start: 0.0, dur: 0.22, gain: 0.11, glideTo: 262 });
-        note(ac, { freq: 262, type: "sawtooth", start: 0.20, dur: 0.34, gain: 0.11, glideTo: 175 });
+        // gentle descending minor sigh (not harsh)
+        note(ac, { freq: 415, type: "sine", start: 0.0, dur: 0.3, gain: 0.11, glideTo: 311 });
+        note(ac, { freq: 311, type: "sine", start: 0.26, dur: 0.42, gain: 0.11, glideTo: 233 });
+        note(ac, { freq: 155, type: "triangle", start: 0.1, dur: 0.6, gain: 0.05 });
         break;
       case "draw":
-        note(ac, { freq: 440, type: "sine", start: 0.0, dur: 0.18, gain: 0.12 });
-        note(ac, { freq: 440, type: "sine", start: 0.20, dur: 0.26, gain: 0.12 });
+        // neutral two-note resolve
+        note(ac, { freq: 440, type: "sine", start: 0.0, dur: 0.2, gain: 0.12 });
+        note(ac, { freq: 587, type: "sine", start: 0.2, dur: 0.34, gain: 0.12 });
         break;
     }
   } catch {
     /* audio is best-effort — never let a sound failure affect the game */
   }
+}
+
+// ── Loading-screen ambience ──────────────────────────────────────────────────
+// A soft, slowly-evolving pad + a faint shimmer, looped while a LoadingScreen is
+// mounted. startLoadingAmbience() returns a stop() you call on unmount.
+
+let ambience: { stop: () => void } | null = null;
+
+/** Begin the loading-screen ambience (idempotent). Returns a stop() function. */
+export function startLoadingAmbience(): () => void {
+  if (!useSettingsStore.getState().sound) return () => {};
+  const ac = audio();
+  if (!ac) return () => {};
+  // If one is already playing, stop it first (avoid stacking).
+  ambience?.stop();
+  try {
+    const now = ac.currentTime;
+    const out = ac.createGain();
+    out.gain.setValueAtTime(0.0001, now);
+    out.gain.exponentialRampToValueAtTime(0.06, now + 1.2); // slow fade-in
+    out.connect(ac.destination);
+
+    // Two detuned low pads (a warm perfect-fifth drone) + a gentle LFO on volume
+    // for a breathing feel.
+    const oscs: OscillatorNode[] = [];
+    const mk = (freq: number, type: OscillatorType, g: number) => {
+      const o = ac.createOscillator();
+      const gain = ac.createGain();
+      o.type = type;
+      o.frequency.value = freq;
+      gain.gain.value = g;
+      o.connect(gain).connect(out);
+      o.start(now);
+      oscs.push(o);
+      return o;
+    };
+    mk(110, "sine", 0.6); // A2 root
+    mk(110.4, "sine", 0.5); // slight detune → shimmer/beat
+    mk(164.8, "triangle", 0.28); // E3 fifth
+    mk(330, "sine", 0.08); // faint high sparkle
+
+    // Breathing LFO on the master ambience gain.
+    const lfo = ac.createOscillator();
+    const lfoGain = ac.createGain();
+    lfo.frequency.value = 0.12; // ~8s cycle
+    lfoGain.gain.value = 0.02;
+    lfo.connect(lfoGain).connect(out.gain);
+    lfo.start(now);
+    oscs.push(lfo);
+
+    const stop = () => {
+      try {
+        const t = ac.currentTime;
+        out.gain.cancelScheduledValues(t);
+        out.gain.setValueAtTime(Math.max(0.0001, out.gain.value), t);
+        out.gain.exponentialRampToValueAtTime(0.0001, t + 0.4); // fade out
+        for (const o of oscs) o.stop(t + 0.45);
+      } catch {
+        /* ignore */
+      }
+      ambience = null;
+    };
+    ambience = { stop };
+    return stop;
+  } catch {
+    return () => {};
+  }
+}
+
+/** Stop any playing loading ambience immediately-ish (fade out). */
+export function stopLoadingAmbience() {
+  ambience?.stop();
 }
