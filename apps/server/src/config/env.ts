@@ -36,6 +36,14 @@ const schema = z.object({
   PAYMONGO_SECRET_KEY: z.string().default(""),
   PAYMONGO_WEBHOOK_SECRET: z.string().default(""),
   PAYMONGO_PUBLIC_KEY: z.string().default(""),
+  // Real-money diamond top-up master switch. Default OFF for legal compliance —
+  // the store is gold-only. Set DIAMOND_TOPUP_ENABLED=true (with live PayMongo
+  // keys) to reactivate buying diamonds. The PayMongo wiring stays intact and
+  // dormant behind this flag; an admin toggle can later drive it.
+  DIAMOND_TOPUP_ENABLED: z
+    .string()
+    .default("false")
+    .transform((v) => v === "true" || v === "1"),
 
   // storage (Cloudflare R2 / S3). Empty ⇒ avatar upload disabled.
   S3_ENDPOINT: z.string().default(""),
@@ -85,6 +93,8 @@ export const features = {
   googleOAuth: !!(env.GOOGLE_CLIENT_ID && env.GOOGLE_CLIENT_SECRET),
   facebookOAuth: !!(env.FACEBOOK_CLIENT_ID && env.FACEBOOK_CLIENT_SECRET),
   email: !!env.RESEND_API_KEY,
-  payments: !!(env.PAYMONGO_SECRET_KEY && env.PAYMONGO_WEBHOOK_SECRET),
+  // Real-money diamond top-up is available ONLY when explicitly enabled AND the
+  // PayMongo keys are configured. Default: OFF (gold-only store).
+  payments: env.DIAMOND_TOPUP_ENABLED && !!(env.PAYMONGO_SECRET_KEY && env.PAYMONGO_WEBHOOK_SECRET),
   storage: !!(env.S3_ENDPOINT && env.S3_ACCESS_KEY),
 };

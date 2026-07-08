@@ -56,6 +56,7 @@ type SeasonData = {
   season: { id: string; name: string; startsAt: string; endsAt: string };
   hasPass: boolean;
   passPrice: number;
+  passCurrency?: "GOLD" | "DIAMONDS"; // which currency the pass is charged in (gold by default)
   xp: number;
   tiers: ApiTier[];
 };
@@ -301,7 +302,8 @@ export function SeasonPage() {
   const levelPct = nextTier && nextTier.xp > 0 ? Math.max(2, Math.min(100, Math.round((xp / nextTier.xp) * 100))) : xp > 0 ? 100 : 2;
   const seasonName = data?.season.name ?? "Ranked Season";
   const endsLabel = endsInLabel(data?.season.endsAt);
-  const passPrice = data?.passPrice ?? 900; // real price from the API (matches what /season/pass charges)
+  const passCurrency = data?.passCurrency ?? "GOLD"; // gold-only store by default
+  const passPrice = data?.passPrice ?? 9000; // real price from the API (matches what /season/pass charges)
 
   // Tiers still claimable: unlocked & not yet claimed. A tier is "claimable" if the
   // free reward is available, or (with the pass) a premium reward is available.
@@ -358,8 +360,17 @@ export function SeasonPage() {
     }
     setBuyingPass(true);
     try {
-      const res = await api.post<{ spentDiamonds: number; diamondBalance: number }>("/api/season/pass");
-      patchMe({ diamonds: res.diamondBalance });
+      // The pass is charged in gold by default (gold-only store) or diamonds if
+      // real-money top-up is reactivated. Patch whichever balance the server
+      // actually debited so the nav updates correctly.
+      const res = await api.post<{ currency?: "GOLD" | "DIAMONDS"; balance?: number; spentDiamonds?: number; diamondBalance?: number }>(
+        "/api/season/pass",
+      );
+      if (res.currency === "DIAMONDS" || res.diamondBalance != null) {
+        patchMe({ diamonds: res.diamondBalance ?? res.balance });
+      } else if (res.balance != null) {
+        patchMe({ gold: res.balance });
+      }
       showToast("Royal Season Pass unlocked!");
       await load();
     } catch (e) {
@@ -773,8 +784,8 @@ export function SeasonPage() {
                   opacity: buyingPass ? 0.7 : 1,
                 }}
               >
-                <img src="/assets/ic-gem.png" alt="" style={{ width: 18, height: 18, objectFit: "contain" }} />
-                {buyingPass ? "…" : `${passPrice} · Unlock`}
+                <img src={passCurrency === "DIAMONDS" ? "/assets/ic-gem.png" : "/assets/ic-coin.png"} alt="" style={{ width: 18, height: 18, objectFit: "contain" }} />
+                {buyingPass ? "…" : `${passPrice.toLocaleString()} · Unlock`}
               </button>
             )}
           </div>

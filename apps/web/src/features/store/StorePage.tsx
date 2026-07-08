@@ -383,6 +383,9 @@ interface CartLine {
 export function StorePage() {
   const me = useAuthStore((s) => s.me);
   const patchMe = useAuthStore((s) => s.patchMe);
+  // Real-money diamond top-up is off by default (gold-only store). When off we
+  // hide the "Currency" (buy-Diamonds) category entirely.
+  const diamondTopUp = useAuthStore((s) => s.providers.diamondTopUp);
   const showToast = useAppStore((s) => s.showToast);
   const navigate = useNavigate();
 
@@ -652,12 +655,14 @@ export function StorePage() {
               </button>
             );
           })}
-          <button key="Currency" onClick={() => setTopUpOpen(true)} style={catBtn(false)}>
-            <span style={{ color: "var(--gold)", display: "flex" }}>
-              <CatIcon name="coin" />
-            </span>
-            <span style={{ font: "600 13px Inter" }}>Currency</span>
-          </button>
+          {diamondTopUp && (
+            <button key="Currency" onClick={() => setTopUpOpen(true)} style={catBtn(false)}>
+              <span style={{ color: "var(--gold)", display: "flex" }}>
+                <CatIcon name="coin" />
+              </span>
+              <span style={{ font: "600 13px Inter" }}>Currency</span>
+            </button>
+          )}
         </div>
         <div className="frame" style={{ padding: 20, textAlign: "center" }}>
           <div className="ptitle">Member Benefits</div>
@@ -687,9 +692,18 @@ export function StorePage() {
               ))}
             </div>
             <div style={{ display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
-              <span className="pill" style={{ color: "#ff9aa8" }}>
-                <CurIcon cur="gem" /> 1,200
-              </span>
+              {(() => {
+                // Show the Heritage Pack's real, live catalog price (gold-only
+                // store), not a hardcoded diamond figure. Falls back gracefully
+                // if the item hasn't loaded yet.
+                const h = itemById("heritage");
+                const cur: Cur = h?.cur ?? "gold";
+                return (
+                  <span className="pill" style={{ color: cur === "gem" ? "#ff9aa8" : "#f2d493" }}>
+                    <CurIcon cur={cur} /> {(h?.price ?? 12000).toLocaleString()}
+                  </span>
+                );
+              })()}
               <button
                 className="btn btn-gold"
                 onClick={() => {
@@ -933,10 +947,10 @@ export function StorePage() {
           <div style={{ font: "800 19px Cinzel,serif", color: "var(--gold-lt)" }}>Lunar New Year Bundle</div>
           <div style={{ font: "400 12px Inter", color: "var(--ink)", margin: "6px 0 14px" }}>Celebrate tradition and prosperity!</div>
           <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 10, marginBottom: 14 }}>
-            <span style={{ display: "flex", alignItems: "center", gap: 6, font: "800 18px 'JetBrains Mono',monospace", color: "#ff8fae" }}>
-              <CurIcon cur="gem" size={18} /> 1,080
+            <span style={{ display: "flex", alignItems: "center", gap: 6, font: "800 18px 'JetBrains Mono',monospace", color: "#f2d493" }}>
+              <CurIcon cur="gold" size={18} /> 10,800
             </span>
-            <span style={{ font: "500 13px 'JetBrains Mono',monospace", color: "var(--ink2)", textDecoration: "line-through" }}>1,680</span>
+            <span style={{ font: "500 13px 'JetBrains Mono',monospace", color: "var(--ink2)", textDecoration: "line-through" }}>16,800</span>
             <span style={{ font: "700 11px Inter", padding: "3px 8px", borderRadius: 6, background: "#a83744", color: "#fff" }}>-35%</span>
           </div>
           <button

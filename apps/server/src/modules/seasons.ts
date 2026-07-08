@@ -79,15 +79,17 @@ export async function seasonRoutes(app: FastifyInstance) {
     const tiers = (season.tiers as unknown as Tier[]) ?? [];
     const xp = progress?.xp ?? 0;
     const claimed = progress?.claimed ?? [];
-    // Real pass price from the seeded SEASON_PASS item, so the UI never shows a
-    // number that differs from what /season/pass actually charges.
+    // Real pass price + currency from the seeded SEASON_PASS item, so the UI
+    // never shows a number/currency that differs from what /season/pass charges.
     const passItem = await prisma.storeItem.findUnique({ where: { id: PASS_ITEM_ID } });
-    const passPrice = passItem?.priceDiamonds ?? 900;
+    const passCurrency: "GOLD" | "DIAMONDS" = passItem?.priceDiamonds != null ? "DIAMONDS" : "GOLD";
+    const passPrice = passCurrency === "DIAMONDS" ? passItem!.priceDiamonds! : passItem?.priceGold ?? 9000;
 
     return ok({
       season: { id: season.id, name: season.name, startsAt: season.startsAt, endsAt: season.endsAt },
       hasPass: progress?.hasPass ?? false,
       passPrice,
+      passCurrency,
       xp,
       tiers: tiers.map((t) => ({
         tier: t.tier,
@@ -160,7 +162,10 @@ export async function seasonRoutes(app: FastifyInstance) {
     });
   });
 
-  // POST /api/season/pass — buy the premium pass with diamonds (in-currency spend)
+  // POST /api/season/pass — buy the premium pass with in-game currency. The pass
+  // is charged in whatever currency the seeded SEASON_PASS item is priced in:
+  // GOLD by default (gold-only store), or DIAMONDS if real-money top-up is
+  // reactivated and the item is repriced in diamonds. Never mixes the two.
   app.post("/season/pass", { preHandler: requireAuth }, async (req) => {
     const userId = req.userId!;
     const season = await currentSeason();
@@ -172,14 +177,17 @@ export async function seasonRoutes(app: FastifyInstance) {
     if (progress?.hasPass) throw err.conflict("PASS_ALREADY_OWNED", "You already own the season pass");
 
     const passItem = await prisma.storeItem.findUnique({ where: { id: PASS_ITEM_ID } });
-    const price = passItem?.priceDiamonds ?? 900;
+    // Pick the currency the item is actually priced in. Diamonds only when the
+    // item carries a diamond price (reactivation); otherwise charge gold.
+    const currency: "GOLD" | "DIAMONDS" = passItem?.priceDiamonds != null ? "DIAMONDS" : "GOLD";
+    const price = currency === "DIAMONDS" ? passItem!.priceDiamonds! : passItem?.priceGold ?? 9000;
 
     // Flip hasPass and spend in ONE transaction, gated by a conditional flip so
     // only one concurrent request can win (count===1) and charge. This closes
     // the read-then-act double-charge race: two clicks can't both debit.
-    let diamondBalance: number;
+    let balance: number;
     try {
-      diamondBalance = await prisma.$transaction(async (tx) => {
+      balance = await prisma.$transaction(async (tx) => {
         // Ensure a row exists (idempotent create; ignore if another racer made it).
         if (!progress) {
           try {
@@ -195,7 +203,7 @@ export async function seasonRoutes(app: FastifyInstance) {
         if (flip.count === 0) throw new Error("PASS_ALREADY_OWNED");
         return applyLedgerTx(tx, {
           userId,
-          currency: "DIAMONDS",
+          currency,
           amount: -price,
           reason: "season_pass",
           refType: "season_pass",
@@ -208,12 +216,26 @@ export async function seasonRoutes(app: FastifyInstance) {
       }
       if (e instanceof Error && e.message.startsWith("INSUFFICIENT")) {
         // tx rolled back → hasPass flip is undone automatically, no manual revert.
-        throw err.badRequest("INSUFFICIENT_DIAMONDS", "Not enough diamonds for the season pass");
+        throw err.badRequest(
+          currency === "DIAMONDS" ? "INSUFFICIENT_DIAMONDS" : "INSUFFICIENT_GOLD",
+          currency === "DIAMONDS" ? "Not enough diamonds for the season pass" : "Not enough gold for the season pass",
+        );
       }
       throw e;
     }
 
-    return ok({ hasPass: true, spentDiamonds: price, diamondBalance, seasonId: season.id });
+    // Report the charged currency + resulting balance. Keep the legacy
+    // spentDiamonds/diamondBalance keys populated only when diamonds were spent.
+    return ok({
+      hasPass: true,
+      currency,
+      price,
+      spent: price,
+      balance,
+      spentDiamonds: currency === "DIAMONDS" ? price : 0,
+      diamondBalance: currency === "DIAMONDS" ? balance : undefined,
+      seasonId: season.id,
+    });
   });
 
   // ── Season-end rewards ──────────────────────────────────────────────────────

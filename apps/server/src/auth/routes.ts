@@ -160,6 +160,9 @@ export async function authRoutes(app: FastifyInstance) {
       google: features.googleOAuth,
       facebook: features.facebookOAuth,
       emailDelivery: features.email,
+      // Real-money diamond top-up availability (default OFF → gold-only store).
+      // Drives whether the client shows the buy-diamonds UI / nav diamond pill.
+      diamondTopUp: features.payments,
     });
   });
 }

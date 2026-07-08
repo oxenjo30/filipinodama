@@ -44,6 +44,9 @@ export function AppLayout() {
   // or fake balances (no placeholder DamaMaster / Bayani / 12,480 gold).
   const me = useAuthStore((s) => s.me);
   const logout = useAuthStore((s) => s.logout);
+  // Real-money diamond top-up is off by default (gold-only store). When off we
+  // hide the diamond balance pill + top-up button entirely across the nav.
+  const diamondTopUp = useAuthStore((s) => s.providers.diamondTopUp);
   const showToast = useAppStore((s) => s.showToast);
   const startPresence = usePresenceStore((s) => s.start);
   const stopPresence = usePresenceStore((s) => s.stop);
@@ -203,10 +206,12 @@ export function AppLayout() {
                   <span className="pill fd-hide-narrow" style={{ color: "#f2d493" }} title="Gold — earned from daily challenges, quests & matches. Spend it in the Store.">
                     <Icon src={ICONS.coin} alt="Gold" /> {gold.toLocaleString()}
                   </span>
-                  <span className="pill fd-hide-narrow" style={{ color: "#ff9aa8", gap: 6, paddingRight: 5 }} title="Diamonds — premium currency. Top up with real money.">
-                    <Icon src={ICONS.gem} alt="Diamonds" /> {diamonds.toLocaleString()}
-                    <button onClick={() => setTopUpOpen(true)} title="Top up Diamonds" style={{ width: 22, height: 22, flex: "none", borderRadius: "50%", border: "none", background: "linear-gradient(180deg,#f0cf72,#c99a2e)", color: "#3a2405", font: "800 15px Inter", lineHeight: 1, cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}>+</button>
-                  </span>
+                  {diamondTopUp && (
+                    <span className="pill fd-hide-narrow" style={{ color: "#ff9aa8", gap: 6, paddingRight: 5 }} title="Diamonds — premium currency. Top up with real money.">
+                      <Icon src={ICONS.gem} alt="Diamonds" /> {diamonds.toLocaleString()}
+                      <button onClick={() => setTopUpOpen(true)} title="Top up Diamonds" style={{ width: 22, height: 22, flex: "none", borderRadius: "50%", border: "none", background: "linear-gradient(180deg,#f0cf72,#c99a2e)", color: "#3a2405", font: "800 15px Inter", lineHeight: 1, cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}>+</button>
+                    </span>
+                  )}
                   <button onClick={() => setNotifOpen((o) => !o)} title="Notifications" style={{ position: "relative", width: 40, height: 40, borderRadius: 10, border: "1px solid rgba(232,184,75,.35)", background: "rgba(15,8,32,.6)", color: "var(--gold-lt)", cursor: "pointer", fontSize: 18 }}>
                     🔔
                     {notifUnread > 0 && (
@@ -330,7 +335,9 @@ export function AppLayout() {
                   {registered && (
                     <div style={{ display: "flex", flexDirection: "column", gap: 5, alignItems: "flex-end" }}>
                       <span style={{ display: "inline-flex", alignItems: "center", gap: 5, font: "700 12px Inter", color: "#f2d493" }}><Icon src={ICONS.coin} alt="Gold" size={15} /> {gold.toLocaleString()}</span>
-                      <span style={{ display: "inline-flex", alignItems: "center", gap: 5, font: "700 12px Inter", color: "#ff9aa8" }}><Icon src={ICONS.gem} alt="Diamonds" size={15} /> {diamonds.toLocaleString()}</span>
+                      {diamondTopUp && (
+                        <span style={{ display: "inline-flex", alignItems: "center", gap: 5, font: "700 12px Inter", color: "#ff9aa8" }}><Icon src={ICONS.gem} alt="Diamonds" size={15} /> {diamonds.toLocaleString()}</span>
+                      )}
                     </div>
                   )}
                 </div>

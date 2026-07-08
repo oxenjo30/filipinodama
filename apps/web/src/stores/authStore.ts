@@ -7,7 +7,7 @@ import { api, ApiError, type Me } from "../lib/api";
  * boot, bootstrap() hydrates from the session cookie (or leaves me=null).
  */
 
-type Providers = { email: boolean; guest: boolean; google: boolean; facebook: boolean; emailDelivery: boolean };
+type Providers = { email: boolean; guest: boolean; google: boolean; facebook: boolean; emailDelivery: boolean; diamondTopUp: boolean };
 
 export type AuthStore = {
   me: Me | null;
@@ -34,7 +34,7 @@ export const useAuthStore = create<AuthStore>((set, get) => ({
   me: null,
   loading: false,
   ready: false,
-  providers: { email: true, guest: true, google: false, facebook: false, emailDelivery: false },
+  providers: { email: true, guest: true, google: false, facebook: false, emailDelivery: false, diamondTopUp: false },
   justRegistered: false,
 
   bootstrap: async () => {

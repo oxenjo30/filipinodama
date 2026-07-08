@@ -95,8 +95,30 @@ const QUESTS = [
   { id: "season-win50", scope: "seasonal", title: "Win 50 ranked matches", description: "Win 50 ranked matches this season", goal: 50, rewardGold: 5000 },
 ];
 
+/**
+ * Gold-only store conversion. Real-money diamond top-up is disabled for legal
+ * compliance, so every item must be buyable with earnable GOLD. Any item priced
+ * in diamonds is converted to gold at DIAMOND_TO_GOLD (1💎 = 10🪙): priceGold =
+ * priceDiamonds × rate, its salePrice scaled the same, and priceDiamonds cleared
+ * so the purchase path (which picks currency by "diamonds != null && gold ==
+ * null") charges gold. Applied at seed time so re-seeding reprices prod idempotently.
+ * When real-money top-up is reactivated later, restore diamond prices here.
+ */
+const DIAMOND_TO_GOLD = 10;
+function toGoldOnly<T extends { priceGold?: number | null; priceDiamonds?: number | null; salePrice?: number | null }>(it: T): T {
+  if (it.priceDiamonds == null) return it; // already gold-priced (or free)
+  const { priceDiamonds, salePrice, ...rest } = it as any;
+  return {
+    ...rest,
+    priceGold: priceDiamonds * DIAMOND_TO_GOLD,
+    priceDiamonds: null,
+    ...(salePrice != null ? { salePrice: salePrice * DIAMOND_TO_GOLD } : { salePrice: null }),
+  } as T;
+}
+
 async function main() {
-  for (const it of STORE) {
+  for (const raw of STORE) {
+    const it = toGoldOnly(raw as any);
     await prisma.storeItem.upsert({ where: { id: it.id }, update: it as any, create: it as any });
   }
   for (const q of QUESTS) {
