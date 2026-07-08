@@ -291,17 +291,11 @@ export function GamePage({ mode = "ai" }: { mode?: "ai" | "local" }) {
           )}
         </div>
 
-        <Divider style={{ width: "100%" }}>More</Divider>
-
-        <Button variant="red" block onClick={() => goOnline("/play/online?mode=casual")}>
-          🌐 Play Online
-        </Button>
-        <Button variant="purple" block onClick={() => navigate("/play/ai")}>
-          🤖 VS AI
-        </Button>
-        <Button variant="purple" block onClick={() => (isLocal ? rematch() : navigate("/play/local"))}>
-          👥 Local Match
-        </Button>
+        {/* The mode-switching buttons that used to live here (Play Online / VS AI
+            / Local Match) were removed: mid-game they only abandon the current
+            match, and on mobile they crowded the screen above the board. The
+            "Explore Game Modes" grid below the board already covers "play something
+            else" intentionally, once you've finished. */}
         <div
           style={{
             display: "flex",
