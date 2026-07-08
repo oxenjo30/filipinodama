@@ -55,6 +55,8 @@ button { font-family: inherit; }
 .navitem:hover { background: var(--panel-2); }
 .navitem.on { background: rgba(232, 184, 75, 0.13); color: var(--gold-lt); }
 .navitem .badge { margin-left: auto; font: 700 9px var(--mono); letter-spacing: .5px; border-radius: 100px; padding: 2px 7px; }
+.navitem .ndot { width: 7px; height: 7px; border-radius: 50%; flex: none; }
+.navitem .count { margin-left: auto; font: 700 10px var(--mono); background: rgba(194,73,90,.9); color: #fff; border-radius: 100px; padding: 1px 7px; }
 .sidebar .foot { margin-top: auto; padding: 12px 8px; border-top: 1px solid var(--edge); font: 600 10px var(--sans); color: var(--dim-2); line-height: 1.6; }
 
 .body { flex: 1; min-width: 0; display: flex; flex-direction: column; }

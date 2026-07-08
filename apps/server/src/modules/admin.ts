@@ -42,6 +42,46 @@ function untilFrom(durationHours?: number): Date {
 }
 
 export async function adminRoutes(app: FastifyInstance) {
+  // ── Overview KPIs — only REAL, computable metrics (no fabricated analytics).
+  // DAU/revenue/etc. need an analytics pipeline (Phase 2); we return what the DB
+  // can honestly answer now: player counts, live economy faucet/sink, matches/day.
+  app.get("/admin/overview", { preHandler: requireAdmin("SUPPORT") }, async () => {
+    const now = new Date();
+    const dayMs = 86_400_000;
+    const since7 = new Date(now.getTime() - 7 * dayMs);
+
+    const [totalPlayers, activePlayers, matchesTotal, matches7d] = await Promise.all([
+      prisma.user.count({ where: { isBot: false, isGuest: false, deletedAt: null } }),
+      prisma.user.count({ where: { isBot: false, deletedAt: null, lastSeenAt: { gte: since7 } } }),
+      prisma.match.count(),
+      prisma.match.findMany({ where: { startedAt: { gte: since7 } }, select: { startedAt: true } }),
+    ]);
+
+    // Gold faucet vs sink over the last 7d, straight from the ledger.
+    const goldRows = await prisma.ledgerEntry.findMany({
+      where: { currency: "GOLD", createdAt: { gte: since7 } },
+      select: { amount: true },
+    });
+    let faucet = 0, sink = 0;
+    for (const r of goldRows) { if (r.amount > 0) faucet += r.amount; else sink += -r.amount; }
+    const faucetPct = faucet + sink > 0 ? Math.round((faucet / (faucet + sink)) * 100) : 50;
+
+    // Matches per day (last 7 days, oldest→newest) by UTC day.
+    const buckets: { day: string; count: number }[] = [];
+    for (let i = 6; i >= 0; i--) {
+      const d = new Date(now.getTime() - i * dayMs);
+      const key = `${d.getUTCFullYear()}-${d.getUTCMonth()}-${d.getUTCDate()}`;
+      const label = d.toLocaleDateString("en-US", { weekday: "short" });
+      const count = matches7d.filter((m) => {
+        const md = m.startedAt;
+        return `${md.getUTCFullYear()}-${md.getUTCMonth()}-${md.getUTCDate()}` === key;
+      }).length;
+      buckets.push({ day: label, count });
+    }
+
+    return ok({ totalPlayers, activePlayers, matchesTotal, faucet, sink, faucetPct, matchesPerDay: buckets });
+  });
+
   // ── 1.2 Who am I (drives client RBAC) ──────────────────────────────────────
   app.get("/admin/me", { preHandler: requireAdmin("SUPPORT") }, async (req) => {
     const u = await prisma.user.findUnique({
