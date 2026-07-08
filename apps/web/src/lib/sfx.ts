@@ -26,13 +26,21 @@ function audio(): AudioContext | null {
     } catch {
       return null;
     }
-    // Master bus with a subtle stereo "hall": dry + two short feedback delays.
+    // Master bus: gain → limiter → out. A DynamicsCompressor acting as a limiter
+    // lets us push levels HARD (punchy, arcade-loud) without clipping/distortion.
     master = ctx.createGain();
-    master.gain.value = 0.9;
-    master.connect(ctx.destination);
+    master.gain.value = 2.4; // hot — the limiter tames peaks
+    const limiter = ctx.createDynamicsCompressor();
+    limiter.threshold.value = -10;
+    limiter.knee.value = 6;
+    limiter.ratio.value = 12;
+    limiter.attack.value = 0.002;
+    limiter.release.value = 0.12;
+    master.connect(limiter);
+    limiter.connect(ctx.destination);
 
     hallIn = ctx.createGain();
-    hallIn.gain.value = 0.28; // send level into the hall
+    hallIn.gain.value = 0.22; // send level into the hall (less wet = punchier)
     const d1 = ctx.createDelay();
     d1.delayTime.value = 0.09;
     const d2 = ctx.createDelay();
@@ -100,7 +108,7 @@ function note(ac: AudioContext, o: { freq: number; type?: OscillatorType; start?
   osc.frequency.setValueAtTime(freq, t);
   if (glideTo) osc.frequency.exponentialRampToValueAtTime(Math.max(1, glideTo), t + dur);
   g.gain.setValueAtTime(0.0001, t);
-  g.gain.exponentialRampToValueAtTime(gain, t + 0.01);
+  g.gain.exponentialRampToValueAtTime(gain, t + 0.004); // sharp attack = punch
   g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
   osc.connect(g);
   if (master) g.connect(master);
@@ -136,47 +144,47 @@ export function playSfx(name: Sfx) {
   try {
     switch (name) {
       case "select":
-        // tiny, dry tick when you pick up a piece
-        note(ac, { freq: 660, type: "sine", dur: 0.05, gain: 0.05, hall: false });
+        // crisp, snappy pick-up tick
+        note(ac, { freq: 700, type: "square", dur: 0.05, gain: 0.28, hall: false });
         break;
       case "move":
-        // warm wooden tap — two quick layered blips a fifth apart
-        note(ac, { freq: 300, type: "triangle", dur: 0.10, gain: 0.11 });
-        note(ac, { freq: 450, type: "sine", start: 0.005, dur: 0.08, gain: 0.06 });
+        // punchy "tick-tock" snap — bright square blip over a woody body
+        note(ac, { freq: 520, type: "square", dur: 0.07, gain: 0.42, hall: false });
+        note(ac, { freq: 260, type: "triangle", dur: 0.12, gain: 0.4, glideTo: 200 });
         break;
       case "capture":
-        // satisfying thump: noise body + a low pitched-down tone + a bright click
-        thunk(ac, { dur: 0.2, cutoff: 1200, gain: 0.3 });
-        note(ac, { freq: 180, type: "square", dur: 0.16, gain: 0.11, glideTo: 70 });
-        note(ac, { freq: 900, type: "triangle", start: 0.01, dur: 0.06, gain: 0.07, hall: false });
+        // BIG impact: punchy noise smack + a deep sub boom + a bright metallic clank
+        thunk(ac, { dur: 0.26, cutoff: 2200, gain: 0.85 });
+        note(ac, { freq: 220, type: "sawtooth", dur: 0.22, gain: 0.55, glideTo: 55 }); // sub drop
+        note(ac, { freq: 1400, type: "square", start: 0.0, dur: 0.07, gain: 0.3, hall: false }); // clank
         break;
       case "king":
-        // sparkling ascending arpeggio (C-E-G-C) with a shimmer on top
-        note(ac, { freq: 523, type: "triangle", start: 0.0, dur: 0.16, gain: 0.13 });
-        note(ac, { freq: 659, type: "triangle", start: 0.08, dur: 0.16, gain: 0.13 });
-        note(ac, { freq: 784, type: "triangle", start: 0.16, dur: 0.18, gain: 0.13 });
-        note(ac, { freq: 1047, type: "sine", start: 0.24, dur: 0.34, gain: 0.14 });
-        note(ac, { freq: 1568, type: "sine", start: 0.26, dur: 0.30, gain: 0.05 }); // shimmer
+        // triumphant power arpeggio — sawtooth stabs (C-E-G-C) + a shimmer
+        note(ac, { freq: 523, type: "sawtooth", start: 0.0, dur: 0.14, gain: 0.4 });
+        note(ac, { freq: 659, type: "sawtooth", start: 0.07, dur: 0.14, gain: 0.4 });
+        note(ac, { freq: 784, type: "sawtooth", start: 0.14, dur: 0.16, gain: 0.42 });
+        note(ac, { freq: 1047, type: "square", start: 0.22, dur: 0.34, gain: 0.44 });
+        note(ac, { freq: 1568, type: "sine", start: 0.24, dur: 0.30, gain: 0.16 }); // shimmer
         break;
       case "win":
-        // full major fanfare (C-E-G-C-E) with a held root underneath
-        note(ac, { freq: 262, type: "sine", start: 0.0, dur: 0.7, gain: 0.06 }); // pad root
-        note(ac, { freq: 523, type: "triangle", start: 0.0, dur: 0.16, gain: 0.14 });
-        note(ac, { freq: 659, type: "triangle", start: 0.12, dur: 0.16, gain: 0.14 });
-        note(ac, { freq: 784, type: "triangle", start: 0.24, dur: 0.16, gain: 0.14 });
-        note(ac, { freq: 1047, type: "triangle", start: 0.36, dur: 0.20, gain: 0.15 });
-        note(ac, { freq: 1319, type: "sine", start: 0.5, dur: 0.4, gain: 0.12 });
+        // BIG victory fanfare (C-E-G-C-E) — sawtooth brass over a fat held root
+        note(ac, { freq: 131, type: "sawtooth", start: 0.0, dur: 0.9, gain: 0.24 }); // fat bass root
+        note(ac, { freq: 523, type: "sawtooth", start: 0.0, dur: 0.16, gain: 0.42 });
+        note(ac, { freq: 659, type: "sawtooth", start: 0.12, dur: 0.16, gain: 0.42 });
+        note(ac, { freq: 784, type: "sawtooth", start: 0.24, dur: 0.16, gain: 0.42 });
+        note(ac, { freq: 1047, type: "square", start: 0.36, dur: 0.22, gain: 0.44 });
+        note(ac, { freq: 1319, type: "square", start: 0.5, dur: 0.5, gain: 0.4 });
         break;
       case "lose":
-        // gentle descending minor sigh (not harsh)
-        note(ac, { freq: 415, type: "sine", start: 0.0, dur: 0.3, gain: 0.11, glideTo: 311 });
-        note(ac, { freq: 311, type: "sine", start: 0.26, dur: 0.42, gain: 0.11, glideTo: 233 });
-        note(ac, { freq: 155, type: "triangle", start: 0.1, dur: 0.6, gain: 0.05 });
+        // dramatic descending "defeat" — heavy sawtooth downward slides
+        note(ac, { freq: 392, type: "sawtooth", start: 0.0, dur: 0.32, gain: 0.4, glideTo: 262 });
+        note(ac, { freq: 262, type: "sawtooth", start: 0.28, dur: 0.5, gain: 0.4, glideTo: 130 });
+        note(ac, { freq: 98, type: "square", start: 0.1, dur: 0.7, gain: 0.28 }); // ominous low
         break;
       case "draw":
-        // neutral two-note resolve
-        note(ac, { freq: 440, type: "sine", start: 0.0, dur: 0.2, gain: 0.12 });
-        note(ac, { freq: 587, type: "sine", start: 0.2, dur: 0.34, gain: 0.12 });
+        // firm neutral two-note stab
+        note(ac, { freq: 440, type: "square", start: 0.0, dur: 0.2, gain: 0.38 });
+        note(ac, { freq: 587, type: "square", start: 0.2, dur: 0.36, gain: 0.4 });
         break;
     }
   } catch {
@@ -220,7 +228,7 @@ export function startLoadingAmbience(): () => void {
       // an automation ramp on the same param.
       const out = ac.createGain();
       out.gain.setValueAtTime(0.0001, now);
-      out.gain.exponentialRampToValueAtTime(0.09, now + 0.6); // quick, audible fade-in
+      out.gain.exponentialRampToValueAtTime(0.18, now + 0.6); // louder, audible fade-in
       out.connect(ac.destination);
 
       const oscs: OscillatorNode[] = [];
