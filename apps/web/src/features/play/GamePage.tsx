@@ -333,11 +333,12 @@ export function GamePage({ mode = "ai" }: { mode?: "ai" | "local" }) {
             thinking={aiThinking}
           />
         </div>
-        {/* Transient status banner slot. These states are mutually exclusive
-            (local turn / must-capture / AI-thinking), so we reserve a FIXED-height
-            row for whichever is active — the banner appears/disappears WITHOUT
-            shifting the board up and down (that jitter was the annoyance). */}
-        <div style={{ minHeight: 42, display: "flex", alignItems: "center", justifyContent: "center", width: "100%" }}>
+        {/* Transient status banner slot. The must-capture / AI-thinking / turn
+            banners appear on your turn and vanish on the AI's — which was jerking
+            the board up and down. We reserve a FIXED height here (tall enough for
+            a two-line banner) so whichever banner shows sits INSIDE the reserved
+            space and the board never moves. */}
+        <div style={{ minHeight: 52, display: "flex", alignItems: "center", justifyContent: "center", width: "100%" }}>
           {/* must-capture takes priority over the plain turn banner, so at most one
               banner ever shows in this fixed-height slot. */}
           {isLocal && !result && !(mustCapture && humanTurn) && (

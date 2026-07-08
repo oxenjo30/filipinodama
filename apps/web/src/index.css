@@ -4,6 +4,10 @@
 
 :root{--gold:#E8B84B;--gold-lt:#F5D783;--gold-dp:#C99A2E;--ink:#c9b8e0;--ink2:#9a86bd;--red:#A0303A;--blue:#2E6BC6;--green:#2f8f5b;--purple:#4a2d7a;--text:#efe7fb;--bg:#160b28}
 *{box-sizing:border-box}
+/* Always reserve the vertical scrollbar gutter so the page never shifts left/right
+   (and content never jumps) when a scrollbar appears/disappears as content height
+   changes mid-game — a common source of "the window keeps moving" jitter. */
+html{scrollbar-gutter:stable}
 body{margin:0;background:#160b28;color:#efe7fb;font-family:Inter,system-ui,sans-serif;-webkit-font-smoothing:antialiased}
 button{font-family:inherit}
 ::selection{background:rgba(232,184,75,.3)}
