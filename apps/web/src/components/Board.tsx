@@ -1,4 +1,4 @@
-import type { CSSProperties } from "react";
+import { useEffect, useRef, useState, type CSSProperties } from "react";
 import type { GameState, Square, Piece as PieceModel } from "@dama/shared";
 import { isDark } from "@dama/shared";
 import { boardTexture, type BoardTextureKey, type PieceSkin } from "../lib/assets";
@@ -133,6 +133,25 @@ export function Board({
     (color === "red" ? redSkin : blueSkin) ?? skin;
   const grid = toGrid(state.pieces);
   const turn = state.turn;
+
+  // ── Capture-fade tracking ──
+  // Pieces slide between squares (overlay below, keyed by piece.id). A CAPTURED
+  // piece is removed from state.pieces, so it would just vanish. To animate it
+  // out, we diff against the previous piece set: any id that disappeared is kept
+  // as a fading "ghost" (shrink + fade) for a beat, then dropped.
+  const prevRef = useRef<PieceModel[]>(state.pieces);
+  const [ghosts, setGhosts] = useState<PieceModel[]>([]);
+  useEffect(() => {
+    const nowIds = new Set(state.pieces.map((p) => p.id));
+    const removed = prevRef.current.filter((p) => !nowIds.has(p.id));
+    prevRef.current = state.pieces;
+    if (removed.length) {
+      setGhosts(removed);
+      const t = window.setTimeout(() => setGhosts([]), 320);
+      return () => window.clearTimeout(t);
+    }
+    return undefined;
+  }, [state.pieces]);
   // Only render the image board for a KNOWN texture key. An unknown/invalid
   // boardTheme falls back to the marble/CSS board rather than a broken image.
   // Defensive: keeps the board visible no matter what value reaches it.
@@ -188,19 +207,10 @@ export function Board({
           />,
         );
       }
-      // piece
-      if (p) {
-        kids.push(
-          <Piece
-            key="piece"
-            color={p.color}
-            king={p.king}
-            skin={skinFor(p.color)}
-            selected={isSel}
-            glow={glow}
-          />,
-        );
-      }
+      // NB: pieces are NOT rendered inside cells anymore — they live in an
+      // absolutely-positioned overlay (below) keyed by piece.id so they SLIDE
+      // between squares and captured pieces can fade out. Cells only draw the
+      // square background + move/capture highlights + handle clicks.
 
       // Squares are always drawn by US (perfect 8×8). For image themes we use the
       // theme's own tints (the image behind is just the frame); for marble the
@@ -234,9 +244,77 @@ export function Board({
     }
   }
 
+  // ── Pieces overlay ── absolutely-positioned pieces keyed by piece.id, on top of
+  // the square grid. Each is placed by its square (as a %) and TRANSITIONS its
+  // position, so a move SLIDES the piece. Fading ghosts (captured pieces) shrink
+  // + fade out. `flip` mirrors the coordinates so the board can be viewed from
+  // either side. One cell = 12.5% of the board.
+  const cellPct = 100 / 8;
+  const posOf = (sq: Square) => {
+    const rr = flip ? 7 - sq.r : sq.r;
+    const cc = flip ? 7 - sq.c : sq.c;
+    return { left: `${cc * cellPct}%`, top: `${rr * cellPct}%` };
+  };
+  const selectedId = selected ? grid[selected.r]?.[selected.c]?.id : undefined;
+  const glowIds = new Set(
+    state.pieces
+      .filter((p) => mustCapture && p.color === turn && canCapture(grid, p.square.r, p.square.c, turn))
+      .map((p) => p.id),
+  );
+
+  const piecesOverlay = (
+    <div style={{ position: "absolute", inset: 0, pointerEvents: "none" }}>
+      {state.pieces.map((p) => {
+        const { left, top } = posOf(p.square);
+        return (
+          <div
+            key={p.id}
+            style={{
+              position: "absolute",
+              left,
+              top,
+              width: `${cellPct}%`,
+              height: `${cellPct}%`,
+              transition: "left .26s cubic-bezier(.4,.9,.3,1), top .26s cubic-bezier(.4,.9,.3,1)",
+              willChange: "left, top",
+            }}
+          >
+            <Piece
+              color={p.color}
+              king={p.king}
+              skin={skinFor(p.color)}
+              selected={p.id === selectedId}
+              glow={glowIds.has(p.id)}
+            />
+          </div>
+        );
+      })}
+      {/* captured pieces fading out where they stood */}
+      {ghosts.map((p) => {
+        const { left, top } = posOf(p.square);
+        return (
+          <div
+            key={`ghost-${p.id}`}
+            style={{
+              position: "absolute",
+              left,
+              top,
+              width: `${cellPct}%`,
+              height: `${cellPct}%`,
+              animation: "fdcapture .3s ease-out forwards",
+            }}
+          >
+            <Piece color={p.color} king={p.king} skin={skinFor(p.color)} />
+          </div>
+        );
+      })}
+    </div>
+  );
+
   const gridEl = (
     <div
       style={{
+        position: "relative",
         display: "grid",
         gridTemplateColumns: "repeat(8,1fr)",
         gridTemplateRows: useImage ? "repeat(8,1fr)" : undefined,
@@ -251,6 +329,7 @@ export function Board({
       }}
     >
       {cells}
+      {piecesOverlay}
     </div>
   );
 

@@ -21,7 +21,10 @@ export const AI_COLOR: PieceColor = "blue";
 export type GameMode = "ai" | "local";
 
 /** Delay (ms) before the AI plays its move, so the "thinking" state is visible. */
-const AI_THINK_MS = 450;
+// AI reply delay. Long enough for the human's move to visibly SLIDE and any
+// captured piece to fade out (~320ms board animation) plus a short beat so the
+// capture is clearly seen before the AI responds.
+const AI_THINK_MS = 700;
 
 type GameStatus = "playing" | "thinking" | "over";
 
