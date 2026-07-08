@@ -30,13 +30,13 @@ const LEGAL_DATA: Record<LegalKey, LegalDoc> = {
     title: "Privacy Policy",
     updated: UPDATED,
     intro:
-      'This Privacy Policy explains what information Filipino Dama Royal ("we", "the app") collects, why we collect it, and the choices you have. It is written to comply with the Apple App Store Review Guidelines, the Google Play Developer Program Policies and User Data policy, and applicable laws including the GDPR and the CCPA.',
+      'This Privacy Policy explains what information FilipinoDama Royal ("we", "the game") collects, why we collect it, and the choices you have. FilipinoDama Royal is a web-based game played in your browser. This policy is written to comply with the Philippine Data Privacy Act of 2012 and, where applicable to visitors from those regions, the GDPR and the CCPA.',
     sections: [
       {
         no: "1",
         heading: "Information We Collect",
         paras: [
-          "Account data you provide: display name, player tag, avatar selection, and (if you choose social sign-in) the email address associated with your Apple or Google account.",
+          "Account data you provide: display name, player tag, avatar selection, and (if you choose Google sign-in) the email address associated with your Google account.",
           "Gameplay data: match results, ratings, trophies, lessons completed, guild membership, and in-app purchases. Chat messages sent to friends or guilds are processed to deliver them and to enforce our Community Guidelines.",
           "Device and diagnostic data: device model, operating system version, coarse region, crash logs, and performance metrics. This data is used to keep the app stable and secure.",
         ],
@@ -45,28 +45,28 @@ const LEGAL_DATA: Record<LegalKey, LegalDoc> = {
         no: "2",
         heading: "How We Use Information",
         paras: [
-          "To operate core features — matchmaking, leaderboards, guilds, friends, chat, and lessons; to process purchases through the Apple App Store or Google Play; to prevent cheating, fraud, and abuse; and to improve the game. We do not sell your personal information.",
+          "To operate core features — matchmaking, leaderboards, guilds, friends, chat, and lessons; to process purchases through our payment provider (PayMongo); to prevent cheating, fraud, and abuse; and to improve the game. We do not sell your personal information.",
         ],
       },
       {
         no: "3",
         heading: "Advertising & Analytics",
         paras: [
-          "We use privacy-focused analytics to understand feature usage in aggregate. On iOS we request permission through App Tracking Transparency before any tracking that would require it, and we honour your choice. Any advertising identifiers are used only with your consent where the law requires it.",
+          "We use privacy-focused analytics to understand feature usage in aggregate. We do not use third-party advertising trackers, and we honour cookie/consent choices you make on the site.",
         ],
       },
       {
         no: "4",
         heading: "Children’s Privacy",
         paras: [
-          "The app is rated for a general audience. We do not knowingly collect personal information from children under 13 (or the minimum age in your country) without verifiable parental consent, consistent with COPPA and Google Play’s Families policy. If you believe a child has provided us data, contact us and we will delete it.",
+          "The game is intended for a general audience. We do not knowingly collect personal information from children under 13 (or the minimum age in your country) without verifiable parental consent, consistent with COPPA and the Philippine Data Privacy Act. If you believe a child has provided us data, contact us and we will delete it.",
         ],
       },
       {
         no: "5",
         heading: "Data Sharing",
         paras: [
-          "We share data only with service providers who help us run the game (cloud hosting, crash reporting, payment processing by Apple/Google) under contracts that protect your data, or when required by law. Your public profile (name, tag, avatar, rating) is visible to other players.",
+          "We share data only with service providers who help us run the game (cloud hosting, email delivery, and payment processing by PayMongo) under contracts that protect your data, or when required by law. Your public profile (name, tag, avatar, rating) is visible to other players.",
         ],
       },
       {
@@ -97,13 +97,13 @@ const LEGAL_DATA: Record<LegalKey, LegalDoc> = {
     title: "Terms of Service",
     updated: UPDATED,
     intro:
-      'These Terms of Service ("Terms") govern your use of Filipino Dama Royal. By downloading, accessing, or playing the game you agree to these Terms, the Apple Media Services / Google Play Terms as applicable, and our Privacy Policy. If you do not agree, do not use the app.',
+      'These Terms of Service ("Terms") govern your use of FilipinoDama Royal, a web-based game. By accessing or playing the game you agree to these Terms and our Privacy Policy. If you do not agree, do not use the game.',
     sections: [
       {
         no: "1",
         heading: "Eligibility",
         paras: [
-          "You must be old enough to form a binding contract in your country and meet the minimum age of the app store you downloaded from. If you are a minor, you may use the app only with the consent and supervision of a parent or legal guardian.",
+          "You must be old enough to form a binding contract in your country. If you are a minor, you may use the game only with the consent and supervision of a parent or legal guardian.",
         ],
       },
       {
@@ -124,8 +124,9 @@ const LEGAL_DATA: Record<LegalKey, LegalDoc> = {
         no: "4",
         heading: "Virtual Items & Purchases",
         paras: [
-          "The app may offer virtual goods and currency (e.g. trophies, cosmetics). Virtual items have no real-world monetary value, are licensed not sold, and are non-transferable and non-refundable except as required by law or the store’s policies.",
-          "All purchases are processed by the Apple App Store or Google Play and are subject to their payment terms. Refund requests are handled according to Apple’s and Google’s refund policies.",
+          "The game offers virtual goods and currency (e.g. Diamonds, cosmetics). Virtual items have no real-world monetary value, are licensed to you (not sold), and are non-transferable and non-refundable except as required by applicable law.",
+          "Purchases are made on our website and processed by our third-party payment provider, PayMongo, using the payment methods it supports (such as GCash, Maya, and cards). We do not store your full card details. Diamonds are credited to your account after the payment is confirmed; if a payment is confirmed but Diamonds are not credited, contact us and we will resolve it.",
+          "Because Diamonds are delivered digitally and immediately, all sales are final and non-refundable once the currency is credited, except where a refund is required by law. Payment disputes and chargebacks are handled in accordance with PayMongo’s policies and applicable Philippine consumer law.",
         ],
       },
       {
@@ -158,9 +159,9 @@ const LEGAL_DATA: Record<LegalKey, LegalDoc> = {
       },
       {
         no: "9",
-        heading: "Apple & Google Notice",
+        heading: "Governing Law",
         paras: [
-          "If you downloaded from the Apple App Store, Apple is not a party to these Terms and is not responsible for the app; Apple and its subsidiaries are third-party beneficiaries entitled to enforce these Terms against you. Similar terms apply to Google for downloads from Google Play.",
+          "These Terms are governed by the laws of the Republic of the Philippines, without regard to conflict-of-law rules. Any dispute arising from these Terms or your use of the game will be subject to the exclusive jurisdiction of the courts of the Philippines, except where mandatory consumer-protection law provides otherwise.",
         ],
       },
     ],
@@ -214,7 +215,7 @@ const LEGAL_DATA: Record<LegalKey, LegalDoc> = {
     title: "Data & Account Controls",
     updated: UPDATED,
     intro:
-      "This section summarizes what data the app handles and how to exercise your controls — including account and data deletion, which Apple and Google require us to make easy to find and use.",
+      "This section summarizes what data the game handles and how to exercise your controls — including account and data deletion, which we make easy to find and use.",
     sections: [
       {
         no: "1",
@@ -334,10 +335,10 @@ export function LegalLayout({ active }: { active: LegalKey }) {
               marginBottom: 5,
             }}
           >
-            Store Compliant
+            Privacy First
           </div>
           <div style={{ font: "500 11px/1.5 Inter", color: "var(--ink2)" }}>
-            Meets Apple App Store Review Guidelines and Google Play Developer Program Policies.
+            Built to respect your data — compliant with the Philippine Data Privacy Act, GDPR, and CCPA.
           </div>
         </div>
       </div>

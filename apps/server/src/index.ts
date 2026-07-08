@@ -28,6 +28,17 @@ export { prisma };
 async function main() {
   const app = Fastify({ logger: true });
 
+  // Global safety net: a floating promise rejection anywhere (e.g. a fired-and-
+  // forgotten socket handler hitting a transient DB fault) must NOT terminate the
+  // process on Node's default --unhandled-rejections=throw and drop every live
+  // match/socket. Log it and keep serving.
+  process.on("unhandledRejection", (reason) => {
+    app.log.error({ reason }, "unhandledRejection (non-fatal)");
+  });
+  process.on("uncaughtException", (err) => {
+    app.log.error({ err }, "uncaughtException (non-fatal)");
+  });
+
   // Security headers. This is a JSON API (no first-party HTML), so the default
   // CSP is unnecessary and would only complicate the separately-served SPA;
   // HSTS is enabled only in production (behind Railway TLS).

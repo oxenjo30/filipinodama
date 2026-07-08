@@ -36,11 +36,17 @@ async function friendIds(userId: string): Promise<string[]> {
   return rows.map((f) => (f.aId === userId ? f.bId : f.aId));
 }
 
-/** Tell a user's online friends that their presence changed. */
+/** Tell a user's online friends that their presence changed. Best-effort: a DB
+ *  failure must never bubble up — this is fired-and-forgotten from connect and
+ *  disconnect, so an unhandled rejection here would crash the whole process. */
 async function broadcastToFriends(io: IOServer, userId: string, status: "online" | "offline") {
-  const ids = await friendIds(userId);
-  const payload = { userId, status, at: Date.now() };
-  for (const fid of ids) io.to(`presence:${fid}`).emit(EV.presenceUpdate, payload);
+  try {
+    const ids = await friendIds(userId);
+    const payload = { userId, status, at: Date.now() };
+    for (const fid of ids) io.to(`presence:${fid}`).emit(EV.presenceUpdate, payload);
+  } catch {
+    /* presence is best-effort; a friend-lookup failure just means no broadcast */
+  }
 }
 
 export function registerPresence(io: IOServer, socket: Socket) {

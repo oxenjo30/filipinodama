@@ -65,6 +65,13 @@ export type OnlineStore = {
   end: EndInfo;
   error: string | null;
 
+  /**
+   * Transient flag: the socket dropped mid-match and we're trying to reconnect.
+   * Purely a UI hint (drives the "reconnecting…" banner); the authoritative
+   * state is untouched. Cleared on reconnect/resync and on the next matchState.
+   */
+  connectionLost: boolean;
+
   /** In-match quick chat log (messages + emotes), live for the current match. */
   chat: ChatMsg[];
   /** Rematch UI state, driven by the rematch socket events. */
@@ -142,8 +149,31 @@ export const useOnlineStore = create<OnlineStore>((set, get) => {
         state: p.state,
         myColor: p.yourColor ?? st.myColor,
         selected: null,
+        // A fresh authoritative state means we're back in sync — drop the banner.
+        connectionLost: false,
         ...derive(p.state, null, p.yourColor ?? st.myColor),
       }));
+    });
+
+    // ── Mid-match reconnect handling ───────────────────────────────────────
+    // Mobile sockets drop routinely. On disconnect, if a match is in progress,
+    // raise a transient banner (connectionLost) without touching the board —
+    // the authoritative state stays put so nothing freezes visibly beyond the
+    // hint. On reconnect, re-attach to the current match by re-emitting
+    // matchResync; the resulting matchState clears the flag.
+    s.on("disconnect", () => {
+      const st = useOnlineStore.getState();
+      if (st.matchId && (st.status === "playing" || st.status === "found")) {
+        set({ connectionLost: true });
+      }
+    });
+
+    s.io.on("reconnect", () => {
+      const st = useOnlineStore.getState();
+      if (st.matchId) {
+        s.emit(EV.matchResync, { matchId: st.matchId });
+      }
+      set({ connectionLost: false });
     });
 
     s.on(EV.matchMoved, (p: { matchId: string; move: Move; state: GameState }) => {
@@ -262,6 +292,7 @@ export const useOnlineStore = create<OnlineStore>((set, get) => {
     mustCapture: false,
     end: null,
     error: null,
+    connectionLost: false,
     chat: [],
     offeredByMe: false,
     offeredByOpponent: false,
@@ -340,6 +371,7 @@ export const useOnlineStore = create<OnlineStore>((set, get) => {
         mustCapture: false,
         end: null,
         error: null,
+        connectionLost: false,
         chat: [],
         offeredByMe: false,
         offeredByOpponent: false,

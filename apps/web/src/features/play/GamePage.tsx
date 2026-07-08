@@ -36,7 +36,6 @@ const EXPLORE_MODES = [
   { title: "Classic Mode", short: "Timeless fun", border: "rgba(60,110,200,.55)", btn: "blue", icon: "mc-classic.png" },
   { title: "Ranked Mode", short: "Prove your skill", border: "rgba(180,60,70,.55)", btn: "red", icon: "mc-ranked.png" },
   { title: "Play vs AI", short: "Beat the bot", border: "rgba(50,150,100,.55)", btn: "green", icon: "mc-training.png" },
-  { title: "Kingdom Mode", short: "Conquer & win", border: "rgba(140,90,210,.55)", btn: "purple", icon: "mc-kingdom.png" },
 ] as const;
 
 /** Board square → algebraic coordinate (col letter + row number, 8×8). */
@@ -170,9 +169,8 @@ export function GamePage({ mode = "ai" }: { mode?: "ai" | "local" }) {
 
   // "Explore Game Modes" cards → real destinations where built.
   function onMode(title: string) {
-    if (title === "Play vs AI" || title === "Classic Mode") navigate("/play/ai");
-    else if (title === "Ranked Mode") goOnline("/play/online?mode=ranked", true);
-    else showToast("Kingdom Mode is coming soon.");
+    if (title === "Ranked Mode") goOnline("/play/online?mode=ranked", true);
+    else navigate("/play/ai"); // Classic Mode / Play vs AI
   }
 
   // Player names for the two seats. Local: Player 1 (red) vs Player 2 (blue).

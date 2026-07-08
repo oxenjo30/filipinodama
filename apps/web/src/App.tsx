@@ -5,7 +5,6 @@ import { HomePage } from "./features/home/HomePage";
 import { PlayHubPage } from "./features/play/PlayHubPage";
 import { AiSetupPage } from "./features/play/AiSetupPage";
 import { GamePage } from "./features/play/GamePage";
-import { ComingSoon } from "./features/shared/ComingSoon";
 import { NotFoundPage } from "./features/shared/NotFoundPage";
 import { FriendsPage } from "./features/friends/FriendsPage";
 import { ProfilePage } from "./features/profile/ProfilePage";
@@ -114,7 +113,6 @@ export function App() {
           <Route path="/contact" element={<ContactPage />} />
           <Route path="/blog" element={<BlogPage />} />
           <Route path="/blog/:slug" element={<ArticlePage />} />
-          <Route path="/matchmaking" element={<ComingSoon title="Matchmaking" />} />
 
           {/* ── catch-all ── */}
           <Route path="*" element={<NotFoundPage />} />

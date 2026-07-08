@@ -1,5 +1,5 @@
-import { useEffect, useMemo } from "react";
-import { Link, useParams } from "react-router-dom";
+import { useCallback, useEffect, useMemo, type MouseEvent } from "react";
+import { Link, useNavigate, useParams } from "react-router-dom";
 import { articles, allBySlug, isPublished, formatDate, type BlogCategory } from "./blog";
 
 /**
@@ -62,8 +62,28 @@ function setMetaDescription(content: string) {
   el.setAttribute("content", content);
 }
 
+/**
+ * Rewrite the article body's internal links at render time.
+ *
+ * The authored HTML links to flat filenames (e.g. href="some-slug.html"), but
+ * the SPA route is /blog/:slug — so every bare *.html link would 404. Strip the
+ * ".html" and prefix "/blog/". We only touch *relative* *.html hrefs: any href
+ * that is already absolute (starts with http, //, or /) or is an anchor/mailto
+ * is left alone, so "/play/" style links and external links are untouched here.
+ */
+function rewriteBodyLinks(html: string): string {
+  return html.replace(/href="([^"]+?)\.html"/g, (match, path: string) => {
+    // Leave absolute/protocol/anchor/mailto links alone — only rewrite bare slugs.
+    if (/^([a-z][\w+.-]*:|\/\/|\/|#)/i.test(path)) return match;
+    // Strip any leading "./" and a trailing slash from the slug, if present.
+    const slug = path.replace(/^\.\//, "");
+    return `href="/blog/${slug}"`;
+  });
+}
+
 export function ArticlePage() {
   const { slug } = useParams<{ slug: string }>();
+  const navigate = useNavigate();
   // Look up across ALL articles (published + future) so a future-dated slug is
   // "found" — we then gate it below rather than 404'ing it.
   const found = slug ? allBySlug[slug] : undefined;
@@ -78,6 +98,35 @@ export function ArticlePage() {
     document.title = `${article.title} — FilipinoDama`;
     setMetaDescription(article.description);
   }, [article]);
+
+  // Body HTML with internal *.html links rewritten to /blog/<slug> routes.
+  const bodyHtml = useMemo(
+    () => (article ? rewriteBodyLinks(article.body) : ""),
+    [article],
+  );
+
+  // Intercept clicks on in-app links inside the article body so they navigate
+  // via react-router (SPA) instead of triggering a full page reload. Only
+  // plain left-clicks on same-origin in-app hrefs (/blog/…, /play, /…) are
+  // hijacked; modified clicks (new tab), external links, and anchors fall
+  // through to default browser behaviour.
+  const onBodyClick = useCallback(
+    (e: MouseEvent<HTMLElement>) => {
+      if (e.defaultPrevented) return;
+      if (e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+      const anchor = (e.target as HTMLElement).closest("a");
+      if (!anchor) return;
+      if (anchor.target && anchor.target !== "_self") return;
+      // Use the raw attribute (not the resolved .href) to keep it relative.
+      const href = anchor.getAttribute("href");
+      if (!href) return;
+      // Only intercept in-app absolute paths; leave external/protocol/anchor links.
+      if (!href.startsWith("/") || href.startsWith("//")) return;
+      e.preventDefault();
+      navigate(href);
+    },
+    [navigate],
+  );
 
   // Up to 3 other LIVE articles from the same category (excludes the current one).
   const related = useMemo(() => {
@@ -176,7 +225,8 @@ export function ArticlePage() {
       {/* BODY — pre-sanitized static HTML we ship (no scripts); safe to render. */}
       <article
         className="fd-article"
-        dangerouslySetInnerHTML={{ __html: article.body }}
+        onClick={onBodyClick}
+        dangerouslySetInnerHTML={{ __html: bodyHtml }}
       />
 
       {/* FOOTER: back link + CTA */}

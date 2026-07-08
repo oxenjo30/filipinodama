@@ -82,7 +82,7 @@ export function OnlineMatchPage() {
   const {
     status, matchId, myColor, opponent, state,
     selected, moveTargets, captureTargets, mustCapture, end, error,
-    chat, offeredByMe, offeredByOpponent, rematchDeclined,
+    connectionLost, chat, offeredByMe, offeredByOpponent, rematchDeclined,
     joinQueue, leaveQueue, resync, onSquareClick, resign, reset,
     sendChat: sendMatchChat, sendEmote, offerRematch, acceptRematch, declineRematch,
   } = useOnlineStore();
@@ -425,6 +425,25 @@ export function OnlineMatchPage() {
         }}>
           {myTurn ? (mustCapture ? "⚠ You must capture" : "● Your move") : "Opponent's move…"}
         </div>
+
+        {/* Connection-lost banner — non-blocking hint that the socket dropped
+            mid-match and we're reconnecting. Disappears automatically on the
+            next authoritative state (reconnect → matchResync → matchState). */}
+        {connectionLost && status === "playing" && !state.result && (
+          <div
+            role="status"
+            style={{
+              alignSelf: "center", display: "inline-flex", alignItems: "center", gap: 9,
+              padding: "8px 16px", borderRadius: 100,
+              border: "1px solid rgba(232,184,75,.5)", background: "rgba(15,8,32,.78)",
+              color: "var(--gold-lt)", font: "700 12px Inter", letterSpacing: ".3px",
+              boxShadow: "0 0 18px rgba(232,184,75,.18)",
+            }}
+          >
+            <span style={{ width: 12, height: 12, borderRadius: "50%", border: "2px solid rgba(232,184,75,.35)", borderTopColor: "var(--gold)", animation: "fdspin 0.9s linear infinite", display: "inline-block" }} />
+            Connection lost — reconnecting…
+          </div>
+        )}
 
         <div style={{ width: "min(92vw,600px)", maxWidth: "100%", margin: "0 auto" }}>
           <Board

@@ -44,6 +44,25 @@ type LiveMatch = {
 const live: Map<string, LiveMatch> = new Map();
 
 /**
+ * Abandonment: if a human player's sockets all disconnect mid-match and they do
+ * not reconnect within this window, the match is forfeited to their opponent so
+ * it always settles (no phantom "endedAt:null" rows, no dodgeable ranked losses,
+ * no opponent stuck forever). Keyed `matchId:userId`. Reconnecting (resync/join)
+ * clears the timer. Bots never disconnect, so this only ever targets humans.
+ */
+const ABANDON_MS = 45_000;
+const abandonTimers: Map<string, NodeJS.Timeout> = new Map();
+const abandonKey = (matchId: string, userId: string) => `${matchId}:${userId}`;
+function clearAbandon(matchId: string, userId: string): void {
+  const k = abandonKey(matchId, userId);
+  const t = abandonTimers.get(k);
+  if (t) {
+    clearTimeout(t);
+    abandonTimers.delete(k);
+  }
+}
+
+/**
  * Rematch offers keyed by the just-finished matchId. When a match ends, either
  * human player may offer a rematch; when BOTH have offered we seed a fresh match
  * (colors swapped) and notify both. Entries auto-expire so a stale offer can't
@@ -479,6 +498,12 @@ export function registerMatch(io: IOServer, socket: Socket) {
       return;
     }
     const myColor = colorOf(lm, userId);
+    // Reconnected into the match → cancel any pending abandonment forfeit and
+    // re-join the match room so live events reach this socket again.
+    if (myColor) {
+      clearAbandon(matchId, userId);
+      void socket.join(matchId);
+    }
     socket.emit(EV.matchState, {
       matchId,
       state: lm.state,
@@ -563,5 +588,35 @@ export function registerMatch(io: IOServer, socket: Socket) {
     rematchOffers.delete(matchId);
     const other = userId === offer.redId ? offer.blueId : offer.redId;
     io.to(`presence:${other}`).emit(EV.matchRematchDecline, { fromMatchId: matchId, by: userId });
+  });
+
+  // ── Abandonment forfeit ── if this was the user's LAST socket, arm a timer on
+  // every live match they're still playing: if they don't reconnect (resync)
+  // within ABANDON_MS, forfeit them so the match always settles. Deferred a tick
+  // so the socket has fully left its presence room before we check for others.
+  socket.on("disconnect", () => {
+    setTimeout(() => {
+      // Still have another connected socket (multi-tab / quick reconnect)? then
+      // they haven't abandoned anything.
+      const room = io.sockets.adapter.rooms.get(`presence:${userId}`);
+      if (room && room.size > 0) return;
+      for (const lm of live.values()) {
+        if (lm.settled || lm.state.result) continue;
+        const color = colorOf(lm, userId);
+        if (!color) continue; // not a player in this match
+        const k = abandonKey(lm.matchId, userId);
+        if (abandonTimers.has(k)) continue; // already armed
+        const t = setTimeout(() => {
+          abandonTimers.delete(k);
+          const cur = live.get(lm.matchId);
+          if (!cur || cur.settled || cur.state.result) return;
+          // Still gone → opponent wins by abandonment.
+          const winner: PieceColor = color === "red" ? "blue" : "red";
+          cur.state = { ...cur.state, result: { winner, reason: "abandon" } };
+          void settleMatch(io, cur).catch((e) => console.error("[match] abandon settle failed", e));
+        }, ABANDON_MS);
+        abandonTimers.set(k, t);
+      }
+    }, 500);
   });
 }

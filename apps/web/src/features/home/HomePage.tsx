@@ -24,7 +24,6 @@ const MODES = [
   { title: "Classic Mode", desc: "Timeless Dama fun for everyone.", border: "rgba(60,110,200,.55)", btn: "btn-blue", icon: "mc-classic.png" },
   { title: "Ranked Mode", desc: "Climb the ladder, prove your skill.", border: "rgba(180,60,70,.55)", btn: "btn-red", icon: "mc-ranked.png" },
   { title: "Play vs AI", desc: "Practice offline against the computer.", border: "rgba(50,150,100,.55)", btn: "btn-green", icon: "mc-training.png" },
-  { title: "Kingdom Mode", desc: "Conquer kingdoms, unlock rewards.", border: "rgba(140,90,210,.55)", btn: "btn-purple", icon: "mc-kingdom.png" },
 ];
 
 // prototype `updates` (line 3816) & `quickStats` (line 3819).
@@ -213,14 +212,13 @@ export function HomePage() {
   const updates = useMemo(() => recentUpdates(), []);
 
   const onMode = (title: string) => {
-    if (title === "Play vs AI" || title === "Classic Mode") navigate("/play/ai");
-    else if (title === "Ranked Mode") {
+    if (title === "Ranked Mode") {
       if (me && !me.isGuest) navigate("/play/online?mode=ranked");
       // A guest can't play ranked, and routing to /login would loop (its guest
       // option sends them right back). Tell them; a logged-out user signs in.
       else if (me?.isGuest) showToast("Ranked needs a free account — create one to climb the ladder.");
       else navigate(`/login?next=${encodeURIComponent("/play/online?mode=ranked")}`);
-    } else showToast("Kingdom Mode is coming soon.");
+    } else navigate("/play/ai"); // Classic Mode / Play vs AI
   };
 
   return (
