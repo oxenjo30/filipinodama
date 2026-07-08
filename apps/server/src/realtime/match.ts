@@ -8,7 +8,7 @@ import {
   type Move,
   type PieceColor,
 } from "@dama/shared";
-import { createInitialState, isLegal, applyMove } from "@dama/game-engine";
+import { createInitialState, isLegal, applyMove, bestMove } from "@dama/game-engine";
 import type { MatchMode as PrismaMatchMode } from "@prisma/client";
 import { prisma } from "../db/client.js";
 import { applyLedger } from "../economy/ledger.js";
@@ -32,6 +32,12 @@ type LiveMatch = {
   state: GameState;
   /** guards against double-settlement (result reached + resign racing). */
   settled: boolean;
+  /**
+   * When this match was filled with a BOT (empty-queue fallback), this is the
+   * bot's colour. The server plays the bot's turns with the game engine via the
+   * same authoritative apply/broadcast path as a human. undefined = all-human.
+   */
+  botColor?: PieceColor;
 };
 
 /** matchId -> authoritative live state. */
@@ -81,6 +87,7 @@ export function createLiveMatch(
   blueId: string | null,
   mode: PrismaMatchMode | string,
   settings: GameSettings,
+  botColor?: PieceColor,
 ): LiveMatch {
   const state = createInitialState(settings, matchId);
   const lm: LiveMatch = {
@@ -90,9 +97,65 @@ export function createLiveMatch(
     mode: mode as PrismaMatchMode,
     state,
     settled: false,
+    botColor,
   };
   live.set(matchId, lm);
   return lm;
+}
+
+/**
+ * Drive the BOT's turn (empty-queue fill). If it's the bot's move and the game
+ * isn't over, wait a human-like beat, compute a strong move with the engine, and
+ * apply it through the SAME authoritative path as a human move (validate → apply
+ * → persist → broadcast matchMoved → settle). Recurses so consecutive bot turns
+ * (never happens in Dama, but safe) and post-move settlement are handled. No-op
+ * for all-human matches.
+ */
+export function maybePlayBotMove(io: IOServer, matchId: string): void {
+  const lm = live.get(matchId);
+  if (!lm || lm.settled || !lm.botColor) return;
+  if (lm.state.result || lm.state.turn !== lm.botColor) return;
+
+  // Human-like think time (700–1500ms) so it doesn't feel robotic.
+  const delay = 700 + Math.floor(Math.random() * 800);
+  setTimeout(() => {
+    void (async () => {
+      const cur = live.get(matchId);
+      // Re-check: the match may have ended / resigned / turn changed mid-timeout.
+      if (!cur || cur.settled || cur.botColor == null) return;
+      if (cur.state.result || cur.state.turn !== cur.botColor) return;
+
+      let move: Move;
+      try {
+        move = bestMove(cur.state, "hard");
+      } catch (e) {
+        console.error("[match] bot bestMove failed", matchId, e);
+        return;
+      }
+      let next: GameState;
+      try {
+        if (!isLegal(cur.state, move)) return; // engine invariant; bail safely
+        next = applyMove(cur.state, move);
+      } catch (e) {
+        console.error("[match] bot applyMove failed", matchId, e);
+        return;
+      }
+      cur.state = next;
+
+      prisma.match
+        .update({ where: { id: matchId }, data: { moves: next.history as unknown as object } })
+        .catch((e) => console.error("[match] bot move persist failed", matchId, e));
+
+      io.to(matchId).emit(EV.matchMoved, { matchId, move, state: next });
+
+      if (next.result) {
+        await settleMatch(io, cur);
+      } else {
+        // If, after the bot's move, it's somehow the bot's turn again, continue.
+        maybePlayBotMove(io, matchId);
+      }
+    })();
+  }, delay);
 }
 
 /** The color this user plays in a match, or null if they are not a player. */
@@ -385,6 +448,10 @@ export function registerMatch(io: IOServer, socket: Socket) {
 
     if (next.result) {
       await settleMatch(io, lm);
+    } else {
+      // If this is a bot-filled match and it's now the bot's turn, let the server
+      // play the bot's reply (no-op for all-human matches).
+      maybePlayBotMove(io, matchId);
     }
   });
 
