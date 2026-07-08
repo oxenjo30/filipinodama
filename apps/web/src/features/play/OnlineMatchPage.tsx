@@ -133,6 +133,7 @@ export function OnlineMatchPage() {
     // matchmaking, orphaning the real game). Resync into the existing match instead.
     const st = useOnlineStore.getState();
     if (st.matchId && (st.status === "playing" || st.status === "found")) {
+      setResuming(true);
       resync();
     } else {
       joinQueue(mode, colorPref);
@@ -143,6 +144,37 @@ export function OnlineMatchPage() {
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Resume guard: when we resync into an existing match, `state` is null until the
+  // server replies with matchState. Show a loader meanwhile — and if the match is
+  // gone (server restarted / match ended / no reply), don't hang on a blank screen:
+  // bounce back to /play with an honest message after a short timeout.
+  const [resuming, setResuming] = useState(false);
+  useEffect(() => {
+    if (!resuming) return;
+    // The server replied with the live board → we're in; stop the resume guard.
+    if (state) {
+      setResuming(false);
+      return;
+    }
+    // matchIllegal ("no-such-match") arrives on `error`, or the match simply
+    // ended before we got here — treat either as "can't resume".
+    if (error) {
+      showToast("That match is no longer available.");
+      reset();
+      navigate("/play", { replace: true });
+      return;
+    }
+    // Hard timeout: no state and no error within 8s → the match is unreachable.
+    const t = window.setTimeout(() => {
+      if (!useOnlineStore.getState().state) {
+        showToast("Couldn't resume the match — it may have ended.");
+        reset();
+        navigate("/play", { replace: true });
+      }
+    }, 8000);
+    return () => window.clearTimeout(t);
+  }, [resuming, state, error, navigate, reset, showToast]);
 
   // Branded pre-match loader, mirroring the prototype's playWithLoader: on a FRESH
   // entry (not a resync into an existing match) show the themed LoadingScreen with
@@ -361,6 +393,13 @@ export function OnlineMatchPage() {
         </div>
       </div>
     );
+  }
+
+  // Resuming into a live match: the server hasn't sent the board yet. Show the
+  // branded loader (not a blank screen) until matchState arrives — or until the
+  // resume-guard effect above bounces us out if the match can't be reached.
+  if (!state && (resuming || status === "playing")) {
+    return <LoadingScreen context="matchmaking" />;
   }
 
   if (!state) return null;

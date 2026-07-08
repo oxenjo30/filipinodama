@@ -121,10 +121,27 @@ export async function matchRoutes(app: FastifyInstance) {
   // null), if any, so the Home "Continue Playing" card can resume it. Online
   // matches are server-authoritative + in-memory; the Match row exists with
   // endedAt null while live, so this is an honest "you have a game going" signal.
+  //
+  // We DON'T surface matches that can't actually be resumed:
+  //   • vs a BOT — bot matches live only in the in-memory `live` map, so a server
+  //     restart wipes them while the DB row stays open (endedAt null). Resuming
+  //     one hits "no-such-match" → a dead card. Never advertise those.
+  //   • STALE — a human match row left open long past any real session is almost
+  //     certainly orphaned (crash/restart before the end was written). Cap it.
   app.get("/matches/active", { preHandler: requireAuth }, async (req) => {
     const me = req.userId!;
+    const STALE_MS = 6 * 60 * 60 * 1000; // 6h — well beyond any real live game
     const m = await prisma.match.findFirst({
-      where: { endedAt: null, mode: { in: ["CASUAL", "RANKED", "PRIVATE"] }, OR: [{ redId: me }, { blueId: me }] },
+      where: {
+        endedAt: null,
+        mode: { in: ["CASUAL", "RANKED", "PRIVATE"] },
+        startedAt: { gte: new Date(Date.now() - STALE_MS) },
+        OR: [{ redId: me }, { blueId: me }],
+        // Neither side is a bot — bot games are unresumable after a restart.
+        // `isNot` (null passes) rather than `is`, since red/blue are nullable.
+        red: { isNot: { isBot: true } },
+        blue: { isNot: { isBot: true } },
+      },
       orderBy: { startedAt: "desc" },
       include: { red: playerSelect, blue: playerSelect },
     });
