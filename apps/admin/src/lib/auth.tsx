@@ -19,34 +19,52 @@ type AuthState =
   | { status: "forbidden" } // logged in but not an admin
   | { status: "anon" }; // not logged in
 
-type Ctx = AuthState & { can: (min: AdminRole) => boolean };
+type Ctx = AuthState & {
+  can: (min: AdminRole) => boolean;
+  /** Sign in with email+password (shared session cookie), then re-check admin. */
+  login: (email: string, password: string) => Promise<void>;
+  logout: () => Promise<void>;
+  refresh: () => Promise<void>;
+};
 
-const AuthCtx = createContext<Ctx>({ status: "loading", can: () => false });
+const AuthCtx = createContext<Ctx>({ status: "loading", can: () => false, login: async () => {}, logout: async () => {}, refresh: async () => {} });
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [state, setState] = useState<AuthState>({ status: "loading" });
 
+  const check = async () => {
+    try {
+      const me = await api.get<AdminMe>("/api/admin/me");
+      setState({ status: "ok", me });
+    } catch (e) {
+      if (e instanceof ApiError && e.status === 403) setState({ status: "forbidden" });
+      else setState({ status: "anon" });
+    }
+  };
+
   useEffect(() => {
-    let alive = true;
-    void (async () => {
-      try {
-        const me = await api.get<AdminMe>("/api/admin/me");
-        if (alive) setState({ status: "ok", me });
-      } catch (e) {
-        if (!alive) return;
-        if (e instanceof ApiError && e.status === 403) setState({ status: "forbidden" });
-        else setState({ status: "anon" });
-      }
-    })();
-    return () => {
-      alive = false;
-    };
+    void check();
   }, []);
+
+  const login = async (email: string, password: string) => {
+    // The player auth endpoint issues the shared .filipinodama.com cookie; then
+    // /admin/me tells us whether this account has admin access.
+    await api.post("/api/auth/login", { email, password });
+    await check();
+  };
+  const logout = async () => {
+    try {
+      await api.post("/api/auth/logout");
+    } catch {
+      /* ignore */
+    }
+    setState({ status: "anon" });
+  };
 
   const role = state.status === "ok" ? state.me.adminRole : null;
   const can = (min: AdminRole) => !!role && RANK[role] >= RANK[min];
 
-  return <AuthCtx.Provider value={{ ...state, can }}>{children}</AuthCtx.Provider>;
+  return <AuthCtx.Provider value={{ ...state, can, login, logout, refresh: check }}>{children}</AuthCtx.Provider>;
 }
 
 export function useAuth() {

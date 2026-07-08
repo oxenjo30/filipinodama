@@ -1,9 +1,17 @@
-import { NavLink, Navigate, Route, Routes } from "react-router-dom";
+import { NavLink, Navigate, Route, Routes, useLocation } from "react-router-dom";
 import { useAuth, type AdminRole } from "./lib/auth";
+import { Login } from "./pages/Login";
 import { PlayersPage } from "./pages/Players";
 import { EconomyPage } from "./pages/Economy";
 import { AuditPage } from "./pages/Audit";
 import { Phase2 } from "./pages/Phase2";
+
+/** Page eyebrow + title per route (matches the approved topbar). */
+const TITLES: Record<string, { eyebrow: string; title: string }> = {
+  "/players": { eyebrow: "Player Management", title: "Players" },
+  "/economy": { eyebrow: "Economy", title: "Grants & Ledger" },
+  "/audit": { eyebrow: "System", title: "Audit Log" },
+};
 
 /**
  * Admin shell — grouped sidebar (role-gated, hidden when can() fails) + routed
@@ -51,33 +59,33 @@ const NAV: NavGroup[] = [
 
 export function App() {
   const auth = useAuth();
+  const loc = useLocation();
 
   if (auth.status === "loading") return <Center>Loading console…</Center>;
-  if (auth.status === "anon")
-    return (
-      <Center>
-        <div style={{ textAlign: "center" }}>
-          <h1 style={{ color: "var(--gold)" }}>Admin Console</h1>
-          <p className="dim">You need to sign in on the main site first, then return here.</p>
-          <a className="btn gold" href="https://filipinodama.com/login" style={{ display: "inline-block", marginTop: 8 }}>Go to sign in</a>
-        </div>
-      </Center>
-    );
+  if (auth.status === "anon") return <Login />;
   if (auth.status === "forbidden")
     return (
       <Center>
-        <div style={{ textAlign: "center" }}>
-          <h1 style={{ color: "var(--red)" }}>Not authorized</h1>
-          <p className="dim">Your account doesn't have admin access.</p>
+        <div style={{ textAlign: "center", maxWidth: 380 }}>
+          <div className="lm" style={{ margin: "0 auto 14px", width: 46, height: 46, borderRadius: 12, background: "rgba(194,73,90,.18)", border: "1px solid rgba(194,73,90,.4)", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--red-lt)", fontSize: 22 }}>⛔</div>
+          <h1 style={{ color: "var(--red-lt)", font: "800 22px var(--serif)" }}>Not authorized</h1>
+          <p className="dim">This account doesn't have admin access.</p>
+          <button className="btn" style={{ marginTop: 10 }} onClick={() => auth.logout()}>Sign out</button>
         </div>
       </Center>
     );
 
-  const { me, can } = auth;
+  const { me, can, logout } = auth;
+  const initials = (me.displayName || me.username).slice(0, 2).toUpperCase();
+  const head = TITLES[loc.pathname] ?? { eyebrow: "Admin", title: "Console" };
+
   return (
     <div className="app">
       <aside className="sidebar">
-        <div className="brand">☀ DAMA ADMIN</div>
+        <div className="brand">
+          <span className="mark">☀</span>
+          <span className="name">DAMA ADMIN</span>
+        </div>
         {NAV.map((g) => {
           const items = g.items.filter((i) => can(i.min));
           if (!items.length) return null;
@@ -87,19 +95,40 @@ export function App() {
               {items.map((i) => (
                 <NavLink key={i.to} to={i.to} className={({ isActive }) => `navitem${isActive ? " on" : ""}`}>
                   {i.label}
-                  {i.phase2 && <span className="badge" style={{ background: "var(--amber)", color: "#2a1607" }}>P2</span>}
+                  {i.phase2 && <span className="badge" style={{ background: "rgba(240,207,114,.15)", color: "var(--amber)", border: "1px solid rgba(240,207,114,.35)" }}>P2</span>}
                 </NavLink>
               ))}
             </div>
           );
         })}
-        <div style={{ marginTop: "auto", paddingTop: 16, borderTop: "1px solid var(--edge)", fontSize: 12 }}>
-          <div style={{ fontWeight: 700 }}>{me.displayName}</div>
-          <div className="dim mono">{me.tag} · {me.adminRole}</div>
+        <div className="foot">
+          <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+            <span style={{ width: 7, height: 7, borderRadius: "50%", background: "var(--green)", boxShadow: "0 0 8px var(--green)" }} />
+            All systems operational
+          </div>
+          <div style={{ marginTop: 5, fontFamily: "var(--mono)" }}>v1.0.0 · prod</div>
         </div>
       </aside>
-      <main className="main">
-        <Routes>
+
+      <div className="body">
+        <header className="topbar">
+          <div style={{ minWidth: 0 }}>
+            <div className="eyebrow">{head.eyebrow}</div>
+            <div className="title">{head.title}</div>
+          </div>
+          <div style={{ flex: 1 }} />
+          <div className="userchip">
+            <div className="av">{initials}</div>
+            <div>
+              <div style={{ font: "700 12px var(--sans)", color: "var(--ink-2)", lineHeight: 1 }}>{me.displayName}</div>
+              <div style={{ font: "600 10px var(--sans)", color: "var(--dim)", marginTop: 2 }}>{me.adminRole}</div>
+            </div>
+          </div>
+          <button className="btn" onClick={() => logout()}>Sign out</button>
+        </header>
+
+        <main className="main">
+          <Routes>
           <Route path="/" element={<Navigate to="/players" replace />} />
           <Route path="/players" element={<PlayersPage />} />
           <Route path="/economy" element={<EconomyPage />} />
@@ -115,8 +144,9 @@ export function App() {
           <Route path="/admins" element={<Phase2 title="Admin Users" note="Role management." />} />
           <Route path="/settings" element={<Phase2 title="Config & Flags" note="Runtime feature flags + economy constants (needs a config table)." />} />
           <Route path="*" element={<Navigate to="/players" replace />} />
-        </Routes>
-      </main>
+          </Routes>
+        </main>
+      </div>
     </div>
   );
 }
