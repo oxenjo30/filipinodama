@@ -63,6 +63,12 @@ export type BoardProps = {
   /** click handler for any playable square */
   onSquareClick?: (sq: Square) => void;
   /**
+   * Compact/preview mode: drop the 280px min-width scroll wrapper so the board
+   * shrinks to fit a tiny container (e.g. the Home "Continue Playing" mini
+   * preview). Without this the board can't go below 280px and overflows/scrolls.
+   */
+  compact?: boolean;
+  /**
    * board surface. "marble" (default) uses the procedural marble+gold squares;
    * any other key uses that full-image texture with the grid inset over it.
    */
@@ -124,6 +130,7 @@ export function Board({
   redSkin,
   blueSkin,
   flip = false,
+  compact = false,
   className,
   style,
 }: BoardProps) {
@@ -373,6 +380,14 @@ export function Board({
     </div>
   );
 
+  // Compact/preview: fill the (small) parent, no min-width, no scroll wrapper.
+  if (compact) {
+    return (
+      <div className={className} style={{ width: "100%", height: "100%", ...style }}>
+        {surface}
+      </div>
+    );
+  }
   return (
     <div className={className ? `fd-board-scroll ${className}` : "fd-board-scroll"} style={style}>
       <div style={{ minWidth: 280 }}>{surface}</div>

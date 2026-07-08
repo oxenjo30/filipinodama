@@ -72,9 +72,9 @@ export function BlogPage() {
   const tabs: Filter[] = ["All", ...categories];
 
   return (
-    <div style={{ maxWidth: 1560, margin: "0 auto", padding: 26 }}>
+    <div className="fd-page-pad" style={{ maxWidth: 1200, margin: "0 auto", padding: "26px 26px 48px" }}>
       {/* HEADER */}
-      <div style={{ textAlign: "center", marginBottom: 22 }}>
+      <div style={{ textAlign: "center", marginBottom: 26 }}>
         <div style={{ font: "800 34px Cinzel,serif", color: "var(--gold-lt)" }}>Dama Blog</div>
         <div style={{ font: "400 14px Inter", color: "var(--ink)", marginTop: 6 }}>
           Guides, rules &amp; strategy
@@ -162,8 +162,10 @@ export function BlogPage() {
           <div
             style={{
               display: "grid",
-              gridTemplateColumns: "repeat(auto-fill,minmax(min(100%,280px),1fr))",
-              gap: 18,
+              // Roomier cards: ~340px min → at most 3 columns on a wide screen, so
+              // the grid breathes instead of packing 5 dense cards per row.
+              gridTemplateColumns: "repeat(auto-fill,minmax(min(100%,340px),1fr))",
+              gap: 22,
             }}
           >
             {filtered.map((a) => {
@@ -172,29 +174,41 @@ export function BlogPage() {
                 <Link
                   key={a.slug}
                   to={`/blog/${a.slug}`}
-                  className="frame"
                   style={{
                     display: "flex",
                     flexDirection: "column",
-                    gap: 10,
-                    padding: 20,
+                    gap: 12,
+                    padding: "24px 22px",
                     textDecoration: "none",
                     color: "inherit",
+                    // Clean, calm card — a soft border + subtle wash, NOT the ornate
+                    // sparkle .frame (which was visual noise repeated 30×).
+                    borderRadius: 14,
+                    border: "1px solid rgba(232,184,75,.16)",
+                    background: "linear-gradient(180deg,rgba(38,22,60,.55),rgba(24,13,40,.5))",
+                    transition: "border-color .15s ease, transform .15s ease",
+                  }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.borderColor = "rgba(232,184,75,.4)";
+                    e.currentTarget.style.transform = "translateY(-2px)";
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.borderColor = "rgba(232,184,75,.16)";
+                    e.currentTarget.style.transform = "none";
                   }}
                 >
                   <CategoryPill category={a.category} />
                   <div
                     style={{
-                      font: "700 18px Cinzel,serif",
+                      font: "700 19px/1.3 Cinzel,serif",
                       color: "var(--gold-lt)",
-                      lineHeight: 1.25,
                     }}
                   >
                     {a.title}
                   </div>
                   <div
                     style={{
-                      font: "400 13px/1.6 Inter",
+                      font: "400 13px/1.65 Inter",
                       color: "var(--ink)",
                       display: "-webkit-box",
                       WebkitLineClamp: 3,
@@ -207,7 +221,7 @@ export function BlogPage() {
                   <div
                     style={{
                       marginTop: "auto",
-                      paddingTop: 6,
+                      paddingTop: 8,
                       font: "500 11px Inter",
                       color: "var(--ink2)",
                     }}

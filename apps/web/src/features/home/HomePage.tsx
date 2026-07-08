@@ -8,6 +8,7 @@ import { useAppStore } from "../../stores/appStore";
 import { useAuthStore } from "../../stores/authStore";
 import { useOnlineStore } from "../../stores/onlineStore";
 import { ICONS } from "../../lib/assets";
+import { recentUpdates, timeAgo } from "./updates";
 
 /**
  * HomePage — reproduced VERBATIM from the prototype's Home screen
@@ -27,10 +28,6 @@ const MODES = [
 ];
 
 // prototype `updates` (line 3816) & `quickStats` (line 3819).
-const UPDATES = [
-  { tag: "NEW", tagbg: "#2f8f5b", title: "Kingdom Mode is Here!", body: "Build your kingdom, conquer rivals, and earn exclusive rewards.", time: "2 days ago", bg: "rgba(74,45,122,.5)", glyph: "🏰" },
-  { tag: "UPDATE", tagbg: "#2f5da8", title: "Ranked Season 12", body: "New season has begun! Climb the ranks and earn epic rewards.", time: "5 days ago", bg: "rgba(160,48,58,.4)", glyph: "🏆" },
-];
 // Ambient PLATFORM-WIDE stats (not the user's personal data). These are the
 // documented "big-platform numbers" exception to the no-mock rule — the same
 // class as the players-online pill and global-leaderboard ambience. They are
@@ -212,6 +209,9 @@ export function HomePage() {
     return s;
   }, []);
 
+  // Recent Updates — real game updates merged with the latest published blog posts.
+  const updates = useMemo(() => recentUpdates(), []);
+
   const onMode = (title: string) => {
     if (title === "Play vs AI" || title === "Classic Mode") navigate("/play/ai");
     else if (title === "Ranked Mode") {
@@ -290,7 +290,7 @@ export function HomePage() {
             <ContinuePlayingCard
               match={activeMatch}
               meId={me?.id ?? null}
-              miniBoard={<Board state={miniState} boardTheme="marble" />}
+              miniBoard={<Board state={miniState} boardTheme="marble" compact />}
               onResume={() => {
                 // Seed the online store with this in-progress match so /play/online
                 // RESYNCS into it instead of starting a fresh casual search (CC-2).
@@ -304,18 +304,22 @@ export function HomePage() {
           <div className="frame" style={{ padding: 20 }}>
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 14 }}>
               <span className="ptitle" style={{ border: "none", padding: 0, margin: 0, textAlign: "left" }}>Recent Updates</span>
-              <span onClick={() => showToast("Full changelog is coming soon.")} style={{ font: "600 11px Inter", color: "var(--gold)", cursor: "pointer" }}>View All</span>
+              <span onClick={() => navigate("/blog")} style={{ font: "600 11px Inter", color: "var(--gold)", cursor: "pointer" }}>View All</span>
             </div>
-            {UPDATES.map((u) => (
-              <div key={u.title} style={{ display: "flex", gap: 12, padding: "10px 0", borderTop: "1px solid rgba(232,184,75,.12)" }}>
-                <div style={{ width: 44, height: 44, flex: "none", borderRadius: 8, background: u.bg, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 20 }}>{u.glyph}</div>
-                <div>
+            {updates.map((u) => (
+              <div
+                key={u.title}
+                onClick={() => u.href && navigate(u.href)}
+                style={{ display: "flex", gap: 12, padding: "10px 0", borderTop: "1px solid rgba(232,184,75,.12)", cursor: u.href ? "pointer" : "default" }}
+              >
+                <div style={{ width: 44, height: 44, flex: "none", borderRadius: 8, background: "rgba(74,45,122,.5)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 20 }}>{u.glyph}</div>
+                <div style={{ minWidth: 0 }}>
                   <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                    <span style={{ font: "700 9px Inter", letterSpacing: "1px", padding: "2px 6px", borderRadius: 4, background: u.tagbg, color: "#fff" }}>{u.tag}</span>
-                    <span style={{ font: "700 13px Inter" }}>{u.title}</span>
+                    <span style={{ font: "700 9px Inter", letterSpacing: "1px", padding: "2px 6px", borderRadius: 4, background: u.tagBg, color: "#fff", flex: "none" }}>{u.tag}</span>
+                    <span style={{ font: "700 13px Inter", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{u.title}</span>
                   </div>
-                  <div style={{ font: "400 12px Inter", color: "var(--ink)", marginTop: 3 }}>{u.body}</div>
-                  <div style={{ font: "500 11px Inter", color: "var(--ink2)", marginTop: 3 }}>{u.time}</div>
+                  <div style={{ font: "400 12px Inter", color: "var(--ink)", marginTop: 3, display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden" }}>{u.body}</div>
+                  <div style={{ font: "500 11px Inter", color: "var(--ink2)", marginTop: 3 }}>{timeAgo(u.date)}</div>
                 </div>
               </div>
             ))}
