@@ -33,9 +33,11 @@ const IMAGE_THEMES: Record<Exclude<BoardTextureKey, "marble">, ImageTheme> = {
     dark: "radial-gradient(120% 120% at 25% 20%,#6b4a2c 0%,#4e3417 55%,#3a2410 100%)",
     light: "radial-gradient(120% 120% at 25% 20%,#f0dcb0 0%,#e6c98c 55%,#d8b673 100%)",
   },
-  // Ebony: cream vs deep-ebony inside the gold-filigree black frame.
+  // Ebony: cream vs deep-ebony inside the gold-filigree black frame. The printed
+  // playing field sits ~12–13% in (the ornate corners cut in further than the
+  // plain edges), so a bit more inset keeps our grid inside the border.
   ebony: {
-    frameInset: 11.5,
+    frameInset: 13,
     dark: "radial-gradient(120% 120% at 25% 20%,#3a2c22 0%,#241812 55%,#160d09 100%)",
     light: "radial-gradient(120% 120% at 25% 20%,#f4e7c8 0%,#e8d6a8 55%,#dcc890 100%)",
   },

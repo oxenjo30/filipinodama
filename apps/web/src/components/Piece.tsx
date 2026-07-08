@@ -76,6 +76,14 @@ export type PieceProps = {
  * specular highlight, and a gold ♛ crown for kings. Selected → gold ring;
  * must-capture → green glow ring. Sized to fill its Board cell (80% of a square).
  */
+/** Skins that ship real coin-art PNGs under /assets/pieces/skins/<key>/. These
+ *  render the actual art in-game (matching the store preview) instead of the CSS
+ *  disc. "default" (classic) has no art and uses the procedural disc. */
+const SKINS_WITH_ART = new Set([
+  "jade", "crimson", "obsidian",
+  "sarimanok", "bakunawa", "sunstars", "tamaraw", "baybayin",
+]);
+
 export function Piece({ color, king = false, skin = "default", selected = false, glow = false }: PieceProps) {
   const pal =
     skin !== "default" && SKIN_FACE[skin as Exclude<PieceSkin, "default">]
@@ -88,6 +96,42 @@ export function Piece({ color, king = false, skin = "default", selected = false,
     : selected
       ? ", 0 0 0 4px #F5D783, 0 0 16px rgba(245,215,131,.65)"
       : "";
+
+  // ── Real coin-art skins: render the actual PNG (soldier or crowned king) so
+  //    the in-game piece matches what the store preview promised. The selection/
+  //    must-capture ring is drawn as an overlay so it still works over the art. ──
+  if (skin !== "default" && SKINS_WITH_ART.has(skin)) {
+    const src = `/assets/pieces/skins/${skin}/${color}-${king ? "king" : "man"}.png`;
+    return (
+      <div
+        style={{
+          position: "absolute",
+          inset: 0,
+          margin: "auto",
+          width: "86%",
+          height: "86%",
+          filter:
+            "drop-shadow(0 5px 7px rgba(0,0,0,.6)) drop-shadow(0 0 1.5px rgba(255,255,255,.5))",
+        }}
+      >
+        <img
+          src={src}
+          alt=""
+          style={{ width: "100%", height: "100%", objectFit: "contain", display: "block" }}
+        />
+        {ringColor && (
+          <div
+            style={{
+              position: "absolute",
+              inset: "3%",
+              borderRadius: "50%",
+              boxShadow: `0 0 0 4px ${ringColor}` + (glow ? ", 0 0 18px rgba(90,220,130,.6)" : ", 0 0 16px rgba(245,215,131,.65)"),
+            }}
+          />
+        )}
+      </div>
+    );
+  }
 
   return (
     <div
