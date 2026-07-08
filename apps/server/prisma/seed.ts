@@ -124,22 +124,26 @@ async function main() {
   for (const q of QUESTS) {
     await prisma.quest.upsert({ where: { id: q.id }, update: q, create: q });
   }
+  // Season tier reward track. Computed once and applied on BOTH create and update
+  // so a re-seed reprices an already-seeded season (e.g. diamonds→trophies) — an
+  // empty `update` would leave old tiers in place on prod.
+  const seasonTiers = Array.from({ length: 30 }, (_, i) => ({
+    tier: i + 1,
+    xp: (i + 1) * 100,
+    freeReward: { gold: 100 },
+    // Every 5th premium tier awards Trophies (ranking progress) instead of
+    // gold — diamonds are no longer granted (real-money currency, disabled).
+    premiumReward: i % 5 === 4 ? { trophies: 25 } : { gold: 300 },
+  }));
   await prisma.season.upsert({
     where: { id: "S1" },
-    update: {},
+    update: { tiers: seasonTiers },
     create: {
       id: "S1",
       name: "Season 1 — Rise of the Bagani",
       startsAt: new Date(),
       endsAt: new Date(Date.now() + 60 * 864e5),
-      tiers: Array.from({ length: 30 }, (_, i) => ({
-        tier: i + 1,
-        xp: (i + 1) * 100,
-        freeReward: { gold: 100 },
-        // Every 5th premium tier awards Trophies (ranking progress) instead of
-        // gold — diamonds are no longer granted (real-money currency, disabled).
-        premiumReward: i % 5 === 4 ? { trophies: 25 } : { gold: 300 },
-      })),
+      tiers: seasonTiers,
     },
   });
 
