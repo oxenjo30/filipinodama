@@ -87,6 +87,11 @@ export function OnlineMatchPage() {
     sendChat: sendMatchChat, sendEmote, offerRematch, acceptRematch, declineRematch,
   } = useOnlineStore();
 
+  // Preferred side. Honoured vs bots (you always get it) and vs humans when
+  // compatible; "either" = no preference (fastest match). Changing it while
+  // searching re-queues with the new preference.
+  const [colorPref, setColorPref] = useState<"red" | "blue" | "either">("either");
+
   // Elapsed-search clock (mm:ss), reset whenever we (re)enter searching.
   const [elapsed, setElapsed] = useState(0);
   const startRef = useRef<number | null>(null);
@@ -130,7 +135,7 @@ export function OnlineMatchPage() {
     if (st.matchId && (st.status === "playing" || st.status === "found")) {
       resync();
     } else {
-      joinQueue(mode);
+      joinQueue(mode, colorPref);
     }
     return () => {
       leaveQueue();
@@ -245,6 +250,46 @@ export function OnlineMatchPage() {
             );
           })}
         </div>
+
+        {/* Colour preference — only while still searching (once found, colours are
+            locked). Changing it re-queues with the new preference. Vs a bot you
+            always get your pick; vs humans it's honoured when compatible. */}
+        {!found && (
+          <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 8, marginBottom: 26 }}>
+            <div style={{ font: "600 10px Inter", letterSpacing: "1.5px", textTransform: "uppercase", color: "var(--ink2)" }}>Preferred Side</div>
+            <div style={{ display: "flex", gap: 8 }}>
+              {([
+                { key: "red", label: "🔴 Red" },
+                { key: "either", label: "Either" },
+                { key: "blue", label: "🔵 Blue" },
+              ] as const).map((c) => {
+                const active = colorPref === c.key;
+                return (
+                  <button
+                    key={c.key}
+                    onClick={() => {
+                      if (colorPref === c.key) return;
+                      setColorPref(c.key);
+                      // Re-enter the queue with the new preference.
+                      leaveQueue();
+                      reset();
+                      joinQueue(mode, c.key);
+                    }}
+                    style={{
+                      padding: "8px 16px", borderRadius: 100, cursor: "pointer",
+                      font: "700 12px Inter", letterSpacing: ".5px",
+                      border: active ? "1px solid rgba(232,184,75,.55)" : "1px solid rgba(232,184,75,.2)",
+                      background: active ? "rgba(232,184,75,.14)" : "rgba(15,8,32,.5)",
+                      color: active ? "var(--gold-lt)" : "var(--ink2)",
+                    }}
+                  >
+                    {c.label}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        )}
 
         {/* VS arena */}
         <div className="frame fd-card-m" style={{ padding: "34px 28px" }}>

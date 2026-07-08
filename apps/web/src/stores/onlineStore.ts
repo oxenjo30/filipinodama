@@ -72,7 +72,7 @@ export type OnlineStore = {
   offeredByOpponent: boolean;
   rematchDeclined: boolean;
 
-  joinQueue: (mode: "CASUAL" | "RANKED") => Promise<void>;
+  joinQueue: (mode: "CASUAL" | "RANKED", colorPref?: "red" | "blue" | "either") => Promise<void>;
   leaveQueue: () => void;
   /** Re-attach to the current matchId (used when arriving already in a match:
    *  a private-room start or a Continue-Playing resume) instead of re-queuing. */
@@ -267,12 +267,12 @@ export const useOnlineStore = create<OnlineStore>((set, get) => {
     offeredByOpponent: false,
     rematchDeclined: false,
 
-    joinQueue: async (mode) => {
+    joinQueue: async (mode, colorPref = "either") => {
       set({ status: "searching", error: null, end: null });
       try {
         await connectSocket();
         wire();
-        getSocket().emit(EV.mmJoin, { mode });
+        getSocket().emit(EV.mmJoin, { mode, colorPref });
       } catch {
         set({ status: "idle", error: "Could not connect. Are you logged in?" });
       }

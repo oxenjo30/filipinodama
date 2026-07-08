@@ -33,10 +33,18 @@ function cancelBotTimer(userId: string): void {
 type QueueMode = "CASUAL" | "RANKED";
 const QUEUE_MODES: QueueMode[] = ["CASUAL", "RANKED"];
 
+/** A player's preferred side. "either" = no preference (matches anyone). */
+type ColorPref = "red" | "blue" | "either";
+function asColorPref(x: unknown): ColorPref {
+  return x === "red" || x === "blue" ? x : "either";
+}
+
 type Waiting = {
   userId: string;
   socketId: string;
   joinedAt: number;
+  /** preferred colour; honoured when compatible, else the player is flipped. */
+  colorPref: ColorPref;
 };
 
 /** mode -> ordered list of waiting players (FIFO). */
@@ -135,8 +143,15 @@ async function tryMatch(io: IOServer, mode: QueueMode): Promise<void> {
       continue;
     }
 
-    // Randomize colors so seat assignment is fair.
-    const aIsRed = Math.random() < 0.5;
+    // Assign colours honouring both players' preferences when compatible, else
+    // fall back to random. "either" is flexible; a hard conflict (both want the
+    // same colour) can't both win, so it degrades to random.
+    let aIsRed: boolean;
+    if (a.colorPref === "red" && b.colorPref !== "red") aIsRed = true;
+    else if (a.colorPref === "blue" && b.colorPref !== "blue") aIsRed = false;
+    else if (b.colorPref === "red" && a.colorPref !== "red") aIsRed = false;
+    else if (b.colorPref === "blue" && a.colorPref !== "blue") aIsRed = true;
+    else aIsRed = Math.random() < 0.5; // both "either", or same hard pick → random
     const redId = aIsRed ? a.userId : b.userId;
     const blueId = aIsRed ? b.userId : a.userId;
     const settings: GameSettings = { ...DEFAULT_SETTINGS };
@@ -201,7 +216,7 @@ function requeueFront(mode: QueueMode, w: Waiting) {
  * engine (see match.ts maybePlayBotMove). Trophies/gold settle normally for the
  * human; the bot user's stats move too but are never surfaced.
  */
-async function startBotMatch(io: IOServer, userId: string, socketId: string, mode: QueueMode): Promise<void> {
+async function startBotMatch(io: IOServer, userId: string, socketId: string, mode: QueueMode, colorPref: ColorPref): Promise<void> {
   // Still connected + still the sole waiter for this mode?
   const socket = io.sockets.sockets.get(socketId);
   if (!socket) {
@@ -227,9 +242,9 @@ async function startBotMatch(io: IOServer, userId: string, socketId: string, mod
   // Pull the human out of the queue (they're about to be matched).
   leaveAllQueues(userId);
 
-  // Randomize colours; seed the DB match + live state; mark the bot's colour so
-  // the match loop drives its moves.
-  const humanIsRed = Math.random() < 0.5;
+  // vs a BOT the human always gets their preferred colour (the bot takes the
+  // other side); "either" → random. Then seed the match + mark the bot's colour.
+  const humanIsRed = colorPref === "red" ? true : colorPref === "blue" ? false : Math.random() < 0.5;
   const redId = humanIsRed ? userId : bot.id;
   const blueId = humanIsRed ? bot.id : userId;
   const botColor: PieceColor = humanIsRed ? "blue" : "red";
@@ -272,12 +287,13 @@ async function startBotMatch(io: IOServer, userId: string, socketId: string, mod
 export function registerMatchmaking(io: IOServer, socket: Socket) {
   const userId = socket.data.userId as string;
 
-  socket.on(EV.mmJoin, async (payload: { mode?: unknown } = {}) => {
+  socket.on(EV.mmJoin, async (payload: { mode?: unknown; colorPref?: unknown } = {}) => {
     const mode = payload?.mode;
     if (!isQueueMode(mode)) {
       socket.emit(EV.mmCancelled, { reason: "invalid-mode" });
       return;
     }
+    const colorPref = asColorPref(payload?.colorPref);
 
     // A user may only be in one queue at a time — leaving any previous one first.
     leaveAllQueues(userId);
@@ -285,7 +301,7 @@ export function registerMatchmaking(io: IOServer, socket: Socket) {
     // Guard against being matched with yourself from a second tab: if you are
     // already the sole waiter, refresh your socket id rather than double-queue.
     const q = queues.get(mode)!;
-    q.push({ userId, socketId: socket.id, joinedAt: Date.now() });
+    q.push({ userId, socketId: socket.id, joinedAt: Date.now(), colorPref });
     queuedIn.set(userId, mode);
 
     socket.emit(EV.mmSearching, { mode });
@@ -307,7 +323,7 @@ export function registerMatchmaking(io: IOServer, socket: Socket) {
         botTimers.delete(userId);
         // Re-check we're still the sole waiter for this mode before botting.
         if (queuedIn.get(userId) !== mode) return;
-        void startBotMatch(io, userId, socket.id, mode).catch((err) =>
+        void startBotMatch(io, userId, socket.id, mode, colorPref).catch((err) =>
           console.error("[matchmaking] startBotMatch failed", err),
         );
       }, BOT_FILL_MS);
