@@ -662,7 +662,10 @@ export function StorePage() {
         <div className="frame" style={{ padding: 20, textAlign: "center" }}>
           <div className="ptitle">Member Benefits</div>
           <div style={{ font: "400 12px/1.5 Inter", color: "var(--ink)", marginBottom: 14 }}>Exclusive discounts, free items, and monthly rewards!</div>
-          <button className="btn btn-gold" onClick={() => showToast("Member benefits arrive with online play.")} style={{ width: "100%", padding: 11, fontSize: 12 }}>
+          {/* The "member benefits" ARE the Royal Season Pass (free + premium reward
+              track, monthly rewards). Send the player to the real Season page where
+              they can view and unlock it — instead of a dead toast. */}
+          <button className="btn btn-gold" onClick={() => navigate("/season")} style={{ width: "100%", padding: 11, fontSize: 12 }}>
             View Benefits
           </button>
         </div>
