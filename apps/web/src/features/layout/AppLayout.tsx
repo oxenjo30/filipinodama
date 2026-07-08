@@ -171,6 +171,18 @@ export function AppLayout() {
         {/* ============ TOP NAV ============ */}
         <header style={{ borderBottom: "1px solid rgba(232,184,75,.28)", background: "linear-gradient(180deg,rgba(24,12,44,.9),rgba(18,9,34,.75))", backdropFilter: "blur(10px)", position: "sticky", top: 0, zIndex: 50 }}>
           <div style={{ maxWidth: 1560, margin: "0 auto", padding: "12px 26px", display: "flex", alignItems: "center", gap: 22 }}>
+            {/* Hamburger — LEFT of the logo on mobile (standard pattern). CSS
+                (.fd-burger) shows it only ≤1100px; on desktop the logo leads and
+                the burger is hidden. Opens the full-screen drawer (all nav + auth). */}
+            <button
+              className="fd-burger"
+              aria-label="Menu"
+              aria-expanded={menuOpen}
+              onClick={() => setMenuOpen(true)}
+              style={{ width: 42, height: 42, borderRadius: 10, border: "1px solid rgba(232,184,75,.35)", background: "rgba(15,8,32,.6)", color: "var(--gold-lt)", cursor: "pointer", fontSize: 20, lineHeight: 1, alignItems: "center", justifyContent: "center", flex: "none" }}
+            >
+              ☰
+            </button>
             <div onClick={() => navigate("/")} style={{ display: "flex", alignItems: "center", gap: 13, cursor: "pointer" }}>
               <img src={BRAND.logoSun} alt="" width={44} height={44} style={{ objectFit: "contain", flex: "none" }} />
               <div style={{ lineHeight: 0.9 }}>
@@ -190,17 +202,6 @@ export function AppLayout() {
               ))}
             </nav>
             <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 10 }}>
-              {/* Hamburger — narrow screens only (CSS shows it below 1100px). Opens
-                  the full-screen drawer with all nav + account/auth. */}
-              <button
-                className="fd-burger"
-                aria-label="Menu"
-                aria-expanded={menuOpen}
-                onClick={() => setMenuOpen(true)}
-                style={{ width: 42, height: 42, borderRadius: 10, border: "1px solid rgba(232,184,75,.35)", background: "rgba(15,8,32,.6)", color: "var(--gold-lt)", cursor: "pointer", fontSize: 20, lineHeight: 1, alignItems: "center", justifyContent: "center", flex: "none" }}
-              >
-                ☰
-              </button>
               {registered ? (
                 <>
                   {/* ── REGISTERED USER: full account chrome ── */}
