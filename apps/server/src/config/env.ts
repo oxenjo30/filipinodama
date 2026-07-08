@@ -29,8 +29,10 @@ const schema = z.object({
   OAUTH_CALLBACK_BASE: z.string().default("http://localhost:4000"),
 
   // email (Resend). Empty ⇒ verification emails are logged, not sent.
+  // Sends come from the mail.filipinodama.com subdomain (verified in Resend).
+  // EMAIL_FROM is env-overridable and will be admin-panel configurable later.
   RESEND_API_KEY: z.string().default(""),
-  EMAIL_FROM: z.string().default("FilipinoDama Royal <no-reply@filipinodama.gg>"),
+  EMAIL_FROM: z.string().default("FilipinoDama Royal <no-reply@mail.filipinodama.com>"),
 
   // payments (PayMongo). Empty ⇒ diamond top-ups disabled.
   PAYMONGO_SECRET_KEY: z.string().default(""),
