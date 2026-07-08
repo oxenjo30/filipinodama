@@ -105,9 +105,13 @@ export function App() {
               <div className="navsec">{g}</div>
               {items.map(([to, label, dot, , , phase2]) => (
                 <NavLink key={to} to={to} className={({ isActive }) => `navitem${isActive ? " on" : ""}`}>
-                  <span className="ndot" style={{ background: dot, boxShadow: `0 0 7px ${dot}66` }} />
-                  {label}
-                  {phase2 && <span className="badge" style={{ background: "rgba(240,207,114,.15)", color: "var(--amber)", border: "1px solid rgba(240,207,114,.35)" }}>P2</span>}
+                  {({ isActive }) => (
+                    <>
+                      <span className="ndot" style={{ background: dot, boxShadow: isActive ? `0 0 8px ${dot}` : "none" }} />
+                      <span className="lbl">{label}</span>
+                      {phase2 && <span className="badge" style={{ background: "rgba(240,207,114,.15)", color: "var(--amber)", border: "1px solid rgba(240,207,114,.35)" }}>P2</span>}
+                    </>
+                  )}
                 </NavLink>
               ))}
             </div>

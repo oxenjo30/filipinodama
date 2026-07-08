@@ -51,11 +51,15 @@ button { font-family: inherit; }
 .brand .mark { width: 30px; height: 30px; border-radius: 8px; background: linear-gradient(150deg, #4a2d7a, #2a1848); border: 1px solid var(--edge-strong); display: flex; align-items: center; justify-content: center; color: var(--gold-lt); font: 800 15px var(--serif); flex: none; }
 .brand .name { font: 800 15px var(--serif); letter-spacing: 1px; color: var(--gold-lt); }
 .navsec { font: 700 10px var(--sans); letter-spacing: 1.5px; text-transform: uppercase; color: var(--dim-2); padding: 15px 10px 6px; }
-.navitem { display: flex; align-items: center; gap: 10px; padding: 9px 11px; border-radius: 9px; color: var(--ink-3); cursor: pointer; font-weight: 600; border: none; background: none; width: 100%; text-align: left; font-size: 13px; }
+.navitem { display: flex; align-items: center; gap: 11px; padding: 10px 12px; border-radius: 9px; color: #b9a9d6; cursor: pointer; font: 700 12.5px var(--sans); border: none; background: transparent; width: 100%; text-align: left; }
 .navitem:hover { background: var(--panel-2); }
-.navitem.on { background: rgba(232, 184, 75, 0.13); color: var(--gold-lt); }
+/* Active: horizontal gold gradient wash + a 3px gold left accent bar + gold text
+   (matches the approved prototype exactly). */
+.navitem.on { background: linear-gradient(90deg, rgba(232, 184, 75, 0.18), rgba(232, 184, 75, 0.04)); color: var(--gold-lt); box-shadow: inset 3px 0 0 var(--gold); }
 .navitem .badge { margin-left: auto; font: 700 9px var(--mono); letter-spacing: .5px; border-radius: 100px; padding: 2px 7px; }
-.navitem .ndot { width: 7px; height: 7px; border-radius: 50%; flex: none; }
+.navitem .ndot { width: 8px; height: 8px; border-radius: 50%; flex: none; opacity: .6; }
+.navitem.on .ndot { opacity: 1; } /* dot glows when active */
+.navitem .lbl { flex: 1; text-align: left; }
 .navitem .count { margin-left: auto; font: 700 10px var(--mono); background: rgba(194,73,90,.9); color: #fff; border-radius: 100px; padding: 1px 7px; }
 .sidebar .foot { margin-top: auto; padding: 12px 8px; border-top: 1px solid var(--edge); font: 600 10px var(--sans); color: var(--dim-2); line-height: 1.6; }
 
