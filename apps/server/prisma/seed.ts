@@ -125,13 +125,27 @@ async function main() {
   // equipped SKIN (store-item id) so when you face a bot its pieces show real coin
   // art instead of the default disc (the board renders each side's own skin).
   // Keys are drawn from AVATARS/skin ids in the catalog above.
+  // 15 unique bots across the trophy tiers, each with a DISTINCT name + avatar +
+  // piece skin, so a player facing bots sees varied opponents (not the same few)
+  // and can't spot a pattern. Names are Filipino mythology/heroes; avatars/skins
+  // cycle through the catalog. Matchmaking picks the bot nearest the player's
+  // trophies, so all tiers stay populated.
   const bots = [
+    ["Bakonawa", 2860, "obsidian", "obsidianskin"],
     ["Lakan", 2740, "sultan", "sarimanokskin"],
-    ["Mayari", 2410, "diwata", "bakunawaskin"],
-    ["Amihan", 2180, "babaylan", "sunstarsskin"],
-    ["Tala", 1950, "dayang", "baybayinskin"],
-    ["Bathala", 1620, "sovereign", "tamarawskin"],
-    ["Dumakulem", 1180, "bagani", "obsidianskin"],
+    ["Mayari", 2560, "diwata", "bakunawaskin"],
+    ["Apolaki", 2410, "champion", "sunstarsskin"],
+    ["Amihan", 2260, "babaylan", "tamarawskin"],
+    ["Haliya", 2120, "priestess", "baybayinskin"],
+    ["Tala", 1980, "dayang", "jadeskin"],
+    ["Sidapa", 1840, "strategist", "crimsonskin"],
+    ["Bathala", 1700, "sovereign", "obsidianskin"],
+    ["Magwayen", 1560, "magwayen", "sarimanokskin"],
+    ["Dumakulem", 1420, "bagani", "bakunawaskin"],
+    ["Lam-ang", 1280, "mandirigma", "sunstarsskin"],
+    ["Kanlaon", 1140, "datu", "tamarawskin"],
+    ["Diwata", 1000, "binukot", "baybayinskin"],
+    ["Panday", 860, "panday", "jadeskin"],
   ] as const;
   for (const [name, trophies, avatar, skinId] of bots) {
     await prisma.user.upsert({

@@ -24,6 +24,13 @@ function botFillDelay(): number {
 /** Pending bot-fill timers keyed by userId, so a real match cancels the fallback. */
 const botTimers: Map<string, NodeJS.Timeout> = new Map();
 
+/** The seeded bot usernames (lowercase), kept in sync with prisma/seed.ts. These
+ *  fill empty queues; the picker chooses among the nearest-rated few at random. */
+const BOT_USERNAMES = [
+  "bakonawa", "lakan", "mayari", "apolaki", "amihan", "haliya", "tala", "sidapa",
+  "bathala", "magwayen", "dumakulem", "lam-ang", "kanlaon", "diwata", "panday",
+];
+
 function cancelBotTimer(userId: string): void {
   const t = botTimers.get(userId);
   if (t) {
@@ -239,15 +246,18 @@ async function startBotMatch(io: IOServer, userId: string, socketId: string, mod
   const myTrophies = me?.trophies ?? 1000;
 
   // Seeded bots are real users (isGuest:false) with names/avatars/trophies. Pick
-  // the one whose trophies are nearest the player's for a believable pairing.
+  // a believable opponent: sort by trophy distance to the player, then RANDOMLY
+  // pick among the 3 nearest — so the same player facing bots at the same tier
+  // doesn't always get the identical opponent (which would give the bot away).
   const bots = await prisma.user.findMany({
-    where: { username: { in: ["lakan", "mayari", "amihan", "tala", "bathala", "dumakulem"] } },
+    where: { username: { in: BOT_USERNAMES } },
     select: { id: true, trophies: true },
   });
   if (bots.length === 0) return; // no bots seeded → leave the player queued
-  const bot = bots.reduce((best, b) =>
-    Math.abs(b.trophies - myTrophies) < Math.abs(best.trophies - myTrophies) ? b : best,
-  );
+  const nearest = [...bots]
+    .sort((a, b) => Math.abs(a.trophies - myTrophies) - Math.abs(b.trophies - myTrophies))
+    .slice(0, 3);
+  const bot = nearest[Math.floor(Math.random() * nearest.length)];
 
   // Pull the human out of the queue (they're about to be matched).
   leaveAllQueues(userId);
