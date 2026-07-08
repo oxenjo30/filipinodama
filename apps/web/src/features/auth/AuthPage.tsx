@@ -352,34 +352,9 @@ export function AuthPage({ initialMode = "signin" }: { initialMode?: Mode }) {
             />
           </label>
           <label style={{ display: "block" }}>
-            <div
-              style={{
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "space-between",
-                marginBottom: 6,
-              }}
-            >
-              <span style={{ ...LABEL_TEXT, marginBottom: 0 }}>PASSWORD</span>
-              {!isSignup && (
-                <button
-                  type="button"
-                  onClick={openForgot}
-                  style={{
-                    border: "none",
-                    background: "transparent",
-                    color: "var(--gold)",
-                    font: "700 11px Inter",
-                    cursor: "pointer",
-                    padding: 0,
-                    textDecoration: "underline",
-                    whiteSpace: "nowrap",
-                  }}
-                >
-                  Forgot?
-                </button>
-              )}
-            </div>
+            {/* Just the label — the "Forgot password" trigger lives once, under the
+                Sign In button (removed the duplicate inline "Forgot?" here). */}
+            <span style={{ ...LABEL_TEXT }}>PASSWORD</span>
             <input
               value={pass}
               onChange={(e) => setPass(e.target.value)}

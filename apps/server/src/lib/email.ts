@@ -27,20 +27,90 @@ export async function sendEmail(to: string, subject: string, html: string, textL
   return { sent: true, dev: false };
 }
 
+// ── Brand tokens (email-safe: no CSS vars, no webfonts — many clients strip both) ──
+const C = {
+  bg: "#0f0820", // page backdrop
+  card: "#1b1030", // frame fill
+  cardEdge: "#3a2557",
+  gold: "#e8b84b",
+  goldLt: "#f5d783",
+  ink: "#e7ddf7",
+  ink2: "#9a86bd",
+  btnFrom: "#f0cf72",
+  btnTo: "#c99a2e",
+  btnText: "#3a2405",
+};
+const SITE = "https://filipinodama.com";
+// Display serif / body sans web-SAFE stacks (Cinzel/Inter don't load in email).
+const SERIF = "'Georgia','Times New Roman',serif";
+const SANS = "'Helvetica Neue',Arial,sans-serif";
+
+const esc = (s: string) => s.replace(/[<>&"]/g, (c) => ({ "<": "&lt;", ">": "&gt;", "&": "&amp;", '"': "&quot;" }[c] as string));
+
+/**
+ * Shared, email-client-robust shell: table-based, inline styles only, dark card
+ * on a dark backdrop, gold sun wordmark header + muted footer. `preheader` is the
+ * hidden inbox-preview snippet. Body is trusted HTML built by the callers below.
+ */
+function shell(opts: { preheader: string; heading: string; body: string; cta: { label: string; href: string }; footnote: string; fallbackLink: string }): string {
+  const { preheader, heading, body, cta, footnote, fallbackLink } = opts;
+  return `<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="x-apple-disable-message-reformatting"></head>
+<body style="margin:0;padding:0;background:${C.bg};">
+  <div style="display:none;max-height:0;overflow:hidden;opacity:0;color:${C.bg};font-size:1px;line-height:1px;">${esc(preheader)}</div>
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:${C.bg};padding:28px 12px;">
+    <tr><td align="center">
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:520px;">
+        <!-- brand wordmark -->
+        <tr><td align="center" style="padding:6px 0 20px;">
+          <span style="font-family:${SERIF};font-size:13px;letter-spacing:3px;color:${C.gold};font-weight:700;">☀ FILIPINO DAMA</span>
+        </td></tr>
+        <!-- card -->
+        <tr><td style="background:${C.card};border:1px solid ${C.cardEdge};border-radius:14px;padding:36px 34px;">
+          <h1 style="margin:0 0 14px;font-family:${SERIF};font-size:24px;line-height:1.2;color:${C.goldLt};font-weight:700;">${esc(heading)}</h1>
+          <div style="font-family:${SANS};font-size:15px;line-height:1.6;color:${C.ink};">${body}</div>
+          <!-- bulletproof gold button -->
+          <table role="presentation" cellpadding="0" cellspacing="0" style="margin:26px 0 8px;"><tr>
+            <td align="center" bgcolor="${C.btnTo}" style="border-radius:9px;background:linear-gradient(180deg,${C.btnFrom},${C.btnTo});">
+              <a href="${cta.href}" style="display:inline-block;padding:14px 30px;font-family:${SANS};font-size:15px;font-weight:800;letter-spacing:.3px;color:${C.btnText};text-decoration:none;border-radius:9px;">${esc(cta.label)}</a>
+            </td>
+          </tr></table>
+          <p style="margin:18px 0 0;font-family:${SANS};font-size:12px;line-height:1.5;color:${C.ink2};">${esc(footnote)}</p>
+          <p style="margin:12px 0 0;font-family:${SANS};font-size:11px;line-height:1.5;color:${C.ink2};word-break:break-all;">Or paste this link into your browser:<br><a href="${fallbackLink}" style="color:${C.gold};">${esc(fallbackLink)}</a></p>
+        </td></tr>
+        <!-- footer -->
+        <tr><td align="center" style="padding:22px 8px 4px;">
+          <p style="margin:0;font-family:${SANS};font-size:11px;line-height:1.6;color:${C.ink2};">
+            <a href="${SITE}" style="color:${C.gold};text-decoration:none;">filipinodama.com</a> · Strategy · Heritage · Victory<br>
+            You received this because an account action was requested for this email.
+          </p>
+        </td></tr>
+      </table>
+    </td></tr>
+  </table>
+</body></html>`;
+}
+
 export function verifyEmailHtml(username: string, link: string) {
-  return `<div style="font-family:Inter,Arial,sans-serif;background:#160b28;color:#efe7fb;padding:32px;border-radius:12px">
-    <h1 style="color:#f5d783;font-family:Cinzel,serif">FilipinoDama Royal</h1>
-    <p>Kumusta, <b>${username}</b>! Confirm your email to start your climb up the ladder.</p>
-    <p><a href="${link}" style="display:inline-block;background:linear-gradient(180deg,#f0cf72,#c99a2e);color:#3a2405;padding:12px 22px;border-radius:8px;text-decoration:none;font-weight:800">Verify Email</a></p>
-    <p style="color:#9a86bd;font-size:12px">If the button doesn't work, paste this link: ${link}</p>
-  </div>`;
+  return shell({
+    preheader: "Confirm your email to start your climb up the ladder.",
+    heading: "Confirm your email",
+    body: `<p style="margin:0 0 12px;">Kumusta, <strong style="color:${C.goldLt};">${esc(username)}</strong>!</p>
+           <p style="margin:0;">Verify your email to activate your account and start your climb up the FilipinoDama Royal ladder.</p>`,
+    cta: { label: "Verify Email", href: link },
+    footnote: "This link expires in 24 hours. If you didn't create an account, you can safely ignore this email.",
+    fallbackLink: link,
+  });
 }
 
 export function resetEmailHtml(username: string, link: string) {
-  return `<div style="font-family:Inter,Arial,sans-serif;background:#160b28;color:#efe7fb;padding:32px;border-radius:12px">
-    <h1 style="color:#f5d783;font-family:Cinzel,serif">Reset your password</h1>
-    <p>Hi <b>${username}</b>, we got a request to reset your FilipinoDama Royal password.</p>
-    <p><a href="${link}" style="display:inline-block;background:linear-gradient(180deg,#f0cf72,#c99a2e);color:#3a2405;padding:12px 22px;border-radius:8px;text-decoration:none;font-weight:800">Reset Password</a></p>
-    <p style="color:#9a86bd;font-size:12px">Didn't request this? You can ignore this email.</p>
-  </div>`;
+  return shell({
+    preheader: "Reset your FilipinoDama Royal password.",
+    heading: "Reset your password",
+    body: `<p style="margin:0 0 12px;">Hi <strong style="color:${C.goldLt};">${esc(username)}</strong>,</p>
+           <p style="margin:0;">We got a request to reset the password for your FilipinoDama Royal account. Click below to choose a new one.</p>`,
+    cta: { label: "Reset Password", href: link },
+    footnote: "This link expires soon. Didn't request a reset? You can ignore this email — your password won't change.",
+    fallbackLink: link,
+  });
 }

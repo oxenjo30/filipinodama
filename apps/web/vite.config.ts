@@ -7,6 +7,16 @@ export default defineConfig({
     react(),
     VitePWA({
       registerType: "autoUpdate",
+      // Activate a new service worker IMMEDIATELY and take control of open pages,
+      // so a fresh deploy lands on the very next load instead of being stuck
+      // behind the old cached bundle for a reload or two (which was making new
+      // routes like /reset 404 on already-cached clients). Also drop stale caches.
+      workbox: {
+        skipWaiting: true,
+        clientsClaim: true,
+        cleanupOutdatedCaches: true,
+        navigateFallback: "/index.html",
+      },
       manifest: {
         name: "FilipinoDama Royal",
         short_name: "Dama Royal",
