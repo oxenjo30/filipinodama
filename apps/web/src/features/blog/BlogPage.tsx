@@ -73,6 +73,31 @@ function SidebarCard({ title, children }: { title: string; children: React.React
 
 const A = (n: string) => `/assets/${n}`;
 
+/**
+ * Resolve a store item's thumbnail image the SAME way the Store does (per type),
+ * so the sidebar shows the real art — skins show their coin art, boards their
+ * texture, avatars/frames their png — not a wrong fallback icon.
+ */
+function featuredThumb(it: FeaturedItem): string {
+  const a = it.assetKey;
+  switch (it.type) {
+    case "BOARD":
+      return A(a.endsWith(".png") ? a : `board-${a}.png`);
+    case "SKIN":
+      return a === "classic" ? A("crimson-king.png") : A(`pieces/skins/${a}/red-king.png`);
+    case "AVATAR":
+      return A(a.startsWith("avatars/") ? a : `avatars/${a}`);
+    case "FRAME":
+      return A(a);
+    case "BUNDLE":
+      return A(a.endsWith(".png") ? a : "me-banner.png");
+    case "SEASON_PASS":
+      return A("me-crown.png");
+    default:
+      return A(a.endsWith(".png") || a.endsWith(".webp") ? a : "me-banner.png");
+  }
+}
+
 export function BlogPage() {
   const navigate = useNavigate();
   const me = useAuthStore((s) => s.me);
@@ -308,7 +333,7 @@ export function BlogPage() {
                     onClick={() => navigate("/store")}
                     style={{ display: "flex", alignItems: "center", gap: 11, padding: 8, borderRadius: 10, border: "1px solid rgba(232,184,75,.12)", background: "rgba(0,0,0,.2)", cursor: "pointer", textAlign: "left" }}
                   >
-                    <img src={A(it.assetKey.endsWith(".png") || it.assetKey.endsWith(".webp") ? it.assetKey : "me-banner.png")} alt="" style={{ width: 40, height: 40, objectFit: "contain", flex: "none" }} />
+                    <img src={featuredThumb(it)} alt="" style={{ width: 40, height: 40, objectFit: "contain", flex: "none" }} />
                     <div style={{ minWidth: 0 }}>
                       <div style={{ font: "700 12px Inter", color: "#fff", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{it.name}</div>
                       <div style={{ font: "600 11px 'JetBrains Mono',monospace", color: it.priceDiamonds ? "#ff9aa8" : "#f2d493" }}>
@@ -322,24 +347,34 @@ export function BlogPage() {
             </SidebarCard>
           )}
 
-          {/* Recent ranked match — signed-in only */}
-          {recent && (
+          {/* Your Last Match — shown to signed-in players. When they haven't
+              finished an online game yet, an honest prompt instead of hiding. */}
+          {me && !me.isGuest && (
             <SidebarCard title="Your Last Match">
-              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
-                <div style={{ minWidth: 0 }}>
-                  <div style={{ font: "700 13px Inter", color: "#fff" }}>vs {recent.opponentName}</div>
-                  <div style={{ font: "500 11px Inter", color: "var(--ink2)", marginTop: 2 }}>{recent.mode === "RANKED" ? "Ranked" : "Casual"} · {formatDate(recent.endedAt) ?? ""}</div>
-                </div>
-                <div style={{ textAlign: "right", flex: "none" }}>
-                  <div style={{ font: "800 13px Inter", color: recent.result === "win" ? "#7ee6a4" : recent.result === "loss" ? "#ff9aa8" : "var(--ink)" }}>{recent.result.toUpperCase()}</div>
-                  {recent.trophyDelta != null && recent.trophyDelta !== 0 && (
-                    <div style={{ font: "700 11px 'JetBrains Mono',monospace", color: recent.trophyDelta > 0 ? "#7ee6a4" : "#ff9aa8" }}>
-                      {recent.trophyDelta > 0 ? "+" : ""}{recent.trophyDelta} 🏆
+              {recent ? (
+                <>
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
+                    <div style={{ minWidth: 0 }}>
+                      <div style={{ font: "700 13px Inter", color: "#fff" }}>vs {recent.opponentName}</div>
+                      <div style={{ font: "500 11px Inter", color: "var(--ink2)", marginTop: 2 }}>{recent.mode === "RANKED" ? "Ranked" : "Casual"} · {formatDate(recent.endedAt) ?? ""}</div>
                     </div>
-                  )}
-                </div>
-              </div>
-              <button onClick={() => navigate("/leaderboard")} style={{ marginTop: 12, width: "100%", background: "none", border: "none", color: "var(--gold)", font: "700 11px Inter", letterSpacing: ".5px", textTransform: "uppercase", cursor: "pointer" }}>View Leaderboard →</button>
+                    <div style={{ textAlign: "right", flex: "none" }}>
+                      <div style={{ font: "800 13px Inter", color: recent.result === "win" ? "#7ee6a4" : recent.result === "loss" ? "#ff9aa8" : "var(--ink)" }}>{recent.result.toUpperCase()}</div>
+                      {recent.trophyDelta != null && recent.trophyDelta !== 0 && (
+                        <div style={{ font: "700 11px 'JetBrains Mono',monospace", color: recent.trophyDelta > 0 ? "#7ee6a4" : "#ff9aa8" }}>
+                          {recent.trophyDelta > 0 ? "+" : ""}{recent.trophyDelta} 🏆
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                  <button onClick={() => navigate("/leaderboard")} style={{ marginTop: 12, width: "100%", background: "none", border: "none", color: "var(--gold)", font: "700 11px Inter", letterSpacing: ".5px", textTransform: "uppercase", cursor: "pointer" }}>View Leaderboard →</button>
+                </>
+              ) : (
+                <>
+                  <div style={{ font: "400 13px/1.6 Inter", color: "var(--ink)", marginBottom: 12 }}>No online matches yet. Play a ranked or casual game to see your result here.</div>
+                  <button className="btn btn-purple" onClick={() => navigate("/play/online?mode=casual")} style={{ width: "100%", justifyContent: "center", padding: 11, fontSize: 12 }}>Find a Match</button>
+                </>
+              )}
             </SidebarCard>
           )}
         </aside>
