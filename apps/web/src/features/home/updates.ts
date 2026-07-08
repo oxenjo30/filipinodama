@@ -38,7 +38,9 @@ const GAME_UPDATES: UpdateItem[] = [
     body: "Filipino-heritage piece skins, avatars and profile frames — now in the Store.",
     date: "2026-07-08",
     glyph: "💎",
-    href: "/store",
+    // Deep-link to a flagship new cosmetic so the announcement lands ON an item
+    // (the Store opens its preview via ?item=), not just the generic catalog.
+    href: "/store?item=sarimanokskin",
   },
   {
     kind: "UPDATE",

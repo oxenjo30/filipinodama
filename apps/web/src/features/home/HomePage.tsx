@@ -446,7 +446,7 @@ export function HomePage() {
               return (
                 <div
                   key={it.id}
-                  onClick={() => navigate("/store")}
+                  onClick={() => navigate(`/store?item=${encodeURIComponent(it.id)}`)}
                   style={{ display: "flex", alignItems: "center", gap: 12, padding: "9px 0", borderTop: "1px solid rgba(232,184,75,.12)", cursor: "pointer" }}
                 >
                   <StoreThumb it={it} />

@@ -421,6 +421,26 @@ export function StorePage() {
     };
   }, []);
 
+  // ── Deep link: /store?item=<id> opens that item's preview + its category tab ──
+  // Used by Home's "Hot in the Store" card so a click lands ON the item, not just
+  // the store. Runs once the catalog is loaded; the param is then cleaned so a
+  // refresh / back-nav doesn't re-open it.
+  useEffect(() => {
+    if (!items || !items.length) return;
+    const params = new URLSearchParams(window.location.search);
+    const wantId = params.get("item");
+    if (!wantId) return;
+    const target = items.find((i) => i.id === wantId);
+    if (target) {
+      setTab(TYPE_META[target.type].label); // switch to its category so it's visible behind the modal
+      setPreview(target); // open the preview modal on the item
+    }
+    // Strip ?item so a reload doesn't re-trigger.
+    params.delete("item");
+    const clean = window.location.pathname + (params.toString() ? `?${params}` : "");
+    window.history.replaceState(null, "", clean);
+  }, [items]);
+
   // ── Post-payment reconciliation ──
   // PayMongo redirects back to /store?purchase=success right after checkout, but
   // the diamonds are credited ASYNCHRONOUSLY by the signature-verified webhook —
