@@ -79,11 +79,20 @@ a{color:inherit;text-decoration:none}
 @keyframes fdfade{from{opacity:0}to{opacity:1}}
 @keyframes fdslidein{from{transform:translateX(100%)}to{transform:translateX(0)}}
 @media(max-width:1000px){
-  main [style*="minmax("],main [style*="repeat("]:not([style*="repeat(8,"]){grid-template-columns:1fr!important}
+  /* Collapse ANY multi-column grid inside main to a single column — covers grids
+     declared with minmax(), repeat(), OR a plain "1fr 1fr" (e.g. the hero), which
+     the old minmax/repeat-only selector missed and left overflowing. The 8x8
+     board grid (repeat(8,) is excluded so it stays a board. */
+  main [style*="minmax("]:not([style*="repeat(8,"]),
+  main [style*="repeat("]:not([style*="repeat(8,"]),
+  main [style*="1fr 1fr"]:not([style*="repeat(8,"]){grid-template-columns:1fr!important}
   main>div{padding-left:14px!important;padding-right:14px!important}
   header{position:static!important}
-  main .frame{overflow-x:auto}
-  h1{font-size:clamp(24px,7vw,36px)!important}
+  /* Let grid/flex children actually shrink below their content's intrinsic width
+     instead of forcing the row wider than the screen (the real overflow cause). */
+  main [style*="grid"]>*,main [style*="flex"]>*{min-width:0}
+  main img{max-width:100%;height:auto}
+  h1{font-size:clamp(24px,7vw,36px)!important;overflow-wrap:anywhere}
 }
 @media(max-width:640px){
   header>div{padding:10px 14px!important;gap:8px!important}
