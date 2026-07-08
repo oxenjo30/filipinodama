@@ -208,7 +208,12 @@ function applyMoveRaw(state: GameState, move: Move): void {
   );
   const landing = move.path[move.path.length - 1];
   p.square = { ...landing };
-  if (move.promotion) p.king = true;
+  // Promotion is AUTHORITATIVE from the rules — a man that ends its move on its
+  // back rank is always crowned. We derive it from the landing square rather
+  // than trusting move.promotion, because isLegal() only matches from/path (not
+  // the promotion flag), so a client could otherwise send a promoting move with
+  // promotion:false and land a king-less piece on the back rank.
+  if (!p.king && landing.r === backRank(p.color)) p.king = true;
   state.history.push(move);
   state.turn = opp(state.turn);
   state.moveNumber += 1;

@@ -349,6 +349,28 @@ describe("promotion", () => {
     expect(mv.promotion).toBe(true);
     expect(mv.path.at(-1)).toEqual({ r: 0, c: 3 });
   });
+
+  it("promotion is authoritative from the landing square, not the move.promotion flag", () => {
+    // Regression: isLegal() matches only from/path (not the promotion flag), so a
+    // client could send a promoting move with promotion:false. applyMove must
+    // STILL crown the piece — a man on its back rank is always a king.
+    const s = board([man("a", "red", 1, 2)]);
+    const mv = legalMoves(s).find((m) => m.path.at(-1)!.r === 0)!;
+    const spoofed = { ...mv, promotion: false }; // lie about promotion
+    const ns = applyMove(s, spoofed);
+    expect(ns.pieces[0].king).toBe(true); // promoted regardless of the flag
+  });
+
+  it("blue man reaching row 7 (its back rank) promotes", () => {
+    // Mirror of the reported bug: a BLUE man landing on row 7 must become a king.
+    const s = board([man("b", "blue", 6, 1)], "blue");
+    const mv = legalMoves(s).find((m) => m.path.at(-1)!.r === 7)!;
+    expect(mv.promotion).toBe(true);
+    const ns = applyMove(s, { ...mv, promotion: false });
+    const moved = ns.pieces.find((p) => p.color === "blue")!;
+    expect(moved.king).toBe(true);
+    expect(moved.square.r).toBe(7);
+  });
 });
 
 // ===========================================================================
