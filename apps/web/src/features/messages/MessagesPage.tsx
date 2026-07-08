@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { Avatar } from "../../components";
 import { avatar } from "../../lib/assets";
+import { EmotePicker } from "../shared/EmotePicker";
 import { useAuthStore } from "../../stores/authStore";
 import { usePresenceStore } from "../../stores/presenceStore";
 import { useDmStore } from "../../stores/dmStore";
@@ -562,6 +563,7 @@ export function MessagesPage() {
                       padding: "12px 14px",
                     }}
                   />
+                  <EmotePicker onPick={(g) => setDraft((d) => (d + g).slice(0, 1000))} />
                   <button
                     onClick={() => void doSend()}
                     disabled={sending || !draft.trim()}

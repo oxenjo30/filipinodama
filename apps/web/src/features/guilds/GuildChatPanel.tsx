@@ -4,6 +4,7 @@ import { useAuthStore } from "../../stores/authStore";
 import { api } from "../../lib/api";
 import { connectSocket, getSocket } from "../../lib/socket";
 import { avatar, guildCrest } from "../../lib/assets";
+import { EmotePicker } from "../shared/EmotePicker";
 
 /**
  * GuildChatPanel — the slide-in guild chat drawer (handoff lines 2439-2469).
@@ -357,6 +358,7 @@ export function GuildChatPanel({
                 padding: "12px 14px",
               }}
             />
+            <EmotePicker onPick={(g) => setDraft((d) => (d + g).slice(0, 500))} />
             <button
               onClick={() => void send()}
               disabled={sending || !draft.trim()}
