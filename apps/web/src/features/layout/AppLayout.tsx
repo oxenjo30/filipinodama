@@ -278,10 +278,14 @@ export function AppLayout() {
                 </>
               ) : (
                 <>
-                  {/* ── GUEST or LOGGED OUT: identical clean header — only Sign In
-                      (ghost) + Play Now (gold). A guest is still a temporary
-                      session, but the header looks the same as logged-out. ── */}
+                  {/* ── GUEST or LOGGED OUT: clean header — Sign In (ghost) + Play
+                      Now (gold). On mobile "Sign In" is HIDDEN (fd-hide-narrow):
+                      it fights Play Now + the burger for space, and the goal is to
+                      get them playing. Signing in is still reachable from the burger
+                      drawer, and any login-gated action (e.g. Ranked) redirects to
+                      /login anyway — so no access is lost. ── */}
                   <button
+                    className="fd-hide-narrow"
                     onClick={() => navigate("/login")}
                     style={{
                       padding: "9px 18px",

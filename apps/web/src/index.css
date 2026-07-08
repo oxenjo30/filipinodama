@@ -8,6 +8,12 @@
    (and content never jumps) when a scrollbar appears/disappears as content height
    changes mid-game — a common source of "the window keeps moving" jitter. */
 html{scrollbar-gutter:stable}
+/* Clamp the page to the viewport so nothing can cause horizontal scroll on
+   mobile (a stray wide element used to push the whole page sideways, cutting off
+   the hero + CTAs). Legitimately-wide content (boards, tables, chip strips) still
+   scrolls inside its OWN overflow-x:auto container — this only kills page-level
+   sideways scroll. */
+html,body{max-width:100%;overflow-x:hidden}
 body{margin:0;background:#160b28;color:#efe7fb;font-family:Inter,system-ui,sans-serif;-webkit-font-smoothing:antialiased}
 button{font-family:inherit}
 ::selection{background:rgba(232,184,75,.3)}
