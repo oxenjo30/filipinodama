@@ -121,26 +121,30 @@ async function main() {
 
   // demo bots across rank tiers to populate leaderboard + matchmaking. Each bot
   // gets a DISTINCT hero portrait (avatar key → /assets/avatars/<key>.png) so the
-  // ladder doesn't render every player with the same default face. Keys are drawn
-  // from AVATARS in apps/web/src/lib/assets.ts; the mapping fits each mythic name.
+  // ladder doesn't render every player with the same default face, PLUS a distinct
+  // equipped SKIN (store-item id) so when you face a bot its pieces show real coin
+  // art instead of the default disc (the board renders each side's own skin).
+  // Keys are drawn from AVATARS/skin ids in the catalog above.
   const bots = [
-    ["Lakan", 2740, "sultan"],
-    ["Mayari", 2410, "diwata"],
-    ["Amihan", 2180, "babaylan"],
-    ["Tala", 1950, "dayang"],
-    ["Bathala", 1620, "sovereign"],
-    ["Dumakulem", 1180, "bagani"],
+    ["Lakan", 2740, "sultan", "sarimanokskin"],
+    ["Mayari", 2410, "diwata", "bakunawaskin"],
+    ["Amihan", 2180, "babaylan", "sunstarsskin"],
+    ["Tala", 1950, "dayang", "baybayinskin"],
+    ["Bathala", 1620, "sovereign", "tamarawskin"],
+    ["Dumakulem", 1180, "bagani", "obsidianskin"],
   ] as const;
-  for (const [name, trophies, avatar] of bots) {
+  for (const [name, trophies, avatar, skinId] of bots) {
     await prisma.user.upsert({
       where: { username: name.toLowerCase() },
-      // backfill the avatar on existing rows too, so re-seeding fixes the ladder.
-      update: { avatarUrl: avatar },
+      // backfill the avatar + equipped skin on existing rows too, so re-seeding
+      // fixes the ladder faces and gives bots their piece skins.
+      update: { avatarUrl: avatar, equippedSkin: skinId },
       create: {
         username: name.toLowerCase(),
         displayName: name,
         tag: `#${1000 + trophies}`,
         avatarUrl: avatar,
+        equippedSkin: skinId,
         trophies,
         isGuest: false,
         wins: Math.floor(trophies / 20),
