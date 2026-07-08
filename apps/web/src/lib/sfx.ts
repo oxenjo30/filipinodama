@@ -162,58 +162,88 @@ export function startLoadingAmbience(): () => void {
   if (!ac) return () => {};
   // If one is already playing, stop it first (avoid stacking).
   ambience?.stop();
+
+  // A caller-visible stop that also cancels a not-yet-started ambience (in case
+  // the loader unmounts before the context finishes resuming).
+  let stopped = false;
+  let realStop: (() => void) | null = null;
+  const publicStop = () => {
+    stopped = true;
+    realStop?.();
+    ambience = null;
+  };
+  ambience = { stop: publicStop };
+
+  // The context may be SUSPENDED (autoplay policy) — scheduling against a frozen
+  // clock produces silence. Resume first, THEN build the graph, so `currentTime`
+  // is actually advancing.
+  const build = () => {
+    if (stopped) return;
+    try {
+      const now = ac.currentTime;
+      // Fixed base level; a SEPARATE lfo gain does the breathing so we never fight
+      // an automation ramp on the same param.
+      const out = ac.createGain();
+      out.gain.setValueAtTime(0.0001, now);
+      out.gain.exponentialRampToValueAtTime(0.09, now + 0.6); // quick, audible fade-in
+      out.connect(ac.destination);
+
+      const oscs: OscillatorNode[] = [];
+      const mk = (freq: number, type: OscillatorType, g: number) => {
+        const o = ac.createOscillator();
+        const gain = ac.createGain();
+        o.type = type;
+        o.frequency.value = freq;
+        gain.gain.value = g;
+        o.connect(gain).connect(out);
+        o.start(now);
+        oscs.push(o);
+      };
+      mk(110, "sine", 0.6); // A2 root
+      mk(110.4, "sine", 0.5); // slight detune → shimmer/beat
+      mk(164.8, "triangle", 0.3); // E3 fifth
+      mk(330, "sine", 0.1); // faint high sparkle
+
+      // Breathing LFO on its OWN gain node between `out` and destination so it
+      // modulates volume without colliding with the fade-in automation above.
+      const breathe = ac.createGain();
+      breathe.gain.setValueAtTime(1, now);
+      out.disconnect();
+      out.connect(breathe).connect(ac.destination);
+      const lfo = ac.createOscillator();
+      const lfoGain = ac.createGain();
+      lfo.frequency.value = 0.14; // ~7s cycle
+      lfoGain.gain.value = 0.25; // ±25% volume swell
+      lfo.connect(lfoGain).connect(breathe.gain);
+      lfo.start(now);
+      oscs.push(lfo);
+
+      realStop = () => {
+        try {
+          const t = ac.currentTime;
+          out.gain.cancelScheduledValues(t);
+          out.gain.setValueAtTime(Math.max(0.0001, out.gain.value), t);
+          out.gain.exponentialRampToValueAtTime(0.0001, t + 0.4);
+          for (const o of oscs) o.stop(t + 0.45);
+        } catch {
+          /* ignore */
+        }
+      };
+    } catch {
+      /* ignore */
+    }
+  };
+
   try {
-    const now = ac.currentTime;
-    const out = ac.createGain();
-    out.gain.setValueAtTime(0.0001, now);
-    out.gain.exponentialRampToValueAtTime(0.06, now + 1.2); // slow fade-in
-    out.connect(ac.destination);
-
-    // Two detuned low pads (a warm perfect-fifth drone) + a gentle LFO on volume
-    // for a breathing feel.
-    const oscs: OscillatorNode[] = [];
-    const mk = (freq: number, type: OscillatorType, g: number) => {
-      const o = ac.createOscillator();
-      const gain = ac.createGain();
-      o.type = type;
-      o.frequency.value = freq;
-      gain.gain.value = g;
-      o.connect(gain).connect(out);
-      o.start(now);
-      oscs.push(o);
-      return o;
-    };
-    mk(110, "sine", 0.6); // A2 root
-    mk(110.4, "sine", 0.5); // slight detune → shimmer/beat
-    mk(164.8, "triangle", 0.28); // E3 fifth
-    mk(330, "sine", 0.08); // faint high sparkle
-
-    // Breathing LFO on the master ambience gain.
-    const lfo = ac.createOscillator();
-    const lfoGain = ac.createGain();
-    lfo.frequency.value = 0.12; // ~8s cycle
-    lfoGain.gain.value = 0.02;
-    lfo.connect(lfoGain).connect(out.gain);
-    lfo.start(now);
-    oscs.push(lfo);
-
-    const stop = () => {
-      try {
-        const t = ac.currentTime;
-        out.gain.cancelScheduledValues(t);
-        out.gain.setValueAtTime(Math.max(0.0001, out.gain.value), t);
-        out.gain.exponentialRampToValueAtTime(0.0001, t + 0.4); // fade out
-        for (const o of oscs) o.stop(t + 0.45);
-      } catch {
-        /* ignore */
-      }
-      ambience = null;
-    };
-    ambience = { stop };
-    return stop;
+    if (ac.state === "suspended") {
+      void ac.resume().then(build).catch(() => {});
+    } else {
+      build();
+    }
   } catch {
-    return () => {};
+    build();
   }
+  return publicStop;
 }
 
 /** Stop any playing loading ambience immediately-ish (fade out). */

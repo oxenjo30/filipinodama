@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import type { AiDifficulty, Move, Square } from "@dama/shared";
-import { Board, Button, Divider } from "../../components";
+import { Board, Button } from "../../components";
 import { useGameStore, HUMAN_COLOR, AI_COLOR } from "../../stores/gameStore";
 import { useSettingsStore } from "../../stores/settingsStore";
 import { useAppStore } from "../../stores/appStore";
@@ -11,7 +11,6 @@ import { useGameSounds } from "../../lib/useGameSounds";
 import { PlayerPanel } from "./PlayerPanel";
 import { Modal } from "../shared/Modal";
 import { LoadingScreen } from "../shared/LoadingScreen";
-import { emblem } from "../../lib/emblems";
 
 /** How long the pre-match loader shows before the board appears (handoff: 3.4s). */
 const LOADER_MS = 3400;
@@ -31,13 +30,6 @@ const AI_NAME: Record<AiDifficulty, string> = {
 
 /** Quick-chat emotes from the prototype. */
 const GAME_EMOTES = ["👋", "😄", "😮", "😢", "👍", "🔥"];
-
-/** "Explore Game Modes" cards (prototype `modes`, line 3808). */
-const EXPLORE_MODES = [
-  { title: "Classic Mode", short: "Timeless fun", border: "rgba(60,110,200,.55)", btn: "blue", icon: "mc-classic.png" },
-  { title: "Ranked Mode", short: "Prove your skill", border: "rgba(180,60,70,.55)", btn: "red", icon: "mc-ranked.png" },
-  { title: "Play vs AI", short: "Beat the bot", border: "rgba(50,150,100,.55)", btn: "green", icon: "mc-training.png" },
-] as const;
 
 /** Board square → algebraic coordinate (col letter + row number, 8×8). */
 function coord(sq: Square): string {
@@ -151,17 +143,6 @@ export function GamePage({ mode = "ai" }: { mode?: "ai" | "local" }) {
   const rows = toRows(state.history);
 
   // Online-play gate (mirrors PlayHubPage.requireLogin). A logged-out visitor is
-  // sent to sign in first and returned to the match afterwards. Casual allows
-  // guests; Ranked requires a real (non-guest) account per owner mandate.
-  const goOnline = (next: string, requireAccount = false) => {
-    if (me && (!requireAccount || !me.isGuest)) {
-      navigate(next);
-    } else {
-      showToast("Sign in to play online.");
-      navigate(`/login?next=${encodeURIComponent(next)}`);
-    }
-  };
-
   // Offline echo only. There is NO match-chat socket yet (see task notes), so we
   // cannot deliver a message to an opponent. Matching the prototype's
   // `sendGameChat`, we locally echo the text via a toast and never claim it was
@@ -173,11 +154,6 @@ export function GamePage({ mode = "ai" }: { mode?: "ai" | "local" }) {
     showToast(`Sent: ${msg}`);
   }
 
-  // "Explore Game Modes" cards → real destinations where built.
-  function onMode(title: string) {
-    if (title === "Ranked Mode") goOnline("/play/online?mode=ranked", true);
-    else navigate("/play/ai"); // Classic Mode / Play vs AI
-  }
 
   // Player names for the two seats. Local: Player 1 (red) vs Player 2 (blue).
   // vs-AI: the human (red) vs the difficulty-named bot (blue).
@@ -506,28 +482,10 @@ export function GamePage({ mode = "ai" }: { mode?: "ai" | "local" }) {
           />
         </div>
 
-        <Divider style={{ width: "100%", marginTop: 8 }}>Explore Game Modes</Divider>
-        <div
-          className="fd-modes-grid"
-          style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 12, width: "100%" }}
-        >
-          {EXPLORE_MODES.map((m) => (
-            <div key={m.title} className="frame" style={{ padding: 14, textAlign: "center", borderColor: m.border }}>
-              <img
-                src={emblem(m.icon)}
-                alt=""
-                width={44}
-                height={44}
-                style={{ display: "block", margin: "0 auto 8px", borderRadius: 10, objectFit: "contain" }}
-              />
-              <div style={{ font: "700 13px Cinzel,serif", color: "var(--gold-lt)" }}>{m.title}</div>
-              <div style={{ font: "400 11px Inter", color: "var(--ink)", margin: "3px 0 10px" }}>{m.short}</div>
-              <Button variant={m.btn} block size="sm" onClick={() => onMode(m.title)}>
-                Play Now
-              </Button>
-            </div>
-          ))}
-        </div>
+        {/* The "Explore Game Modes" grid used to sit here, below the board — but
+            mid-game it's out of place (switching modes abandons the current game)
+            and it dangled awkwardly on desktop. Removed; use the nav to change
+            modes. Leave / Surrender already offer a clean exit. */}
       </div>
 
       {/* RIGHT: history + chat + tip */}
