@@ -760,9 +760,25 @@ export function StorePage() {
                     <div style={{ font: "700 14px Inter", color: "#fff" }}>{it.name}</div>
                     <div style={{ font: "500 11px Inter", color: "var(--ink2)", marginTop: 2 }}>{it.sub}</div>
                   </div>
-                  <button className="fd-tap" onClick={() => setPreview(it)} style={{ display: "inline-flex", alignItems: "center", gap: 5, background: "none", border: "none", padding: 0, color: "var(--gold)", font: "700 10px Inter", letterSpacing: ".8px", textTransform: "uppercase", cursor: "pointer" }}>
-                    🔍 Preview
-                  </button>
+                  {/* Preview + Add-to-Cart action row (matches the handoff store
+                      card: 🔍 Preview  ＋ Add to Cart). Owned/free items skip the
+                      cart action. */}
+                  <div style={{ display: "flex", gap: 14, alignItems: "center", flexWrap: "wrap", justifyContent: "center" }}>
+                    <button className="fd-tap" onClick={() => setPreview(it)} style={{ display: "inline-flex", alignItems: "center", gap: 5, background: "none", border: "none", padding: 0, color: "var(--gold)", font: "700 10px Inter", letterSpacing: ".8px", textTransform: "uppercase", cursor: "pointer" }}>
+                      🔍 Preview
+                    </button>
+                    {!isOwned && !it.free && (
+                      <button
+                        className="fd-tap"
+                        disabled={isBuying}
+                        onClick={() => addToCart(cartLineOf(it))}
+                        title="Add to Cart"
+                        style={{ display: "inline-flex", alignItems: "center", gap: 5, background: "none", border: "none", padding: 0, color: "#c9a6ff", font: "700 10px Inter", letterSpacing: ".8px", textTransform: "uppercase", cursor: isBuying ? "default" : "pointer", opacity: isBuying ? 0.6 : 1 }}
+                      >
+                        ＋ Add to Cart
+                      </button>
+                    )}
+                  </div>
                   {isOwned ? (
                     <div style={{ width: "100%", marginTop: "auto", textAlign: "center", font: "700 11px Inter", letterSpacing: "1px", color: "#3fbf6f", border: "1px solid #3fbf6f", padding: 9, borderRadius: 7 }}>✓ OWNED</div>
                   ) : it.free ? (
