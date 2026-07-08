@@ -6,6 +6,9 @@ import { api, ApiError } from "../../lib/api";
 import { useAppStore } from "../../stores/appStore";
 import { useAuthStore } from "../../stores/authStore";
 import { useRoomStore, type RoomMember } from "../../stores/roomStore";
+import { useOnlineStore } from "../../stores/onlineStore";
+import { useSettingsStore } from "../../stores/settingsStore";
+import { Board } from "../../components";
 import { ShareInviteModal } from "./ShareInviteModal";
 
 /**
@@ -119,6 +122,7 @@ export function PrivateRoomPage() {
     connecting,
     error,
     startedMatchId,
+    spectateMatchId,
     create,
     join,
     spectate,
@@ -478,6 +482,15 @@ export function PrivateRoomPage() {
             : "You're in the room. Waiting for the host to start the match."}
         </p>
       </div>
+
+      {/* SPECTATOR: a live, read-only board when a match is running and we joined
+          to watch (not play). Rendered from the same onlineStore feed the players
+          use — spectators receive matchMoved but can never move (myColor is null). */}
+      {spectateMatchId && (
+        <div style={{ marginBottom: 24 }}>
+          <SpectatorBoard hostName={host?.name ?? "Red"} guestName={guest?.name ?? "Blue"} />
+        </div>
+      )}
 
       <div
         className="fd-stack"
@@ -1216,6 +1229,53 @@ function Switch({ on, onToggle }: { on: boolean; onToggle: () => void }) {
         }}
       />
     </button>
+  );
+}
+
+/**
+ * SpectatorBoard — a live, READ-ONLY view of the room's in-progress match for a
+ * spectator. Reads the server-authoritative board from the onlineStore (the same
+ * feed players use); a spectator has myColor=null so the board is non-interactive
+ * and onSquareClick no-ops. Red = host, Blue = guest. Shows whose turn it is and
+ * the result when the game ends.
+ */
+function SpectatorBoard({ hostName, guestName }: { hostName: string; guestName: string }) {
+  const state = useOnlineStore((s) => s.state);
+  const skin = useSettingsStore((s) => s.skin);
+
+  if (!state) {
+    return (
+      <div className="frame" style={{ padding: 28, textAlign: "center" }}>
+        <div style={{ display: "inline-flex", alignItems: "center", gap: 10, font: "600 13px Inter", color: "var(--ink)" }}>
+          <span style={{ width: 14, height: 14, borderRadius: "50%", border: "2px solid rgba(232,184,75,.35)", borderTopColor: "var(--gold)", animation: "fdspin .9s linear infinite", display: "inline-block" }} />
+          Loading the live board…
+        </div>
+      </div>
+    );
+  }
+
+  const turnLabel = state.result
+    ? state.result.winner === "draw"
+      ? "Draw"
+      : `${state.result.winner === "red" ? hostName : guestName} wins`
+    : `${state.turn === "red" ? hostName : guestName}'s move`;
+
+  return (
+    <div className="frame" style={{ padding: 20 }}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 12, marginBottom: 14, flexWrap: "wrap" }}>
+        <span style={{ font: "700 12px Inter", letterSpacing: 1, textTransform: "uppercase", color: "#8ce0ad" }}>👁 Spectating · Live</span>
+        <span style={{ font: "700 13px Inter", color: "var(--gold-lt)" }}>{turnLabel}</span>
+      </div>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, marginBottom: 12, font: "700 13px Inter" }}>
+        <span style={{ color: "#ff9aa8" }}>🔴 {hostName}</span>
+        <span style={{ color: "var(--ink2)", font: "600 11px Inter" }}>VS</span>
+        <span style={{ color: "#7fb2ff" }}>🔵 {guestName}</span>
+      </div>
+      <div style={{ width: "min(92vw,520px)", maxWidth: "100%", margin: "0 auto" }}>
+        {/* No onSquareClick / legalTargets — a spectator only observes. */}
+        <Board state={state} redSkin={skin} blueSkin="default" />
+      </div>
+    </div>
   );
 }
 

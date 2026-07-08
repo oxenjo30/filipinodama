@@ -69,6 +69,13 @@ export type RoomStore = {
    */
   startedMatchId: string | null;
 
+  /**
+   * Set (instead of startedMatchId) when EV.roomStart arrives for us as a
+   * SPECTATOR (yourColor:null). The page stays put and renders a live, read-only
+   * board in place. Cleared when the match ends or we leave.
+   */
+  spectateMatchId: string | null;
+
   create: (mode?: MatchMode) => Promise<void>;
   join: (code: string) => Promise<void>;
   spectate: (code: string) => Promise<void>;
@@ -117,6 +124,7 @@ const EMPTY = {
   connecting: false,
   error: null as RoomError | null,
   startedMatchId: null as string | null,
+  spectateMatchId: null as string | null,
 };
 
 let wired = false;
@@ -166,15 +174,17 @@ export const useRoomStore = create<RoomStore>((set, get) => {
       });
     });
 
-    s.on(EV.roomStart, (p: { matchId: string; yourColor: PieceColor }) => {
+    s.on(EV.roomStart, (p: { matchId: string; yourColor: PieceColor | null }) => {
       // The server has already seeded a real match and joined our socket to its
       // room. Hand it to the onlineStore (which owns live match rendering) so the
-      // online match view resyncs into it, then flag the page to navigate.
-      // Carry the REAL opponent identity from the room state so the match view
-      // shows the actual player, not a generic "Opponent". yourColor red ⇒ host,
-      // so the opponent is the guest (and vice-versa).
+      // match view resyncs into it. yourColor:null ⇒ we're a SPECTATOR watching
+      // read-only (we stay on the room page); a color ⇒ we're a player (navigate
+      // into /play/online).
       const rs = get();
-      const opp = p.yourColor === "red" ? rs.guest : rs.host;
+      const spectating = p.yourColor == null;
+      // A player's "opponent" is the OTHER seat; a spectator has no opponent, so
+      // use the host (always the RED player) as the reference identity.
+      const opp = spectating ? rs.host : p.yourColor === "red" ? rs.guest : rs.host;
       const opponent = opp
         ? {
             id: opp.userId,
@@ -189,7 +199,7 @@ export const useRoomStore = create<RoomStore>((set, get) => {
       useOnlineStore.setState({
         status: "playing",
         matchId: p.matchId,
-        myColor: p.yourColor,
+        myColor: p.yourColor, // null for spectators → board renders read-only (no move intents)
         opponent,
         state: null,
         selected: null,
@@ -204,7 +214,8 @@ export const useRoomStore = create<RoomStore>((set, get) => {
         rematchDeclined: false,
       });
       s.emit(EV.matchResync, { matchId: p.matchId });
-      set({ matchId: p.matchId, startedMatchId: p.matchId });
+      if (spectating) set({ matchId: p.matchId, spectateMatchId: p.matchId });
+      else set({ matchId: p.matchId, startedMatchId: p.matchId });
     });
 
     s.on("room:chat", (p: { from: RoomMember; body: string; at: number }) => {

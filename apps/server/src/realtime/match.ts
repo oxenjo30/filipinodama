@@ -541,8 +541,18 @@ export function registerMatch(io: IOServer, socket: Socket) {
       return;
     }
     const myColor = colorOf(lm, userId);
+    // A non-player may only receive read-only state if their socket is ALREADY in
+    // the match room — which only happens through the legitimate rooms.ts spectate
+    // path (join by room code → server joins them to the match channel). This stops
+    // a random user from watching any match just by guessing its id.
+    const isSpectator = !myColor && socket.rooms.has(matchId);
+    if (!myColor && !isSpectator) {
+      socket.emit(EV.matchIllegal, { matchId, reason: "not-a-player" });
+      return;
+    }
     // Reconnected into the match → cancel any pending abandonment forfeit and
-    // re-join the match room so live events reach this socket again.
+    // re-join the match room so live events reach this socket again. (Spectators
+    // are already joined; re-joining is a harmless no-op.)
     if (myColor) {
       clearAbandon(matchId, userId);
       void socket.join(matchId);
@@ -550,7 +560,7 @@ export function registerMatch(io: IOServer, socket: Socket) {
     socket.emit(EV.matchState, {
       matchId,
       state: lm.state,
-      yourColor: myColor,
+      yourColor: myColor, // null for spectators → client renders read-only
       settings: lm.state.settings,
     });
   });

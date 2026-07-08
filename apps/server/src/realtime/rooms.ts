@@ -236,6 +236,13 @@ export function registerRooms(io: IOServer, socket: Socket) {
       userRoom.set(userId, code!);
       room.spectators.set(userId, member);
     }
+    // Late spectator: if a match is already live in this room, join this socket to
+    // the match channel and tell it to open the board read-only. The client then
+    // resyncs to pull the current board state.
+    if (room.matchId) {
+      void socket.join(room.matchId);
+      socket.emit(EV.roomStart, { matchId: room.matchId, yourColor: null });
+    }
     emitState(io, room);
   });
 
@@ -295,6 +302,14 @@ export function registerRooms(io: IOServer, socket: Socket) {
       }
       io.to(`presence:${room.hostId}`).emit(EV.roomStart, { matchId: match.id, yourColor: "red" });
       io.to(`presence:${room.guest.userId}`).emit(EV.roomStart, { matchId: match.id, yourColor: "blue" });
+      // Spectators watch READ-ONLY: join their sockets to the match room so they
+      // receive matchMoved/matchState, and tell them to open the board with
+      // yourColor:null. They can never move — the match move handlers gate on
+      // colorOf(), and a spectator has no color.
+      for (const spec of room.spectators.values()) {
+        for (const sid of spec.sockets) io.sockets.sockets.get(sid)?.join(match.id);
+        io.to(`presence:${spec.userId}`).emit(EV.roomStart, { matchId: match.id, yourColor: null });
+      }
       emitState(io, room); // spectators see matchId now
     } catch (e) {
       console.error("[rooms] start failed", e);
