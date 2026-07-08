@@ -1,0 +1,27 @@
+# Keep the Railway build context small + snapshots fast. These are all
+# regenerated inside the build container (pnpm install + build), so shipping
+# them in the upload snapshot is pure waste that slows every deploy.
+node_modules/
+**/node_modules/
+dist/
+**/dist/
+.turbo/
+**/.turbo/
+*.tsbuildinfo
+**/*.tsbuildinfo
+coverage/
+.git/
+# Large design/reference material — never needed to build
+handoff/
+handoffv2/
+_asset-previews/
+*.zip
+# NOTE: do NOT ignore *.mp3 globally — apps/web/public/assets/audio/*.mp3 is a
+# shipped asset the web build needs. Only ignore stray root-level source audio.
+/*.mp3
+# Local env / logs
+.env
+.env.*
+!.env.example
+*.log
+.DS_Store
