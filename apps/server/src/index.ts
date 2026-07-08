@@ -50,7 +50,11 @@ async function main() {
     crossOriginResourcePolicy: { policy: "cross-origin" },
   });
 
-  await app.register(cors, { origin: env.CORS_ORIGIN, credentials: true });
+  // CORS accepts a COMMA-SEPARATED list of allowed origins so the player app
+  // (filipinodama.com) and the admin console (app.filipinodama.com) can both call
+  // the API with the shared cookie. Any of the listed origins is allowed.
+  const corsOrigins = env.CORS_ORIGIN.split(",").map((o) => o.trim()).filter(Boolean);
+  await app.register(cors, { origin: corsOrigins.length > 1 ? corsOrigins : corsOrigins[0], credentials: true });
   await app.register(cookie);
 
   // Global rate limit — a sane ceiling on every route (keyed by client IP).
@@ -96,7 +100,7 @@ async function main() {
 
   const io = new IOServer(app.server, {
     path: "/rt",
-    cors: { origin: env.CORS_ORIGIN, credentials: true },
+    cors: { origin: corsOrigins.length > 1 ? corsOrigins : corsOrigins[0], credentials: true },
   });
   registerRealtime(io);
 
