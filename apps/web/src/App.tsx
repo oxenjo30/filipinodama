@@ -20,6 +20,8 @@ import { LessonPage } from "./features/learn/LessonPage";
 import { SeasonPage } from "./features/season/SeasonPage";
 import { LeaderboardPage } from "./features/leaderboard/LeaderboardPage";
 import { AuthPage } from "./features/auth/AuthPage";
+import { ResetPasswordPage } from "./features/auth/ResetPasswordPage";
+import { VerifyEmailPage } from "./features/auth/VerifyEmailPage";
 import { OnlineMatchPage } from "./features/play/OnlineMatchPage";
 import { MessagesPage } from "./features/messages/MessagesPage";
 import { PrivateRoomPage } from "./features/rooms/PrivateRoomPage";
@@ -79,6 +81,11 @@ export function App() {
         {/* ── auth (no AppLayout chrome — full-screen) ── */}
         <Route path="/login" element={<AuthPage initialMode="signin" />} />
         <Route path="/register" element={<AuthPage initialMode="signup" />} />
+        {/* Targets of the reset-password / verify-email emails
+            (${WEB_ORIGIN}/reset?token=… and /verify?token=…). Without these the
+            links 404. */}
+        <Route path="/reset" element={<ResetPasswordPage />} />
+        <Route path="/verify" element={<VerifyEmailPage />} />
 
         <Route element={<AppLayout />}>
           {/* ── fully built ── */}
