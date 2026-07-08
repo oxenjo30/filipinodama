@@ -23,7 +23,7 @@ const PASS_ITEM_ID = "seasonpass";
 
 const claimSchema = z.object({ tier: z.number().int().min(1) });
 
-type Reward = { gold?: number; diamonds?: number };
+type Reward = { gold?: number; diamonds?: number; trophies?: number };
 type Tier = { tier: number; xp: number; freeReward?: Reward; premiumReward?: Reward };
 
 /** The currently-running season (falls back to the most recent if none active). */
@@ -53,6 +53,16 @@ async function grantReward(userId: string, reward: Reward | undefined, seasonId:
       userId,
       currency: "DIAMONDS",
       amount: reward.diamonds,
+      reason: "season",
+      refType: "season_tier",
+      refId: `${seasonId}:${tier}`,
+    });
+  }
+  if (reward.trophies && reward.trophies > 0) {
+    await applyLedger(prisma, {
+      userId,
+      currency: "TROPHIES",
+      amount: reward.trophies,
       reason: "season",
       refType: "season_tier",
       refId: `${seasonId}:${tier}`,

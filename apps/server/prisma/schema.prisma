@@ -52,6 +52,12 @@ model User {
   draws  Int @default(0)
   streak Int @default(0)
 
+  // daily login bonus — server-authoritative streak (client localStorage would
+  // be trivially farmable). loginStreak is the current consecutive-day count
+  // (1..7, cycles); lastLoginBonusAt is when the last bonus was claimed.
+  loginStreak      Int       @default(0)
+  lastLoginBonusAt DateTime?
+
   createdAt  DateTime  @default(now())
   lastSeenAt DateTime  @default(now())
   deletedAt  DateTime?

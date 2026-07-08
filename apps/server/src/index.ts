@@ -15,6 +15,7 @@ import { guildRoutes } from "./modules/guilds.js";
 import { storeRoutes } from "./modules/store.js";
 import { questRoutes } from "./modules/quests.js";
 import { seasonRoutes } from "./modules/seasons.js";
+import { rewardRoutes } from "./modules/rewards.js";
 import { leaderboardRoutes } from "./modules/leaderboard.js";
 import { matchRoutes } from "./modules/matches.js";
 import { learnRoutes } from "./modules/learn.js";
@@ -80,6 +81,7 @@ async function main() {
   await app.register(storeRoutes, { prefix: "/api" });
   await app.register(questRoutes, { prefix: "/api" });
   await app.register(seasonRoutes, { prefix: "/api" });
+  await app.register(rewardRoutes, { prefix: "/api" });
   await app.register(leaderboardRoutes, { prefix: "/api" });
   await app.register(matchRoutes, { prefix: "/api" });
   await app.register(learnRoutes, { prefix: "/api" });

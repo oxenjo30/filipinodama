@@ -136,7 +136,9 @@ async function main() {
         tier: i + 1,
         xp: (i + 1) * 100,
         freeReward: { gold: 100 },
-        premiumReward: i % 5 === 4 ? { diamonds: 50 } : { gold: 300 },
+        // Every 5th premium tier awards Trophies (ranking progress) instead of
+        // gold — diamonds are no longer granted (real-money currency, disabled).
+        premiumReward: i % 5 === 4 ? { trophies: 25 } : { gold: 300 },
       })),
     },
   });

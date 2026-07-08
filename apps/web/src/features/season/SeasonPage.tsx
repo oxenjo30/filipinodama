@@ -32,12 +32,13 @@ import { useAuthStore } from "../../stores/authStore";
  */
 
 // ── reward → display cell (icon + label) from the real reward payload ──
-type Reward = { gold?: number; diamonds?: number } | null;
+type Reward = { gold?: number; diamonds?: number; trophies?: number } | null;
 type RewardCell = { tag: string; icon: string; label: string };
 
 function rewardCell(r: Reward, premium: boolean): RewardCell {
   const tag = premium ? "ROYAL" : "FREE";
   if (!r) return { tag, icon: premium ? "👑" : "🎁", label: premium ? "Royal Reward" : "Reward" };
+  if (r.trophies && r.trophies > 0) return { tag, icon: "🏆", label: `${r.trophies.toLocaleString()} Trophies` };
   if (r.diamonds && r.diamonds > 0) return { tag, icon: "💎", label: `${r.diamonds.toLocaleString()} Diamonds` };
   if (r.gold && r.gold > 0) return { tag, icon: "🪙", label: `${r.gold.toLocaleString()} Gold` };
   return { tag, icon: premium ? "👑" : "🎁", label: premium ? "Royal Reward" : "Reward" };
@@ -320,11 +321,11 @@ export function SeasonPage() {
   // reward-track season name so the banner/modal never render an empty title.
   const endSeasonName = endStatus?.season?.name ?? seasonName;
 
-  // Re-pull balances after a claim (gold/diamonds may both change).
+  // Re-pull balances after a claim (gold / trophies / diamonds may all change).
   const refreshBalances = useCallback(async () => {
     try {
-      const { user } = await api.get<{ user: { gold: number; diamonds: number } }>("/api/auth/me");
-      patchMe({ gold: user.gold, diamonds: user.diamonds });
+      const { user } = await api.get<{ user: { gold: number; diamonds: number; trophies: number } }>("/api/auth/me");
+      patchMe({ gold: user.gold, diamonds: user.diamonds, trophies: user.trophies });
     } catch {
       /* non-fatal */
     }
@@ -341,8 +342,12 @@ export function SeasonPage() {
         const res = await api.post<{ freeReward: Reward; premiumReward: Reward }>("/api/season/claim", { tier });
         const gold = (res.freeReward?.gold ?? 0) + (res.premiumReward?.gold ?? 0);
         const diamonds = (res.freeReward?.diamonds ?? 0) + (res.premiumReward?.diamonds ?? 0);
-        const gained = gold ? `+${gold.toLocaleString()} Gold` : diamonds ? `+${diamonds.toLocaleString()} Diamonds` : "Reward claimed";
-        showToast(gained);
+        const trophies = (res.freeReward?.trophies ?? 0) + (res.premiumReward?.trophies ?? 0);
+        const parts: string[] = [];
+        if (gold) parts.push(`+${gold.toLocaleString()} Gold`);
+        if (trophies) parts.push(`+${trophies.toLocaleString()} Trophies`);
+        if (diamonds) parts.push(`+${diamonds.toLocaleString()} Diamonds`);
+        showToast(parts.length ? parts.join(" · ") : "Reward claimed");
         await Promise.all([load(), refreshBalances()]);
       } catch (e) {
         showToast(e instanceof ApiError ? e.message : "Couldn't claim reward.");
@@ -741,7 +746,7 @@ export function SeasonPage() {
               <div style={{ font: "500 13px Inter", color: "var(--ink)", lineHeight: 1.5, marginTop: 4 }}>
                 {hasPass
                   ? "You own the pass — claim the premium reward on every level you reach this season."
-                  : "Claim the premium reward on every level — exclusive skins, frames, and bonus Diamonds all season long."}
+                  : "Claim the premium reward on every level — exclusive skins, frames, and bonus Trophies all season long."}
               </div>
             </div>
             {hasPass ? (

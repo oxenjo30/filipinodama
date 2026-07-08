@@ -14,6 +14,7 @@ import { NotificationsMenu } from "../nav/NotificationsMenu";
 import { CookieConsent } from "../consent/CookieConsent";
 import { Footer } from "./Footer";
 import { OnboardingFlow } from "../onboarding/OnboardingFlow";
+import { DailyLoginBonusModal } from "../rewards/DailyLoginBonusModal";
 
 /**
  * AppLayout — the top nav + mobile nav + fixed background, reproduced VERBATIM
@@ -390,6 +391,7 @@ export function AppLayout() {
       </div>
       <Toasts />
       <OnboardingFlow />
+      <DailyLoginBonusModal />
       <CookieConsent />
       <TopUpModal open={topUpOpen} onClose={() => setTopUpOpen(false)} />
       <NotificationsMenu open={notifOpen} onClose={() => setNotifOpen(false)} onUnreadChange={setNotifUnread} />
