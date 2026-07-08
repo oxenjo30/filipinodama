@@ -5,6 +5,10 @@ import { Login } from "./pages/Login";
 import { Overview } from "./pages/Overview";
 import { PlayersPage } from "./pages/Players";
 import { EconomyPage } from "./pages/Economy";
+import { StorePage } from "./pages/Store";
+import { LiveOpsPage } from "./pages/LiveOps";
+import { GuildsPage } from "./pages/Guilds";
+import { MatchesPage } from "./pages/Matches";
 import { AuditPage } from "./pages/Audit";
 import { Phase2 } from "./pages/Phase2";
 
@@ -25,13 +29,14 @@ const NAV: Nav[] = [
   ["/players", "Players", "#7fb0ff", "Players & safety", "SUPPORT"],
   ["/moderation", "Moderation", "#c2495a", "Players & safety", "MODERATOR", true],
   ["/support", "Support", "#5fd08a", "Players & safety", "SUPPORT", true],
-  ["/matches", "Anti-cheat", "#d98a3a", "Players & safety", "MODERATOR", true],
-  ["/economy", "Store & economy", "#f0cf72", "Economy", "ECONOMY"],
+  ["/matches", "Matches", "#d98a3a", "Players & safety", "MODERATOR"],
+  ["/economy", "Grants & ledger", "#f0cf72", "Economy", "ECONOMY"],
+  ["/store", "Store catalog", "#f0cf72", "Economy", "ECONOMY"],
   ["/financials", "Financials", "#4bd6a0", "Economy", "ECONOMY", true],
   ["/fraud", "Fraud & AML", "#ff7a7a", "Economy", "ECONOMY", true],
-  ["/liveops", "Live ops", "#4fd0c0", "Engagement", "ECONOMY", true],
+  ["/liveops", "Live ops", "#4fd0c0", "Engagement", "ECONOMY"],
   ["/tournaments", "Tournaments", "#e0a24a", "Engagement", "ECONOMY", true],
-  ["/guilds", "Guilds", "#e39aa8", "Engagement", "MODERATOR", true],
+  ["/guilds", "Guilds", "#e39aa8", "Engagement", "MODERATOR"],
   ["/campaigns", "Campaigns", "#ff9ec4", "Engagement", "SUPPORT", true],
   ["/settings", "Settings", "#b98cff", "System & access", "SUPERADMIN", true],
   ["/admins", "Admins", "#7fe0c0", "System & access", "SUPERADMIN", true],
@@ -46,8 +51,9 @@ const TITLES: Record<string, [string, string]> = {
   "/players": ["Player Management", "Players"],
   "/moderation": ["Trust & Safety", "Moderation queue"],
   "/support": ["Player Support", "Support tickets"],
-  "/matches": ["Integrity", "Matches & anti-cheat"],
-  "/economy": ["Economy", "Store & currency"],
+  "/matches": ["Integrity", "Match viewer"],
+  "/economy": ["Economy", "Grants & ledger"],
+  "/store": ["Economy", "Store catalog"],
   "/financials": ["Revenue & Payments", "Financials"],
   "/fraud": ["Risk", "Fraud & AML monitoring"],
   "/liveops": ["Live Ops", "Seasons, quests & events"],
@@ -161,18 +167,19 @@ export function App() {
             <Route path="/" element={<Navigate to="/overview" replace />} />
             <Route path="/overview" element={<Overview />} />
             <Route path="/players" element={<PlayersPage />} />
+            <Route path="/matches" element={<MatchesPage />} />
             <Route path="/economy" element={<EconomyPage />} />
+            <Route path="/store" element={<StorePage />} />
+            <Route path="/liveops" element={<LiveOpsPage />} />
+            <Route path="/guilds" element={<GuildsPage />} />
             <Route path="/audit" element={<AuditPage />} />
             {/* Phase-2 stubs */}
             <Route path="/analytics" element={<Phase2 title="Analytics deep-dive" note="DAU/WAU/MAU, funnels, retention cohorts. Needs an analytics pipeline." />} />
             <Route path="/moderation" element={<Phase2 title="Moderation queue" note="Reports intake + queue. Coming in Phase 1.5." />} />
             <Route path="/support" element={<Phase2 title="Support tickets" note="Ticket model + intake." />} />
-            <Route path="/matches" element={<Phase2 title="Matches & anti-cheat" note="Read-only match viewer + void (needs a detection subsystem)." />} />
             <Route path="/financials" element={<Phase2 title="Financials" note="Blocked — real-money top-up is disabled for legal compliance." />} />
             <Route path="/fraud" element={<Phase2 title="Fraud & AML" note="Payment-driven risk engine (blocked on payments)." />} />
-            <Route path="/liveops" element={<Phase2 title="Seasons, quests & events" note="Live-ops authoring over the existing Season/Quest models." />} />
             <Route path="/tournaments" element={<Phase2 title="Tournaments" note="Needs a Tournament model." />} />
-            <Route path="/guilds" element={<Phase2 title="Guilds" note="Guild oversight (rename/disband)." />} />
             <Route path="/campaigns" element={<Phase2 title="Campaign composer" note="Segmented notifications + campaigns." />} />
             <Route path="/settings" element={<Phase2 title="Settings" note="Runtime feature flags + economy constants (needs a config table)." />} />
             <Route path="/admins" element={<Phase2 title="Admin users" note="Role management over existing adminRole." />} />
