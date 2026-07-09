@@ -76,10 +76,14 @@ model Report {
   reason        ReportReason
   note          String?      @db.Text        // optional free-text from reporter
 
-  context       String       // "dm" | "profile"   (match/room deferred)
-  channelId     String?      // dm: the Channel
-  messageId     String?      // dm: the specific offending Message (stable id)
-  excerpt       String?      @db.Text        // snapshot of that message body at report time
+  context         String       // "dm" | "profile"   (match/room deferred)
+  channelId       String?      // dm: the Channel
+  messageId       String?      // dm: the specific offending Message (stable id)
+  excerpt         String?      @db.Text      // dm: snapshot of that message body at report time
+  // profile reports have no chat excerpt, so the evidence IS the accused's profile
+  // at report time — snapshot it so a later rename/avatar-swap can't erase what was
+  // reported. Stored as JSON: { displayName, username, tag, avatarUrl, bio }.
+  profileSnapshot Json?        // profile: accused's profile fields at report time
 
   status        ReportStatus @default(OPEN)
   resolvedById  String?      // moderator who closed it (nullable FK, SetNull)
@@ -90,6 +94,7 @@ model Report {
 
   @@index([status, createdAt])
   @@index([accusedId])
+  @@index([reporterId, createdAt])   // serves the DB-backed per-user rate-limit count (M7)
 }
 ```
 
@@ -124,39 +129,55 @@ and is documented here so it isn't lost on a schema regenerate.
 
 One endpoint, two surfaces this build:
 
-| Surface | context | Body carries | Excerpt source |
+| Surface | context | Body carries | Evidence snapshotted |
 |---|---|---|---|
-| Direct message | `dm` | `accusedId, messageId` | server looks up the Message by id |
-| Player profile | `profile` | `accusedId` | none |
+| Direct message | `dm` | `accusedId, messageId, note?` | `excerpt` = that message's body |
+| Player profile | `profile` | `accusedId, note (required)` | `profileSnapshot` = accused's profile fields |
 
 **Request body:** `{ accusedId, reason, note?, context: "dm"|"profile", messageId? }`.
 
 **Server logic:**
 1. `requireAuth` (live-status checked). Reporter = `req.userId`.
-2. Validate with zod: `reason` ∈ enum, `context` ∈ {dm, profile}, `note` ≤ 500,
-   `messageId` required iff `context==="dm"`.
+2. Validate with zod: `reason` ∈ enum, `context` ∈ {dm, profile}, `note` ≤ 500;
+   `messageId` required iff `context==="dm"`; **`note` required + non-empty iff
+   `context==="profile"`** (a profile report has no chat evidence, so the reporter must say
+   what's wrong — offensive name? avatar? bio?).
 3. Reject: self-report (`accusedId===reporter`), accused is a bot or deleted/nonexistent,
    → 400 with a clear message.
-4. **DM evidence ownership (H3):** load the Message by `messageId`; require that
-   (a) it exists, (b) `message.authorId === accusedId` (you can only cite the *accused's*
-   own message as evidence, not put words in their mouth), and (c) the reporter is a member
-   of that message's channel (`ChannelMember`). Otherwise 400. Snapshot `excerpt = message.body`
-   and `channelId = message.channelId`.
-5. Snapshot `reporterName` / `accusedName` from the two users.
-6. `create` the Report. On P2002 (partial-unique) → 409 "You've already reported this player."
+4. **DM evidence validation (H3 + tightening):** load the Message by `messageId` together
+   with its Channel; require that
+   (a) it exists, (b) **`channel.type === "DM"`** (not a room/guild channel),
+   (c) `message.authorId === accusedId` (you can only cite the *accused's* own message —
+   no putting words in their mouth), and (d) **the channel's two DM members are exactly
+   {reporter, accused}** — i.e. the reporter is a member AND the accused is a member of that
+   DM (verify the pair via `ChannelMember`, not just the reporter's membership). Otherwise
+   400. Snapshot `excerpt = message.body`, `channelId = message.channelId`.
+5. **Profile evidence:** snapshot `profileSnapshot = { displayName, username, tag, avatarUrl,
+   bio }` from the accused at report time.
+6. Snapshot `reporterName` / `accusedName` ("username#tag") from the two users.
+7. **Rate-limit (M7 — DB-backed, decided):** the `@fastify/rate-limit` plugin hooks
+   `onRequest`, which runs BEFORE `requireAuth`'s `preHandler` populates `req.userId`
+   (confirmed: `guards.ts:46` sets it in a preHandler; plugin is `@fastify/rate-limit@^9`),
+   so a userId `keyGenerator` would see `undefined`. Instead enforce the quota **in the
+   handler, after auth**: `count` the reporter's reports in the last hour
+   (`where: { reporterId, createdAt: { gte: hourAgo } }` — served by an index on
+   `[reporterId, createdAt]`) and reject the 6th with **429 `RATE_LIMITED`**. Deterministic,
+   testable, per-user (two users behind one IP are independent), no hook-order dependency.
+8. `create` the Report. On P2002 (partial-unique) → 409 `ALREADY_REPORTED`
+   "You've already reported this player."
 
-**Guardrails:**
-- **Rate-limit (M7):** the global limiter is IP-keyed with no `keyGenerator` (confirmed
-  `index.ts:66`). Add a **per-route** rate-limit config on `POST /api/reports` with a
-  `keyGenerator` that returns `req.userId` (falls back to IP if somehow absent), e.g.
-  `max: 5, timeWindow: "1 hour"`. This is the first user-keyed limit in the app; the
-  keyGenerator is local to this route's config.
-- **Dedupe:** the partial unique index (above).
+Add an index `@@index([reporterId, createdAt])` to the model for the rate-limit count.
 
 **Client:** `apps/web/src/features/moderation/ReportPlayerModal.tsx` — shared reason-picker
-modal (6 reasons + optional note), using existing web design tokens + the web `api` client.
-Invoked from: the **DM thread** (passes the selected/most-recent accused message's id) and the
-**player profile / card** (context=profile). Success → toast; dedupe 409 → inline "already
+modal (6 reasons + note; note required for profile), using existing web design tokens + the
+web `api` client. Invoked from:
+- **DM thread** — a per-message **"Report this message"** affordance on the *other person's*
+  bubbles (`m.author.id !== myId`) in `apps/web/src/features/messages/MessagesPage.tsx`
+  (each message already renders with a stable `key={m.id}`). It passes that exact `messageId`
+  (NO "most-recent message" fallback — the reporter reports a *specific* line), and the modal
+  shows the **locked quoted message** so the reporter confirms exactly what they're citing.
+- **Player profile / card** — a "Report player" affordance (context=profile, note required).
+Success → toast; dedupe 409 → inline "already
 reported" message.
 
 ## Admin queue — `/moderation` section
@@ -165,42 +186,82 @@ reported" message.
 `admin-*` plugins under the `/api` prefix (so routes are `/admin/reports…` → client calls
 `/api/admin/reports…`, per L10). All routes `requireAdmin("MODERATOR")`; all mutations audited.
 
-- `GET /admin/reports?status=&reason=&accusedId=&cursor=&limit=` — queue, newest first,
-  cursor-paginated (`take: limit+1` / `nextCursor`). Default `status=OPEN`. Each row returns
-  reporter/accused (live `{id,username,tag,avatarUrl}` when the user still exists, else the
-  snapshot name), reason, note, context, channelId, messageId, excerpt, status, createdAt.
+- `GET /admin/reports?status=&reason=&accusedId=&cursor=&limit=` — queue, cursor-paginated.
+  **Stable ordering:** `orderBy: [{ createdAt: "desc" }, { id: "desc" }]` and the cursor is the
+  compound `(createdAt, id)` of the last row — a plain `createdAt desc` cursor drops/dupes rows
+  that share a timestamp. Default `status=OPEN`. Each row returns reporter/accused (live
+  `{id,username,tag,avatarUrl}` when the user still exists, else the snapshot `*Name`), reason,
+  note, context, channelId, messageId, excerpt, profileSnapshot, status, `accusedGone`
+  (= `accusedId === null`), createdAt.
 - `POST /admin/reports/:id/dismiss` — `{ reason }`. Set DISMISSED + resolvedBy/At +
-  `resolution="dismissed"`. Audited `report.dismiss`. No sanction.
+  `resolution="dismissed"`. Audited `report.dismiss`. No sanction. **Allowed even when the
+  accused is deleted.**
 - `POST /admin/reports/:id/mute` — `{ durationHours?, reason }`. Mute the **accused** +
-  resolve the report. Audited.
+  resolve the report. Audited. **If `accusedId === null` → 409 `ACCUSED_GONE`** (nothing to
+  sanction; the mod should Dismiss instead).
 - `POST /admin/reports/:id/ban` — `{ durationHours?, reason }`. Ban the accused + resolve.
-  Audited.
+  Audited. **Same `ACCUSED_GONE` guard.**
+
+**Deleted-accused handling (decided).** When the accused account has been deleted
+(`accusedId === null`), the queue allows **Dismiss/Resolve only** — Mute/Ban are disabled in
+the UI (keyed off the row's `accusedGone` flag) and the server returns 409 `ACCUSED_GONE` if
+attempted. The report row + evidence is retained regardless.
 
 **Transactional resolution (H4).** Today admin mute/ban update the user and write the audit
 row as separate awaits (`admin.ts:236`); a naive extraction could leave "sanction applied,
 report still open" (or vice-versa) on a mid-way failure, and two mods could act on the same
-report concurrently. So:
+report concurrently.
 
-- New `apps/server/src/lib/sanctions.ts` exports `muteUser(tx, {...})` / `banUser(tx, {...})`
-  that take a Prisma transaction client and do the user update + audit write, returning what's
-  needed to send the notification email **after** commit (email is side-effecting and must not
-  be inside the transaction). admin.ts's existing `/users/:id/mute` and `/ban` are refactored
-  to call these (wrapped in their own `$transaction`), so the Players page and the queue share
-  one path with identical audit/notify behavior.
-- Each queue mutation runs one `prisma.$transaction`:
-  1. `updateMany` the report **only where `status = 'OPEN'`** (atomic claim). If count === 0 →
-     throw a 409 "Report already resolved" (someone else got there first / stale UI).
-  2. Apply the sanction via `muteUser`/`banUser(tx, …)` (skip for dismiss).
-  3. Set the report's `resolvedById`, `resolvedAt`, `resolution`.
-  4. Write the `audit()` row(s).
-  After commit, send the accused's notification email (best-effort, non-fatal), same as the
+- **Widen `audit()` (concrete refactor).** `audit()` currently takes `db: PrismaClient`
+  (confirmed `audit.ts:9`), so it cannot be called with a transaction client. Change its first
+  param type to `Prisma.TransactionClient | PrismaClient` (both expose `.auditLog.create`) so it
+  works inside a `$transaction`. `apps/server/src/lib/audit.ts` is added to files-touched. No
+  call-site changes needed (widening only).
+- New `apps/server/src/lib/sanctions.ts` exports
+  `muteUser(tx, { targetId, actorId, durationHours, reason })` /
+  `banUser(tx, {...})` typed to take `Prisma.TransactionClient`. Each does the user `update` +
+  the `audit(tx, …)` write inside the caller's transaction, and **returns the data needed to
+  send the email after commit** `{ email, username, isGuest, until }` (email is side-effecting
+  and must never run inside the transaction). admin.ts's existing `/users/:id/mute` and `/ban`
+  are refactored to wrap these in their own `$transaction`, so the Players page and the queue
+  share one path.
+- **Mute email (clarification).** Today only **bans** send an email (`banEmailHtml`; no mute
+  email exists — confirmed `admin.ts:245`). To keep behavior identical after the refactor,
+  `banUser` returns email data and `muteUser` returns `null` for email (no mute email). Adding
+  a mute email is out of scope for this build; if wanted later, add `muteEmailHtml` and have
+  `muteUser` return its data — the post-commit send site already handles "email or null".
+- **Concrete atomic-claim algorithm.** Each queue mutation runs one `prisma.$transaction(async (tx) => …)`:
+  1. **Claim:** `const claimed = await tx.report.updateMany({ where: { id, status: "OPEN" },
+     data: { status: targetStatus, resolvedById: actorId, resolvedAt: new Date(), resolution } })`
+     where `targetStatus` is `DISMISSED` for dismiss else `RESOLVED`, and `resolution` is
+     `"dismissed" | "muted" | "banned"`. This sets the resolution fields **as part of the same
+     conditional update** — no separate later write.
+  2. **`if (claimed.count === 0)`** → the report was already resolved (or never OPEN) → throw
+     409 `REPORT_RESOLVED`. Because the `WHERE status = 'OPEN'` update is atomic, exactly one of
+     two concurrent mods wins; the loser's `count` is 0.
+  3. For mute/ban only: **guard `accusedId !== null`** (else throw 409 `ACCUSED_GONE`), then
+     `await muteUser(tx, …)` / `banUser(tx, …)` (applies sanction + writes its own audit row,
+     returns email data).
+  4. Write the resolution `audit(tx, { action: "report.dismiss|report.resolve.mute|
+     report.resolve.ban", targetType: "report", targetId: id, before:{status:"OPEN"},
+     after:{status:targetStatus,resolution}, reason })`.
+  5. Return the email data (or null) out of the transaction.
+  **After commit:** if email data was returned, send it (best-effort, non-fatal) — same as the
   existing sanction path.
 
 **Admin page** `apps/admin/src/pages/Moderation.tsx` — matches the approved `secModeration`
 markup: report cards (colored left-accent by reason, type badge + relative time,
-"Reported: **Accused** · by Reporter · in {DM / profile}", italic excerpt box when present),
+"Reported: **Accused** · by Reporter · in {DM / profile}", italic excerpt box for DM reports /
+a compact profile-snapshot preview for profile reports; the reporter note shown when present),
 Dismiss / Mute / Ban buttons (Mute/Ban → confirm→duration→reason modal via the shared
-`useAdminMutation`), status + reason filter chips, and the **"Queue clear"** empty state.
+`useAdminMutation`; **Mute/Ban disabled when `accusedGone`**), status + reason filter chips.
+Two distinct empty states:
+- **"Queue clear"** — the approved empty state, shown when there are genuinely no OPEN reports
+  and no filters are applied.
+- **"No reports match these filters"** — shown when a status/reason/accused filter returns
+  nothing but the queue isn't actually empty (so a mod doesn't misread a filtered view as
+  "all clear"). Includes a "Clear filters" action.
+
 Only approved admin CSS tokens/classes.
 
 **Player-detail count (M9).** Add `openReportsAgainst` (count of OPEN reports where
@@ -221,16 +282,19 @@ change + a test.
 ## Files touched
 
 **Server:**
-- `prisma/schema.prisma` — `Report` model + 2 enums + 3 User back-relations. Migration also
-  runs the partial-unique-index raw SQL.
+- `apps/server/prisma/schema.prisma` — `Report` model + 2 enums + 3 User back-relations.
+  Migration also runs the partial-unique-index raw SQL.
 - `apps/server/src/auth/guards.ts` — harden `requireAdmin` (live reload). [H5]
-- `apps/server/src/lib/sanctions.ts` — NEW: `muteUser`/`banUser` (tx-aware, email-after-commit). [H4]
+- `apps/server/src/lib/audit.ts` — widen first param to `Prisma.TransactionClient | PrismaClient`
+  so `audit()` can run inside a `$transaction`. [H4]
+- `apps/server/src/lib/sanctions.ts` — NEW: `muteUser`/`banUser` (tx-typed, email-after-commit). [H4]
 - `apps/server/src/modules/admin.ts` — refactor `/users/:id/mute` + `/ban` onto `sanctions.ts`;
   add `openReportsAgainst` to `/users/:id`. [H4, M9]
-- `apps/server/src/modules/reports.ts` — NEW: `POST /api/reports` intake (+ per-route user-keyed
+- `apps/server/src/modules/reports.ts` — NEW: `POST /api/reports` intake (+ DB-backed per-user
   rate limit). [M7]
 - `apps/server/src/modules/admin-reports.ts` — NEW: admin queue routes (transactional). [H4]
-- `apps/server/src/index.ts` — register `reportRoutes` + `adminReportsRoutes`.
+- `apps/server/src/index.ts` — extract a `buildApp()` factory (see Test harness) + register
+  `reportRoutes` + `adminReportsRoutes`.
 - `apps/server/test/…` — NEW integration tests (see below). [M8]
 
 **Web (player app):**
@@ -244,32 +308,70 @@ change + a test.
 
 ## Error handling
 
-- Intake: self/bot/deleted-accused → 400; bad `messageId` / not the accused's message / not a
-  channel member → 400; dedupe P2002 → 409 "already reported"; over rate limit → 429.
-- Queue: acting on an already-resolved report → 409 "Report already resolved" (the atomic
-  claim in step 1 guarantees this even under concurrent mods). Not-found → `err.notFound`.
+- Intake: self/bot/deleted-accused → 400; missing note on a profile report → 400; DM evidence
+  failures (non-DM channel / not the accused's message / not the DM pair) → 400; over quota →
+  429 `RATE_LIMITED`; dedupe P2002 → 409 `ALREADY_REPORTED`.
+- Queue: already-resolved report → 409 `REPORT_RESOLVED` (the atomic OPEN-claim guarantees this
+  even under concurrent mods); mute/ban on a deleted accused → 409 `ACCUSED_GONE`; not-found →
+  `err.notFound`.
 - Sanction failures roll back the whole transaction (report stays OPEN) — no half-applied state.
+- All errors use the app's standard envelope (`err.*` → `{ error: { code, message } }`); the
+  429 is thrown from the handler (not the plugin) so it uses the same envelope.
 
 ## Testing / verification (M8)
 
-Server integration tests are **required** (server already runs `vitest`; web/admin have no test
-harness, so those stay manual). Cover:
-- **Intake auth:** unauthenticated → 401; authenticated happy path creates a Report.
-- **Dedupe:** second OPEN report same reporter→accused → 409; allowed again after the first is resolved.
-- **Evidence ownership:** DM report with a `messageId` that isn't the accused's message, or where
-  the reporter isn't a channel member → 400; valid case snapshots the excerpt.
-- **Self/bot guards:** self-report and bot-report → 400.
-- **Admin RBAC:** SUPPORT hitting the queue → 403; the hardened `requireAdmin` rejects a
-  now-banned/demoted admin whose token still says admin.
-- **Pagination:** `nextCursor` walks the queue without dupes/gaps.
-- **Stale 409:** resolving an already-resolved report → 409; the report isn't double-sanctioned.
-- **Transaction race:** two concurrent mute/ban on the same OPEN report → exactly one sanction
-  applied, the other 409s; audit rows consistent with the winner.
+**Test harness (prerequisite).** The server currently runs `vitest run --passWithNoTests`
+(confirmed `package.json:16`) and `index.ts` builds the app and `listen()`s inline at module
+load (`index.ts:34,108,119`) — so there's nothing to exercise without opening a socket. First
+extract a **`buildApp(): Promise<FastifyInstance>`** factory that registers everything but does
+NOT call `.listen()`; `main()` becomes `buildApp().then(app => app.listen(...))`. Tests then use
+Fastify's **`app.inject()`** (no network) against `buildApp()`. DB: tests run against a real
+Postgres (a local/CI test database via `DATABASE_URL`), each test seeding + cleaning its own
+rows in a `beforeEach`/`afterEach` (or a per-test transaction rollback) — this feature's
+transaction/index/concurrency semantics can't be honestly tested against a mock. The concurrency
+race test issues two `inject()` calls with `Promise.all`. This harness is reusable by future
+server tests, so it's worth doing once here.
 
-Manual E2E (prod-like): file a DM report and a profile report → both appear in the queue →
-Dismiss removes from OPEN; Mute/Ban applies the sanction + resolves + writes AuditLog + emails
-the accused; dedupe + rate-limit behave; "Queue clear" shows when empty; SUPPORT sees the
-count on player detail but not the queue.
+**Structured logging / audit payloads.** Each intake + resolution path emits a structured log
+(`app.log.info({...})`) and, for mutations, an `AuditLog` row. Documented shapes so tests can
+assert them and ops can grep:
+- create → log `{ evt:"report.create", reporterId, accusedId, context, reason }`
+- dedupe reject → log `{ evt:"report.dedupe_blocked", reporterId, accusedId }` (no audit — no mutation)
+- rate-limit reject → log `{ evt:"report.rate_limited", reporterId, recentCount }`
+- resolve/dismiss → audit `{ action:"report.dismiss"|"report.resolve.mute"|"report.resolve.ban",
+  targetType:"report", targetId, before:{status:"OPEN"}, after:{status,resolution}, reason }`
+  (+ the sanction's own `user.mute`/`user.ban` audit row for mute/ban)
+- stale/conflict → log `{ evt:"report.conflict", id, kind:"resolved"|"accused_gone" }` (no audit)
+
+**Required server integration tests (via `inject()`):**
+- **Intake auth:** unauthenticated → 401; authenticated happy path creates a Report (DM + profile).
+- **Dedupe:** second OPEN report same reporter→accused → 409 `ALREADY_REPORTED`; allowed again
+  after the first is resolved (proves the partial index is OPEN-scoped, not all-status).
+- **DM evidence validation:** rejects (a) non-DM channel, (b) `messageId` not authored by the
+  accused, (c) reporter/accused not the DM pair → 400; valid case snapshots `excerpt`.
+- **Profile report:** requires a non-empty `note` (400 without); snapshots `profileSnapshot`.
+- **Self/bot guards:** self-report and bot-report → 400.
+- **Rate-limit (M7 tests):** 6th report within the hour → 429 `RATE_LIMITED`; **two different
+  users behind the same IP** each get their own quota (user B's 1st is NOT blocked by user A's
+  5); the 429 body uses the app's standard error envelope (`{ error: { code, message } }`).
+- **Admin RBAC:** SUPPORT hitting the queue → 403; the hardened `requireAdmin` rejects a
+  now-banned / now-demoted / now-deleted admin whose token still claims admin (H5).
+- **Pagination stability:** with several reports sharing an identical `createdAt`, the
+  `(createdAt desc, id desc)` cursor walks all rows with no dupes and no gaps.
+- **Stale 409:** resolving an already-resolved report → 409 `REPORT_RESOLVED`; not double-sanctioned.
+- **Deleted-accused:** mute/ban on a report whose `accusedId` is null → 409 `ACCUSED_GONE`;
+  dismiss on the same report → succeeds.
+- **Transaction race:** two concurrent mute/ban on the same OPEN report → exactly one sanction
+  applied, the other 409s; the accused's `mutedUntil`/`bannedUntil` reflects one action; audit
+  rows consistent with the winner.
+
+Web/admin have no test harness (no `"test"` script) → those paths are verified manually.
+
+Manual E2E (prod-like): file a DM report (per-message) and a profile report → both appear in the
+queue → Dismiss removes from OPEN; Mute applies the mute + resolves + writes AuditLog (no email,
+per current behavior); Ban applies + resolves + emails the accused; dedupe + rate-limit behave;
+"Queue clear" vs filtered-empty states render correctly; deleted-accused disables Mute/Ban;
+SUPPORT sees the count on player detail but not the queue.
 
 Deploy verification: `/api/reports` returns 401 unauthenticated; `/api/admin/reports…` return
 401 unauthenticated (exist + guarded); admin `/moderation` renders.
