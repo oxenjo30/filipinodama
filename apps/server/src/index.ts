@@ -1,3 +1,4 @@
+import { fileURLToPath } from "node:url";
 import Fastify, { type FastifyInstance } from "fastify";
 import cors from "@fastify/cors";
 import cookie from "@fastify/cookie";
@@ -127,7 +128,14 @@ async function main() {
   app.log.info(`FilipinoDama server listening on :${env.PORT}`);
 }
 
-main().catch((e) => {
-  console.error(e);
-  process.exit(1);
-});
+// Only auto-run main() when this file is the process entry point (e.g. `node
+// dist/index.js`, per the "start" script), NOT when it's imported — the test
+// harness imports `buildApp` from this module and must not boot a real
+// listening HTTP + Socket.IO server as a side effect of that import.
+const isEntry = process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1];
+if (isEntry) {
+  main().catch((e) => {
+    console.error(e);
+    process.exit(1);
+  });
+}
