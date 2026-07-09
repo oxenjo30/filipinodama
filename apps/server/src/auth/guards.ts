@@ -74,8 +74,16 @@ export function requireAdmin(min: AdminRole) {
   return async (req: FastifyRequest, _reply: FastifyReply) => {
     await attachUser(req);
     if (!req.userId) throw err.unauthorized();
-    if (!req.adminRole || RANK[req.adminRole] < RANK[min]) {
-      throw err.forbidden("ADMIN_FORBIDDEN", `requires ${min} admin role`);
-    }
+    const user = await prisma.user.findUnique({
+      where: { id: req.userId },
+      select: { deletedAt: true, bannedUntil: true, adminRole: true },
+    });
+    if (!user || user.deletedAt) throw err.unauthorized("ACCOUNT_GONE", "This account no longer exists");
+    // DB role is authoritative — ignore the token's adminRole.
+    req.adminRole = user.adminRole;
+    if (!user.adminRole || RANK[user.adminRole] < RANK[min]) throw err.forbidden("ADMIN_FORBIDDEN", `requires ${min} admin role`);
+    // Active ban locks out everyone EXCEPT a superadmin (so the top account can't self-brick).
+    const banned = user.bannedUntil && user.bannedUntil > new Date();
+    if (banned && user.adminRole !== "SUPERADMIN") throw err.forbidden("ADMIN_BANNED", "This admin account is suspended");
   };
 }
