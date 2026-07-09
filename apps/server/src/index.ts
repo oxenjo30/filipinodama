@@ -1,4 +1,4 @@
-import Fastify from "fastify";
+import Fastify, { type FastifyInstance } from "fastify";
 import cors from "@fastify/cors";
 import cookie from "@fastify/cookie";
 import helmet from "@fastify/helmet";
@@ -31,7 +31,11 @@ import { registerRealtime } from "./realtime/index.js";
 
 export { prisma };
 
-async function main() {
+function corsOriginsFromEnv(): string[] {
+  return env.CORS_ORIGIN.split(",").map((o) => o.trim()).filter(Boolean);
+}
+
+export async function buildApp(): Promise<FastifyInstance> {
   const app = Fastify({ logger: true });
 
   // Global safety net: a floating promise rejection anywhere (e.g. a fired-and-
@@ -57,7 +61,7 @@ async function main() {
   // CORS accepts a COMMA-SEPARATED list of allowed origins so the player app
   // (filipinodama.com) and the admin console (app.filipinodama.com) can both call
   // the API with the shared cookie. Any of the listed origins is allowed.
-  const corsOrigins = env.CORS_ORIGIN.split(",").map((o) => o.trim()).filter(Boolean);
+  const corsOrigins = corsOriginsFromEnv();
   await app.register(cors, { origin: corsOrigins.length > 1 ? corsOrigins : corsOrigins[0], credentials: true });
   await app.register(cookie);
 
@@ -105,8 +109,15 @@ async function main() {
   await app.register(dmRoutes, { prefix: "/api" });
   // more modules register here as they land
 
+  return app;
+}
+
+async function main() {
+  const app = await buildApp();
+
   await app.listen({ port: env.PORT, host: "0.0.0.0" });
 
+  const corsOrigins = corsOriginsFromEnv();
   const io = new IOServer(app.server, {
     path: "/rt",
     cors: { origin: corsOrigins.length > 1 ? corsOrigins : corsOrigins[0], credentials: true },
