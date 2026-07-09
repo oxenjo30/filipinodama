@@ -14,7 +14,7 @@ import { GuildsPage } from "./features/guilds/GuildsPage";
 import { StorePage } from "./features/store/StorePage";
 import { InventoryPage } from "./features/inventory/InventoryPage";
 import { SettingsPage } from "./features/settings/SettingsPage";
-import { PrivacyPage, TermsPage, CommunityPage, DataPage } from "./features/legal/LegalPages";
+import { PrivacyPage, TermsPage, CommunityPage, AntiCheatPage, DataPage } from "./features/legal/LegalPages";
 import { LearnPage } from "./features/learn/LearnPage";
 import { LessonPage } from "./features/learn/LessonPage";
 import { SeasonPage } from "./features/season/SeasonPage";
@@ -121,6 +121,7 @@ export function App() {
           <Route path="/privacy" element={<PrivacyPage />} />
           <Route path="/terms" element={<TermsPage />} />
           <Route path="/community" element={<CommunityPage />} />
+          <Route path="/anti-cheat" element={<AntiCheatPage />} />
           <Route path="/data" element={<DataPage />} />
           <Route path="/contact" element={<ContactPage />} />
           <Route path="/blog" element={<BlogPage />} />

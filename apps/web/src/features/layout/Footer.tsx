@@ -19,6 +19,7 @@ const LEGAL_LINKS: { label: string; to: string }[] = [
   { label: "Privacy Policy", to: "/privacy" },
   { label: "Terms of Service", to: "/terms" },
   { label: "Community Guidelines", to: "/community" },
+  { label: "Fair Play & Anti-Cheat", to: "/anti-cheat" },
   { label: "Data & Account", to: "/data" },
   { label: "Contact", to: "/contact" },
 ];
