@@ -18,6 +18,10 @@ export function CommunityPage() {
   return <LegalLayout active="community" />;
 }
 
+export function AntiCheatPage() {
+  return <LegalLayout active="anticheat" />;
+}
+
 export function DataPage() {
   return <LegalLayout active="data" />;
 }
