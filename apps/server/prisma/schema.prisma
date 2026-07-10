@@ -86,6 +86,8 @@ model User {
   ticketsFiled    Ticket[]        @relation("ticketsFiled")
   ticketsResolved Ticket[]        @relation("ticketsResolved")
   ticketMessages  TicketMessage[] @relation("ticketMessages")
+  tournamentsCreated Tournament[]      @relation("tournamentsCreated")
+  tournamentEntries  TournamentEntry[] @relation("tournamentEntries")
 
   @@index([trophies])
 }
@@ -234,6 +236,8 @@ model Match {
   goldReward      Int?      @default(0)
   startedAt       DateTime  @default(now())
   endedAt         DateTime?
+
+  tournamentMatch TournamentMatch?
 
   @@index([redId])
   @@index([blueId])
@@ -549,4 +553,122 @@ model TicketMessage {
   createdAt  DateTime  @default(now())
 
   @@index([ticketId, createdAt])
+}
+
+// ─────────────── Tournaments (V1: admin-managed single-elimination) ───────────────
+enum TournamentFormat {
+  SINGLE_ELIM      // V1
+  DOUBLE_ELIM      // reserved — V2
+  SWISS            // reserved — V2
+  ROUND_ROBIN      // reserved — V2
+}
+
+enum TournamentStatus {
+  DRAFT       // being edited; not visible to players
+  OPEN        // registration open; players may join/leave
+  RUNNING     // bracket seeded; matches being played
+  COMPLETED   // finished; prizes paid
+  CANCELLED   // called off; entry fees refunded
+}
+
+model Tournament {
+  id            String           @id @default(cuid())
+  name          String
+  format        TournamentFormat @default(SINGLE_ELIM)
+  status        TournamentStatus @default(DRAFT)
+
+  // Economy — GOLD ONLY (rule 2). No currency column: it is always gold.
+  entryFeeGold  Int              @default(0)   // 0 = free entry
+  prizePoolGold Int              @default(0)    // total gold paid out across placements
+
+  // Bracket sizing — must be a power of two in {2..256}; validated on write.
+  maxPlayers      Int              @default(16)
+  registeredCount Int              @default(0)   // serialized counter — the capacity guard
+                                                   // (see "Join" below). Incremented/decremented
+                                                   // inside the same $transaction as entry
+                                                   // create/delete; NEVER derived from a plain
+                                                   // COUNT(*) on TournamentEntry at request time.
+  minTrophies     Int              @default(0)    // trophy gate to join (0 = open to all)
+  matchMode       MatchMode        @default(CASUAL) // the MatchMode tournament games run as (see below)
+
+  startsAt      DateTime?        // descriptive in V1 (admin-triggered start); scheduler is V2
+
+  // Prize distribution — V1 pays ONLY the champion and runner-up (see "Prize payout
+  // (V1: top-2 only, no ties)" below for why). JSON 2-tuple: [firstPrizeGold,
+  // secondPrizeGold]. Validated at COMPLETE time: firstPrizeGold + secondPrizeGold
+  // === prizePoolGold (else 400 PRIZE_SPLIT_MISMATCH). Placements 3+ are recorded on
+  // TournamentEntry.placement for display but are NEVER paid in V1.
+  prizeSplitGold Json           @default("[]")
+
+  createdById   String
+  createdBy     User             @relation("tournamentsCreated", fields: [createdById], references: [id], onDelete: Restrict)
+
+  createdAt     DateTime         @default(now())
+  updatedAt     DateTime         @updatedAt
+  openedAt      DateTime?
+  startedAt     DateTime?
+  completedAt   DateTime?
+  cancelledAt   DateTime?
+
+  entries       TournamentEntry[]
+  matches       TournamentMatch[]
+
+  @@index([status, startsAt])
+}
+
+model TournamentEntry {
+  id           String     @id @default(cuid())
+  tournamentId String
+  tournament   Tournament @relation(fields: [tournamentId], references: [id], onDelete: Cascade)
+  userId       String
+  user         User       @relation("tournamentEntries", fields: [userId], references: [id], onDelete: Cascade)
+
+  seed         Int?       // 1..B, assigned at Start (null while OPEN)
+  eliminated   Boolean    @default(false)
+  placement    Int?       // final rank set at COMPLETE (1 = champion, 2 = runner-up, recorded
+                           // for display beyond that). null = not yet placed / eliminated early.
+                           // ONLY placement 1 and 2 are paid in V1 (see prize payout below).
+  refunded     Boolean    @default(false) // entry fee refunded (cancel path). guards double-refund at app level too.
+  joinedAt     DateTime   @default(now())
+
+  // Opposite relation fields for TournamentMatch.redEntry/blueEntry (Prisma requires both
+  // sides of a named relation). Not otherwise queried directly — matches are looked up via
+  // TournamentMatch, not through these back-relations.
+  redSlots     TournamentMatch[] @relation("tmRed")
+  blueSlots    TournamentMatch[] @relation("tmBlue")
+
+  @@unique([tournamentId, userId])   // one entry per player per tournament (dedupe)
+  @@index([tournamentId, seed])
+}
+
+model TournamentMatch {
+  id           String     @id @default(cuid())
+  tournamentId String
+  tournament   Tournament @relation(fields: [tournamentId], references: [id], onDelete: Cascade)
+
+  round        Int        // 1 = first round; final round = log2(B)
+  slot         Int        // 0-based position within the round (parent = slot >> 1 in round+1)
+
+  // The two competitors for this slot. null = not yet determined (awaiting a
+  // feeder result) OR a bye (one side null with the other present in round 1).
+  redEntryId   String?
+  redEntry     TournamentEntry? @relation("tmRed",  fields: [redEntryId],  references: [id], onDelete: SetNull)
+  blueEntryId  String?
+  blueEntry    TournamentEntry? @relation("tmBlue", fields: [blueEntryId], references: [id], onDelete: SetNull)
+
+  // The real Match this slot was played as, if any. V1: players play through the
+  // EXISTING normal match flow (unrelated to the bracket) and the admin reports the
+  // result via /report — matchId is set by the admin's report call as an optional
+  // reference/audit link, NOT created by a lazy "Play your match" socket handoff
+  // (that mechanism is deferred to V1.5 — see "Deferred to V1.5: lazy match
+  // creation + live handoff" below). null for byes or if the admin didn't link one.
+  matchId      String?    @unique
+  match        Match?     @relation(fields: [matchId], references: [id], onDelete: SetNull)
+
+  winnerEntryId String?   // set when the slot resolves (from admin report/bye)
+  status        String     @default("pending") // "pending" | "ready" | "done"
+  resolvedAt    DateTime?
+
+  @@unique([tournamentId, round, slot])
+  @@index([tournamentId, round])
 }

@@ -54,7 +54,7 @@ export async function seedUser(
 /** Wipe the tables these tests write, leaving durable seed rows (bots/store) intact. */
 export async function truncateAll() {
   await prisma.$executeRawUnsafe(
-    `TRUNCATE "Report", "AuditLog", "Message", "ChannelMember", "Channel", "Ticket" RESTART IDENTITY CASCADE`,
+    `TRUNCATE "Report", "AuditLog", "Message", "ChannelMember", "Channel", "Ticket", "Tournament", "TournamentEntry", "TournamentMatch", "Match", "LedgerEntry" RESTART IDENTITY CASCADE`,
   );
   // remove only test-created users (prefix-scoped) to keep seed accounts
   await prisma.user.deleteMany({ where: { username: { startsWith: "t_user_" } } });
