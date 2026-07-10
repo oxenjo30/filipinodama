@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Outlet, useLocation, useNavigate } from "react-router-dom";
 import { rankTierFor } from "@dama/shared";
 import { useAppStore } from "../../stores/appStore";
@@ -26,17 +26,15 @@ import { DailyLoginBonusModal } from "../rewards/DailyLoginBonusModal";
 
 type NavItem = { label: string; to: string; mobileLabel?: string; children?: { label: string; to: string; icon?: string }[] };
 
-// Quests + Learn now live UNDER Play as a dropdown (desktop). The `to` on Play
-// still navigates to the hub; `children` populate the dropdown + the mobile
-// drawer's nested list.
+// Quests + Learn live UNDER Play as a dropdown (desktop). Play itself is still a
+// clickable button that navigates to the hub; `children` populate the dropdown +
+// the mobile drawer's nested list.
 const NAV: NavItem[] = [
   { label: "Home", to: "/" },
   {
     label: "Play",
     to: "/play",
     children: [
-      { label: "Play Now", to: "/play", icon: "🎮" },
-      { label: "Math Dama", to: "/damath", icon: "🧮" },
       { label: "Quests", to: "/quests", icon: "🎯" },
       { label: "Learn", to: "/learn", icon: "📖" },
     ],
@@ -136,11 +134,33 @@ export function AppLayout() {
   const [notifUnread, setNotifUnread] = useState(0);
   const [menuOpen, setMenuOpen] = useState(false); // mobile hamburger drawer
   const [openMenu, setOpenMenu] = useState<string | null>(null); // desktop nav dropdown (e.g. "Play")
+  // Close the nav dropdown on a short DELAY so moving the mouse from the button
+  // to the items (even across a small gap) doesn't dismiss it. Re-entering
+  // cancels the pending close. This is the standard "hover intent" fix.
+  const menuCloseTimer = useRef<number | null>(null);
+  const cancelMenuClose = () => {
+    if (menuCloseTimer.current) {
+      window.clearTimeout(menuCloseTimer.current);
+      menuCloseTimer.current = null;
+    }
+  };
+  const openNavMenu = (label: string) => {
+    cancelMenuClose();
+    setOpenMenu(label);
+  };
+  const scheduleMenuClose = () => {
+    cancelMenuClose();
+    menuCloseTimer.current = window.setTimeout(() => setOpenMenu(null), 180);
+  };
 
-  // Close the mobile drawer on any route change (tapping a link navigates → close).
+  // Close the mobile drawer + desktop nav dropdown on any route change.
   useEffect(() => {
     setMenuOpen(false);
+    setOpenMenu(null);
   }, [pathname]);
+
+  // Clean up the dropdown close-timer on unmount.
+  useEffect(() => () => cancelMenuClose(), []);
 
   // While the drawer is open: lock body scroll + close on Escape.
   useEffect(() => {
@@ -262,12 +282,13 @@ export function AppLayout() {
                   <div
                     key={n.to}
                     style={{ position: "relative" }}
-                    onMouseEnter={() => setOpenMenu(n.label)}
-                    onMouseLeave={() => setOpenMenu((m) => (m === n.label ? null : m))}
+                    onMouseEnter={() => openNavMenu(n.label)}
+                    onMouseLeave={scheduleMenuClose}
                   >
                     <button
                       className={`navlink ${isOn(n.to) || n.children.some((c) => isOn(c.to)) ? "on" : ""}`}
-                      onClick={() => navigate(n.to)}
+                      onClick={() => { setOpenMenu(null); navigate(n.to); }}
+                      onFocus={() => openNavMenu(n.label)}
                       aria-haspopup="true"
                       aria-expanded={openMenu === n.label}
                       style={{ display: "inline-flex", alignItems: "center", gap: 5 }}
@@ -278,13 +299,21 @@ export function AppLayout() {
                     {openMenu === n.label && (
                       <div
                         role="menu"
+                        onMouseEnter={cancelMenuClose}
+                        onMouseLeave={scheduleMenuClose}
                         style={{
-                          position: "absolute", top: "calc(100% + 8px)", left: "50%", transform: "translateX(-50%)",
-                          zIndex: 71, minWidth: 190, padding: 6, borderRadius: 12,
-                          border: "1px solid rgba(232,184,75,.28)", background: "linear-gradient(180deg,#20132f,#170c26)",
-                          boxShadow: "0 18px 44px rgba(0,0,0,.55)", animation: "fdrise .16s ease both",
+                          position: "absolute", top: "100%", left: "50%", transform: "translateX(-50%)",
+                          // A transparent top pad BRIDGES the button and the panel so the
+                          // mouse never crosses empty space (which was closing the menu).
+                          paddingTop: 10,
+                          zIndex: 71, minWidth: 190,
                         }}
                       >
+                        <div style={{
+                          padding: 6, borderRadius: 12,
+                          border: "1px solid rgba(232,184,75,.28)", background: "linear-gradient(180deg,#20132f,#170c26)",
+                          boxShadow: "0 18px 44px rgba(0,0,0,.55)", animation: "fdrise .16s ease both",
+                        }}>
                         {n.children.map((c) => (
                           <button
                             key={c.to}
@@ -303,6 +332,7 @@ export function AppLayout() {
                             {c.label}
                           </button>
                         ))}
+                        </div>
                       </div>
                     )}
                   </div>
