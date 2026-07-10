@@ -77,10 +77,10 @@ button { font-family: inherit; }
   position: sticky; top: 0; z-index: 20; background: rgba(16, 7, 32, 0.86); backdrop-filter: blur(10px);
   border-bottom: 1px solid var(--edge);
 }
-/* Inner row constrained to the same 1240px column as .main, so the title/controls
-   line up exactly with the content below (no full-width vs centered misalignment). */
+/* Full-width inner row (no 1240px cap) — content fills the screen with even 32px
+   side padding, matching .main so the title/controls align with the content below. */
 .topbar-inner {
-  max-width: 1240px; margin: 0 auto; padding: 14px 24px;
+  padding: 14px 32px;
   display: flex; align-items: center; gap: 16px;
 }
 .topbar .eyebrow { font: 700 9px var(--sans); letter-spacing: 2.5px; text-transform: uppercase; color: var(--dim); }
@@ -89,7 +89,9 @@ button { font-family: inherit; }
 .viewingas span { font: 600 10px var(--sans); letter-spacing: 1.5px; color: var(--dim); }
 .userchip { display: flex; align-items: center; gap: 9px; padding: 5px 12px 5px 6px; background: var(--panel); border: 1px solid rgba(232, 184, 75, 0.16); border-radius: 100px; }
 .userchip .av { width: 30px; height: 30px; border-radius: 50%; background: linear-gradient(150deg, #4a2d7a, #2a1848); border: 1px solid rgba(232, 184, 75, 0.4); display: flex; align-items: center; justify-content: center; font: 800 12px var(--sans); color: var(--gold-lt); }
-.main { flex: 1; padding: 24px; max-width: 1240px; width: 100%; margin: 0 auto; animation: adfade .25s ease; }
+/* Full-width content (no 1240px cap) — fills the screen with even 32px side padding
+   so wide monitors have no big empty side bands; aligns with .topbar-inner. */
+.main { flex: 1; padding: 24px 32px; width: 100%; animation: adfade .25s ease; }
 
 /* ── cards / panels ── */
 .panel { background: var(--panel); border: 1px solid var(--edge); border-radius: 14px; }
