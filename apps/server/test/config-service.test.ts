@@ -1,7 +1,6 @@
 import { describe, it, expect, afterEach, afterAll } from "vitest";
 import { prisma } from "../src/db/client.js";
 import { getBool, getConfig, invalidateConfig } from "../src/lib/config-service.js";
-import { truncateAll } from "./helpers.js";
 
 afterEach(async () => { await prisma.config.deleteMany({ where: { key: { startsWith: "T_" } } }); invalidateConfig(); });
 afterAll(async () => { await prisma.$disconnect(); });
