@@ -55,6 +55,8 @@ function crestFor(tag: string): string {
 
 /** Guilds — oversight: list, search, detail drawer with roster, moderate. */
 export function GuildsPage() {
+  const { can } = useAuth();
+  const mutate = useAdminMutation();
   const [q, setQ] = useState("");
   const [sort, setSort] = useState<(typeof SORTS)[number]["key"]>("points");
   const [rows, setRows] = useState<GuildRow[]>([]);
@@ -74,6 +76,36 @@ export function GuildsPage() {
   };
   useEffect(load, [sort]);
 
+  /** Row-level rename — same PATCH the drawer's Edit form uses, just a focused one-field prompt (mockup's inline "Rename" action). */
+  const rename = (g: GuildRow) =>
+    mutate({
+      title: `Rename ${g.name}`,
+      requireReason: true,
+      confirmLabel: "Save",
+      method: "PATCH",
+      path: `/api/admin/guilds/${g.id}`,
+      successMsg: "Guild renamed.",
+      onDone: load,
+      extra: (set, vals) => (
+        <div className="field"><label>Name</label>
+          <input className="input" autoFocus value={(vals.name as string) ?? g.name} onChange={(e) => set("name", e.target.value)} />
+        </div>
+      ),
+    });
+
+  const disbandRow = (g: GuildRow) =>
+    mutate({
+      title: `Disband ${g.name}`,
+      body: "This removes the guild and all its members and join requests. This cannot be undone.",
+      requireReason: true,
+      danger: true,
+      confirmLabel: "Disband",
+      method: "DELETE",
+      path: `/api/admin/guilds/${g.id}`,
+      successMsg: "Guild disbanded.",
+      onDone: load,
+    });
+
   return (
     <>
       <div className="crumb">Community · Guilds</div>
@@ -88,7 +120,7 @@ export function GuildsPage() {
           onChange={(e) => setQ(e.target.value)}
           onKeyDown={(e) => e.key === "Enter" && load()}
         />
-        <button className="btn" onClick={load}>Search</button>
+        <button className="abtn btn-ghost btn-ghost-sm" onClick={load}>Search</button>
         <div style={{ marginLeft: "auto" }} className="dim">{total} guilds</div>
       </div>
       <div className="row" style={{ marginBottom: 14 }}>
@@ -97,45 +129,52 @@ export function GuildsPage() {
         ))}
       </div>
 
-      <div className="panel">
-        <table className="tbl">
-          <thead>
-            <tr>
-              <th>Guild</th>
-              <th>Leader</th>
-              <th className="num">Members</th>
-              <th className="num">Weekly pts</th>
-              <th className="num">Min trophies</th>
-              <th>Join policy</th>
-            </tr>
-          </thead>
-          <tbody>
-            {loading ? (
-              <tr><td colSpan={6} className="dim" style={{ textAlign: "center", padding: 24 }}>Loading…</td></tr>
-            ) : rows.length === 0 ? (
-              <tr><td colSpan={6} className="dim" style={{ textAlign: "center", padding: 24 }}>No guilds match your search.</td></tr>
-            ) : (
-              rows.map((g) => (
-                <tr key={g.id} className="click" onClick={() => setSelId(g.id)}>
-                  <td>
-                    <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                      <div style={{ width: 32, height: 32, borderRadius: 8, background: crestFor(g.tag), display: "flex", alignItems: "center", justifyContent: "center", font: "800 11px var(--serif)", color: "#3a2405", flex: "none" }}>{g.tag}</div>
-                      <div>
-                        <div style={{ fontWeight: 600 }}>{g.name}</div>
-                        <div className="dim mono" style={{ fontSize: 12 }}>{g.tag}</div>
+      <div className="panel" style={{ overflow: "hidden" }}>
+        <div style={{ overflowX: "auto" }}>
+          <table className="tbl" style={{ minWidth: 720 }}>
+            <thead>
+              <tr className="thead-raised">
+                <th>Guild</th>
+                <th className="num">Members</th>
+                <th className="num">Weekly pts</th>
+                <th className="num">Min trophies</th>
+                <th style={{ textAlign: "center" }}>Action</th>
+              </tr>
+            </thead>
+            <tbody>
+              {loading ? (
+                <tr><td colSpan={5} className="dim" style={{ textAlign: "center", padding: 24 }}>Loading…</td></tr>
+              ) : rows.length === 0 ? (
+                <tr><td colSpan={5} className="dim" style={{ textAlign: "center", padding: 24 }}>No guilds match your search.</td></tr>
+              ) : (
+                rows.map((g) => (
+                  <tr key={g.id} className="arow" style={{ cursor: "pointer" }} onClick={() => setSelId(g.id)}>
+                    <td>
+                      <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                        <div className="fd-avatar" style={{ borderRadius: 8, background: crestFor(g.tag), font: "800 11px var(--serif)", color: "#3a2405" }}>{g.tag}</div>
+                        <div>
+                          <div style={{ fontWeight: 700, fontSize: 12.5 }}>{g.name}</div>
+                          <div className="dim mono" style={{ fontSize: 11 }}>
+                            {g.tag}{g.leader ? ` · ${g.leader.username}${g.leader.tag}` : ""}
+                          </div>
+                        </div>
                       </div>
-                    </div>
-                  </td>
-                  <td>{g.leader ? <>{g.leader.username} <span className="dim mono" style={{ fontSize: 12 }}>{g.leader.tag}</span></> : <span className="dim">—</span>}</td>
-                  <td className="num">{g.memberCount.toLocaleString()}</td>
-                  <td className="num" style={{ color: "var(--gold-lt)" }}>{g.weeklyPoints.toLocaleString()}</td>
-                  <td className="num">{g.minTrophies.toLocaleString()}</td>
-                  <td className="dim mono">{g.joinPolicy}</td>
-                </tr>
-              ))
-            )}
-          </tbody>
-        </table>
+                    </td>
+                    <td className="num">{g.memberCount.toLocaleString()}</td>
+                    <td className="num" style={{ color: "var(--gold-lt)" }}>{g.weeklyPoints.toLocaleString()}</td>
+                    <td className="num">{g.minTrophies.toLocaleString()}</td>
+                    <td onClick={(e) => e.stopPropagation()}>
+                      <div style={{ display: "flex", gap: 6, justifyContent: "center" }}>
+                        <button className="abtn btn-ghost btn-ghost-sm" disabled={!can("MODERATOR")} onClick={() => rename(g)}>Rename</button>
+                        <button className="abtn btn-danger btn-danger-sm" disabled={!can("MODERATOR")} onClick={() => disbandRow(g)}>Disband</button>
+                      </div>
+                    </td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
       </div>
 
       {selId && <GuildDrawer id={selId} onClose={() => setSelId(null)} onChanged={load} />}
@@ -230,13 +269,13 @@ function GuildDrawer({ id, onClose, onChanged }: { id: string; onClose: () => vo
           <>
             <div className="row" style={{ justifyContent: "space-between" }}>
               <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-                <div style={{ width: 40, height: 40, borderRadius: 9, background: crestFor(d.tag), display: "flex", alignItems: "center", justifyContent: "center", font: "800 13px var(--serif)", color: "#3a2405", flex: "none" }}>{d.tag}</div>
+                <div className="fd-avatar lg" style={{ borderRadius: 9, background: crestFor(d.tag), font: "800 13px var(--serif)", color: "#3a2405" }}>{d.tag}</div>
                 <div>
                   <div style={{ font: "800 20px var(--sans)" }}>{d.name}</div>
                   <div className="dim mono">{d.tag} · {d.joinPolicy}</div>
                 </div>
               </div>
-              <button className="btn" onClick={onClose}>Close</button>
+              <button className="abtn btn-ghost btn-ghost-sm" onClick={onClose}>Close</button>
             </div>
 
             <div className="kpi" style={{ margin: "18px 0" }}>
@@ -254,47 +293,54 @@ function GuildDrawer({ id, onClose, onChanged }: { id: string; onClose: () => vo
             {/* Actions — role-gated (server enforces too) */}
             <div style={{ fontWeight: 700, margin: "10px 0 8px" }}>Actions</div>
             <div className="row">
-              {can("MODERATOR") && <button className="btn" onClick={edit}>Edit</button>}
-              {can("MODERATOR") && <button className="btn danger" onClick={disband}>Disband</button>}
+              {can("MODERATOR") && <button className="abtn btn-ghost btn-ghost-sm" onClick={edit}>Edit</button>}
+              {can("MODERATOR") && <button className="abtn btn-danger btn-danger-sm" onClick={disband}>Disband</button>}
               {!can("MODERATOR") && <span className="dim">No actions available for your role.</span>}
             </div>
 
             {/* Member roster */}
             <div style={{ fontWeight: 700, margin: "22px 0 8px" }}>Member roster</div>
-            <div className="panel">
-              <table className="tbl">
-                <thead>
-                  <tr>
-                    <th>Member</th>
-                    <th>Role</th>
-                    <th className="num">Weekly</th>
-                    <th>Joined</th>
-                    {can("MODERATOR") && <th></th>}
-                  </tr>
-                </thead>
-                <tbody>
-                  {d.roster.length === 0 ? (
-                    <tr><td colSpan={can("MODERATOR") ? 5 : 4} className="dim" style={{ textAlign: "center", padding: 16 }}>No members.</td></tr>
-                  ) : (
-                    d.roster.map((m) => (
-                      <tr key={m.userId}>
-                        <td>
-                          <div style={{ fontWeight: 600 }}>{m.username} <span className="dim mono" style={{ fontSize: 12 }}>{m.tag}</span></div>
-                          <div className="dim" style={{ fontSize: 12 }}>{m.trophies.toLocaleString()} 🏆</div>
-                        </td>
-                        <td><RoleBadge role={m.role} /></td>
-                        <td className="num">{m.weeklyContribution.toLocaleString()}</td>
-                        <td className="mono dim">{new Date(m.joinedAt).toLocaleDateString()}</td>
-                        {can("MODERATOR") && (
+            <div className="panel" style={{ overflow: "hidden" }}>
+              <div style={{ overflowX: "auto" }}>
+                <table className="tbl">
+                  <thead>
+                    <tr className="thead-raised">
+                      <th>Member</th>
+                      <th>Role</th>
+                      <th className="num">Weekly</th>
+                      <th>Joined</th>
+                      {can("MODERATOR") && <th></th>}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {d.roster.length === 0 ? (
+                      <tr><td colSpan={can("MODERATOR") ? 5 : 4} className="dim" style={{ textAlign: "center", padding: 16 }}>No members.</td></tr>
+                    ) : (
+                      d.roster.map((m) => (
+                        <tr key={m.userId} className="arow">
                           <td>
-                            {m.role !== "LEADER" && <button className="btn danger" onClick={() => kick(m)}>Kick</button>}
+                            <div style={{ display: "flex", alignItems: "center", gap: 9 }}>
+                              <div className="fd-avatar sm">{m.username.slice(0, 2).toUpperCase()}</div>
+                              <div>
+                                <div style={{ fontWeight: 600 }}>{m.username} <span className="dim mono" style={{ fontSize: 12 }}>{m.tag}</span></div>
+                                <div className="dim" style={{ fontSize: 12 }}>{m.trophies.toLocaleString()} 🏆</div>
+                              </div>
+                            </div>
                           </td>
-                        )}
-                      </tr>
-                    ))
-                  )}
-                </tbody>
-              </table>
+                          <td><RoleBadge role={m.role} /></td>
+                          <td className="num">{m.weeklyContribution.toLocaleString()}</td>
+                          <td className="mono dim">{new Date(m.joinedAt).toLocaleDateString()}</td>
+                          {can("MODERATOR") && (
+                            <td>
+                              {m.role !== "LEADER" && <button className="abtn btn-danger btn-danger-sm" onClick={() => kick(m)}>Kick</button>}
+                            </td>
+                          )}
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                </table>
+              </div>
             </div>
           </>
         )}
