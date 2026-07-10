@@ -96,10 +96,10 @@ export function Moderation() {
 
 function EmptyState({ title, note, action, icon }: { title: string; note: string; action?: React.ReactNode; icon?: string }) {
   return (
-    <div className="panel panel-pad" style={{ textAlign: "center", padding: 40 }}>
+    <div className="panel panel-pad" style={{ textAlign: "center", padding: 48 }}>
       {icon && <div style={{ fontSize: 20, marginBottom: 6, opacity: 0.7 }}>{icon}</div>}
-      <div style={{ fontWeight: 700, marginBottom: 6, color: "var(--gold-lt)", font: "800 16px var(--serif)" }}>{title}</div>
-      <div className="dim" style={{ maxWidth: 420, margin: "0 auto" }}>{note}</div>
+      <div style={{ fontWeight: 700, marginBottom: 6, color: "var(--gold-lt)", font: "700 15px var(--serif)" }}>{title}</div>
+      <div className="dim" style={{ maxWidth: 420, margin: "6px auto 0", fontSize: 13, fontWeight: 500 }}>{note}</div>
       {action && <div style={{ marginTop: 14 }}>{action}</div>}
     </div>
   );
@@ -166,15 +166,15 @@ function ReportCard({ r, onDone }: { r: Report; onDone: () => void }) {
     });
 
   return (
-    <div className="acard" style={{ borderLeft: `3px solid ${badge.accent}` }}>
+    <div className="acard" style={{ borderLeft: `3px solid ${badge.accent}`, borderRadius: 12 }}>
       <div className="row" style={{ alignItems: "flex-start", gap: 12, flexWrap: "wrap" }}>
         <div style={{ flex: 1, minWidth: 240 }}>
-          <div className="row" style={{ marginBottom: 6 }}>
+          <div className="row" style={{ marginBottom: 6, gap: 8 }}>
             <span className="badge-rect" style={{ color: badge.accent, background: "rgba(255,255,255,.06)", borderColor: badge.accent }}>{badge.label}</span>
-            <span className="dim mono" style={{ fontSize: 12 }}>{timeAgo(r.createdAt)}</span>
+            <span className="dim" style={{ fontSize: 11, fontWeight: 600 }}>{timeAgo(r.createdAt)}</span>
           </div>
-          <div style={{ fontWeight: 700 }}>
-            <span className="dim" style={{ fontWeight: 500 }}>Reported:</span> {accusedLabel} <span className="dim" style={{ fontWeight: 500 }}>· by {reporterLabel} · in {r.context === "dm" ? "DM" : "profile"}</span>
+          <div style={{ fontWeight: 700, marginTop: 10, fontSize: 13, color: "var(--ink-3)" }}>
+            <span className="dim" style={{ fontWeight: 500 }}>Reported:</span> <span style={{ color: "var(--ink-2)" }}>{accusedLabel}</span> <span className="dim" style={{ fontWeight: 500 }}>· by {reporterLabel} · in {r.context === "dm" ? "DM" : "profile"}</span>
           </div>
 
           {r.context === "dm" && r.excerpt && (
