@@ -3,6 +3,14 @@ export const ECONOMY = {
   /** ranked trophy delta on a win/loss (base; scale by rating gap if using Elo/Glicko) */
   rankedTrophyWin: 25,
   rankedTrophyLoss: -18,
+  /**
+   * Trophy delta when a RANKED match is bot-filled (empty-queue fallback vs an
+   * NPC). Only the HUMAN seat moves; the bot seat never does. Kept small and
+   * win-only (no loss penalty) so a low-population ladder can still fill without
+   * being farmable or punishing a player for being auto-matched with a bot.
+   */
+  rankedBotTrophyWin: 10,
+  rankedBotTrophyLoss: 0,
   /** gold banked per win, by mode */
   goldPerWin: { RANKED: 50, CASUAL: 25, AI: 10, PRIVATE: 25, LOCAL: 0 } as const,
   dailyChallengeGold: 500,
