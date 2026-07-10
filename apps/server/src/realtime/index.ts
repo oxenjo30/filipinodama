@@ -5,6 +5,7 @@ import { registerMatchmaking } from "./matchmaking.js";
 import { registerMatch } from "./match.js";
 import { registerDamathMatchmaking } from "./damath-matchmaking.js";
 import { registerDamathMatch } from "./damath-match.js";
+import { registerDamathRooms } from "./damath-rooms.js";
 import { registerGuildChat } from "./guild-chat.js";
 import { registerPresence } from "./presence.js";
 import { registerRooms } from "./rooms.js";
@@ -90,6 +91,7 @@ export function registerRealtime(io: IOServer) {
     registerMatch(io, socket);
     registerDamathMatchmaking(io, socket);
     registerDamathMatch(io, socket);
+    registerDamathRooms(io, socket);
     registerGuildChat(io, socket);
     registerRooms(io, socket);
 

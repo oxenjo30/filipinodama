@@ -75,6 +75,14 @@ export const EV = {
   damathResign: "damath:resign",
   damathEnded: "damath:ended",
   damathResync: "damath:resync",
+
+  // Math Dama private rooms — invite a friend by code, play on two devices.
+  // Reuses Classic's room PATTERNS but seeds a Damath match (damath-match.ts).
+  damathRoomCreate: "damath:room:create",
+  damathRoomJoin: "damath:room:join",
+  damathRoomLeave: "damath:room:leave",
+  damathRoomState: "damath:room:state",
+  damathRoomStart: "damath:room:start", // host starts → server seeds the match
 } as const;
 
 export type EventName = (typeof EV)[keyof typeof EV];

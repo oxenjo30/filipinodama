@@ -18,6 +18,9 @@ export function DamathOnlineMatchPage() {
   const navigate = useNavigate();
   const [params] = useSearchParams();
   const variant = (params.get("variant") as DamathVariant) || "whole";
+  // Arriving from a private room: the room already attached us to a seeded
+  // match (attachMatch), so we must NOT re-join the public matchmaking queue.
+  const fromRoom = params.get("from") === "room";
 
   const {
     status,
@@ -33,15 +36,18 @@ export function DamathOnlineMatchPage() {
     error,
     connectionLost,
     joinQueue,
+    resync,
     leaveQueue,
     onSquareClick,
     resign,
     reset,
   } = useDamathOnlineStore();
 
-  // Join the queue on mount; leave/reset on unmount.
+  // On mount: from a room → resync into the already-seeded match; otherwise join
+  // the public queue. Leave/reset on unmount.
   useEffect(() => {
-    void joinQueue(variant);
+    if (fromRoom) void resync();
+    else void joinQueue(variant);
     return () => {
       leaveQueue();
       reset();

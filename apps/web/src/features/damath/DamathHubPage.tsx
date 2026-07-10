@@ -14,8 +14,8 @@ const LEVELS: { key: DamathLevel; title: string; blurb: string; icon: string }[]
   { key: "secondary", title: "Secondary", blurb: "Integers, rationals, radicals & polynomials.", icon: "🎓" },
 ];
 
-const OPPONENTS: { key: "local" | "ai" | "online"; title: string; blurb: string; icon: string; ready: boolean }[] = [
-  { key: "local", title: "Pass & Play", blurb: "Two players on one device.", icon: "👥", ready: true },
+const OPPONENTS: { key: "room" | "ai" | "online"; title: string; blurb: string; icon: string; ready: boolean }[] = [
+  { key: "room", title: "Private Room", blurb: "Invite a friend by code — play on two devices.", icon: "👥", ready: true },
   { key: "ai", title: "Play vs AI", blurb: "Practice against the computer.", icon: "🤖", ready: true },
   { key: "online", title: "Online", blurb: "Server-matched, unranked.", icon: "🌐", ready: true },
 ];
@@ -37,32 +37,28 @@ export function DamathHubPage() {
   const navigate = useNavigate();
   const showToast = useAppStore((s) => s.showToast);
   const me = useAuthStore((s) => s.me);
-  const newLocalGame = useDamathStore((s) => s.newLocalGame);
   const newAiGame = useDamathStore((s) => s.newAiGame);
 
   const [step, setStep] = useState<Step>("level");
   const [level, setLevel] = useState<DamathLevel | null>(null);
   const [variant, setVariant] = useState<DamathVariant | null>(null);
 
-  const startLocal = (v: DamathVariant) => {
-    newLocalGame(v);
-    navigate("/damath/game");
-  };
-
   const startAi = (v: DamathVariant, d: AiDifficulty) => {
     newAiGame(v, d);
     navigate("/damath/game");
   };
 
-  const startOnline = (v: DamathVariant) => {
-    // Online needs a session (guests count as logged in, matching PlayHub).
+  // Both online paths need a session (guests count as logged in, matching PlayHub).
+  const requireLogin = (v: DamathVariant, dest: string) => {
     if (!me) {
       showToast("Sign in to play Math Dama online.");
-      navigate(`/login?next=${encodeURIComponent(`/damath/online?variant=${v}`)}`);
+      navigate(`/login?next=${encodeURIComponent(dest)}`);
       return;
     }
-    navigate(`/damath/online?variant=${v}`);
+    navigate(dest);
   };
+  const startRoom = (v: DamathVariant) => requireLogin(v, `/damath/room?variant=${v}`);
+  const startOnline = (v: DamathVariant) => requireLogin(v, `/damath/online?variant=${v}`);
 
   return (
     <div style={{ maxWidth: 900, margin: "0 auto", padding: "40px 26px 60px" }}>
@@ -154,7 +150,7 @@ export function DamathHubPage() {
                   }
                   if (o.key === "ai") setStep("difficulty");
                   else if (o.key === "online") startOnline(variant);
-                  else startLocal(variant);
+                  else startRoom(variant);
                 }}
                 style={{ ...selectCard(false), opacity: o.ready ? 1 : 0.6, cursor: o.ready ? "pointer" : "not-allowed" }}
               >

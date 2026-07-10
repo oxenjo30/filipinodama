@@ -54,6 +54,8 @@ export type DamathOnlineStore = {
   joinQueue: (variant?: DamathVariant) => Promise<void>;
   leaveQueue: () => void;
   resync: () => Promise<void>;
+  /** Attach to an already-seeded match (private-room start) and pull its state. */
+  attachMatch: (matchId: string, myColor: DamathPlayerId, variant: DamathVariant, opponent?: Opponent) => Promise<void>;
   onSquareClick: (sq: DamathCoord) => void;
   resign: () => void;
   reset: () => void;
@@ -200,6 +202,17 @@ export const useDamathOnlineStore = create<DamathOnlineStore>((set, get) => {
         getSocket().emit(EV.damathResync, { matchId: id });
       } catch {
         /* server will resend damath:state */
+      }
+    },
+
+    attachMatch: async (matchId, myColor, variant, opponent = null) => {
+      set({ status: "found", matchId, myColor, variant, opponent, result: null, error: null });
+      try {
+        await connectSocket();
+        wire();
+        getSocket().emit(EV.damathResync, { matchId });
+      } catch {
+        /* the resulting damath:state will load the board when it arrives */
       }
     },
 
