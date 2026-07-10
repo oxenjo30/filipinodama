@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import type {
+  AiDifficulty,
   DamathCoord,
   DamathGameState,
   DamathLegalMove,
@@ -12,18 +13,27 @@ import {
   getAllLegalDamathMoves,
   applyDamathMove,
   checkDamathEnd,
+  bestDamathMove,
 } from "@dama/game-engine";
 
 /**
- * Damath store — parallel to gameStore, never merged. Phase 2 covers LOCAL
- * pass-and-play only (vs-AI = Phase 3, online = Phase 4). Both players share the
- * one device; Red opens. The engine owns all rules/scoring — this store only
- * holds selection + derived highlights and forwards taps.
+ * Damath store — parallel to gameStore, never merged. Covers LOCAL pass-and-play
+ * and vs-AI (online = Phase 4). Red opens. In vs-AI the human plays RED and the
+ * AI plays BLUE. The engine owns all rules/scoring/AI — this store only holds
+ * selection + derived highlights and forwards taps.
  */
 
 export type DamathMode = "local" | "ai" | "online";
 
-type DamathStatus = "playing" | "over";
+type DamathStatus = "playing" | "thinking" | "over";
+
+/** vs-AI seats: human plays RED (opens), AI plays BLUE. */
+export const DAMATH_HUMAN: DamathPlayerId = "red";
+export const DAMATH_AI: DamathPlayerId = "blue";
+
+/** Delay before the AI plays, so its "thinking" state is visible and the
+ *  human's move has time to slide + any capture to fade. */
+const AI_THINK_MS = 700;
 
 const sameCoord = (a: DamathCoord, b: DamathCoord) => a.x === b.x && a.y === b.y;
 const landingOf = (m: DamathLegalMove) => m.path[m.path.length - 1];
@@ -33,6 +43,8 @@ export type DamathStore = {
   state: DamathGameState;
   mode: DamathMode;
   variant: DamathVariant;
+  /** AI strength (vs-AI mode only) */
+  difficulty: AiDifficulty;
   /** selected own piece square (null when nothing selected) */
   selected: DamathCoord | null;
   /** landing squares of legal QUIET moves from the selected piece */
@@ -46,6 +58,7 @@ export type DamathStore = {
   flip: boolean;
 
   newLocalGame: (variant?: DamathVariant) => void;
+  newAiGame: (variant?: DamathVariant, difficulty?: AiDifficulty) => void;
   rematch: () => void;
   onSquareClick: (sq: DamathCoord) => void;
   swapSides: () => void;
@@ -77,18 +90,66 @@ function derive(state: DamathGameState, selected: DamathCoord | null) {
   return { mustCapture, moveTargets, captureTargets };
 }
 
+/** Terminal check after a move: is the side to move out of moves/pieces? */
+function terminalReason(next: DamathGameState): DamathEndReason | null {
+  const noPieces = next.pieces.filter((p) => p.player === next.turn).length === 0;
+  if (noPieces) return "no-pieces";
+  if (getAllLegalDamathMoves(next).length === 0) return "no-moves";
+  return null;
+}
+
 export const useDamathStore = create<DamathStore>((set, get) => {
-  function start(mode: DamathMode, variant: DamathVariant) {
+  function start(mode: DamathMode, variant: DamathVariant, difficulty?: AiDifficulty) {
     const state = createInitialDamathState(variant);
     set({
       state,
       mode,
       variant,
+      difficulty: difficulty ?? get().difficulty,
       selected: null,
       status: "playing",
       flip: false,
       ...derive(state, null),
     });
+    // Red opens (human in ai mode / Player 1 in local); no AI kickoff needed.
+  }
+
+  /** Apply a chosen move, settle any game end, switch turn, and — in vs-AI mode
+   *  when it becomes the AI's turn — schedule the AI's reply. */
+  function commitMove(next: DamathGameState) {
+    const reason = terminalReason(next);
+    if (reason) {
+      const result = checkDamathEnd(next, reason);
+      set({
+        state: { ...next, result },
+        selected: null,
+        status: "over",
+        moveTargets: [],
+        captureTargets: [],
+      });
+      return;
+    }
+    set({ state: next, selected: null, status: "playing", ...derive(next, null) });
+    scheduleAiMove();
+  }
+
+  /** In vs-AI mode, if it is the AI's turn, play the engine's move after a beat. */
+  function scheduleAiMove() {
+    const { state, mode, difficulty } = get();
+    if (mode !== "ai" || state.result || state.turn !== DAMATH_AI) return;
+    set({ status: "thinking" });
+    window.setTimeout(() => {
+      const { state: cur, mode: curMode } = get();
+      // Guard: the match may have been reset/switched to local mid-timeout. In
+      // local mode BLUE is a human even though blue === DAMATH_AI, so this check
+      // prevents a stale timeout from moving for a human.
+      if (curMode !== "ai" || cur.result || cur.turn !== DAMATH_AI) {
+        if (!cur.result && curMode === "ai") set({ status: "playing" });
+        return;
+      }
+      const move = bestDamathMove(cur, difficulty);
+      commitMove(applyDamathMove(cur, move));
+    }, AI_THINK_MS);
   }
 
   const initial = createInitialDamathState("whole");
@@ -96,6 +157,7 @@ export const useDamathStore = create<DamathStore>((set, get) => {
     state: initial,
     mode: "local",
     variant: "whole",
+    difficulty: "normal",
     selected: null,
     moveTargets: [],
     captureTargets: [],
@@ -104,14 +166,18 @@ export const useDamathStore = create<DamathStore>((set, get) => {
     flip: false,
 
     newLocalGame: (variant) => start("local", variant ?? get().variant),
-    rematch: () => start(get().mode, get().variant),
+    newAiGame: (variant, difficulty) =>
+      start("ai", variant ?? get().variant, difficulty ?? get().difficulty),
+    rematch: () => start(get().mode, get().variant, get().difficulty),
 
     swapSides: () => set((s) => ({ flip: !s.flip })),
 
     surrender: (who) => {
-      const { state } = get();
+      const { state, mode } = get();
       if (state.result) return;
-      const resigning = who ?? state.turn;
+      // ai mode: the human (RED) resigns → AI wins. local: the given side (or
+      // the side to move) resigns → the other wins.
+      const resigning = mode === "ai" ? DAMATH_HUMAN : (who ?? state.turn);
       const result = checkDamathEnd({ ...state, turn: resigning }, "resign");
       set({
         state: { ...state, result },
@@ -136,8 +202,10 @@ export const useDamathStore = create<DamathStore>((set, get) => {
     },
 
     onSquareClick: (sq) => {
-      const { state, selected, status } = get();
+      const { state, selected, status, mode } = get();
       if (status !== "playing" || state.result) return;
+      // vs-AI: only the human (RED) may act. local: whoever is to move may act.
+      if (mode === "ai" && state.turn !== DAMATH_HUMAN) return;
       const mover = state.turn;
 
       // If a piece is selected and the tap is a legal landing, play it.
@@ -145,29 +213,7 @@ export const useDamathStore = create<DamathStore>((set, get) => {
         const options = movesFrom(state, selected);
         const chosen = options.find((m) => sameCoord(landingOf(m), sq));
         if (chosen) {
-          const next = applyDamathMove(state, chosen);
-          // after a move: has the side to move any legal reply? if not, the game
-          // ends (no-moves) and the winner is decided by score (+chip bonus).
-          const replies = getAllLegalDamathMoves(next);
-          const noPieces = next.pieces.filter((p) => p.player === next.turn).length === 0;
-          if (replies.length === 0 || noPieces) {
-            const reason: DamathEndReason = noPieces ? "no-pieces" : "no-moves";
-            const result = checkDamathEnd(next, reason);
-            set({
-              state: { ...next, result },
-              selected: null,
-              status: "over",
-              moveTargets: [],
-              captureTargets: [],
-            });
-            return;
-          }
-          set({
-            state: next,
-            selected: null,
-            status: "playing",
-            ...derive(next, null),
-          });
+          commitMove(applyDamathMove(state, chosen));
           return;
         }
       }

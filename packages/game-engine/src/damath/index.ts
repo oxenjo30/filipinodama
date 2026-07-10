@@ -6,3 +6,4 @@ export * from "./damathScoring.js";
 export * from "./damathMoveGeneration.js";
 export * from "./damathRules.js";
 export * from "./damathState.js";
+export * from "./damathAi.js";

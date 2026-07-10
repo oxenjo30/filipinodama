@@ -3,15 +3,15 @@ import { useNavigate } from "react-router-dom";
 import type { DamathPlayerId } from "@dama/shared";
 import { Button } from "../../components";
 import { Modal } from "../shared/Modal";
-import { useDamathStore } from "../../stores/damathStore";
+import { useDamathStore, DAMATH_HUMAN } from "../../stores/damathStore";
 import { useAppStore } from "../../stores/appStore";
 import { DamathBoard } from "./DamathBoard";
 import { DamathScorePanel } from "./DamathScorePanel";
 import { DamathMoveHistory } from "./DamathMoveHistory";
 import { variantInfo } from "./variants";
 
-const P1 = "Player 1"; // Red
-const P2 = "Player 2"; // Blue
+/** AI opponent display name per difficulty. */
+const AI_NAME = { easy: "Apprentice", normal: "Tactician", hard: "Master" } as const;
 
 const show = (n: number) => {
   const r = Math.round(n * 100) / 100;
@@ -30,7 +30,9 @@ export function DamathGamePage() {
 
   const {
     state,
+    mode,
     variant,
+    difficulty,
     selected,
     moveTargets,
     captureTargets,
@@ -44,10 +46,18 @@ export function DamathGamePage() {
     endByReason,
   } = useDamathStore();
 
+  const isAi = mode === "ai";
   const result = state.result;
   const over = !!result;
   const redToMove = !over && state.turn === "red";
   const blueToMove = !over && state.turn === "blue";
+  const aiThinking = isAi && status === "thinking";
+
+  // Seat names: vs-AI → You (Red) vs the difficulty-named bot (Blue).
+  // Local → Player 1 (Red) vs Player 2 (Blue).
+  const P1 = isAi ? "You" : "Player 1";
+  const P2 = isAi ? AI_NAME[difficulty] : "Player 2";
+  const youAre = isAi ? DAMATH_HUMAN : null;
 
   // ── Per-player game clock (view-authoritative for local play) ──
   // Each side's own 20-min budget ticks only on their turn. On flag, the game
@@ -84,17 +94,23 @@ export function DamathGamePage() {
   // ── Result modal wording ──
   let resultTitle = "";
   let resultReason = "";
+  const humanWon = isAi && result?.winner === DAMATH_HUMAN;
   if (result) {
     if (result.winner === "draw") {
       resultTitle = "Draw";
-      resultReason = "Both players finished with the same score.";
+      resultReason = "Both sides finished with the same score.";
     } else {
       const winnerName = result.winner === "red" ? P1 : P2;
-      resultTitle = `${winnerName} Wins`;
       const loserName = result.winner === "red" ? P2 : P1;
+      // vs-AI: frame as Victory/Defeat for the human; local: name the seat.
+      resultTitle = isAi ? (humanWon ? "Victory" : "Defeat") : `${winnerName} Wins`;
       switch (result.reason) {
         case "resign":
-          resultReason = `${loserName} resigned the match.`;
+          resultReason = isAi
+            ? humanWon
+              ? "The AI resigned."
+              : "You resigned the match."
+            : `${loserName} resigned the match.`;
           break;
         case "clock":
           resultReason = `Time ran out — ${winnerName} led on total score.`;
@@ -114,7 +130,9 @@ export function DamathGamePage() {
   const winGrad =
     result?.winner === "draw"
       ? "linear-gradient(180deg,#6b6480,#3b3550)"
-      : "linear-gradient(180deg,#f0cf72,#c99a2e)";
+      : isAi && !humanWon
+        ? "linear-gradient(180deg,#a83744,#6e1b24)"
+        : "linear-gradient(180deg,#f0cf72,#c99a2e)";
 
   const info = variantInfo(variant);
 
@@ -141,12 +159,12 @@ export function DamathGamePage() {
           <div style={{ flex: 1, minWidth: 0 }}>
             <div style={{ font: "700 15px Cinzel,serif", color: "var(--gold-lt)" }}>Math Dama</div>
             <div style={{ font: "500 11px Inter", color: "var(--ink2)" }}>
-              {info?.label ?? "Whole"} · Pass &amp; play
+              {info?.label ?? "Whole"} · {isAi ? `vs AI · ${AI_NAME[difficulty]}` : "Pass & play"}
             </div>
           </div>
         </div>
 
-        <DamathScorePanel state={state} redName={P1} blueName={P2} youAre={null} />
+        <DamathScorePanel state={state} redName={P1} blueName={P2} youAre={youAre} />
       </div>
 
       {/* CENTER: clocks + banner + board + controls */}
@@ -156,12 +174,28 @@ export function DamathGamePage() {
 
         {/* status banner slot (fixed height so the board never jumps) */}
         <div style={{ minHeight: 48, display: "flex", alignItems: "center", justifyContent: "center", width: "100%" }}>
-          {!over && mustCapture && (
-            <Banner tone="warn">
-              ⚠ {(redToMove ? P1 : P2)} must capture this turn.
+          {aiThinking && (
+            <Banner tone="think">
+              <span
+                style={{
+                  width: 14,
+                  height: 14,
+                  borderRadius: "50%",
+                  border: "2px solid rgba(232,184,75,.3)",
+                  borderTopColor: "var(--gold)",
+                  display: "inline-block",
+                  animation: "fdspin .8s linear infinite",
+                }}
+              />
+              {AI_NAME[difficulty]} is thinking…
             </Banner>
           )}
-          {!over && !mustCapture && (
+          {!over && !aiThinking && mustCapture && (
+            <Banner tone="warn">
+              ⚠ {isAi ? "You" : redToMove ? P1 : P2} must capture this turn.
+            </Banner>
+          )}
+          {!over && !aiThinking && !mustCapture && (
             <Banner tone={redToMove ? "red" : "blue"}>
               {(redToMove ? P1 : P2)}&apos;s turn
             </Banner>
@@ -174,7 +208,7 @@ export function DamathGamePage() {
             legalTargets={moveTargets}
             captureTargets={captureTargets}
             selected={selected}
-            mustCapture={mustCapture}
+            mustCapture={mustCapture && !aiThinking}
             onSquareClick={onSquareClick}
             flip={flip}
           />
@@ -302,11 +336,12 @@ function SeatClock({ name, seat, ms, active }: { name: string; seat: DamathPlaye
   );
 }
 
-function Banner({ tone, children }: { tone: "warn" | "red" | "blue"; children: React.ReactNode }) {
+function Banner({ tone, children }: { tone: "warn" | "red" | "blue" | "think"; children: React.ReactNode }) {
   const styles: Record<typeof tone, { border: string; bg: string; color: string; anim?: string }> = {
     warn: { border: "rgba(232,184,75,.5)", bg: "rgba(160,48,58,.25)", color: "var(--gold-lt)", anim: "fdglow 2s ease infinite" },
     red: { border: "rgba(200,70,80,.6)", bg: "rgba(160,48,58,.22)", color: "#fff" },
     blue: { border: "rgba(70,110,200,.6)", bg: "rgba(46,107,198,.2)", color: "#fff" },
+    think: { border: "rgba(232,184,75,.4)", bg: "rgba(15,8,32,.6)", color: "var(--gold-lt)" },
   };
   const s = styles[tone];
   return (

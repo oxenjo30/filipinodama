@@ -1,12 +1,12 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import type { DamathVariant } from "@dama/shared";
+import type { AiDifficulty, DamathVariant } from "@dama/shared";
 import { Button } from "../../components";
 import { useAppStore } from "../../stores/appStore";
 import { useDamathStore } from "../../stores/damathStore";
 import { variantsFor, variantInfo, type DamathLevel } from "./variants";
 
-type Step = "level" | "variant" | "opponent";
+type Step = "level" | "variant" | "opponent" | "difficulty";
 
 const LEVELS: { key: DamathLevel; title: string; blurb: string; icon: string }[] = [
   { key: "elementary", title: "Elementary", blurb: "Counting, Whole & Fraction number systems.", icon: "🎒" },
@@ -15,8 +15,14 @@ const LEVELS: { key: DamathLevel; title: string; blurb: string; icon: string }[]
 
 const OPPONENTS: { key: "local" | "ai" | "online"; title: string; blurb: string; icon: string; ready: boolean }[] = [
   { key: "local", title: "Pass & Play", blurb: "Two players on one device.", icon: "👥", ready: true },
-  { key: "ai", title: "Play vs AI", blurb: "Practice against the computer.", icon: "🤖", ready: false },
+  { key: "ai", title: "Play vs AI", blurb: "Practice against the computer.", icon: "🤖", ready: true },
   { key: "online", title: "Online", blurb: "Server-matched, unranked.", icon: "🌐", ready: false },
+];
+
+const DIFFICULTIES: { key: AiDifficulty; title: string; blurb: string; dots: number; color: string }[] = [
+  { key: "easy", title: "Easy", blurb: "A gentle opponent — forgives loose play.", dots: 1, color: "#3fbf6f" },
+  { key: "normal", title: "Normal", blurb: "Plays soundly and punishes free captures.", dots: 2, color: "#E8B84B" },
+  { key: "hard", title: "Hard", blurb: "Never blunders; hunts the best-net capture.", dots: 3, color: "#d63b52" },
 ];
 
 const goldHeading: React.CSSProperties = {
@@ -30,6 +36,7 @@ export function DamathHubPage() {
   const navigate = useNavigate();
   const showToast = useAppStore((s) => s.showToast);
   const newLocalGame = useDamathStore((s) => s.newLocalGame);
+  const newAiGame = useDamathStore((s) => s.newAiGame);
 
   const [step, setStep] = useState<Step>("level");
   const [level, setLevel] = useState<DamathLevel | null>(null);
@@ -37,6 +44,11 @@ export function DamathHubPage() {
 
   const startLocal = (v: DamathVariant) => {
     newLocalGame(v);
+    navigate("/damath/game");
+  };
+
+  const startAi = (v: DamathVariant, d: AiDifficulty) => {
+    newAiGame(v, d);
     navigate("/damath/game");
   };
 
@@ -128,7 +140,8 @@ export function DamathHubPage() {
                     showToast(`${o.title} arrives in a later update.`);
                     return;
                   }
-                  startLocal(variant);
+                  if (o.key === "ai") setStep("difficulty");
+                  else startLocal(variant);
                 }}
                 style={{ ...selectCard(false), opacity: o.ready ? 1 : 0.6, cursor: o.ready ? "pointer" : "not-allowed" }}
               >
@@ -142,6 +155,27 @@ export function DamathHubPage() {
         </div>
       )}
 
+      {step === "difficulty" && variant && (
+        <div>
+          <div style={{ textAlign: "center", marginBottom: 16, font: "600 13px Inter", color: "var(--ink2)" }}>
+            {variantInfo(variant)?.label} · vs AI · pick a difficulty
+          </div>
+          <div className="fd-diff-grid" style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(200px,1fr))", gap: 14 }}>
+            {DIFFICULTIES.map((d) => (
+              <button key={d.key} onClick={() => startAi(variant, d.key)} style={selectCard(false)}>
+                <div style={{ font: "800 18px Cinzel,serif", color: "var(--gold-lt)", marginBottom: 5 }}>{d.title}</div>
+                <div style={{ font: "500 12px/1.5 Inter", color: "var(--ink)" }}>{d.blurb}</div>
+                <div style={{ marginTop: 12, display: "flex", gap: 4, justifyContent: "center" }}>
+                  {[0, 1, 2].map((i) => (
+                    <span key={i} style={{ width: 8, height: 8, borderRadius: "50%", background: i < d.dots ? d.color : "rgba(232,184,75,.18)" }} />
+                  ))}
+                </div>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
       <div style={{ display: "flex", gap: 12, justifyContent: "center", flexWrap: "wrap", marginTop: 28 }}>
         <button onClick={() => navigate("/play")} style={backBtn}>
           ← Back to Play
@@ -149,7 +183,11 @@ export function DamathHubPage() {
         {step !== "level" && (
           <Button
             variant="purple"
-            onClick={() => setStep(step === "opponent" ? "variant" : "level")}
+            onClick={() =>
+              setStep(
+                step === "difficulty" ? "opponent" : step === "opponent" ? "variant" : "level",
+              )
+            }
           >
             ‹ Previous step
           </Button>
