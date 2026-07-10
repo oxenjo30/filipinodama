@@ -49,6 +49,13 @@ async function goldOf(userId: string) {
   return u.gold;
 }
 
+/** A distinct acting admin, deliberately NOT the tournament's createdById — proves
+ * start/complete/cancel audit rows attribute to the ACTOR, not the creator. */
+async function actingAdmin() {
+  const admin = await seedUser({ adminRole: "ECONOMY" });
+  return admin.id;
+}
+
 describe("joinTournament — idempotency + capacity (money-critical)", () => {
   it("charges entryFeeGold, creates the entry, increments registeredCount, writes exactly one ledger row", async () => {
     const t = await seedTournament({ entryFeeGold: 100, maxPlayers: 8 });
@@ -242,7 +249,7 @@ describe("join → leave → rejoin → cancel (HIGH #2 regression: refId=entry.
     expect(await goldOf(player.id)).toBe(400);
 
     // cancel → refund +100, refId=B.id
-    await cancelTournament(prisma, t.id, "test cancel");
+    await cancelTournament(prisma, t.id, await actingAdmin(), "test cancel");
     expect(await goldOf(player.id)).toBe(500);
 
     // exactly one debit row per entry (two total: A and B)
@@ -275,7 +282,8 @@ describe("startTournament — bracket seeding", () => {
       await new Promise((r) => setTimeout(r, 2)); // ensure distinct joinedAt ordering
     }
 
-    await startTournament(prisma, t.id);
+    const admin = await actingAdmin();
+    await startTournament(prisma, t.id, admin);
 
     const after = await prisma.tournament.findUniqueOrThrow({ where: { id: t.id } });
     expect(after.status).toBe("RUNNING");
@@ -313,7 +321,7 @@ describe("startTournament — bracket seeding", () => {
     const t = await seedTournament({ status: "OPEN" });
     const u = await seedUser({ gold: 0 });
     await joinTournament(prisma, t.id, u.id);
-    await expect(startTournament(prisma, t.id)).rejects.toMatchObject({ status: 400, code: "TOO_FEW_PLAYERS" });
+    await expect(startTournament(prisma, t.id, await actingAdmin())).rejects.toMatchObject({ status: 400, code: "TOO_FEW_PLAYERS" });
     const after = await prisma.tournament.findUniqueOrThrow({ where: { id: t.id } });
     expect(after.status).toBe("OPEN");
   });
@@ -324,7 +332,8 @@ describe("startTournament — bracket seeding", () => {
       const u = await seedUser({ gold: 0 });
       await joinTournament(prisma, t.id, u.id);
     }
-    const results = await Promise.allSettled([startTournament(prisma, t.id), startTournament(prisma, t.id)]);
+    const admin = await actingAdmin();
+    const results = await Promise.allSettled([startTournament(prisma, t.id, admin), startTournament(prisma, t.id, admin)]);
     const fulfilled = results.filter((r) => r.status === "fulfilled");
     const rejected = results.filter((r) => r.status === "rejected");
     expect(fulfilled.length).toBe(1);
@@ -342,7 +351,7 @@ describe("startTournament — bracket seeding", () => {
       await joinTournament(prisma, t.id, u.id);
       await new Promise((r) => setTimeout(r, 2));
     }
-    await startTournament(prisma, t.id);
+    await startTournament(prisma, t.id, await actingAdmin());
     const round1 = await prisma.tournamentMatch.findMany({ where: { tournamentId: t.id, round: 1 } });
     expect(round1.length).toBe(2);
     const byes = round1.filter((m) => m.status === "done");
@@ -358,7 +367,7 @@ describe("startTournament — bracket seeding", () => {
       await joinTournament(prisma, t.id, u.id);
       await new Promise((r) => setTimeout(r, 2));
     }
-    await startTournament(prisma, t.id);
+    await startTournament(prisma, t.id, await actingAdmin());
     const total = await prisma.tournamentMatch.count({ where: { tournamentId: t.id } });
     expect(total).toBe(7); // B-1 = 7 total slots for B=8
   });
@@ -370,7 +379,7 @@ describe("startTournament — bracket seeding", () => {
       await joinTournament(prisma, t.id, u.id);
       await new Promise((r) => setTimeout(r, 2));
     }
-    await startTournament(prisma, t.id);
+    await startTournament(prisma, t.id, await actingAdmin());
     const round1 = await prisma.tournamentMatch.findMany({ where: { tournamentId: t.id, round: 1 } });
     const byes = round1.filter((m) => m.status === "done");
     expect(byes.length).toBe(1);
@@ -387,7 +396,7 @@ describe("reportResult — advance the bracket (the only V1 advance path)", () =
       players.push({ user: u, entry });
       await new Promise((r) => setTimeout(r, 2));
     }
-    await startTournament(prisma, t.id);
+    await startTournament(prisma, t.id, await actingAdmin());
     return { tournament: t, players };
   }
 
@@ -486,7 +495,7 @@ describe("completeTournament — pay champion + runner-up only (money-critical)"
       players.push({ user: u, entry });
       await new Promise((r) => setTimeout(r, 2));
     }
-    await startTournament(prisma, t.id);
+    await startTournament(prisma, t.id, await actingAdmin());
     const round1 = await prisma.tournamentMatch.findMany({ where: { tournamentId: t.id, round: 1 }, orderBy: { slot: "asc" } });
     const w0 = round1[0]!.redEntryId!;
     const w1 = round1[1]!.redEntryId!;
@@ -502,7 +511,8 @@ describe("completeTournament — pay champion + runner-up only (money-critical)"
   it("pays champion prizeSplitGold[0], runner-up prizeSplitGold[1], sets placements, marks COMPLETED", async () => {
     const { tournament, championEntryId, runnerUpEntryId } = await finishedFourPlayerTournament(1000, [700, 300]);
 
-    await completeTournament(prisma, tournament.id, "payout");
+    const completingAdmin = await actingAdmin();
+    await completeTournament(prisma, tournament.id, completingAdmin, "payout");
 
     const after = await prisma.tournament.findUniqueOrThrow({ where: { id: tournament.id } });
     expect(after.status).toBe("COMPLETED");
@@ -529,12 +539,20 @@ describe("completeTournament — pay champion + runner-up only (money-critical)"
     const semiLoserIds = (await prisma.tournamentEntry.findMany({ where: { tournamentId: tournament.id, id: { notIn: [championEntryId, runnerUpEntryId] } } })).map((e) => e.id);
     const strayPrizes = await prisma.ledgerEntry.findMany({ where: { reason: "tournament-prize", refId: { in: semiLoserIds } } });
     expect(strayPrizes.length).toBe(0);
+
+    // audit actor attribution (Minor fix regression guard): the audit row for
+    // tournament.complete must attribute to the ACTING admin who called
+    // completeTournament, never to the tournament's createdById.
+    expect(completingAdmin).not.toBe(tournament.createdById);
+    const completeAudit = await prisma.auditLog.findFirstOrThrow({ where: { action: "tournament.complete", targetId: tournament.id } });
+    expect(completeAudit.actorId).toBe(completingAdmin);
+    expect(completeAudit.actorId).not.toBe(tournament.createdById);
   });
 
   it("prizeSplitGold not summing to prizePoolGold → 400 PRIZE_SPLIT_MISMATCH, no payout, status unchanged", async () => {
     const { tournament } = await finishedFourPlayerTournament(1000, [700, 200]); // sums to 900, not 1000
 
-    await expect(completeTournament(prisma, tournament.id, "payout")).rejects.toMatchObject({ status: 400, code: "PRIZE_SPLIT_MISMATCH" });
+    await expect(completeTournament(prisma, tournament.id, await actingAdmin(), "payout")).rejects.toMatchObject({ status: 400, code: "PRIZE_SPLIT_MISMATCH" });
 
     const after = await prisma.tournament.findUniqueOrThrow({ where: { id: tournament.id } });
     expect(after.status).toBe("RUNNING");
@@ -543,7 +561,7 @@ describe("completeTournament — pay champion + runner-up only (money-critical)"
 
   it("prizeSplitGold with length !== 2 → 400 PRIZE_SPLIT_MISMATCH", async () => {
     const { tournament } = await finishedFourPlayerTournament(1000, [1000]);
-    await expect(completeTournament(prisma, tournament.id, "payout")).rejects.toMatchObject({ status: 400, code: "PRIZE_SPLIT_MISMATCH" });
+    await expect(completeTournament(prisma, tournament.id, await actingAdmin(), "payout")).rejects.toMatchObject({ status: 400, code: "PRIZE_SPLIT_MISMATCH" });
   });
 
   it("complete before a champion exists (still RUNNING, final not done) → 409 NOT_FINISHED", async () => {
@@ -553,23 +571,24 @@ describe("completeTournament — pay champion + runner-up only (money-critical)"
       await joinTournament(prisma, t.id, u.id);
       await new Promise((r) => setTimeout(r, 2));
     }
-    await startTournament(prisma, t.id);
-    await expect(completeTournament(prisma, t.id, "too early")).rejects.toMatchObject({ status: 409, code: "NOT_FINISHED" });
+    await startTournament(prisma, t.id, await actingAdmin());
+    await expect(completeTournament(prisma, t.id, await actingAdmin(), "too early")).rejects.toMatchObject({ status: 409, code: "NOT_FINISHED" });
   });
 
   it("re-run complete after success → 409 ALREADY_TERMINAL, no double-pay", async () => {
     const { tournament } = await finishedFourPlayerTournament(1000, [700, 300]);
-    await completeTournament(prisma, tournament.id, "first");
-    await expect(completeTournament(prisma, tournament.id, "second")).rejects.toMatchObject({ status: 409, code: "ALREADY_TERMINAL" });
+    await completeTournament(prisma, tournament.id, await actingAdmin(), "first");
+    await expect(completeTournament(prisma, tournament.id, await actingAdmin(), "second")).rejects.toMatchObject({ status: 409, code: "ALREADY_TERMINAL" });
     expect(await prisma.ledgerEntry.count({ where: { reason: "tournament-prize" } })).toBe(2);
   });
 
   it("CONCURRENT COMPLETE RACE: Promise.all of two completes → exactly one 200(success), other 409 ALREADY_TERMINAL; exactly two tournament-prize rows total (never four)", async () => {
     const { tournament } = await finishedFourPlayerTournament(1000, [700, 300]);
 
+    const admin = await actingAdmin();
     const results = await Promise.allSettled([
-      completeTournament(prisma, tournament.id, "race-a"),
-      completeTournament(prisma, tournament.id, "race-b"),
+      completeTournament(prisma, tournament.id, admin, "race-a"),
+      completeTournament(prisma, tournament.id, admin, "race-b"),
     ]);
     const fulfilled = results.filter((r) => r.status === "fulfilled");
     const rejected = results.filter((r) => r.status === "rejected");
@@ -584,7 +603,7 @@ describe("completeTournament — pay champion + runner-up only (money-critical)"
 
   it("zero-amount prize (e.g. split [1000,0]) skips the grant for the zero side — no ledger row for amount 0", async () => {
     const { tournament, runnerUpEntryId } = await finishedFourPlayerTournament(1000, [1000, 0]);
-    await completeTournament(prisma, tournament.id, "winner-take-all");
+    await completeTournament(prisma, tournament.id, await actingAdmin(), "winner-take-all");
     const prizeRows = await prisma.ledgerEntry.findMany({ where: { reason: "tournament-prize" } });
     expect(prizeRows.length).toBe(1);
     expect(prizeRows[0]!.refId).not.toBe(runnerUpEntryId);
@@ -592,7 +611,7 @@ describe("completeTournament — pay champion + runner-up only (money-critical)"
 
   it("prize pool conservation: sum(prizeSplitGold) === prizePoolGold always, verified against actual paid ledger total", async () => {
     const { tournament, championEntryId, runnerUpEntryId } = await finishedFourPlayerTournament(500, [350, 150]);
-    await completeTournament(prisma, tournament.id, "payout");
+    await completeTournament(prisma, tournament.id, await actingAdmin(), "payout");
     const prizeRows = await prisma.ledgerEntry.findMany({ where: { reason: "tournament-prize", refId: { in: [championEntryId, runnerUpEntryId] } } });
     const totalPaid = prizeRows.reduce((sum, r) => sum + r.amount, 0);
     expect(totalPaid).toBe(500); // === prizePoolGold, real gold, never fabricated
@@ -609,7 +628,8 @@ describe("cancelTournament — refund all entrants exactly once", () => {
       players.push({ user: u, entry });
     }
 
-    await cancelTournament(prisma, t.id, "cancelled by admin");
+    const cancellingAdmin = await actingAdmin();
+    await cancelTournament(prisma, t.id, cancellingAdmin, "cancelled by admin");
 
     const after = await prisma.tournament.findUniqueOrThrow({ where: { id: t.id } });
     expect(after.status).toBe("CANCELLED");
@@ -623,15 +643,22 @@ describe("cancelTournament — refund all entrants exactly once", () => {
     const refundRows = await prisma.ledgerEntry.findMany({ where: { reason: "tournament-refund" } });
     expect(refundRows.length).toBe(3);
     expect(new Set(refundRows.map((r) => r.refId)).size).toBe(3); // each refId distinct (entry.id)
+
+    // audit actor attribution (Minor fix regression guard): the audit row for
+    // tournament.cancel must attribute to the ACTING admin, never t.createdById.
+    expect(cancellingAdmin).not.toBe(t.createdById);
+    const cancelAudit = await prisma.auditLog.findFirstOrThrow({ where: { action: "tournament.cancel", targetId: t.id } });
+    expect(cancelAudit.actorId).toBe(cancellingAdmin);
+    expect(cancelAudit.actorId).not.toBe(t.createdById);
   });
 
   it("re-run cancel → 409 ALREADY_TERMINAL, no second refund", async () => {
     const t = await seedTournament({ status: "OPEN", entryFeeGold: 100 });
     const u = await seedUser({ gold: 500 });
     await joinTournament(prisma, t.id, u.id);
-    await cancelTournament(prisma, t.id, "first");
+    await cancelTournament(prisma, t.id, await actingAdmin(), "first");
 
-    await expect(cancelTournament(prisma, t.id, "second")).rejects.toMatchObject({ status: 409, code: "ALREADY_TERMINAL" });
+    await expect(cancelTournament(prisma, t.id, await actingAdmin(), "second")).rejects.toMatchObject({ status: 409, code: "ALREADY_TERMINAL" });
     expect(await prisma.ledgerEntry.count({ where: { reason: "tournament-refund" } })).toBe(1);
     expect(await goldOf(u.id)).toBe(500);
   });
@@ -640,14 +667,14 @@ describe("cancelTournament — refund all entrants exactly once", () => {
     const t = await seedTournament({ status: "OPEN", entryFeeGold: 0 });
     const u = await seedUser({ gold: 500 });
     await joinTournament(prisma, t.id, u.id);
-    await cancelTournament(prisma, t.id, "free cancel");
+    await cancelTournament(prisma, t.id, await actingAdmin(), "free cancel");
     expect(await prisma.ledgerEntry.count({ where: { userId: u.id } })).toBe(0);
     expect(await goldOf(u.id)).toBe(500);
   });
 
   it("cancel from DRAFT (no entries) → succeeds, no refunds needed", async () => {
     const t = await seedTournament({ status: "DRAFT" });
-    await cancelTournament(prisma, t.id, "scrapped before opening");
+    await cancelTournament(prisma, t.id, await actingAdmin(), "scrapped before opening");
     const after = await prisma.tournament.findUniqueOrThrow({ where: { id: t.id } });
     expect(after.status).toBe("CANCELLED");
   });
@@ -661,8 +688,8 @@ describe("cancelTournament — refund all entrants exactly once", () => {
       players.push({ user: u, entry });
       await new Promise((r) => setTimeout(r, 2));
     }
-    await startTournament(prisma, t.id);
-    await cancelTournament(prisma, t.id, "called off mid-run");
+    await startTournament(prisma, t.id, await actingAdmin());
+    await cancelTournament(prisma, t.id, await actingAdmin(), "called off mid-run");
     for (const p of players) {
       expect(await goldOf(p.user.id)).toBe(200);
     }
@@ -670,7 +697,7 @@ describe("cancelTournament — refund all entrants exactly once", () => {
 
   it("cancel on COMPLETED tournament → 409 ALREADY_TERMINAL", async () => {
     const t = await seedTournament({ status: "COMPLETED" });
-    await expect(cancelTournament(prisma, t.id, "too late")).rejects.toMatchObject({ status: 409, code: "ALREADY_TERMINAL" });
+    await expect(cancelTournament(prisma, t.id, await actingAdmin(), "too late")).rejects.toMatchObject({ status: 409, code: "ALREADY_TERMINAL" });
   });
 });
 
@@ -678,6 +705,7 @@ describe("audit — every mutation writes an AuditLog row", () => {
   it("join, leave, start, report, complete, cancel each write their action's audit row", async () => {
     const t = await seedTournament({ status: "OPEN", entryFeeGold: 0, maxPlayers: 4, prizePoolGold: 100, prizeSplitGold: [70, 30] });
     const admin = await prisma.user.findUniqueOrThrow({ where: { id: t.createdById } });
+    const actor = await actingAdmin(); // deliberately distinct from t.createdById
 
     const players = [];
     for (let i = 0; i < 4; i++) {
@@ -694,8 +722,11 @@ describe("audit — every mutation writes an AuditLog row", () => {
     const rejoinEntry = await joinTournament(prisma, t.id, players[0]!.user.id);
     players[0]!.entry = rejoinEntry;
 
-    await startTournament(prisma, t.id);
+    await startTournament(prisma, t.id, actor);
     expect(await prisma.auditLog.count({ where: { action: "tournament.start", targetId: t.id } })).toBe(1);
+    const startAudit = await prisma.auditLog.findFirstOrThrow({ where: { action: "tournament.start", targetId: t.id } });
+    expect(startAudit.actorId).toBe(actor);
+    expect(startAudit.actorId).not.toBe(t.createdById);
 
     const round1 = await prisma.tournamentMatch.findMany({ where: { tournamentId: t.id, round: 1 }, orderBy: { slot: "asc" } });
     const w0 = round1[0]!.redEntryId!;
@@ -709,12 +740,19 @@ describe("audit — every mutation writes an AuditLog row", () => {
     await reportResult(prisma, t.id, final.id, championEntryId, { actorId: admin.id, reason: "final" });
     expect(await prisma.auditLog.count({ where: { action: "tournament.match.report" } })).toBe(3);
 
-    await completeTournament(prisma, t.id, "payout");
+    await completeTournament(prisma, t.id, actor, "payout");
     expect(await prisma.auditLog.count({ where: { action: "tournament.complete", targetId: t.id } })).toBe(1);
+    const completeAudit = await prisma.auditLog.findFirstOrThrow({ where: { action: "tournament.complete", targetId: t.id } });
+    expect(completeAudit.actorId).toBe(actor);
+    expect(completeAudit.actorId).not.toBe(t.createdById);
 
     // separate cancellable tournament to exercise the cancel audit row
     const t2 = await seedTournament({ status: "DRAFT" });
-    await cancelTournament(prisma, t2.id, "scrapped");
+    const cancelActor = await actingAdmin();
+    await cancelTournament(prisma, t2.id, cancelActor, "scrapped");
     expect(await prisma.auditLog.count({ where: { action: "tournament.cancel", targetId: t2.id } })).toBe(1);
+    const cancelAudit = await prisma.auditLog.findFirstOrThrow({ where: { action: "tournament.cancel", targetId: t2.id } });
+    expect(cancelAudit.actorId).toBe(cancelActor);
+    expect(cancelAudit.actorId).not.toBe(t2.createdById);
   });
 });

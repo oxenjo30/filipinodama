@@ -150,8 +150,11 @@ export async function leaveTournament(db: Db, tournamentId: string, userId: stri
  * slots with standard seed pairing (byes auto-resolved), create the empty
  * slot tree for rounds 2..rounds. One transaction; guarded status flip is
  * part of the same transaction so two concurrent Starts can't both seed.
+ *
+ * `actorId` is the ACTING admin (the one who clicked Start) — the audit row
+ * must attribute to them, never to the tournament's creator.
  */
-export async function startTournament(db: Db, tournamentId: string) {
+export async function startTournament(db: Db, tournamentId: string, actorId: string) {
   const tournament = await db.tournament.findUnique({ where: { id: tournamentId } });
   if (!tournament) throw err.notFound("NO_TOURNAMENT", "Tournament not found");
   if (tournament.status !== "OPEN") throw err.conflict("BAD_STATE", "Tournament must be OPEN to start");
@@ -236,7 +239,7 @@ export async function startTournament(db: Db, tournamentId: string) {
       }
 
       await audit(tx, {
-        actorId: tournament.createdById,
+        actorId,
         action: "tournament.start",
         targetType: "tournament",
         targetId: tournamentId,
@@ -302,8 +305,11 @@ export async function reportResult(
  * transaction (atomic claim) so a losing concurrent complete 409s before
  * touching the ledger — this is what prevents double-pay, not merely the
  * ledger's unique index.
+ *
+ * `actorId` is the ACTING admin (the one who clicked Complete) — the audit
+ * row must attribute to them, never to the tournament's creator.
  */
-export async function completeTournament(db: Db, tournamentId: string, reason?: string) {
+export async function completeTournament(db: Db, tournamentId: string, actorId: string, reason?: string) {
   const tournament = await db.tournament.findUnique({ where: { id: tournamentId } });
   if (!tournament) throw err.notFound("NO_TOURNAMENT", "Tournament not found");
 
@@ -357,7 +363,7 @@ export async function completeTournament(db: Db, tournamentId: string, reason?: 
       }
 
       await audit(tx, {
-        actorId: tournament.createdById,
+        actorId,
         action: "tournament.complete",
         targetType: "tournament",
         targetId: tournamentId,
@@ -381,8 +387,11 @@ export async function completeTournament(db: Db, tournamentId: string, reason?: 
  * Cancel a tournament from DRAFT/OPEN/RUNNING: guarded status flip first
  * (same atomic-claim pattern as Complete), then refund every paid,
  * un-refunded entry, keyed refId=entry.id.
+ *
+ * `actorId` is the ACTING admin (the one who clicked Cancel) — the audit row
+ * must attribute to them, never to the tournament's creator.
  */
-export async function cancelTournament(db: Db, tournamentId: string, reason?: string) {
+export async function cancelTournament(db: Db, tournamentId: string, actorId: string, reason?: string) {
   const tournament = await db.tournament.findUnique({ where: { id: tournamentId } });
   if (!tournament) throw err.notFound("NO_TOURNAMENT", "Tournament not found");
 
@@ -405,7 +414,7 @@ export async function cancelTournament(db: Db, tournamentId: string, reason?: st
       }
 
       await audit(tx, {
-        actorId: tournament.createdById,
+        actorId,
         action: "tournament.cancel",
         targetType: "tournament",
         targetId: tournamentId,

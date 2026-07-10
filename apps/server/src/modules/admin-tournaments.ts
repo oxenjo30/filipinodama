@@ -235,7 +235,7 @@ export async function adminTournamentsRoutes(app: FastifyInstance) {
   // POST /admin/tournaments/:id/start — OPEN -> RUNNING + seed bracket
   app.post<{ Params: { id: string } }>("/admin/tournaments/:id/start", { preHandler: requireAdmin("ECONOMY") }, async (req) => {
     reasonBody.parse(req.body);
-    const result = await startTournament(prisma, req.params.id);
+    const result = await startTournament(prisma, req.params.id, req.userId!);
     return ok(result);
   });
 
@@ -257,14 +257,14 @@ export async function adminTournamentsRoutes(app: FastifyInstance) {
   // POST /admin/tournaments/:id/complete — pays champion + runner-up
   app.post<{ Params: { id: string } }>("/admin/tournaments/:id/complete", { preHandler: requireAdmin("ECONOMY") }, async (req) => {
     const { reason } = reasonBody.parse(req.body);
-    const result = await completeTournament(prisma, req.params.id, reason);
+    const result = await completeTournament(prisma, req.params.id, req.userId!, reason);
     return ok(result);
   });
 
   // POST /admin/tournaments/:id/cancel — refunds all
   app.post<{ Params: { id: string } }>("/admin/tournaments/:id/cancel", { preHandler: requireAdmin("ECONOMY") }, async (req) => {
     const { reason } = reasonBody.parse(req.body);
-    const result = await cancelTournament(prisma, req.params.id, reason);
+    const result = await cancelTournament(prisma, req.params.id, req.userId!, reason);
     return ok(result);
   });
 }
