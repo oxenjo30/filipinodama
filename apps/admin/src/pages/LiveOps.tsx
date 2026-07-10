@@ -213,7 +213,7 @@ function SeasonBanner({
     <div
       style={{
         background: "linear-gradient(120deg,#1e1338,#241645)",
-        border: "1px solid var(--edge-strong)",
+        border: "1px solid rgba(232,184,75,.2)",
         borderRadius: 14,
         padding: 22,
         marginBottom: 14,
@@ -225,7 +225,7 @@ function SeasonBanner({
           <div style={{ font: "800 22px var(--serif)", color: "var(--gold-lt)", marginTop: 4 }}>
             {activeSeason ? `${activeSeason.number ? `S${activeSeason.number} · ` : ""}${activeSeason.name}` : "No active season"}
           </div>
-          <div style={{ marginTop: 6, font: "500 12px var(--sans)", color: "var(--dim)" }}>
+          <div style={{ marginTop: 6, font: "500 12px var(--sans)", color: "#a996c9" }}>
             {activeSeason
               ? activeSeason.endsLabel || `Ends ${fmtDate(activeSeason.endsAt)} · ${activeSeason.tierCount} tiers · ${activeSeason.participants.toLocaleString()} participants`
               : "Create a season below to start a live track."}
@@ -453,7 +453,7 @@ function QuestsPanel({ quests, loading, onDone }: { quests: Quest[]; loading: bo
                     <div className="mono dim" style={{ fontSize: 10 }}>{q.id}</div>
                   </td>
                   <td className="dim">{q.scope}</td>
-                  <td className="num">{q.goal.toLocaleString()}</td>
+                  <td className="num" style={{ color: "var(--ink-2)" }}>{q.goal.toLocaleString()}</td>
                   <td className="num" style={{ color: "var(--gold-lt)" }}>{q.rewardGold.toLocaleString()} 🪙</td>
                   <td style={{ textAlign: "center" }}>
                     <button
@@ -570,7 +570,7 @@ function EventsPanel({ events, loading, onDone }: { events: LiveEvent[]; loading
     });
 
   return (
-    <div className="panel panel-pad" style={{ marginBottom: 22 }}>
+    <div className="panel" style={{ padding: 18, marginBottom: 22 }}>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
         <div style={{ font: "700 14px var(--sans)", color: "var(--ink-2)" }}>Scheduled events</div>
         <button className="abtn btn-gold-pill sm" onClick={() => { setCreating(true); setEditing(null); }}>+ Schedule</button>
@@ -599,8 +599,20 @@ function EventsPanel({ events, loading, onDone }: { events: LiveEvent[]; loading
                 </div>
                 <span className={`badge-st ${EVENT_STATUS_CLASS[e.status] ?? "st-muted"}`}>{e.status}</span>
                 <div style={{ display: "flex", gap: 6, flex: "none" }}>
-                  <button className="abtn btn-ghost btn-ghost-sm" onClick={() => { setEditing(e); setCreating(false); }}>Edit</button>
-                  <button className="abtn btn-danger btn-danger-sm" onClick={() => cancelEvent(e)}>Cancel</button>
+                  <button
+                    className="abtn btn-ghost"
+                    style={{ padding: "6px 11px", fontSize: 10.5, border: "1px solid rgba(232,184,75,.28)" }}
+                    onClick={() => { setEditing(e); setCreating(false); }}
+                  >
+                    Edit
+                  </button>
+                  <button
+                    className="abtn btn-danger"
+                    style={{ padding: "6px 11px", fontSize: 10.5, border: "1px solid rgba(255,143,174,.35)", color: "#ff8fae", background: "transparent" }}
+                    onClick={() => cancelEvent(e)}
+                  >
+                    Cancel
+                  </button>
                 </div>
               </div>
             );

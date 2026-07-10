@@ -119,17 +119,23 @@ function GrantCard({ onDone }: { onDone: () => void }) {
       <div className="dim" style={{ marginTop: 6, fontSize: 12 }}>Credit or debit a player directly. Every grant is recorded in the ledger + audit log.</div>
 
       <div style={{ display: "flex", flexDirection: "column", gap: 12, marginTop: 14 }}>
-        <div>
-          <div className="dim" style={{ fontSize: 11, marginBottom: 5, textTransform: "uppercase", letterSpacing: ".4px" }}>Player</div>
+        <div className="field" style={{ marginBottom: 0 }}>
+          <label>Player</label>
           <PlayerSearch value={userId} onSelect={setUserId} placeholder="Search player by name, tag, or email…" />
         </div>
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-          <select className="select" style={{ maxWidth: 150 }} value={currency} onChange={(e) => setCurrency(e.target.value as any)}>
-            <option value="GOLD">Gold</option>
-            <option value="DIAMONDS">Diamonds</option>
-            <option value="TROPHIES">Trophies</option>
-          </select>
-          <input className="input" style={{ maxWidth: 140 }} type="number" placeholder="Amount" value={amount || ""} onChange={(e) => setAmount(Number(e.target.value))} />
+          <div className="field" style={{ marginBottom: 0, maxWidth: 150 }}>
+            <label>Currency</label>
+            <select className="select" value={currency} onChange={(e) => setCurrency(e.target.value as any)}>
+              <option value="GOLD">Gold</option>
+              <option value="DIAMONDS">Diamonds</option>
+              <option value="TROPHIES">Trophies</option>
+            </select>
+          </div>
+          <div className="field" style={{ marginBottom: 0, maxWidth: 140 }}>
+            <label>Amount</label>
+            <input className="input" type="number" placeholder="Amount" value={amount || ""} onChange={(e) => setAmount(Number(e.target.value))} />
+          </div>
         </div>
         <button className="abtn btn-gold-pill full" disabled={!userId || !amount} onClick={submit}>Grant</button>
       </div>

@@ -43,14 +43,22 @@ button { font-family: inherit; }
 
 /* ── layout ── */
 .app { display: flex; min-height: 100vh; }
+/* Sidebar — exact mockup: 236px, #160a2b, gold-tinted right border, sticky full-height.
+   Padding lives on the sections (brand/nav), not the aside, per the mockup. */
 .sidebar {
-  width: 236px; flex: none; background: #150b26; border-right: 1px solid var(--edge);
-  display: flex; flex-direction: column; padding: 16px 12px 0;
+  width: 236px; flex: none; background: #160a2b; border-right: 1px solid rgba(232, 184, 75, 0.12);
+  display: flex; flex-direction: column; position: sticky; top: 0; height: 100vh; padding: 0;
 }
-.brand { display: flex; align-items: center; gap: 10px; padding: 6px 8px 18px; }
-.brand .mark { width: 30px; height: 30px; border-radius: 8px; background: linear-gradient(150deg, #4a2d7a, #2a1848); border: 1px solid var(--edge-strong); display: flex; align-items: center; justify-content: center; color: var(--gold-lt); font: 800 15px var(--serif); flex: none; }
-.brand .name { font: 800 15px var(--serif); letter-spacing: 1px; color: var(--gold-lt); }
-.navsec { font: 700 10px var(--sans); letter-spacing: 1.5px; text-transform: uppercase; color: var(--dim-2); padding: 15px 10px 6px; }
+/* Logo lockup — exact mockup values (handoffv2 sidebar header): gold-gradient rounded
+   D tile + two-line FilipinoDama / ADMIN CONSOLE. */
+.brand { display: flex; align-items: center; gap: 10px; padding: 18px 18px 14px; border-bottom: 1px solid rgba(232, 184, 75, 0.1); }
+.brand .mark { width: 34px; height: 34px; border-radius: 9px; background: linear-gradient(150deg, #f5d783, #c99a2e); display: flex; align-items: center; justify-content: center; color: #3a2405; font: 900 18px var(--serif); flex: none; }
+.brand .brandtext { display: flex; flex-direction: column; }
+.brand .name { font: 800 15px var(--serif); line-height: 1; color: #f5d783; }
+.brand .sub { font: 700 9px var(--sans); letter-spacing: 2.5px; color: #8b78ad; margin-top: 3px; }
+/* nav gets its own scroll region + padding (mockup: fd-nav padding 12px 10px, gap 2px) */
+.navwrap { flex: 1; overflow-y: auto; padding: 12px 10px; display: flex; flex-direction: column; gap: 2px; }
+.navsec { font: 800 9.5px var(--sans); letter-spacing: 1.6px; text-transform: uppercase; color: #6f5f92; padding: 14px 12px 5px; }
 .navitem { display: flex; align-items: center; gap: 11px; padding: 10px 12px; border-radius: 9px; color: #b9a9d6; cursor: pointer; font: 700 12.5px var(--sans); border: none; background: transparent; width: 100%; text-align: left; }
 .navitem:hover { background: var(--panel-2); }
 /* Active: horizontal gold gradient wash + a 3px gold left accent bar + gold text
@@ -61,7 +69,7 @@ button { font-family: inherit; }
 .navitem.on .ndot { opacity: 1; } /* dot glows when active */
 .navitem .lbl { flex: 1; text-align: left; }
 .navitem .count { margin-left: auto; font: 700 10px var(--mono); background: rgba(194,73,90,.9); color: #fff; border-radius: 100px; padding: 1px 7px; }
-.sidebar .foot { margin-top: auto; padding: 12px 8px; border-top: 1px solid var(--edge); font: 600 10px var(--sans); color: var(--dim-2); line-height: 1.6; }
+.sidebar .foot { margin-top: auto; padding: 12px 14px; border-top: 1px solid rgba(232, 184, 75, 0.1); font: 600 10px var(--sans); color: #6f5f92; line-height: 1.5; }
 
 .body { flex: 1; min-width: 0; display: flex; flex-direction: column; }
 .topbar {
@@ -73,7 +81,7 @@ button { font-family: inherit; }
 .viewingas { display: flex; align-items: center; gap: 8px; }
 .viewingas span { font: 600 10px var(--sans); letter-spacing: 1.5px; color: var(--dim); }
 .userchip { display: flex; align-items: center; gap: 9px; padding: 5px 12px 5px 6px; background: var(--panel); border: 1px solid rgba(232, 184, 75, 0.16); border-radius: 100px; }
-.userchip .av { width: 30px; height: 30px; border-radius: 50%; background: linear-gradient(150deg, #4a2d7a, #2a1848); border: 1px solid var(--edge-strong); display: flex; align-items: center; justify-content: center; font: 800 12px var(--sans); color: var(--gold-lt); }
+.userchip .av { width: 30px; height: 30px; border-radius: 50%; background: linear-gradient(150deg, #4a2d7a, #2a1848); border: 1px solid rgba(232, 184, 75, 0.4); display: flex; align-items: center; justify-content: center; font: 800 12px var(--sans); color: var(--gold-lt); }
 .main { flex: 1; padding: 24px; max-width: 1240px; width: 100%; margin: 0 auto; animation: adfade .25s ease; }
 
 /* ── cards / panels ── */
@@ -83,25 +91,36 @@ button { font-family: inherit; }
 
 /* ── tables ── */
 table.tbl { width: 100%; border-collapse: collapse; }
-.tbl th { text-align: left; font: 700 10px var(--sans); letter-spacing: .8px; text-transform: uppercase; color: var(--dim); padding: 12px 14px; border-bottom: 1px solid var(--edge); background: var(--panel); position: sticky; top: 0; }
-.tbl td { padding: 12px 14px; border-bottom: 1px solid rgba(232, 184, 75, 0.08); }
+/* Table header — mockup thL/thR/thC: 700 10px, letter-spacing 1px, uppercase, #8b78ad, 12px 14px. */
+.tbl th { text-align: left; font: 700 10px var(--sans); letter-spacing: 1px; text-transform: uppercase; color: var(--dim); padding: 12px 14px; border-bottom: 1px solid var(--edge); background: var(--panel); position: sticky; top: 0; }
+/* Table data cell — mockup tdL: 11px 14px padding, base 600 12px Inter (per-cell overrides win). */
+.tbl td { padding: 11px 14px; font: 600 12px var(--sans); color: var(--ink-2); border-bottom: 1px solid rgba(232, 184, 75, 0.08); }
 .tbl tr:last-child td { border-bottom: none; }
 .tbl tbody tr.click { cursor: pointer; }
 .tbl tbody tr.click:hover { background: var(--panel-2); }
 .tbl .num { font-family: var(--mono); font-variant-numeric: tabular-nums; text-align: right; }
 
 /* ── controls ── */
-.input, .select { width: 100%; padding: 9px 12px; border-radius: 9px; border: 1px solid var(--edge-strong); background: #140a26; color: var(--ink); font: 500 13px var(--sans); }
+/* Inputs — EXACT mockup search-field values: #1b1030 bg, gold-.2 border, 9px radius,
+   11px 14px padding, 500 13px Inter, #e9e0f7 text. */
+.input, .select { width: 100%; padding: 11px 14px; border-radius: 9px; border: 1px solid rgba(232, 184, 75, 0.2); background: #1b1030; color: var(--ink-2); font: 500 13px var(--sans); }
 .input:focus, .select:focus { outline: none; border-color: var(--gold); }
-.input::placeholder { color: var(--dim-2); }
+.input::placeholder { color: #6f5f92; }
+/* Form-context inputs/selects — mockup inpFull/selStyle: darker #0f0720 bg, 8px radius,
+   border .24, 10px 12px padding; selects are 600 12px. (Search-bar .input stays as above.) */
+.field .input, .field .select { padding: 10px 12px; border-radius: 8px; border: 1px solid rgba(232, 184, 75, 0.24); background: var(--bg-2); color: var(--ink); }
+.field .select { padding: 9px 11px; font: 600 12px var(--sans); }
 .row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
 .btn { padding: 9px 15px; border-radius: 9px; border: 1px solid var(--edge-strong); background: var(--panel-2); color: var(--ink-2); font: 700 12px var(--sans); cursor: pointer; }
 .btn:hover { border-color: var(--gold); }
 .btn:disabled { opacity: .5; cursor: not-allowed; }
-.btn.gold { background: linear-gradient(180deg, var(--gold-2), #c99a2e); color: #3a2405; border: none; }
+.btn.gold { background: linear-gradient(180deg, var(--gold-2), #c99a2e); color: #3a2405; border: 1px solid rgba(217, 145, 31, 0.5); font: 800 12px var(--sans); letter-spacing: .4px; padding: 10px 16px; }
 .btn.danger { background: rgba(194, 73, 90, 0.16); border-color: rgba(194, 73, 90, 0.45); color: var(--red-lt); }
-.chip { padding: 6px 14px; border-radius: 100px; border: 1px solid var(--edge-strong); background: var(--panel-2); color: var(--dim); font: 700 11px var(--sans); cursor: pointer; }
-.chip.on { border-color: var(--gold); color: var(--gold-lt); background: rgba(232, 184, 75, 0.12); }
+/* Filter pills — EXACT mockup values (handoffv2 playerFilters f.style, line ~1852):
+   inactive = #1b1030 bg / #b9a9d6 text / faint gold border; active = gold GRADIENT
+   with dark ink text; rounded-rect (9px, not pill) and 11px 15px padding. */
+.chip { padding: 11px 15px; border-radius: 9px; border: 1px solid rgba(232, 184, 75, 0.18); background: #1b1030; color: #b9a9d6; font: 700 11px var(--sans); cursor: pointer; }
+.chip.on { border: 1px solid rgba(232, 184, 75, 0.5); color: #3a2405; background: linear-gradient(180deg, #f0cf72, #c99a2e); }
 
 /* ── status badges ── */
 .badge-st { font: 700 9px var(--sans); letter-spacing: .6px; text-transform: uppercase; padding: 3px 9px; border-radius: 100px; }
@@ -135,8 +154,8 @@ table.tbl { width: 100%; border-collapse: collapse; }
 /* ── page header + fields ── */
 .crumb { font: 700 9px var(--sans); letter-spacing: 2.5px; text-transform: uppercase; color: var(--dim); }
 h1.page { font: 800 24px var(--serif); color: var(--gold-lt); margin: 4px 0 20px; }
-.field { display: flex; flex-direction: column; gap: 5px; margin-bottom: 12px; }
-.field label { font: 700 11px var(--sans); text-transform: uppercase; letter-spacing: .5px; color: var(--dim); }
+.field { display: flex; flex-direction: column; gap: 6px; margin-bottom: 12px; }
+.field label { font: 700 10px var(--sans); text-transform: uppercase; letter-spacing: 1px; color: var(--dim); }
 
 /* ── phase-2 stub ── */
 .phase2 { border: 1px dashed var(--edge-strong); border-radius: 14px; padding: 32px; text-align: center; color: var(--dim); }
@@ -172,12 +191,18 @@ h1.page { font: 800 24px var(--serif); color: var(--gold-lt); margin: 4px 0 20px
    - Modifier classes .fd-kpi.up / .fd-kpi.down / .fd-kpi.amber / .fd-kpi.ink are provided as
      a convenience shorthand that sets --tile for you, so callers can skip the inline style
      for the common cases and only use the inline `style="--tile:#hex"` for one-off colors. */
-.fd-kpi { --tile: var(--gold-lt); background: var(--panel); border: 1px solid var(--edge); border-radius: 13px; padding: 18px; }
-.fd-kpi.pad-sm { padding: 15px; }
-.fd-kpi .l { font: 700 10px var(--sans); letter-spacing: 1.5px; text-transform: uppercase; color: var(--dim); }
+.fd-kpi { --tile: var(--gold-lt); background: var(--panel); border: 1px solid var(--edge); border-radius: 14px; padding: 18px; }
+.fd-kpi.pad-sm { padding: 15px 17px; }
+.fd-kpi .l { font: 700 10px var(--sans); letter-spacing: 1px; text-transform: uppercase; color: var(--dim); }
 .fd-kpi .v { font: 700 26px var(--mono); color: var(--tile); margin-top: 8px; line-height: 1; }
 .fd-kpi .trend { margin-top: 8px; display: flex; align-items: center; justify-content: space-between; gap: 8px; font: 600 11px var(--sans); }
 .fd-kpi .trend .sub { color: var(--dim); }
+/* Dense KPI variant — mockup Analytics tiles: 15px padding, label 9.5px/1.3px, value 800 22px mt6, trend mt7 sub 500 10px. */
+.fd-kpi.dense { padding: 15px; }
+.fd-kpi.dense .l { font-size: 9.5px; letter-spacing: 1.3px; }
+.fd-kpi.dense .v { font: 800 22px var(--mono); margin-top: 6px; }
+.fd-kpi.dense .trend { margin-top: 7px; }
+.fd-kpi.dense .trend .sub { font: 500 10px var(--sans); }
 .fd-kpi .trend .delta { font-weight: 700; }
 .fd-kpi .trend .delta.up, .fd-kpi .trend .delta.pos { color: var(--green-lt); }
 .fd-kpi .trend .delta.down, .fd-kpi .trend .delta.neg { color: var(--red-lt); }
@@ -204,7 +229,7 @@ h1.page { font: 800 24px var(--serif); color: var(--gold-lt); margin: 4px 0 20px
 .btn-gold-pill {
   font: 700 11px var(--sans); letter-spacing: .4px; border-radius: 8px; padding: 9px 14px;
   border: 1px solid rgba(232, 184, 75, .4); color: #3a2405;
-  background: linear-gradient(180deg, var(--gold-2), #c98a1e);
+  background: linear-gradient(180deg, var(--gold-2), #c99a2e);
 }
 .btn-gold-pill.full { width: 100%; }
 .btn-gold-pill.sm, .btn-gold-pill-sm { padding: 6px 10px; font-size: 10px; }
@@ -217,8 +242,8 @@ h1.page { font: 800 24px var(--serif); color: var(--gold-lt); margin: 4px 0 20px
 .btn-ghost, .btn-amber, .btn-danger {
   font: 700 11px var(--sans); letter-spacing: .4px; border-radius: 8px; padding: 9px 14px; cursor: pointer;
 }
-.btn-ghost { border: 1px solid rgba(232, 184, 75, .3); color: var(--ink-2); background: var(--panel-2); }
-.btn-amber { border: 1px solid rgba(217, 145, 31, .5); color: #3a2405; background: linear-gradient(180deg, #e6a636, #c98a1e); } /* warm-amber gradient, distinct from the gold-pill, so the caution tier reads apart from primary gold */
+.btn-ghost { border: 1px solid rgba(232, 184, 75, .3); color: var(--ink-2); background: #221534; }
+.btn-amber { border: 1px solid rgba(217, 145, 31, .5); color: #3a2405; background: linear-gradient(180deg, #e8b04a, #c98a1e); } /* warm-amber gradient (exact mockup btnAmber stops), distinct from the gold-pill so the caution tier reads apart from primary gold */
 .btn-danger { border: 1px solid rgba(194, 73, 90, .5); color: #fff; background: linear-gradient(180deg, var(--red), #8a2f3c); }
 .btn-ghost-sm, .btn-amber-sm, .btn-danger-sm { padding: 6px 10px; font-size: 10px; }
 
@@ -234,6 +259,7 @@ h1.page { font: 800 24px var(--serif); color: var(--gold-lt); margin: 4px 0 20px
   font: 800 11px var(--sans); color: var(--gold-lt);
 }
 .fd-avatar.sm { width: 28px; height: 28px; font-size: 10px; }
+.fd-avatar.md { width: 32px; height: 32px; } /* mockup Players row avatar = 32px */
 .fd-avatar.lg { width: 44px; height: 44px; font-size: 15px; }
 
 /* ── arow: table/list row with gold hover wash + gold-tinted top border ── */

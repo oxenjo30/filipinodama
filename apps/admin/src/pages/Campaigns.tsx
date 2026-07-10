@@ -111,9 +111,9 @@ export function Campaigns() {
       <h1 className="page">Campaign composer</h1>
 
       <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-        <div className="fd-2col" style={{ gridTemplateColumns: "1.5fr 1fr", alignItems: "start" }}>
+        <div className="fd-2col" style={{ gridTemplateColumns: "1.5fr 1fr", alignItems: "start", gap: 16 }}>
           {/* composer */}
-          <div className="acard" style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+          <div className="acard" style={{ display: "flex", flexDirection: "column", gap: 16, padding: 22 }}>
             <div>
               <div style={{ font: "700 15px var(--sans)", color: "var(--ink-2)" }}>Compose campaign</div>
               <div style={{ marginTop: 5, font: "500 12px var(--sans)", color: "var(--dim)" }}>
@@ -158,9 +158,40 @@ export function Campaigns() {
             </div>
 
             <div className="row" style={{ justifyContent: "flex-end", marginTop: 2 }}>
-              <button className="abtn btn-ghost" disabled={!valid} onClick={() => run("draft")}>Save draft</button>
-              <button className="abtn btn-amber" disabled={!valid || !scheduledFor} onClick={() => run("schedule")}>Schedule</button>
-              <button className="abtn btn-gold-pill" disabled={!valid || previewing} onClick={() => run("send")}>Send now</button>
+              <button
+                className="abtn"
+                style={{
+                  font: "700 12px var(--sans)", borderRadius: 9, padding: "10px 16px",
+                  border: "1px solid rgba(232, 184, 75, .24)", color: "#d9ccf0", background: "transparent",
+                }}
+                disabled={!valid}
+                onClick={() => run("draft")}
+              >
+                Save draft
+              </button>
+              <button
+                className="abtn"
+                style={{
+                  font: "700 12px var(--sans)", borderRadius: 9, padding: "10px 16px",
+                  border: "1px solid rgba(240, 207, 114, .4)", color: "#f0cf72", background: "rgba(15, 8, 32, .5)",
+                }}
+                disabled={!valid || !scheduledFor}
+                onClick={() => run("schedule")}
+              >
+                Schedule
+              </button>
+              <button
+                className="abtn"
+                style={{
+                  font: "800 12px var(--sans)", borderRadius: 9, padding: "10px 18px",
+                  border: "1px solid rgba(217, 145, 31, .5)", color: "#3a2405",
+                  background: "linear-gradient(180deg, #e8b04a, #c98a1e)",
+                }}
+                disabled={!valid || previewing}
+                onClick={() => run("send")}
+              >
+                Send now
+              </button>
             </div>
           </div>
 
@@ -191,7 +222,9 @@ export function Campaigns() {
         <MaintenanceCard />
 
         <div className="panel" style={{ overflowX: "auto" }}>
-          <div className="card-header"><span className="t">Campaign history</span></div>
+          <div className="card-header" style={{ padding: "14px 16px" }}>
+            <span className="t" style={{ font: "700 12px var(--sans)", letterSpacing: ".4px", color: "#e9e0f7" }}>Campaign history</span>
+          </div>
           <table className="tbl" style={{ minWidth: 760 }}>
             <thead>
               <tr className="thead-raised">
@@ -247,7 +280,7 @@ export function Campaigns() {
  */
 function MaintenanceCard() {
   return (
-    <div className="acard" style={{ display: "flex", alignItems: "center", gap: 14 }}>
+    <div className="acard" style={{ display: "flex", alignItems: "center", gap: 14, padding: "16px 18px" }}>
       <span style={{ width: 9, height: 9, borderRadius: "50%", background: "var(--dim-2)", flex: "none" }} />
       <div style={{ flex: 1 }}>
         <div style={{ font: "700 13px var(--sans)", color: "var(--ink-2)" }}>Maintenance mode</div>

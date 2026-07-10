@@ -53,15 +53,15 @@ export function Admins() {
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 12, marginBottom: 16 }}>
         <div className="fd-kpi pad-sm" style={{ ["--tile" as string]: "var(--green-lt)" }}>
           <div className="l">Active admins</div>
-          <div className="v" style={{ fontSize: 22 }}>{stats?.active ?? 0}</div>
+          <div className="v" style={{ fontSize: 22, fontWeight: 800 }}>{stats?.active ?? 0}</div>
         </div>
-        <div className="fd-kpi pad-sm" style={{ ["--tile" as string]: "var(--gold-lt)" }}>
+        <div className="fd-kpi pad-sm" style={{ ["--tile" as string]: "var(--gold-2)" }}>
           <div className="l">Disabled</div>
-          <div className="v" style={{ fontSize: 22 }}>{stats?.disabled ?? 0}</div>
+          <div className="v" style={{ fontSize: 22, fontWeight: 800 }}>{stats?.disabled ?? 0}</div>
         </div>
         <div className="fd-kpi pad-sm">
           <div className="l">Total admins</div>
-          <div className="v" style={{ fontSize: 22 }}>{stats?.total ?? 0}</div>
+          <div className="v" style={{ fontSize: 22, fontWeight: 800 }}>{stats?.total ?? 0}</div>
         </div>
       </div>
 
@@ -153,7 +153,12 @@ function AdminRowView({ a, isMe, onDone }: { a: AdminRow; isMe: boolean; onDone:
     <tr className="arow">
       <td>
         <div style={{ display: "flex", alignItems: "center", gap: 11 }}>
-          <div className="fd-avatar">{initials(a.displayName || a.username)}</div>
+          <div
+            className="fd-avatar"
+            style={{ background: "rgba(232,184,75,.12)", border: "1px solid rgba(232,184,75,.28)", font: "800 13px var(--sans)", color: "var(--gold-2)" }}
+          >
+            {initials(a.displayName || a.username)}
+          </div>
           <div style={{ minWidth: 0 }}>
             <div style={{ fontWeight: 700 }}>
               {a.displayName} {isMe && <span className="badge-st st-active" style={{ marginLeft: 6 }}>You</span>}
@@ -165,7 +170,11 @@ function AdminRowView({ a, isMe, onDone }: { a: AdminRow; isMe: boolean; onDone:
       <td>
         <select
           className="select"
-          style={{ maxWidth: 170, color: ROLE_TILE[role] }}
+          style={{
+            maxWidth: 170, color: ROLE_TILE[role],
+            background: "#0f0720", border: "1px solid rgba(232,184,75,.24)", borderRadius: 8,
+            padding: "7px 10px", font: "700 11.5px var(--sans)",
+          }}
           value={role}
           disabled={isMe}
           onChange={(e) => changeRole(e.target.value as AdminRole)}
@@ -176,8 +185,22 @@ function AdminRowView({ a, isMe, onDone }: { a: AdminRow; isMe: boolean; onDone:
       <td><span className={`badge-st ${isDisabled ? "st-muted" : "st-active"}`}>{isDisabled ? "Disabled" : "Active"}</span></td>
       <td className="mono dim" style={{ whiteSpace: "nowrap" }}>{new Date(a.lastSeenAt).toLocaleString()}</td>
       <td style={{ textAlign: "right", whiteSpace: "nowrap" }}>
-        <button className="abtn btn-amber-sm" disabled={isMe} onClick={toggle}>{isDisabled ? "Enable" : "Disable"}</button>
-        <button className="abtn btn-danger btn-danger-sm" disabled={isMe} onClick={revoke} style={{ marginLeft: 6 }}>Revoke</button>
+        <button
+          className="abtn"
+          disabled={isMe}
+          onClick={toggle}
+          style={{ border: "1px solid rgba(232,184,75,.28)", color: "#f0cf72", background: "transparent", padding: "7px 12px", font: "700 11px var(--sans)", borderRadius: 8 }}
+        >
+          {isDisabled ? "Enable" : "Disable"}
+        </button>
+        <button
+          className="abtn"
+          disabled={isMe}
+          onClick={revoke}
+          style={{ border: "1px solid rgba(255,143,174,.35)", color: "#ff8fae", background: "transparent", padding: "7px 12px", font: "700 11px var(--sans)", borderRadius: 8, marginLeft: 6 }}
+        >
+          Revoke
+        </button>
       </td>
     </tr>
   );

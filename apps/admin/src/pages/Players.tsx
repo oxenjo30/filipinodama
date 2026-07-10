@@ -65,7 +65,7 @@ export function PlayersPage() {
       <div className="crumb">Player Management · Players</div>
       <h1 className="page">Players</h1>
 
-      <div className="row" style={{ marginBottom: 12, gap: 10, flexWrap: "wrap" }}>
+      <div className="row" style={{ marginBottom: 16, gap: 10, flexWrap: "wrap" }}>
         <input
           className="input" style={{ flex: 1, minWidth: 220 }}
           placeholder="Search by username, tag, email, or ID…"
@@ -76,7 +76,6 @@ export function PlayersPage() {
           <button key={f} className={`abtn chip${filter === f ? " on" : ""}`} onClick={() => setFilter(f)}>{f}</button>
         ))}
       </div>
-      <div className="dim" style={{ marginBottom: 14, fontSize: 12 }}>{total} players</div>
 
       <div className="panel">
         <div style={{ overflowX: "auto" }}>
@@ -88,9 +87,9 @@ export function PlayersPage() {
           </thead>
           <tbody>
             {loading ? (
-              <tr><td colSpan={7} className="dim" style={{ textAlign: "center", padding: 24 }}>Loading…</td></tr>
+              <tr><td colSpan={7} className="dim" style={{ textAlign: "center", padding: 40, fontSize: 13, fontWeight: 600 }}>Loading…</td></tr>
             ) : rows.length === 0 ? (
-              <tr><td colSpan={7} className="dim" style={{ textAlign: "center", padding: 24 }}>No players match your search.</td></tr>
+              <tr><td colSpan={7} className="dim" style={{ textAlign: "center", padding: 40, fontSize: 13, fontWeight: 600 }}>No players match your search.</td></tr>
             ) : (
               rows.map((p) => {
                 const tier = RANK_TIERS.find((t) => t.key === p.rankTier);
@@ -98,10 +97,10 @@ export function PlayersPage() {
                   <tr key={p.id} className="arow" style={{ cursor: "pointer" }} onClick={() => setSelId(p.id)}>
                     <td>
                       <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                        <div className="fd-avatar">{initials(p.displayName || p.username)}</div>
+                        <div className="fd-avatar md">{initials(p.displayName || p.username)}</div>
                         <div>
-                          <div style={{ fontWeight: 600 }}>{p.displayName}</div>
-                          <div className="dim mono" style={{ fontSize: 12 }}>{p.tag}</div>
+                          <div style={{ font: "700 12.5px var(--sans)", color: "var(--ink-2)" }}>{p.displayName}</div>
+                          <div className="dim mono" style={{ fontSize: 10.5, fontWeight: 500 }}>{p.tag}</div>
                         </div>
                       </div>
                     </td>

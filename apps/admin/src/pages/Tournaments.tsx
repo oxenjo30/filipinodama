@@ -82,6 +82,25 @@ const STATUS_LABEL: Record<TournamentStatus, string> = {
 const fmtDate = (iso: string | null) =>
   iso ? new Date(iso).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }) : "—";
 
+// ── Exact-value style overrides (mockup fidelity — see fidelity(admin) pass) ─
+/** Row/form "Edit" action — ghost outline, mockup exact values. */
+const EDIT_BTN_STYLE = {
+  font: "700 11px var(--sans)",
+  borderRadius: 8,
+  padding: "7px 12px",
+  border: "1px solid rgba(232, 184, 75, .28)",
+  color: "#f0cf72",
+  background: "transparent",
+} as const;
+/** Row lifecycle "Cancel" action — transparent pink outline, mockup exact values. */
+const CANCEL_BTN_STYLE = {
+  border: "1px solid rgba(255, 143, 174, .35)",
+  color: "#ff8fae",
+  background: "transparent",
+} as const;
+/** Primary "New/Create tournament" gold button — mockup gradient starts #e8b04a, not --gold-2. */
+const PRIMARY_GOLD_STYLE = { background: "linear-gradient(180deg,#e8b04a,#c98a1e)" } as const;
+
 /** 1.5 Tournaments — list + create/edit + a simple bracket/slot-resolve view. */
 export function TournamentsPage() {
   const [status, setStatus] = useState<TournamentStatus | "">("");
@@ -120,19 +139,19 @@ export function TournamentsPage() {
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(150px,1fr))", gap: 12, marginBottom: 18 }}>
         <div className="fd-kpi up">
           <div className="l">Live now</div>
-          <div className="v">{stats?.liveNow ?? "—"}</div>
+          <div className="v" style={{ font: "800 22px var(--mono)", marginTop: 5 }}>{stats?.liveNow ?? "—"}</div>
         </div>
-        <div className="fd-kpi amber">
+        <div className="fd-kpi amber" style={{ ["--tile" as string]: "var(--gold-2)" }}>
           <div className="l">Upcoming</div>
-          <div className="v">{stats?.upcoming ?? "—"}</div>
+          <div className="v" style={{ font: "800 22px var(--mono)", marginTop: 5 }}>{stats?.upcoming ?? "—"}</div>
         </div>
         <div className="fd-kpi ink">
           <div className="l">Players registered</div>
-          <div className="v">{(stats?.playersRegistered ?? 0).toLocaleString()}</div>
+          <div className="v" style={{ font: "800 22px var(--mono)", marginTop: 5 }}>{(stats?.playersRegistered ?? 0).toLocaleString()}</div>
         </div>
-        <div className="fd-kpi gold">
+        <div className="fd-kpi gold" style={{ ["--tile" as string]: "var(--gold)" }}>
           <div className="l">Gold prize pool (scheduled)</div>
-          <div className="v">{(stats?.goldPrizePool ?? 0).toLocaleString()} 🪙</div>
+          <div className="v" style={{ font: "800 22px var(--mono)", marginTop: 5 }}>{(stats?.goldPrizePool ?? 0).toLocaleString()} 🪙</div>
         </div>
       </div>
 
@@ -140,7 +159,7 @@ export function TournamentsPage() {
         <div style={{ font: "700 12px var(--sans)", letterSpacing: ".4px", color: "var(--dim)" }}>
           All tournaments — create, schedule &amp; manage the cups shown on the player Cups screen
         </div>
-        <button className="btn gold" onClick={() => { setCreating(true); setEditing(null); }}>+ New tournament</button>
+        <button className="btn gold" style={PRIMARY_GOLD_STYLE} onClick={() => { setCreating(true); setEditing(null); }}>+ New tournament</button>
       </div>
 
       <div className="row" style={{ marginBottom: 14 }}>
@@ -279,24 +298,24 @@ function TournamentRow({
       <td className="dim" style={{ whiteSpace: "nowrap" }}>{fmtDate(t.startsAt)}</td>
       <td className="num">
         <div className="row" style={{ justifyContent: "flex-end", flexWrap: "nowrap" }}>
-          <button className="btn" onClick={onEdit}>Edit</button>
+          <button className="btn" style={EDIT_BTN_STYLE} onClick={onEdit}>Edit</button>
           {t.status === "DRAFT" && (
             <>
               <button className="btn gold" onClick={open}>Open registration</button>
-              <button className="btn danger" onClick={cancel}>Cancel</button>
+              <button className="btn" style={CANCEL_BTN_STYLE} onClick={cancel}>Cancel</button>
             </>
           )}
           {t.status === "OPEN" && (
             <>
               <button className="btn gold" onClick={start}>Start</button>
-              <button className="btn danger" onClick={cancel}>Cancel</button>
+              <button className="btn" style={CANCEL_BTN_STYLE} onClick={cancel}>Cancel</button>
             </>
           )}
           {t.status === "RUNNING" && (
             <>
               <button className="btn" onClick={onView}>View bracket</button>
               <button className="btn gold" onClick={complete}>Complete</button>
-              <button className="btn danger" onClick={cancel}>Cancel</button>
+              <button className="btn" style={CANCEL_BTN_STYLE} onClick={cancel}>Cancel</button>
             </>
           )}
           {(t.status === "COMPLETED" || t.status === "CANCELLED") && (
@@ -449,7 +468,7 @@ function TournamentForm({ tournament, onClose, onDone }: { tournament?: Tourname
 
       <div className="row" style={{ justifyContent: "flex-end" }}>
         <button className="btn" onClick={onClose}>Cancel</button>
-        <button className="btn gold" disabled={!valid} onClick={submit}>{isEdit ? "Save tournament" : "Create tournament"}</button>
+        <button className="btn gold" style={PRIMARY_GOLD_STYLE} disabled={!valid} onClick={submit}>{isEdit ? "Save tournament" : "Create tournament"}</button>
       </div>
     </div>
   );
