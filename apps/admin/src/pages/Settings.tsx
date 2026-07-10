@@ -81,7 +81,7 @@ function ConfigPanel() {
 
   return (
     <div className="fd-2col">
-      <div className="acard">
+      <div className="acard" style={{ padding: 20 }}>
         <div style={{ font: "700 14px var(--sans)", color: "var(--ink-2)" }}>Feature flags</div>
         <div style={{ marginTop: 14, display: "flex", flexDirection: "column", gap: 4 }}>
           {loading ? (
@@ -97,7 +97,7 @@ function ConfigPanel() {
         </div>
       </div>
 
-      <div className="acard">
+      <div className="acard" style={{ padding: 20 }}>
         <div style={{ font: "700 14px var(--sans)", color: "var(--ink-2)" }}>Economy constants</div>
         <div style={{ marginTop: 6, font: "500 11px var(--sans)", color: "var(--dim)" }}>
           Read live by the server. Every change is audited.
