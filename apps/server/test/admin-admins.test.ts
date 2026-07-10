@@ -1,7 +1,7 @@
 import { describe, it, expect, afterEach, afterAll } from "vitest";
 import { prisma } from "../src/db/client.js";
 import { buildTestApp, seedUser, authFor, truncateAll } from "./helpers.js";
-import { setRoleGuarded } from "../src/modules/admin-admins.js";
+import { setRoleGuarded, setDisabledGuarded } from "../src/modules/admin-admins.js";
 
 afterEach(truncateAll);
 afterAll(async () => {
@@ -227,6 +227,147 @@ describe("admin-admins", () => {
       headers: { cookie: authFor({ sub: mod.id, adminRole: "MODERATOR" }) },
     });
     expect(res.statusCode).toBe(403);
+    await app.close();
+  });
+});
+
+describe("admin disable/enable", () => {
+  it("GET /admin/admins returns per-admin status + active/disabled stats", async () => {
+    const app = await buildTestApp();
+    const su = await seedUser({ adminRole: "SUPERADMIN" });
+    const activeMod = await seedUser({ adminRole: "MODERATOR" });
+    const disabledMod = await seedUser({ adminRole: "MODERATOR" });
+    await prisma.user.update({ where: { id: disabledMod.id }, data: { adminDisabledAt: new Date() } });
+    const cookie = authFor({ sub: su.id, adminRole: "SUPERADMIN" });
+
+    const res = await app.inject({ method: "GET", url: "/api/admin/admins", headers: { cookie } });
+    expect(res.statusCode).toBe(200);
+    const body = res.json().data;
+    expect(body.items.length).toBe(3);
+    const byId = Object.fromEntries(body.items.map((i: any) => [i.id, i.status]));
+    expect(byId[su.id]).toBe("active");
+    expect(byId[activeMod.id]).toBe("active");
+    expect(byId[disabledMod.id]).toBe("disabled");
+    expect(body.stats.total).toBe(3);
+    expect(body.stats.active).toBe(2);
+    expect(body.stats.disabled).toBe(1);
+    await app.close();
+  });
+
+  it("disable sets adminDisabledAt + audits admin.disable; disabled MODERATOR gets 403 ADMIN_DISABLED; enable restores access", async () => {
+    const app = await buildTestApp();
+    const su = await seedUser({ adminRole: "SUPERADMIN" });
+    const mod = await seedUser({ adminRole: "MODERATOR" });
+    const suCookie = authFor({ sub: su.id, adminRole: "SUPERADMIN" });
+    const modCookie = authFor({ sub: mod.id, adminRole: "MODERATOR" });
+
+    // Baseline: the moderator can reach a SUPPORT-gated route before being disabled.
+    const before = await app.inject({ method: "GET", url: "/api/admin/tickets", headers: { cookie: modCookie } });
+    expect(before.statusCode).toBe(200);
+
+    const disable = await app.inject({
+      method: "POST",
+      url: `/api/admin/admins/${mod.id}/disable`,
+      headers: { cookie: suCookie },
+      payload: { reason: "policy violation" },
+    });
+    expect(disable.statusCode).toBe(200);
+    expect(disable.json().data.status).toBe("disabled");
+    expect((await prisma.user.findUnique({ where: { id: mod.id } }))!.adminDisabledAt).not.toBeNull();
+    const disableAudit = await prisma.auditLog.findFirst({ where: { action: "admin.disable", targetId: mod.id } });
+    expect(disableAudit).not.toBeNull();
+
+    // Disabled moderator is now locked out of the guarded route.
+    const locked = await app.inject({ method: "GET", url: "/api/admin/tickets", headers: { cookie: modCookie } });
+    expect(locked.statusCode).toBe(403);
+    expect(locked.json().error.code).toBe("ADMIN_DISABLED");
+
+    const enable = await app.inject({
+      method: "POST",
+      url: `/api/admin/admins/${mod.id}/enable`,
+      headers: { cookie: suCookie },
+      payload: {},
+    });
+    expect(enable.statusCode).toBe(200);
+    expect(enable.json().data.status).toBe("active");
+    expect((await prisma.user.findUnique({ where: { id: mod.id } }))!.adminDisabledAt).toBeNull();
+    const enableAudit = await prisma.auditLog.findFirst({ where: { action: "admin.enable", targetId: mod.id } });
+    expect(enableAudit).not.toBeNull();
+
+    // Access restored.
+    const restored = await app.inject({ method: "GET", url: "/api/admin/tickets", headers: { cookie: modCookie } });
+    expect(restored.statusCode).toBe(200);
+    await app.close();
+  });
+
+  it("setDisabledGuarded: refuses to disable the sole active superadmin; allows it when a second active superadmin survives", async () => {
+    // Unit-level guard checks mirroring the setRoleGuarded unit tests.
+    // Case A — exactly one active superadmin: the guard refuses (0 rows).
+    const solo = await seedUser({ adminRole: "SUPERADMIN" });
+    const refused = await setDisabledGuarded(solo.id, true);
+    expect(refused).toBe(0);
+    expect((await prisma.user.findUnique({ where: { id: solo.id } }))!.adminDisabledAt).toBeNull();
+
+    // Case B — two active superadmins: disabling one succeeds (a second survives).
+    const other = await seedUser({ adminRole: "SUPERADMIN" });
+    const allowed = await setDisabledGuarded(solo.id, true);
+    expect(allowed).toBe(1);
+    expect((await prisma.user.findUnique({ where: { id: solo.id } }))!.adminDisabledAt).not.toBeNull();
+    // `other` remains the last active superadmin — now the guard refuses it too.
+    const refusedAgain = await setDisabledGuarded(other.id, true);
+    expect(refusedAgain).toBe(0);
+  });
+
+  it("route: disabling the last active SUPERADMIN target → 409 LAST_SUPERADMIN", async () => {
+    const app = await buildTestApp();
+    // To make `target` the sole ACTIVE superadmin while still having a caller that
+    // can reach the SUPERADMIN-gated route, we exploit the guard's disabled-super
+    // exemption: `actor` is a SUPERADMIN with adminDisabledAt set — it does NOT
+    // count as active (so `target` is the last active one) yet can still call the
+    // route (the guard never locks out a disabled SUPERADMIN). Disabling `target`
+    // then leaves zero active superadmins → the last-active guard refuses (0 rows)
+    // → the route returns 409.
+    const actor = await seedUser({ adminRole: "SUPERADMIN" });
+    const target = await seedUser({ adminRole: "SUPERADMIN" });
+    await prisma.user.update({ where: { id: actor.id }, data: { adminDisabledAt: new Date() } });
+    const cookie = authFor({ sub: actor.id, adminRole: "SUPERADMIN" });
+    const res = await app.inject({
+      method: "POST",
+      url: `/api/admin/admins/${target.id}/disable`,
+      headers: { cookie },
+      payload: { reason: "x" },
+    });
+    expect(res.statusCode).toBe(409);
+    expect(res.json().error.code).toBe("LAST_SUPERADMIN");
+    expect((await prisma.user.findUnique({ where: { id: target.id } }))!.adminDisabledAt).toBeNull();
+    await app.close();
+  });
+
+  it("a disabled SUPERADMIN is NOT locked out by the guard (defense-in-depth exemption)", async () => {
+    const app = await buildTestApp();
+    const su = await seedUser({ adminRole: "SUPERADMIN" });
+    // Force-disable the superadmin directly (bypassing the last-active route guard).
+    await prisma.user.update({ where: { id: su.id }, data: { adminDisabledAt: new Date() } });
+    const cookie = authFor({ sub: su.id, adminRole: "SUPERADMIN" });
+    // A SUPERADMIN-gated route must still be reachable — disable must never brick
+    // the top account.
+    const res = await app.inject({ method: "GET", url: "/api/admin/admins", headers: { cookie } });
+    expect(res.statusCode).toBe(200);
+    await app.close();
+  });
+
+  it("self-disable → 400 SELF_ADMIN_CHANGE", async () => {
+    const app = await buildTestApp();
+    const su = await seedUser({ adminRole: "SUPERADMIN" });
+    const cookie = authFor({ sub: su.id, adminRole: "SUPERADMIN" });
+    const res = await app.inject({
+      method: "POST",
+      url: `/api/admin/admins/${su.id}/disable`,
+      headers: { cookie },
+      payload: { reason: "x" },
+    });
+    expect(res.statusCode).toBe(400);
+    expect(res.json().error.code).toBe("SELF_ADMIN_CHANGE");
     await app.close();
   });
 });

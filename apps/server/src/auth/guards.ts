@@ -76,7 +76,7 @@ export function requireAdmin(min: AdminRole) {
     if (!req.userId) throw err.unauthorized();
     const user = await prisma.user.findUnique({
       where: { id: req.userId },
-      select: { deletedAt: true, bannedUntil: true, adminRole: true },
+      select: { deletedAt: true, bannedUntil: true, adminRole: true, adminDisabledAt: true },
     });
     if (!user || user.deletedAt) throw err.unauthorized("ACCOUNT_GONE", "This account no longer exists");
     // DB role is authoritative — ignore the token's adminRole.
@@ -85,5 +85,11 @@ export function requireAdmin(min: AdminRole) {
     // Active ban locks out everyone EXCEPT a superadmin (so the top account can't self-brick).
     const banned = user.bannedUntil && user.bannedUntil > new Date();
     if (banned && user.adminRole !== "SUPERADMIN") throw err.forbidden("ADMIN_BANNED", "This admin account is suspended");
+    // Disabled admin accounts are locked out too — same superadmin exemption as
+    // the ban gate above, so a disabled SUPERADMIN can never brick the console.
+    // (The disable ROUTE still refuses to disable the last active superadmin, so
+    // this exemption is defense-in-depth, not a hole.)
+    if (user.adminDisabledAt && user.adminRole !== "SUPERADMIN")
+      throw err.forbidden("ADMIN_DISABLED", "This admin account is disabled");
   };
 }
