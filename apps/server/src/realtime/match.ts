@@ -298,10 +298,14 @@ async function settleMatch(io: IOServer, lm: LiveMatch): Promise<void> {
   if (!result) return;
   lm.settled = true;
 
-  // Ranked trophies move only in a RANKED match between two HUMANS. A bot-filled
-  // ranked match (empty-queue fallback) awards gold but NOT trophies, so the
-  // ladder can't be farmed against bots. `botColor` is set iff a seat is a bot.
-  const isRanked = lm.mode === "RANKED" && lm.botColor == null;
+  // Ranked trophies move in any RANKED match. `botColor` is set iff a seat is a
+  // bot (empty-queue fallback). Two amounts apply:
+  //   • human vs human  → full win/loss (+25 / -18)
+  //   • bot-filled       → only the HUMAN seat moves, win-only (+10 / 0); the
+  //     bot seat never moves. Small & win-only so the ladder can fill on a
+  //     low-population game without being farmable or punishing a bot-fill.
+  const isRankedMode = lm.mode === "RANKED";
+  const isBotFilled = lm.botColor != null;
   const goldPerWin =
     ECONOMY.goldPerWin[lm.mode as keyof typeof ECONOMY.goldPerWin] ?? 0;
 
@@ -316,9 +320,9 @@ async function settleMatch(io: IOServer, lm: LiveMatch): Promise<void> {
     ? userIdForColor(lm, winnerColor === "red" ? "blue" : "red")
     : null;
 
-  if (isRanked && winnerColor) {
-    const winDelta = ECONOMY.rankedTrophyWin;
-    const lossDelta = ECONOMY.rankedTrophyLoss;
+  if (isRankedMode && winnerColor) {
+    const winDelta = isBotFilled ? ECONOMY.rankedBotTrophyWin : ECONOMY.rankedTrophyWin;
+    const lossDelta = isBotFilled ? ECONOMY.rankedBotTrophyLoss : ECONOMY.rankedTrophyLoss;
     if (winnerColor === "red") {
       redTrophyDelta = winDelta;
       blueTrophyDelta = lossDelta;
@@ -326,6 +330,10 @@ async function settleMatch(io: IOServer, lm: LiveMatch): Promise<void> {
       blueTrophyDelta = winDelta;
       redTrophyDelta = lossDelta;
     }
+    // In a bot-filled match, the bot seat must never move trophies — zero out
+    // whichever colour is the bot so only the human's delta stands.
+    if (isBotFilled && lm.botColor === "red") redTrophyDelta = 0;
+    if (isBotFilled && lm.botColor === "blue") blueTrophyDelta = 0;
   }
   if (winnerColor) goldReward = goldPerWin;
 
@@ -337,8 +345,8 @@ async function settleMatch(io: IOServer, lm: LiveMatch): Promise<void> {
         winner: result.winner,
         reason: result.reason,
         moves: lm.state.history as unknown as object,
-        redTrophyDelta: isRanked ? redTrophyDelta : null,
-        blueTrophyDelta: isRanked ? blueTrophyDelta : null,
+        redTrophyDelta: isRankedMode ? redTrophyDelta : null,
+        blueTrophyDelta: isRankedMode ? blueTrophyDelta : null,
         goldReward,
         endedAt: new Date(),
       },
@@ -351,7 +359,7 @@ async function settleMatch(io: IOServer, lm: LiveMatch): Promise<void> {
   // Apply economy deltas. Each call is atomic + append-only; a failure on one
   // (e.g. a bot user or deleted account) must not block the others.
   const grants: Promise<unknown>[] = [];
-  if (isRanked) {
+  if (isRankedMode) {
     if (lm.redId && redTrophyDelta !== 0) {
       grants.push(
         applyLedger(prisma, {
@@ -405,14 +413,14 @@ async function settleMatch(io: IOServer, lm: LiveMatch): Promise<void> {
   const outcomes: Promise<unknown>[] = [];
   if (lm.redId) {
     outcomes.push(
-      recordPlayerOutcome(lm.redId, winnerColor === "red", drew, redCaptures, isRanked).catch((e) =>
+      recordPlayerOutcome(lm.redId, winnerColor === "red", drew, redCaptures, isRankedMode).catch((e) =>
         console.error("[match] red outcome failed", e),
       ),
     );
   }
   if (lm.blueId) {
     outcomes.push(
-      recordPlayerOutcome(lm.blueId, winnerColor === "blue", drew, blueCaptures, isRanked).catch((e) =>
+      recordPlayerOutcome(lm.blueId, winnerColor === "blue", drew, blueCaptures, isRankedMode).catch((e) =>
         console.error("[match] blue outcome failed", e),
       ),
     );
@@ -424,8 +432,8 @@ async function settleMatch(io: IOServer, lm: LiveMatch): Promise<void> {
     result,
     winnerId,
     loserId,
-    redTrophyDelta: isRanked ? redTrophyDelta : 0,
-    blueTrophyDelta: isRanked ? blueTrophyDelta : 0,
+    redTrophyDelta: isRankedMode ? redTrophyDelta : 0,
+    blueTrophyDelta: isRankedMode ? blueTrophyDelta : 0,
     goldReward,
     state: lm.state,
   });
