@@ -113,7 +113,7 @@ function SeasonsPanel({
 
   return (
     <div style={{ marginBottom: 22 }}>
-      {/* Active-season banner (secSeasons fidelity: eyebrow + serif name + ends line). */}
+      {/* Active-season banner — secSeasons: gradient card, eyebrow + serif name + ends line, gold-pill actions. */}
       <div
         style={{
           background: "linear-gradient(120deg,#1e1338,#241645)",
@@ -137,11 +137,11 @@ function SeasonsPanel({
           </div>
           <div className="row">
             {activeSeason && (
-              <button className="btn" onClick={() => { setEditing(activeSeason); setCreating(false); }}>
+              <button className="abtn btn-gold-pill sm" onClick={() => { setEditing(activeSeason); setCreating(false); }}>
                 Edit season
               </button>
             )}
-            <button className="btn gold" onClick={() => { setCreating(true); setEditing(null); }}>
+            <button className="abtn btn-gold-pill sm" onClick={() => { setCreating(true); setEditing(null); }}>
               + New season
             </button>
           </div>
@@ -152,48 +152,50 @@ function SeasonsPanel({
       {editing && <SeasonForm season={editing} onClose={() => setEditing(null)} onDone={onDone} />}
 
       {/* All seasons table. */}
-      <div className="panel">
-        <div style={{ padding: "15px 18px", borderBottom: "1px solid var(--edge)", font: "700 14px var(--sans)", color: "var(--ink-2)" }}>
-          All seasons
+      <div className="panel" style={{ overflow: "hidden" }}>
+        <div className="card-header">
+          <span className="t">All seasons</span>
         </div>
-        <table className="tbl">
-          <thead>
-            <tr>
-              <th>Season</th>
-              <th>Window</th>
-              <th>Status</th>
-              <th className="num">Tiers</th>
-              <th className="num">Participants</th>
-              <th></th>
-            </tr>
-          </thead>
-          <tbody>
-            {loading ? (
-              <tr><td colSpan={6} className="dim" style={{ textAlign: "center", padding: 24 }}>Loading…</td></tr>
-            ) : seasons.length === 0 ? (
-              <tr><td colSpan={6} className="dim" style={{ textAlign: "center", padding: 24 }}>No seasons yet.</td></tr>
-            ) : (
-              seasons.map((s) => (
-                <tr key={s.id}>
-                  <td>
-                    <div style={{ font: "700 12.5px var(--sans)", color: "var(--ink-2)" }}>{s.name}</div>
-                    <div className="mono dim" style={{ fontSize: 11 }}>{s.id}</div>
-                  </td>
-                  <td className="dim" style={{ whiteSpace: "nowrap" }}>{fmtDate(s.startsAt)} → {fmtDate(s.endsAt)}</td>
-                  <td><span className={`badge-st ${STATUS_CLASS[s.status]}`}>{s.status}</span></td>
-                  <td className="num">
-                    {s.tierCount}
-                    <span className="dim mono" style={{ fontSize: 10, marginLeft: 6 }}>{tiersPreview(s.tiers)}</span>
-                  </td>
-                  <td className="num">{s.participants.toLocaleString()}</td>
-                  <td className="num">
-                    <button className="btn" onClick={() => { setEditing(s); setCreating(false); }}>Edit</button>
-                  </td>
-                </tr>
-              ))
-            )}
-          </tbody>
-        </table>
+        <div style={{ overflowX: "auto" }}>
+          <table className="tbl" style={{ minWidth: 640 }}>
+            <thead>
+              <tr className="thead-raised">
+                <th>Season</th>
+                <th>Window</th>
+                <th>Status</th>
+                <th className="num">Tiers</th>
+                <th className="num">Participants</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody>
+              {loading ? (
+                <tr><td colSpan={6} className="dim" style={{ textAlign: "center", padding: 24 }}>Loading…</td></tr>
+              ) : seasons.length === 0 ? (
+                <tr><td colSpan={6} className="dim" style={{ textAlign: "center", padding: 24 }}>No seasons yet.</td></tr>
+              ) : (
+                seasons.map((s) => (
+                  <tr key={s.id} className="arow">
+                    <td>
+                      <div style={{ font: "700 12.5px var(--sans)", color: "var(--ink-2)" }}>{s.name}</div>
+                      <div className="mono dim" style={{ fontSize: 11 }}>{s.id}</div>
+                    </td>
+                    <td className="dim" style={{ whiteSpace: "nowrap" }}>{fmtDate(s.startsAt)} → {fmtDate(s.endsAt)}</td>
+                    <td><span className={`badge-st ${STATUS_CLASS[s.status]}`}>{s.status}</span></td>
+                    <td className="num">
+                      {s.tierCount}
+                      <span className="dim mono" style={{ fontSize: 10, marginLeft: 6 }}>{tiersPreview(s.tiers)}</span>
+                    </td>
+                    <td className="num">{s.participants.toLocaleString()}</td>
+                    <td className="num">
+                      <button className="abtn btn-ghost btn-ghost-sm" onClick={() => { setEditing(s); setCreating(false); }}>Edit</button>
+                    </td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
       </div>
     </div>
   );
@@ -265,8 +267,8 @@ function SeasonForm({ season, onClose, onDone }: { season?: Season; onClose: () 
         {tiersErr && <span style={{ color: "var(--red-lt)", fontSize: 12 }}>{tiersErr}</span>}
       </div>
       <div className="row" style={{ justifyContent: "flex-end" }}>
-        <button className="btn" onClick={onClose}>Cancel</button>
-        <button className="btn gold" disabled={!valid} onClick={submit}>{isEdit ? "Save season" : "Create season"}</button>
+        <button className="abtn btn-ghost" onClick={onClose}>Cancel</button>
+        <button className="abtn btn-gold-pill" disabled={!valid} onClick={submit}>{isEdit ? "Save season" : "Create season"}</button>
       </div>
     </div>
   );
@@ -294,9 +296,9 @@ function QuestsPanel({ quests, loading, onDone }: { quests: Quest[]; loading: bo
 
   return (
     <div className="panel" style={{ overflow: "hidden" }}>
-      <div style={{ padding: "15px 18px", borderBottom: "1px solid var(--edge)", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-        <div style={{ font: "700 14px var(--sans)", color: "var(--ink-2)" }}>Quests</div>
-        <button className="btn gold" onClick={() => { setCreating(true); setEditing(null); }}>+ New quest</button>
+      <div className="card-header">
+        <span className="t">Quests</span>
+        <button className="abtn btn-gold-pill sm" onClick={() => { setCreating(true); setEditing(null); }}>+ New quest</button>
       </div>
 
       {creating && (
@@ -310,47 +312,52 @@ function QuestsPanel({ quests, loading, onDone }: { quests: Quest[]; loading: bo
         </div>
       )}
 
-      <table className="tbl">
-        <thead>
-          <tr>
-            <th>Quest</th>
-            <th>Scope</th>
-            <th className="num">Goal</th>
-            <th className="num">Reward</th>
-            <th>Active</th>
-            <th></th>
-          </tr>
-        </thead>
-        <tbody>
-          {loading ? (
-            <tr><td colSpan={6} className="dim" style={{ textAlign: "center", padding: 24 }}>Loading…</td></tr>
-          ) : quests.length === 0 ? (
-            <tr><td colSpan={6} className="dim" style={{ textAlign: "center", padding: 24 }}>No quests yet.</td></tr>
-          ) : (
-            quests.map((q) => (
-              <tr key={q.id}>
-                <td>
-                  <div style={{ font: "700 12.5px var(--sans)", color: "var(--ink-2)" }}>{q.title}</div>
-                  {q.description && <div className="dim" style={{ fontSize: 11 }}>{q.description}</div>}
-                  <div className="mono dim" style={{ fontSize: 10 }}>{q.id}</div>
-                </td>
-                <td className="dim">{q.scope}</td>
-                <td className="num">{q.goal.toLocaleString()}</td>
-                <td className="num" style={{ color: "var(--gold-lt)" }}>{q.rewardGold.toLocaleString()} 🪙</td>
-                <td>
-                  <span className={`badge-st ${q.active ? "st-active" : "st-deleted"}`}>{q.active ? "active" : "off"}</span>
-                </td>
-                <td className="num">
-                  <div className="row" style={{ justifyContent: "flex-end", flexWrap: "nowrap" }}>
-                    <button className="btn" onClick={() => { setEditing(q); setCreating(false); }}>Edit</button>
-                    <button className={`btn ${q.active ? "danger" : ""}`} onClick={() => toggle(q)}>{q.active ? "Deactivate" : "Activate"}</button>
-                  </div>
-                </td>
-              </tr>
-            ))
-          )}
-        </tbody>
-      </table>
+      <div style={{ overflowX: "auto" }}>
+        <table className="tbl" style={{ minWidth: 640 }}>
+          <thead>
+            <tr className="thead-raised">
+              <th>Quest</th>
+              <th>Scope</th>
+              <th className="num">Goal</th>
+              <th className="num">Reward</th>
+              <th style={{ textAlign: "center" }}>Active</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+            {loading ? (
+              <tr><td colSpan={6} className="dim" style={{ textAlign: "center", padding: 24 }}>Loading…</td></tr>
+            ) : quests.length === 0 ? (
+              <tr><td colSpan={6} className="dim" style={{ textAlign: "center", padding: 24 }}>No quests yet.</td></tr>
+            ) : (
+              quests.map((q) => (
+                <tr key={q.id} className="arow">
+                  <td>
+                    <div style={{ font: "700 12.5px var(--sans)", color: "var(--ink-2)" }}>{q.title}</div>
+                    {q.description && <div className="dim" style={{ fontSize: 11 }}>{q.description}</div>}
+                    <div className="mono dim" style={{ fontSize: 10 }}>{q.id}</div>
+                  </td>
+                  <td className="dim">{q.scope}</td>
+                  <td className="num">{q.goal.toLocaleString()}</td>
+                  <td className="num" style={{ color: "var(--gold-lt)" }}>{q.rewardGold.toLocaleString()} 🪙</td>
+                  <td style={{ textAlign: "center" }}>
+                    <button
+                      className={`abtn fd-switch${q.active ? " on" : ""}`}
+                      title={q.active ? "Deactivate quest" : "Activate quest"}
+                      onClick={() => toggle(q)}
+                    >
+                      <span className="knob" />
+                    </button>
+                  </td>
+                  <td className="num">
+                    <button className="abtn btn-ghost btn-ghost-sm" onClick={() => { setEditing(q); setCreating(false); }}>Edit</button>
+                  </td>
+                </tr>
+              ))
+            )}
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 }
@@ -420,8 +427,8 @@ function QuestForm({ quest, onClose, onDone }: { quest?: Quest; onClose: () => v
         </div>
       </div>
       <div className="row" style={{ justifyContent: "flex-end" }}>
-        <button className="btn" onClick={onClose}>Cancel</button>
-        <button className="btn gold" disabled={!valid} onClick={submit}>{isEdit ? "Save quest" : "Create quest"}</button>
+        <button className="abtn btn-ghost" onClick={onClose}>Cancel</button>
+        <button className="abtn btn-gold-pill" disabled={!valid} onClick={submit}>{isEdit ? "Save quest" : "Create quest"}</button>
       </div>
     </div>
   );
