@@ -521,16 +521,18 @@ model Config {
 }
 
 model Campaign {
-  id         String   @id @default(cuid())
-  title      String
-  body       String   @db.Text
-  segment    String
-  status     String   @default("sent")
-  reach      Int      @default(0)
-  sentById   String?
-  sentBy     User?    @relation(fields: [sentById], references: [id], onDelete: SetNull)
-  sentByName String
-  createdAt  DateTime @default(now())
+  id           String    @id @default(cuid())
+  title        String
+  body         String    @db.Text
+  segment      String
+  status       String    @default("sent")
+  channel      String    @default("in-app")
+  scheduledFor DateTime?
+  reach        Int       @default(0)
+  sentById     String?
+  sentBy       User?     @relation(fields: [sentById], references: [id], onDelete: SetNull)
+  sentByName   String
+  createdAt    DateTime  @default(now())
 
   @@index([createdAt])
 }
