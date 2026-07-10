@@ -48,12 +48,14 @@ export function DamathRoomPage() {
     hostId,
     host,
     guest,
+    spectators,
     variant: liveVariant,
     chat,
     error,
     startInfo,
     create,
     join,
+    spectate,
     start,
     leave,
     sendChat,
@@ -84,8 +86,10 @@ export function DamathRoomPage() {
     chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [chat.length]);
 
-  // Auto-enter from a shared link: ?code=XXXXXX (a logged-out friend joins as guest).
+  // Auto-enter from a shared link: ?code=XXXXXX (&spectate=1 to watch). A
+  // logged-out visitor is dropped in as a guest first.
   const queryCode = params.get("code");
+  const querySpectate = params.get("spectate") === "1";
   const autoJoinedRef = useRef(false);
   useEffect(() => {
     if (autoJoinedRef.current || inRoom || !queryCode) return;
@@ -100,10 +104,10 @@ export function DamathRoomPage() {
           return;
         }
       }
-      await join(queryCode);
+      await (querySpectate ? spectate(queryCode) : join(queryCode));
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [me, queryCode]);
+  }, [me, queryCode, querySpectate]);
 
   // Host started → adopt the seeded match + go to the board.
   useEffect(() => {
@@ -178,6 +182,7 @@ export function DamathRoomPage() {
       window.setTimeout(() => setCopyLabel("Copy"), 1600);
     });
   const copyLink = () => void copyText(roomLink, () => showToast("Room link copied."));
+  const copySpectateLink = () => void copyText(`${roomLink}&spectate=1`, () => showToast("Spectate link copied — friends can watch."));
   const inviteFriend = () => void copyText(roomLink, () => showToast("Room link copied — send it to your friend."));
 
   const doCreate = () => {
@@ -290,6 +295,7 @@ export function DamathRoomPage() {
               <div style={{ display: "flex", gap: 8, justifyContent: "center", flexWrap: "wrap" }}>
                 <button onClick={copyLink} style={pillBtn}>🔗 Copy Link</button>
                 <button onClick={inviteFriend} style={pillBtn}>✉ Share Invite</button>
+                <button onClick={copySpectateLink} style={pillBtn}>👁 Spectate Link</button>
               </div>
             </div>
 
@@ -311,6 +317,28 @@ export function DamathRoomPage() {
                   </div>
                 )}
               </div>
+            </div>
+
+            {/* Spectators — friends watching this room (read-only). */}
+            <div className="frame" style={{ padding: 18 }}>
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
+                <span className="ptitle" style={{ marginBottom: 0 }}>Spectators</span>
+                <button onClick={copySpectateLink} style={{ ...pillBtn, padding: "6px 12px", fontSize: 11 }}>👁 Copy Spectate Link</button>
+              </div>
+              {spectators.length === 0 ? (
+                <div style={{ font: "500 12px Inter", color: "var(--ink2)", padding: "12px 4px 2px" }}>
+                  No one is watching yet — share the spectate link to let friends tune in.
+                </div>
+              ) : (
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginTop: 10 }}>
+                  {spectators.map((sp) => (
+                    <div key={sp.userId} style={{ display: "flex", alignItems: "center", gap: 6, padding: "5px 10px", borderRadius: 100, background: "rgba(0,0,0,.25)" }}>
+                      <Avatar src={sp.avatarUrl ?? "champion"} size={22} ring={false} />
+                      <span style={{ font: "600 12px Inter", color: "var(--ink)" }}>{sp.name}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
 
             <div style={{ textAlign: "center" }}>

@@ -15,7 +15,8 @@ import { connectSocket, getSocket } from "../lib/socket";
 export type DamathRoomMember = { userId: string; name: string; avatarUrl: string | null; tag: string } | null;
 export type DamathRoomChatMsg = { id: string; from: NonNullable<DamathRoomMember>; body: string; at: number };
 
-type StartInfo = { matchId: string; yourColor: DamathPlayerId; variant: DamathVariant } | null;
+// yourColor is null for a spectator (read-only).
+type StartInfo = { matchId: string; yourColor: DamathPlayerId | null; variant: DamathVariant } | null;
 type RoomError = { kind: "not-found" | "full" | "closed" | "server"; code?: string } | null;
 
 export type DamathRoomStore = {
@@ -23,16 +24,18 @@ export type DamathRoomStore = {
   hostId: string | null;
   host: DamathRoomMember;
   guest: DamathRoomMember;
+  spectators: NonNullable<DamathRoomMember>[];
   variant: DamathVariant;
   matchId: string | null;
   chat: DamathRoomChatMsg[];
   connecting: boolean;
   error: RoomError;
-  /** set once when the host starts; the page consumes it to navigate. */
+  /** set once when the host starts / on spectate; the page consumes it to navigate. */
   startInfo: StartInfo;
 
   create: (variant?: DamathVariant) => Promise<void>;
   join: (code: string) => Promise<void>;
+  spectate: (code: string) => Promise<void>;
   start: () => void;
   leave: () => void;
   sendChat: (body: string) => void;
@@ -56,13 +59,14 @@ export const useDamathRoomStore = create<DamathRoomStore>((set, get) => {
         hostId?: string;
         host?: DamathRoomMember;
         guest?: DamathRoomMember;
+        spectators?: NonNullable<DamathRoomMember>[];
         variant?: DamathVariant;
         matchId?: string | null;
         error?: string;
         closed?: boolean;
       }) => {
         if (snap.closed) {
-          set({ error: { kind: "closed", code: snap.code }, code: null, hostId: null, host: null, guest: null, matchId: null });
+          set({ error: { kind: "closed", code: snap.code }, code: null, hostId: null, host: null, guest: null, spectators: [], matchId: null });
           return;
         }
         if (snap.error) {
@@ -81,6 +85,7 @@ export const useDamathRoomStore = create<DamathRoomStore>((set, get) => {
           hostId: snap.hostId ?? null,
           host: snap.host ?? null,
           guest: snap.guest ?? null,
+          spectators: snap.spectators ?? [],
           variant: snap.variant ?? get().variant,
           matchId: snap.matchId ?? null,
           error: null,
@@ -90,7 +95,7 @@ export const useDamathRoomStore = create<DamathRoomStore>((set, get) => {
 
     s.on(
       EV.damathRoomStart,
-      (p: { matchId: string; yourColor: DamathPlayerId; variant: DamathVariant }) => {
+      (p: { matchId: string; yourColor: DamathPlayerId | null; variant: DamathVariant }) => {
         set({ startInfo: p });
       },
     );
@@ -120,6 +125,7 @@ export const useDamathRoomStore = create<DamathRoomStore>((set, get) => {
     hostId: null,
     host: null,
     guest: null,
+    spectators: [],
     variant: "whole",
     matchId: null,
     chat: [],
@@ -139,6 +145,13 @@ export const useDamathRoomStore = create<DamathRoomStore>((set, get) => {
       if (await ensure()) getSocket().emit(EV.damathRoomJoin, { code: c });
     },
 
+    spectate: async (code) => {
+      const c = code.trim().toUpperCase();
+      if (c.length < 4) return;
+      set({ chat: [] });
+      if (await ensure()) getSocket().emit(EV.damathRoomSpectate, { code: c });
+    },
+
     start: () => {
       try {
         getSocket().emit(EV.damathRoomStart);
@@ -153,7 +166,7 @@ export const useDamathRoomStore = create<DamathRoomStore>((set, get) => {
       } catch {
         /* ignore */
       }
-      set({ code: null, hostId: null, host: null, guest: null, matchId: null, chat: [] });
+      set({ code: null, hostId: null, host: null, guest: null, spectators: [], matchId: null, chat: [] });
     },
 
     sendChat: (body) => {
@@ -174,6 +187,7 @@ export const useDamathRoomStore = create<DamathRoomStore>((set, get) => {
         hostId: null,
         host: null,
         guest: null,
+        spectators: [],
         matchId: null,
         chat: [],
         connecting: false,

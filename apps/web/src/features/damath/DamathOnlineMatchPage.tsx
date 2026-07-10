@@ -56,7 +56,9 @@ export function DamathOnlineMatchPage() {
   }, []);
 
   const over = status === "ended";
-  const flip = myColor === "blue"; // view from your own side
+  // Spectator: arrived via a room but the server gave us no colour (read-only).
+  const spectating = fromRoom && !!state && myColor === null;
+  const flip = myColor === "blue"; // players view from their own side; spectators from Red's
 
   // ── searching / found reveal ──
   if (status === "searching" || status === "found") {
@@ -105,8 +107,9 @@ export function DamathOnlineMatchPage() {
   const info = variantInfo(liveVariant);
   const meName = "You";
   const oppName = opponent?.displayName ?? "Opponent";
-  const redName = myColor === "red" ? meName : oppName;
-  const blueName = myColor === "blue" ? meName : oppName;
+  // Spectators have no "You": name both seats Red/Blue.
+  const redName = spectating ? "Red" : myColor === "red" ? meName : oppName;
+  const blueName = spectating ? "Blue" : myColor === "blue" ? meName : oppName;
 
   const humanWon = over && result?.winner === myColor;
   let resultTitle = "";
@@ -139,11 +142,11 @@ export function DamathOnlineMatchPage() {
         <div className="frame" style={{ padding: 16, display: "flex", alignItems: "center", gap: 12, borderColor: "rgba(232,184,75,.4)" }}>
           <span style={{ fontSize: 22 }}>🌐</span>
           <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{ font: "700 15px Cinzel,serif", color: "var(--gold-lt)" }}>Math Dama · Online</div>
+            <div style={{ font: "700 15px Cinzel,serif", color: "var(--gold-lt)" }}>Math Dama · {spectating ? "Spectating" : "Online"}</div>
             <div style={{ font: "500 11px Inter", color: "var(--ink2)" }}>{info?.label ?? "Whole"} · Unranked</div>
           </div>
         </div>
-        <DamathScorePanel state={state} redName={redName} blueName={blueName} youAre={myColor} />
+        <DamathScorePanel state={state} redName={redName} blueName={blueName} youAre={spectating ? null : myColor} />
       </div>
 
       <div className="fd-game-center" style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 14 }}>
@@ -164,7 +167,13 @@ export function DamathOnlineMatchPage() {
                 font: "700 13px Cinzel,serif",
               }}
             >
-              {mustCapture && myTurn ? "⚠ You must capture this turn." : myTurn ? "Your turn" : `${oppName}'s turn`}
+              {spectating
+                ? `👁 Watching — ${state.turn === "red" ? redName : blueName}'s turn`
+                : mustCapture && myTurn
+                  ? "⚠ You must capture this turn."
+                  : myTurn
+                    ? "Your turn"
+                    : `${oppName}'s turn`}
             </div>
           )}
         </div>
@@ -172,19 +181,25 @@ export function DamathOnlineMatchPage() {
         <div style={{ width: "min(92vw,600px)", maxWidth: "100%" }}>
           <DamathBoard
             state={state}
-            legalTargets={moveTargets}
-            captureTargets={captureTargets}
-            selected={selected}
-            mustCapture={mustCapture && myTurn}
-            onSquareClick={myTurn ? onSquareClick : undefined}
+            legalTargets={spectating ? [] : moveTargets}
+            captureTargets={spectating ? [] : captureTargets}
+            selected={spectating ? null : selected}
+            mustCapture={!spectating && mustCapture && myTurn}
+            onSquareClick={spectating || !myTurn ? undefined : onSquareClick}
             flip={flip}
           />
         </div>
 
         <div style={{ display: "flex", gap: 8, justifyContent: "center" }}>
-          <Button variant="red" size="sm" onClick={() => resign()} disabled={over}>
-            🏳 Resign
-          </Button>
+          {spectating ? (
+            <Button variant="purple" size="sm" onClick={() => navigate("/damath")}>
+              ← Leave
+            </Button>
+          ) : (
+            <Button variant="red" size="sm" onClick={() => resign()} disabled={over}>
+              🏳 Resign
+            </Button>
+          )}
         </div>
       </div>
 

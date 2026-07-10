@@ -54,8 +54,9 @@ export type DamathOnlineStore = {
   joinQueue: (variant?: DamathVariant) => Promise<void>;
   leaveQueue: () => void;
   resync: () => Promise<void>;
-  /** Attach to an already-seeded match (private-room start) and pull its state. */
-  attachMatch: (matchId: string, myColor: DamathPlayerId, variant: DamathVariant, opponent?: Opponent) => Promise<void>;
+  /** Attach to an already-seeded match (private-room start / spectate) and pull
+   *  its state. `myColor` is null for a spectator (read-only). */
+  attachMatch: (matchId: string, myColor: DamathPlayerId | null, variant: DamathVariant, opponent?: Opponent) => Promise<void>;
   onSquareClick: (sq: DamathCoord) => void;
   resign: () => void;
   reset: () => void;

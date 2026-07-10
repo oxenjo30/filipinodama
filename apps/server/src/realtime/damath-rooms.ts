@@ -20,6 +20,7 @@ type DamathRoom = {
   hostId: string;
   host: Member;
   guest: Member | null;
+  spectators: Map<string, Member>; // userId → member
   variant: DamathVariant;
   matchId: string | null;
 };
@@ -46,7 +47,7 @@ async function memberFor(userId: string, socketId: string): Promise<Member> {
 function memberIn(room: DamathRoom, userId: string): Member | null {
   if (room.host.userId === userId) return room.host;
   if (room.guest?.userId === userId) return room.guest;
-  return null;
+  return room.spectators.get(userId) ?? null;
 }
 
 const publicMember = (m: Member) => ({ userId: m.userId, name: m.name, avatarUrl: m.avatarUrl, tag: m.tag });
@@ -57,6 +58,7 @@ function roomState(room: DamathRoom) {
     hostId: room.hostId,
     host: publicMember(room.host),
     guest: room.guest ? publicMember(room.guest) : null,
+    spectators: [...room.spectators.values()].map(publicMember),
     variant: room.variant,
     matchId: room.matchId,
   };
@@ -78,10 +80,12 @@ function removeMember(io: IOServer, userId: string) {
   if (room.hostId === userId) {
     io.to(PREFIX(code)).emit(EV.damathRoomState, { code, closed: true });
     if (room.guest) userRoom.delete(room.guest.userId);
+    for (const sp of room.spectators.values()) userRoom.delete(sp.userId);
     rooms.delete(code);
     return;
   }
   if (room.guest?.userId === userId) room.guest = null;
+  room.spectators.delete(userId);
   emitState(io, room);
 }
 
@@ -114,7 +118,7 @@ export function registerDamathRooms(io: IOServer, socket: Socket) {
     removeMember(io, userId);
     const code = makeCode();
     const host = await memberFor(userId, socket.id);
-    const room: DamathRoom = { code, hostId: userId, host, guest: null, variant, matchId: null };
+    const room: DamathRoom = { code, hostId: userId, host, guest: null, spectators: new Map(), variant, matchId: null };
     rooms.set(code, room);
     userRoom.set(userId, code);
     void socket.join(PREFIX(code));
@@ -146,6 +150,35 @@ export function registerDamathRooms(io: IOServer, socket: Socket) {
     emitState(io, room);
   });
 
+  socket.on(EV.damathRoomSpectate, async (payload: { code?: unknown } = {}) => {
+    if (!allow(socket, "damath:room:spectate", 15, 10_000)) return;
+    const code = typeof payload?.code === "string" ? payload.code.trim().toUpperCase() : null;
+    if (!code) return;
+    const room = rooms.get(code);
+    if (!room) {
+      socket.emit(EV.damathRoomState, { code, error: "not-found" });
+      return;
+    }
+    void socket.join(PREFIX(code));
+    const already = userRoom.get(userId) === code ? memberIn(room, userId) : null;
+    if (already) {
+      already.sockets.add(socket.id);
+    } else if (room.hostId !== userId && room.guest?.userId !== userId) {
+      removeMember(io, userId);
+      const member = await memberFor(userId, socket.id);
+      userRoom.set(userId, code);
+      room.spectators.set(userId, member);
+    }
+    // Late spectator: if a match is already live, join this socket to the match
+    // channel and tell it to open the board read-only (yourColor:null). The
+    // client then resyncs to pull the current board state.
+    if (room.matchId) {
+      void socket.join(room.matchId);
+      socket.emit(EV.damathRoomStart, { matchId: room.matchId, yourColor: null, variant: room.variant });
+    }
+    emitState(io, room);
+  });
+
   socket.on(EV.damathRoomStart, async () => {
     const code = userRoom.get(userId);
     const room = code ? rooms.get(code) : null;
@@ -164,6 +197,13 @@ export function registerDamathRooms(io: IOServer, socket: Socket) {
       }
       io.to(`presence:${room.hostId}`).emit(EV.damathRoomStart, { matchId: match.id, yourColor: "red", variant: room.variant });
       io.to(`presence:${room.guest.userId}`).emit(EV.damathRoomStart, { matchId: match.id, yourColor: "blue", variant: room.variant });
+      // Spectators watch READ-ONLY: join their sockets to the match room and tell
+      // them to open the board with yourColor:null (they can never move — the
+      // match move handlers gate on colorOf(), and a spectator has no colour).
+      for (const spec of room.spectators.values()) {
+        for (const sid of spec.sockets) io.sockets.sockets.get(sid)?.join(match.id);
+        io.to(`presence:${spec.userId}`).emit(EV.damathRoomStart, { matchId: match.id, yourColor: null, variant: room.variant });
+      }
       emitState(io, room);
     } catch (e) {
       console.error("[damath-rooms] start failed", e);

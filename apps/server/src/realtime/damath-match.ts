@@ -209,17 +209,25 @@ export function registerDamathMatch(io: IOServer, socket: Socket) {
       return;
     }
     const myColor = colorOf(lm, userId);
-    if (!myColor) {
+    // A non-player may only receive read-only state if their socket is ALREADY
+    // in the match room — which only happens via the legitimate room-spectate
+    // path (join by code → server joins them to the match channel). This stops a
+    // random user from watching any match by guessing its id.
+    const isSpectator = !myColor && socket.rooms.has(matchId);
+    if (!myColor && !isSpectator) {
       socket.emit(EV.damathIllegal, { matchId, reason: "not-a-player" });
       return;
     }
-    // Reconnected → cancel any pending abandonment forfeit and re-join the room.
-    clearAbandon(matchId, userId);
-    void socket.join(matchId);
+    // A player reconnecting cancels any pending abandonment forfeit and re-joins
+    // the room; a spectator is already joined (harmless re-join).
+    if (myColor) {
+      clearAbandon(matchId, userId);
+      void socket.join(matchId);
+    }
     socket.emit(EV.damathState, {
       matchId,
       state: lm.state,
-      yourColor: myColor,
+      yourColor: myColor, // null for spectators → client renders read-only
       variant: lm.variant,
     });
   });
