@@ -4,11 +4,14 @@ import { useAdminMutation } from "../lib/ui";
 
 type ListUser = { id: string | null; username: string; tag: string; avatarUrl: string | null };
 
+type Priority = "LOW" | "MEDIUM" | "HIGH" | "URGENT";
+
 type TicketRow = {
   id: string;
   category: string;
   subject: string;
   status: "OPEN" | "RESOLVED";
+  priority: Priority;
   createdAt: string;
   updatedAt: string;
   msgCount: number;
@@ -32,18 +35,21 @@ type TicketDetail = {
   category: string;
   subject: string;
   status: "OPEN" | "RESOLVED";
+  priority: Priority;
   createdAt: string;
   updatedAt: string;
   userGone: boolean;
   user: ListUser;
   userName: string;
   userEmail: string | null;
+  tag: string;
   resolvedAt: string | null;
   canResolve: boolean;
   canReopen: boolean;
 };
 
 const STATUS_FILTERS = ["OPEN", "RESOLVED"] as const;
+const PRIORITIES: Priority[] = ["LOW", "MEDIUM", "HIGH", "URGENT"];
 
 // Mockup's tStatusStyle() colors for ticket status pills (open=green, resolved=dim purple).
 // "PENDING" doesn't exist in our real Ticket model — not rendered.
@@ -51,6 +57,18 @@ const STATUS_COLOR: Record<TicketRow["status"], { fg: string; bg: string }> = {
   OPEN: { fg: "#5fd08a", bg: "rgba(95,208,138,.14)" },
   RESOLVED: { fg: "#8b78ad", bg: "rgba(139,120,173,.14)" },
 };
+
+// Mockup's priority chip colors (tPrioStyle()) — low→dim, urgent→red.
+const PRIORITY_COLOR: Record<Priority, { fg: string; bg: string }> = {
+  LOW: { fg: "#8b78ad", bg: "rgba(139,120,173,.14)" },
+  MEDIUM: { fg: "#e8b84b", bg: "rgba(232,184,75,.14)" },
+  HIGH: { fg: "#e6a636", bg: "rgba(230,166,54,.16)" },
+  URGENT: { fg: "#e05a6e", bg: "rgba(224,90,110,.16)" },
+};
+
+function priorityLabel(p: Priority): string {
+  return p.charAt(0) + p.slice(1).toLowerCase();
+}
 
 function timeAgo(iso: string): string {
   const ms = Date.now() - new Date(iso).getTime();
@@ -76,11 +94,21 @@ function StatusBadge({ status }: { status: TicketRow["status"] }) {
   );
 }
 
+function PriorityBadge({ priority }: { priority: Priority }) {
+  const c = PRIORITY_COLOR[priority];
+  return (
+    <span className="badge-rect" style={{ color: c.fg, background: c.bg, borderColor: `${c.fg}44` }}>
+      {priorityLabel(priority)}
+    </span>
+  );
+}
+
 /** 3.0 Support — the ticket queue (Player Support). Matches the approved secTickets
  * fidelity: filter chips, a ticket list on the left, the selected thread + reply
  * composer on the right, "Select a ticket" empty state. Two real statuses only
- * (OPEN | RESOLVED) — the mockup's "Pending" filter and priority chip have no
- * backing field on our Ticket model and are omitted (see report). */
+ * (OPEN | RESOLVED) — the mockup's "Pending" filter has no backing status on our
+ * Ticket model and is omitted. Priority, user tag, and reopen are wired to the
+ * real server fields/routes. */
 export function Support() {
   const [status, setStatus] = useState<(typeof STATUS_FILTERS)[number]>("OPEN");
   const [rows, setRows] = useState<TicketRow[]>([]);
@@ -208,6 +236,7 @@ function TicketList({
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 7 }}>
                   <span className="mono" style={{ font: "600 10.5px var(--mono)", color: "#8b78ad" }}>{t.id}</span>
+                  <PriorityBadge priority={t.priority} />
                 </div>
                 <div
                   style={{
@@ -226,7 +255,7 @@ function TicketList({
             </div>
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: 9, paddingLeft: 44 }}>
               <span style={{ font: "500 11px var(--sans)", color: "#8b78ad" }}>
-                {t.userName} · {t.category}
+                {t.userName} {t.user.tag} · {t.category}
               </span>
               <span style={{ font: "500 10.5px var(--sans)", color: "#6f5f92" }}>{timeAgo(t.updatedAt)}</span>
             </div>
@@ -242,6 +271,7 @@ function TicketDetailPane({ id, onClose, onChanged }: { id: string; onClose: () 
   const [loading, setLoading] = useState(true);
   const [reply, setReply] = useState("");
   const [sending, setSending] = useState(false);
+  const [savingPriority, setSavingPriority] = useState(false);
   const mutate = useAdminMutation();
 
   const load = () => {
@@ -271,6 +301,17 @@ function TicketDetailPane({ id, onClose, onChanged }: { id: string; onClose: () 
     }
   }
 
+  async function changePriority(priority: Priority) {
+    setSavingPriority(true);
+    try {
+      await api.patch(`/api/admin/tickets/${id}/priority`, { priority });
+      load();
+      onChanged();
+    } finally {
+      setSavingPriority(false);
+    }
+  }
+
   const resolve = () =>
     mutate({
       title: "Resolve this ticket",
@@ -279,6 +320,20 @@ function TicketDetailPane({ id, onClose, onChanged }: { id: string; onClose: () 
       method: "POST",
       path: `/api/admin/tickets/${id}/resolve`,
       successMsg: "Ticket resolved.",
+      onDone: () => {
+        load();
+        onChanged();
+      },
+    });
+
+  const reopen = () =>
+    mutate({
+      title: "Reopen this ticket",
+      requireReason: false,
+      confirmLabel: "Reopen",
+      method: "POST",
+      path: `/api/admin/tickets/${id}/reopen`,
+      successMsg: "Ticket reopened.",
       onDone: () => {
         load();
         onChanged();
@@ -299,15 +354,28 @@ function TicketDetailPane({ id, onClose, onChanged }: { id: string; onClose: () 
     <div style={{ display: "flex", flexDirection: "column", height: "100%" }}>
       <div className="card-header" style={{ alignItems: "flex-start" }}>
         <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
             <span className="mono" style={{ font: "600 10.5px var(--mono)", color: "#8b78ad" }}>{ticket.id}</span>
             <span className="badge-rect" style={{ color: c.fg, background: c.bg, borderColor: `${c.fg}44` }}>
               {ticket.status === "OPEN" ? "Open" : "Resolved"}
             </span>
+            <PriorityBadge priority={ticket.priority} />
+            <select
+              className="select"
+              aria-label="Change priority"
+              value={ticket.priority}
+              disabled={savingPriority}
+              onChange={(e) => changePriority(e.target.value as Priority)}
+              style={{ width: "auto", padding: "3px 6px", font: "600 10px var(--sans)", borderRadius: 6 }}
+            >
+              {PRIORITIES.map((p) => (
+                <option key={p} value={p}>{priorityLabel(p)}</option>
+              ))}
+            </select>
           </div>
           <div style={{ font: "800 15px var(--serif)", color: "var(--gold-lt)", marginTop: 6 }}>{ticket.subject}</div>
           <div style={{ font: "500 11px var(--sans)", color: "#8b78ad", marginTop: 4 }}>
-            {ticket.userName}
+            {ticket.userName} {ticket.tag}
             {ticket.userEmail ? ` · ${ticket.userEmail}` : ""} · {ticket.category}
             {ticket.userGone && " · account deleted"}
           </div>
@@ -366,41 +434,39 @@ function TicketDetailPane({ id, onClose, onChanged }: { id: string; onClose: () 
       </div>
 
       <div style={{ padding: "16px 20px", borderTop: "1px solid rgba(232,184,75,.12)" }}>
-        {ticket.canResolve ? (
-          <>
-            <textarea
-              className="input"
-              placeholder="Type your reply to the player…"
-              value={reply}
-              onChange={(e) => setReply(e.target.value)}
-              style={{ minHeight: 70, resize: "vertical", width: "100%" }}
-            />
-            <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
-              <button className="abtn btn-gold-pill" style={{ flex: 1 }} disabled={sending || !reply.trim()} onClick={sendReply}>
-                {sending ? "Sending…" : "Send reply"}
-              </button>
-              <button
-                className="abtn"
-                onClick={resolve}
-                style={{
-                  font: "700 12px var(--sans)",
-                  borderRadius: 9,
-                  padding: "11px 16px",
-                  border: "1px solid rgba(47,143,91,.5)",
-                  color: "#fff",
-                  background: "linear-gradient(180deg,#2f8f5b,#1c6e42)",
-                }}
-              >
-                Resolve
-              </button>
-              {/* Reopen omitted — mockup's canReopen action has no server route yet (only resolve exists). */}
-            </div>
-          </>
-        ) : (
-          <div className="dim" style={{ fontSize: 12, textAlign: "center" }}>
-            This ticket is resolved{ticket.resolvedAt ? ` (${timeAgo(ticket.resolvedAt)})` : ""}.
-          </div>
-        )}
+        <textarea
+          className="input"
+          placeholder="Type your reply to the player…"
+          value={reply}
+          onChange={(e) => setReply(e.target.value)}
+          style={{ minHeight: 70, resize: "vertical", width: "100%" }}
+        />
+        <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
+          <button className="abtn btn-gold-pill" style={{ flex: 1 }} disabled={sending || !reply.trim()} onClick={sendReply}>
+            {sending ? "Sending…" : "Send reply"}
+          </button>
+          {ticket.canResolve && (
+            <button
+              className="abtn"
+              onClick={resolve}
+              style={{
+                font: "700 12px var(--sans)",
+                borderRadius: 9,
+                padding: "11px 16px",
+                border: "1px solid rgba(47,143,91,.5)",
+                color: "#fff",
+                background: "linear-gradient(180deg,#2f8f5b,#1c6e42)",
+              }}
+            >
+              Resolve
+            </button>
+          )}
+          {ticket.canReopen && (
+            <button className="abtn btn-ghost" onClick={reopen}>
+              Reopen
+            </button>
+          )}
+        </div>
       </div>
     </div>
   );
