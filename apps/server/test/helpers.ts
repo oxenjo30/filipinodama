@@ -32,6 +32,8 @@ export async function seedUser(
     bannedUntil: Date | null;
     deletedAt: Date | null;
     email: string | null;
+    gold: number;
+    trophies: number;
   }> = {},
 ) {
   seq += 1;
@@ -47,6 +49,8 @@ export async function seedUser(
       bannedUntil: overrides.bannedUntil ?? null,
       deletedAt: overrides.deletedAt ?? null,
       email: overrides.email ?? null,
+      gold: overrides.gold ?? 0,
+      trophies: overrides.trophies ?? 0,
     },
   });
 }
