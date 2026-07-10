@@ -12,7 +12,7 @@ import { useState, type CSSProperties, type ReactNode } from "react";
  *
  *   State B — "Purchase Complete": a celebratory header ("Enjoy your loot!"),
  *   the count of granted items, a ✓ list of the granted item names, and
- *   "Keep Shopping" + "View in Locker" buttons.
+ *   "Keep Shopping" + "View in Inventory" buttons.
  *
  * FULLY LIVE-WIRED — this component owns NO purchase logic and fabricates NO
  * data. Confirming calls `onConfirm()`, which the parent (StorePage) implements
@@ -150,7 +150,7 @@ export function CheckoutModal({ open, cart, onCancel, onConfirm, onKeepShopping,
           Enjoy your loot!
         </h2>
         <p style={{ margin: "0 0 18px", font: "400 13px Inter", color: "var(--ink)", animation: "fdrise .4s ease .64s both" }}>
-          {granted.length} item{granted.length === 1 ? "" : "s"} added to your Locker.
+          {granted.length} item{granted.length === 1 ? "" : "s"} added to your Inventory.
         </p>
         <div style={{ display: "flex", flexDirection: "column", gap: 2, textAlign: "left", marginBottom: 20 }}>
           {granted.map((name, i) => (
@@ -165,7 +165,7 @@ export function CheckoutModal({ open, cart, onCancel, onConfirm, onKeepShopping,
             Keep Shopping
           </button>
           <button className="btn btn-gold" onClick={onViewLocker} style={{ flex: 1 }}>
-            View in Locker
+            View in Inventory
           </button>
         </div>
       </div>

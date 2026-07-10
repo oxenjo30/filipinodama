@@ -390,8 +390,8 @@ export function ProfilePage() {
           <button className="btn btn-purple" onClick={() => navigate("/friends")} style={{ padding: "12px 22px" }}>
             👥 Friends
           </button>
-          <button className="btn btn-purple" onClick={() => navigate("/store")} style={{ padding: "12px 22px" }}>
-            🎒 Locker
+          <button className="btn btn-purple" onClick={() => navigate("/inventory")} style={{ padding: "12px 22px" }}>
+            🎒 Inventory
           </button>
           <button className="btn btn-purple" onClick={() => navigate("/settings")} style={{ padding: "12px 22px" }}>
             ⚙ Settings
