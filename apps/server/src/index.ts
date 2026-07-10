@@ -18,6 +18,7 @@ import { questRoutes } from "./modules/quests.js";
 import { seasonRoutes } from "./modules/seasons.js";
 import { rewardRoutes } from "./modules/rewards.js";
 import { adminRoutes } from "./modules/admin.js";
+import { adminReportsRoutes } from "./modules/admin-reports.js";
 import { adminStoreRoutes } from "./modules/admin-store.js";
 import { adminLiveOpsRoutes } from "./modules/admin-liveops.js";
 import { adminGuildsRoutes } from "./modules/admin-guilds.js";
@@ -99,6 +100,7 @@ export async function buildApp(): Promise<FastifyInstance> {
   await app.register(rewardRoutes, { prefix: "/api" });
   await app.register(adminRoutes, { prefix: "/api" });
   // Admin section modules — each is role-gated + audited (see modules/admin-*.ts).
+  await app.register(adminReportsRoutes, { prefix: "/api" });
   await app.register(adminStoreRoutes, { prefix: "/api" });
   await app.register(adminLiveOpsRoutes, { prefix: "/api" });
   await app.register(adminGuildsRoutes, { prefix: "/api" });

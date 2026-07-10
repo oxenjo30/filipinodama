@@ -209,7 +209,8 @@ export async function adminRoutes(app: FastifyInstance) {
       take: 20,
       select: { id: true, currency: true, amount: true, reason: true, refType: true, refId: true, createdAt: true },
     });
-    return ok({ ...u, status: statusOf(u), ledger });
+    const openReportsAgainst = await prisma.report.count({ where: { accusedId: u.id, status: "OPEN" } });
+    return ok({ ...u, status: statusOf(u), ledger, openReportsAgainst });
   });
 
   // ── 1.3 Player recent matches (SUPPORT) ────────────────────────────────────
