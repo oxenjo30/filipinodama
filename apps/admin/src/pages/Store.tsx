@@ -65,8 +65,12 @@ const blankForm = (): Form => ({
 const FILTERS = ["all", "active", "inactive", "onSale", "featured"] as const;
 type FilterT = (typeof FILTERS)[number];
 
-/** Store catalog — CRUD over StoreItem (boards, skins, frames, bundles, …). */
-export function StorePage() {
+/**
+ * Store catalog — CRUD over StoreItem (boards, skins, frames, bundles, …).
+ * Rendered as the top panel of the merged "Store & economy" page (Economy.tsx);
+ * not routed on its own — /store redirects to /economy (see App.tsx).
+ */
+export function StoreCatalog() {
   const [rows, setRows] = useState<StoreItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [typeFilter, setTypeFilter] = useState("");
@@ -214,9 +218,6 @@ export function StorePage() {
 
   return (
     <>
-      <div className="crumb">Economy · Store catalog</div>
-      <h1 className="page">Store catalog</h1>
-
       {/* filters */}
       <div className="row" style={{ margin: "4px 0 14px" }}>
         <input
@@ -439,7 +440,7 @@ export function StorePage() {
         </div>
       </div>
 
-      <div className="dim" style={{ fontSize: 12, marginTop: 10 }}>
+      <div className="dim" style={{ fontSize: 12, margin: "10px 0 14px" }}>
         Every create, edit, toggle, and delete is recorded in the audit log with a required reason. Items owned by players are soft-deleted (deactivated) to protect inventory.
       </div>
     </>
