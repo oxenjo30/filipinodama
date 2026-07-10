@@ -3,6 +3,7 @@ import { NavLink, Navigate, Route, Routes, useLocation } from "react-router-dom"
 import { useAuth, type AdminRole } from "./lib/auth";
 import { Login } from "./pages/Login";
 import { Overview } from "./pages/Overview";
+import { Analytics } from "./pages/Analytics";
 import { PlayersPage } from "./pages/Players";
 import { Moderation } from "./pages/Moderation";
 import { EconomyPage } from "./pages/Economy";
@@ -29,7 +30,7 @@ import { Campaigns } from "./pages/Campaigns";
 type Nav = [string, string, string, string, AdminRole, boolean?];
 const NAV: Nav[] = [
   ["/overview", "Overview", "#E8B84B", "Monitor", "SUPPORT"],
-  ["/analytics", "Analytics", "#5fd0e0", "Monitor", "ECONOMY", true],
+  ["/analytics", "Analytics", "#5fd0e0", "Monitor", "ECONOMY"],
   ["/players", "Players", "#7fb0ff", "Players & safety", "SUPPORT"],
   ["/moderation", "Moderation", "#c2495a", "Players & safety", "MODERATOR"],
   ["/support", "Support", "#5fd08a", "Players & safety", "SUPPORT", true],
@@ -170,6 +171,7 @@ export function App() {
           <Routes>
             <Route path="/" element={<Navigate to="/overview" replace />} />
             <Route path="/overview" element={<Overview />} />
+            <Route path="/analytics" element={<Analytics />} />
             <Route path="/players" element={<PlayersPage />} />
             <Route path="/moderation" element={<Moderation />} />
             <Route path="/matches" element={<MatchesPage />} />
@@ -182,7 +184,6 @@ export function App() {
             <Route path="/settings" element={<Settings />} />
             <Route path="/admins" element={<Admins />} />
             {/* Phase-2 stubs */}
-            <Route path="/analytics" element={<Phase2 title="Analytics deep-dive" note="DAU/WAU/MAU, funnels, retention cohorts. Needs an analytics pipeline." />} />
             <Route path="/support" element={<Phase2 title="Support tickets" note="Ticket model + intake." />} />
             <Route path="/financials" element={<Phase2 title="Financials" note="Blocked — real-money top-up is disabled for legal compliance." />} />
             <Route path="/fraud" element={<Phase2 title="Fraud & AML" note="Payment-driven risk engine (blocked on payments)." />} />
