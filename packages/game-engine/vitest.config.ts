@@ -7,7 +7,7 @@ export default defineConfig({
       provider: "v8",
       reporter: ["text", "text-summary"],
       include: ["src/**/*.ts"],
-      exclude: ["src/index.ts"],
+      exclude: ["src/index.ts", "src/damath/index.ts"],
       thresholds: {
         // Coverage gate for the rules engine (TEST_STRATEGY.md §3):
         // 100% line / 95% branch on packages/game-engine — non-negotiable.

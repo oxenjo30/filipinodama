@@ -1,5 +1,6 @@
 export * from "./enums.js";
 export * from "./game.js";
+export * from "./damath.js";
 export * from "./events.js";
 export * from "./dto.js";
 export * from "./ranks.js";

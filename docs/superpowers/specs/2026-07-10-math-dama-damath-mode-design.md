@@ -1,7 +1,8 @@
 # Math Dama (Damath Mode) — Design
 
-**Date:** 2026-07-10
-**Status:** Approved design, ready for implementation planning
+**Date:** 2026-07-10 · updated after multi-agent review (41 agents; 31 findings verified)
+**Status:** **Approved & unblocked — ready for Phase 1.** Official operator board + Whole chip values now
+embedded (§5.1, B1 resolved). Rules/scoring/timer/anti-stall/matchmaking decisions resolved (§12).
 **Internal mode id:** `damath` · **Display name:** `Math Dama` · **Subtitle:** `Dama with math scoring`
 
 ## 1. Summary
@@ -34,6 +35,12 @@ Per official DepEd Damath rules (FilipiKnow, Wikipedia, DepEd Bohol "Rules of Da
   physical board setup and chip count remain constant; only the number systems differ."*)
 - Elementary/Secondary is therefore a **purely organizational grouping** in the UI + a label for the
   number system a variant teaches. It introduces **no rules or piece-count branching.**
+- **Game ends** on the 20-minute time limit, a player having no chips / no legal move (trapped), or
+  repetitive moves. **The winner is the player with the highest total score — never by elimination.**
+- **End-of-game chip bonus (official):** at game end, each player **adds the values of their own chips
+  still on the board to their score, with remaining dama chips doubled.** (Wikipedia, verbatim:
+  *"Each player also scores the value of their pieces remaining on the board at the end of the game,
+  with dama pieces again scoring double."* FilipiKnow and damath.ph agree.) This is applied in §5.4.
 
 | Level | Grade | Variant | Number system | MVP |
 |---|---|---|---|---|
@@ -88,7 +95,7 @@ packages/game-engine/src/damath/
   damathState.ts          # createInitialDamathState, timer helpers
   damathAi.ts             # score-greedy + 1-ply opponent lookahead (easy/normal/hard)
   index.ts                # re-exports; wired into game-engine top-level index.ts (additive)
-packages/game-engine/test/damath.test.ts   # 29 Damath unit tests (test #30 = Classic suite, untouched)
+packages/game-engine/test/damath.test.ts   # 40 Damath unit tests (test #41 = Classic suite, untouched)
 ```
 
 **Hard invariant:** Classic's `engine.ts`, `ai.ts`, shared `game.ts`, and existing tests are **not
@@ -112,8 +119,59 @@ full suite.
 square has an operator; every non-playable is `null` (asserted as an invariant — tests #2, #3). Red
 = bottom (y=5,6,7, moves −y), Blue = top (y=0,1,2, moves +y), mirroring Classic's seat convention.
 
-`DAMATH_OPERATOR_BOARD` and all type definitions, piece-value tables, `getPlayableColumns`, and
-`createDamathPieces` are taken **verbatim** from the task spec.
+All type definitions, `getPlayableColumns`, and `createDamathPieces` follow the shapes in §6.
+
+#### `DAMATH_OPERATOR_BOARD` (official — B1 resolved)
+
+Row-major, `board[y][x]`, `y=0` at the **top** (Blue home rows). Transcribed from the official Damath
+operation board. `null` = non-playable (grey) square; operators sit only on playable squares
+(`(x+y)%2===0`). The layout is a **4-row repeating block** (rows 0–3 repeat as rows 4–7), which is the
+canonical DepEd arrangement and the invariant tests should assert.
+
+```ts
+// x:   0    1    2    3    4    5    6    7
+const DAMATH_OPERATOR_BOARD: (DamathOperator | null)[][] = [
+  ['×',  null, '÷',  null, '−',  null, '+',  null], // y=0
+  [null, '÷',  null, '×',  null, '+',  null, '−' ], // y=1
+  ['−',  null, '+',  null, '×',  null, '÷',  null], // y=2
+  [null, '+',  null, '−',  null, '÷',  null, '×' ], // y=3
+  ['×',  null, '÷',  null, '−',  null, '+',  null], // y=4  (= y=0)
+  [null, '÷',  null, '×',  null, '+',  null, '−' ], // y=5  (= y=1)
+  ['−',  null, '+',  null, '×',  null, '÷',  null], // y=6  (= y=2)
+  [null, '+',  null, '−',  null, '÷',  null, '×' ], // y=7  (= y=3)
+]
+```
+
+Invariants to assert (tests #2, #3, and the exact-operator test): exactly 32 non-null cells; every
+non-null cell satisfies `(x+y)%2===0`; every `(x+y)%2===0` cell is non-null; each cell equals one of
+`+ − × ÷`; and `board[y]` deep-equals `board[y+4]` for `y∈{0,1,2,3}` (the repeating-block invariant).
+
+#### Whole variant chip values + placement (official — B1 resolved)
+
+**Enabled MVP variant = Whole (Grades 3–4).** Each player has **12 chips valued `{0..11}` exactly once**.
+Official placement order (left→right, top→bottom across the 3 home rows, matching the official piece
+sheet's 3×4 layout) is:
+
+```
+row A: 9  6  1  4
+row B: 0  3 10  7
+row C: 11 8  5  2
+```
+
+`createDamathPieces` fills each side's 3 home rows on the **playable** squares in reading order with the
+sequence `[9,6,1,4, 0,3,10,7, 11,8,5,2]`:
+- **Blue (top):** row A→`y=0`, row B→`y=1`, row C→`y=2`; within each row, values map left→right onto that
+  row's playable columns (`getPlayableColumns(y)`).
+- **Red (bottom):** the same value sequence on `y=5,6,7`, mirrored so the arrangement is point-symmetric
+  to Blue (standard Damath — both players see their own `9,6,1,4` on their front-facing home row).
+
+Test #4/#5 (counts) plus a new **exact value-multiset-and-placement** test assert the full mapping — not
+just "12 pieces per side" — so a mis-transcribed value can't pass silently.
+
+> **Locked variants (not built for MVP, data recorded for the registry):** Counting `{10,7,2,5,1,4,11,8,
+> 12,9,6,3}`; Fraction (all `/10`): `{10,7,2,5,1,4,11,8,12,9,6,3}/10`; Integer `{-9,6,-1,4,0,-3,10,-7,-11,
+> 8,-5,2}`; Rational (all `/10`): `{-9,6,-1,4,0,-3,10,-7,-11,8,-5,2}/10`; Radical and Polynomial are
+> symbolic (values recorded from the official sheet but their scorers stay **disabled** per §5.3, §11).
 
 ### 5.2 Move generation (`damathMoveGeneration.ts`)
 Damath-specific capture-chain recursion (not Classic's — coords, piece shape, and per-step operator
@@ -137,7 +195,12 @@ differ). Produces `DamathLegalMove` carrying the full path, ordered captured-pie
 
 ### 5.3 Scoring (`damathScoring.ts`)
 Only on capture. `base = capturingValue [landingOp] capturedValue`, then `× multiplier`:
-man×man=1, dama×man=2, man×dama=1 (configurable), dama×dama=4. Score credits the capturing player.
+man×man=1, dama×man=2, man×dama=2, dama×dama=4. Score credits the capturing player. **The multiplier
+doubles whenever a dama is involved on *either* side** (capturer or captured) and quadruples when both
+are dama — per damath.ph (verbatim: *"When a Dama eats a normal chip OR a normal chip eats a Dama, the
+score will be doubled (×2)… When a Dama eats another Dama, the score will be quadruple (×4)."*) and
+Wikipedia. This is a **fixed official rule, not configurable** — earlier drafts set `man×dama=1`, which
+was a rule error (a man capturing a dama still doubles).
 
 - **Div-by-zero:** if `÷` and captured value is `0` → base `0` + `division-by-zero-safe-score` note.
   Configurable for tournament rules.
@@ -145,6 +208,9 @@ man×man=1, dama×man=2, man×dama=1 (configurable), dama×dama=4. Score credits
   running totals stay accurate; **UI rounds to 2 decimals for display only.**
 - **Multi-capture chain:** each jump scored against **its own** landing operator and summed; **each
   jump emits its own `DamathScoreEvent`** so history reads jump-by-jump.
+- **End-of-game chip bonus** is a distinct, non-capture score source (§5.4): `DamathScoreEvent` carries
+  a `kind` discriminator (`capture | end-of-game-chip-bonus`) so the bonus renders separately from
+  captures. Bonus events have no operator — they sum remaining chip values (dama ×2), not an operation.
 - Whole/counting/integer → numeric scorer. Fraction/rational → fraction scorer (kept, variant
   locked for MVP). Radical/polynomial → symbolic string, **disabled**.
 - Score preview in the UI calls this **same** function — no scoring logic is duplicated in React.
@@ -154,12 +220,49 @@ man×man=1, dama×man=2, man×dama=1 (configurable), dama×dama=4. Score credits
 piece, append per-jump score events + a `DamathMoveRecord`, apply promotion, switch player
 (continuation already inside the single move). Pure/immutable (returns a new state).
 
-`checkDamathEnd` ends on: game timer expiry (20 min), no legal move, no pieces, resign, manual.
+`checkDamathEnd` ends on: **per-player clock expiry**, no legal move, no pieces, **threefold repetition**,
+**inactivity limit**, resign, manual.
 
-**Winner is by SCORE for ALL non-resign ends** (approved): higher score wins; **equal = draw** —
-independent of piece/dama count, and independent of who is blocked or eliminated. (A player with no
-legal move or no pieces does **not** auto-lose; current score totals decide.) Resign = the resigning
-side loses outright.
+**Timers (per-player, server-authoritative).** Each player has an **independent 20-minute game clock**
+(mirrors real DepEd Damath and the existing `GameState.clocks?: {red, blue}` / `GameSettings.moveTimerSec?`
+shape — reuse the pattern, not the Classic code). A player's own clock counts down only on their turn;
+when a player's clock hits **0** the game ends and the winner is decided by **final score** (§below),
+*not* an automatic loss for the flagged player. **Move timer: 30 s per turn** (a `DamathRuleOptions`
+field, default `30`). On **move-timer expiry the turn is forfeited to the opponent** — the player is
+*not* auto-moved and does *not* lose the game (auto-move is impossible under mandatory capture anyway);
+their game clock simply keeps whatever time remained. `DamathGameState` carries `clocks: {red, blue}`
+(ms remaining), `moveDeadline` (ms), and `activeSince` for authoritative countdown. **No increment/Fischer
+bonus** at launch.
+
+**Anti-stall (threefold / inactivity).** Because winner is by score at clock expiry and flying dama can
+shuffle indefinitely, Damath detects **threefold repetition** and an **inactivity limit** (N plies with
+no capture — reuse Classic's `drawMoveLimit=40` value as the Damath default). Unlike Classic, these do
+**not** force a draw: they **end the game and decide by current final score** (captures + end-of-game
+chip bonus), so a leading player cannot convert a stall into a timer win and a trailing player cannot
+force a draw by shuffling. Equal final score is still a draw.
+
+**End-of-game remaining-chip bonus (official DepEd rule).** When the game ends by any **non-resign**
+condition, each player's capture total is finalized by **adding the values of that player's own chips
+still on the board**, with **remaining dama chips counted double**:
+
+```
+finalScore(player) = captureScore(player)
+                   + Σ value(remaining man of player)
+                   + Σ value(remaining dama of player) × 2
+```
+
+This is computed once by `checkDamathEnd` (pure), emitted as its own `DamathScoreEvent` per player
+(kind `end-of-game-chip-bonus`) so the UI can reveal the bonus separately from capture points. It is
+**not** applied on resign (the resigning side loses outright regardless of totals). Sources:
+[FilipiKnow](https://filipiknow.net/damath-board/), [Wikipedia](https://en.wikipedia.org/wiki/Damath),
+[damath.ph](https://damath.ph/rules/) — all state remaining chips are added to the final score and
+remaining dama are doubled.
+
+**Winner is by FINAL SCORE for ALL non-resign ends** (approved): after the remaining-chip bonus is
+added, higher final score wins; **equal = draw** — independent of raw piece/dama count, and
+independent of who is blocked or eliminated. (A player with no legal move or no pieces does **not**
+auto-lose; the bonus is added to whatever chips they still have — which for an eliminated player is
+zero — and final score totals decide.) Resign = the resigning side loses outright, no bonus applied.
 
 ### 5.5 AI (`damathAi.ts`)
 **Score-greedy + 1-ply opponent check** (approved): among all legal (forced) move sequences, pick
@@ -187,8 +290,24 @@ opponent points). Easy/Normal/Hard tune lookahead depth / randomness. Deeper min
   `getAllLegalDamathMoves`/`applyDamathMove`, broadcasts new state + scores. Mirrors Classic's
   server-authoritative structure and abandon/resign guards, but is its **own file** so Classic's
   loop is never destabilized.
+- **Matchmaking (in MVP — approved).** Online Damath needs its own pairing path: Classic's
+  `realtime/matchmaking.ts` hardwires `QueueMode = "CASUAL" | "RANKED"` and rejects anything else
+  (`mmCancelled("invalid-mode")`), and `match.ts` is only the in-match loop. Add a **`DAMATH_CASUAL`
+  queue** (extend `matchmaking.ts` with an additive branch, or a parallel `damath-matchmaking.ts`) that:
+  pairs two waiting Damath players, **assigns colors** (first-joiner Red by convention, matching Classic),
+  **creates the `DamathMatch` row at pairing** and hands the match id to `damath-match.ts`. **Empty-queue
+  behavior:** since Damath is **unranked**, there is no trophy-tier bot selection like Classic's — so on
+  an empty queue show a plain **"waiting for opponent"** state (optionally offer a "play the AI instead"
+  fallback that drops into local vs-AI), **not** an auto bot-fill. Reconnection/abandon/resign guards
+  mirror Classic's in `damath-match.ts`.
 - **Persistence:** new Prisma **`DamathMatch`** model (players, variant, redScore, blueScore, winner,
-  endReason, `scoreHistory` JSON, timestamps) via a new migration. Classic `Match` table untouched.
+  endReason, `scoreHistory` JSON, **`moveHistory` JSON**, timestamps) via a new migration. `redScore`/
+  `blueScore` store the **final** totals **including the end-of-game chip bonus** (§5.4); the pre-bonus
+  capture totals and the bonus itself are recoverable from `scoreHistory` (which includes the
+  `end-of-game-chip-bonus` events). **`moveHistory`** (the `DamathMoveRecord` list) is the replay source
+  of truth — score events are derivable from it, and board replay (Classic-style) needs the moves, not
+  just formulas (m8). Score columns are stored as the engine's exact values with the §5.3 float/2-dp
+  display contract documented. Classic `Match` table untouched.
 - **No economy hooks at launch** (unranked). Result rows persist for replay/stats only.
 
 ## 8. Client (UI, store, rendering)
@@ -215,28 +334,52 @@ opponent points). Easy/Normal/Hard tune lookahead depth / randomness. Deeper min
 - **Panels (`DamathScorePanel.tsx`, `DamathMoveHistory.tsx`):** live Red/Blue score, current turn,
   remaining game time + move timer; scrollable jump-by-jump history, e.g. `Red: 7 × 3 = 21`,
   `Blue Dama: 10 + 5 = 15 × 2 = 30`, `Red Dama vs Dama: 6 × 4 = 24 × 4 = 96`.
+  - **Own-score emphasis:** the panel visibly marks the viewing/active player's own total (a "You"
+    label + emphasis) so a player always knows which score is theirs — important in vs-AI and online,
+    and for the active seat in local pass-and-play.
+  - **End-of-game reveal:** when the match ends, the panel breaks the final total into
+    `Captures + Chips on board = Final` per player (e.g. `Red — Captures: 84  + Chips on board: 22  =
+    Final: 106`), surfacing the remaining-chip bonus (§5.4) as a teaching moment rather than a silent
+    jump in the number. The bonus is read from the engine's `end-of-game-chip-bonus` score events —
+    still **no scoring math in React.**
 - **No hardcoded scoring in React** — components only render engine-produced values.
 
-## 9. Testing (29 Damath tests + Classic suite = #30)
+## 9. Testing (40 Damath tests + Classic suite = #41)
 
-Board: 8×8 (#1); exactly 32 playable squares (#2); only `+ - × ÷ null` (#3).
-Setup: whole creates 24 pieces (#4); 12 each (#5); top on rows 0–2 (#6); bottom on rows 5–7 (#7).
+Board: 8×8 (#1); exactly 32 playable squares (#2); only `+ - × ÷ null` (#3) — **plus exact
+operator-at-square assertions once B1 board is embedded**.
+Setup: whole creates 24 pieces (#4); 12 each (#5); top on rows 0–2 (#6); bottom on rows 5–7 (#7) —
+**plus exact value multiset + placement per side (not just counts)**.
 Movement: forward diagonal (#8); no backward quiet move (#9); capture forward (#10) and backward
 (#11); non-capture illegal when capture exists (#12); multi-capture continuation (#13); max-capture
 filters shorter sequences (#14).
 Dama: promotion (#15); moves over distance (#16); captures over distance (#17).
 Scoring: uses landing operator (#18); add (#19); subtract (#20); multiply (#21); divide (#22);
-div-by-zero no crash (#23); dama capture ×2 (#24); dama-vs-dama ×4 (#25); score history created on
-capture (#26); no score on normal move (#27).
-Winner: higher score wins (#28); equal score = draw (#29).
-**#30: Classic Dama tests still pass unchanged** (run full `turbo run test`).
+div-by-zero no crash — **asserts exact scored value + note, not just no-throw** (#23); dama-captures-man
+×2 (#24a); **man-captures-dama ×2** (#24b); dama-vs-dama ×4 (#25); score history created on capture
+(#26); no score on normal move (#27).
+**High-risk logic (M5):** multi-jump chain with **different operators per jump** summed, one event per
+jump (#28); **flying-dama chooses among ≥2 landings with different operators** → correct legality +
+score (#29); **dama-capture-priority interacting with max-capture** — a position where the two disagree
+(#30); **mid-chain promotion halts the chain** and fixes the scored result (#31); **exact-float division
+total equals the sum of the 2-dp displayed history lines** (m3) (#32).
+End-of-game chip bonus: remaining chips add to final score (#33); remaining **dama** count double (#34).
+Winner: higher **final** score (captures + chip bonus) wins (#35); **blocked-but-leading wins** / **no
+pieces but leading wins** (#36); equal final score = draw (#37).
+**Timers & anti-stall:** per-player clock expiry → game ends, **score decides** (not auto-loss) (#38);
+**move-timer expiry forfeits the turn** to opponent, no auto-move, no game loss (#39); **threefold
+repetition / inactivity ends the game and decides by final score** — leading stall cannot become a timer
+win (#40).
+**#41: Classic Dama tests still pass unchanged** (run full `turbo run test`).
 
 ## 10. Acceptance criteria
 
 - Start Math Dama from mode selection; Whole loads the exact operation board + official chip values.
 - Pieces move per dama rules; captures mandatory; score uses landing-square operator; scores update
   immediately; history shows the formula.
-- Dama promotion + score multiplier work; game ends correctly; winner by score.
+- Dama promotion + score multiplier work; game ends correctly; **winner by final score**.
+- At any non-resign game end, each player's **remaining chips are added to their score (dama doubled)**;
+  the score panel reveals this bonus, and the winner is decided on the resulting **final** totals.
 - **Classic Dama is not broken.**
 
 ## 11. Explicit non-goals (from the "Do not" list)
@@ -246,14 +389,38 @@ square (always landing operator). Never allow non-capture when capture exists. N
 multi-capture continuation. Winner is never by remaining pieces alone. Radical/polynomial stay
 disabled until symbolic scoring exists. No official PDF artwork — recreate the board from the matrix.
 
-## 12. Open decisions — all resolved
+## 12. Open decisions
 
-- Scope: **Local + vs-AI + Online**, all server-authoritative.
+**Resolved:**
+
+- Scope: **Local + vs-AI + Online**, all server-authoritative. **Online stays in MVP** and gets its own
+  `DAMATH_CASUAL` matchmaking queue (§7); empty queue → "waiting for opponent" (no bot-fill; unranked).
 - Engine location: **`game-engine/src/damath/`**; coords **`{x,y}`** per spec.
-- Non-resign ends (incl. blocked / no-pieces): **decided by score**; equal = **draw**.
-- Division (numeric variants): **exact float in engine, 2-dp display rounding**.
-- Online rewards: **unranked, no payout at launch**; persist `DamathMatch` rows.
+- Non-resign ends (incl. blocked / no-pieces): **decided by FINAL score** = captures **+ end-of-game
+  remaining-chip bonus (own chips, dama ×2)** (§5.4); equal = **draw**. Resign = outright loss, no bonus.
+- **Scoring multipliers (official):** any dama involved = ×2, both dama = ×4 → `man×man=1, dama×man=2,
+  man×dama=2, dama×dama=4` (§5.3). Earlier `man×dama=1` was a rule error, now corrected.
+- **Timers: per-player 20-min game clock** + **30 s move timer**; move-timeout **forfeits the turn**
+  (no auto-move, no loss); clock expiry → score decides. No increment. (§5.4)
+- **Anti-stall:** threefold repetition + inactivity (40-ply) **end the game and decide by final score**
+  (not a forced draw), closing the leading-player stall-to-win exploit. (§5.4)
+- **Persistence:** `DamathMatch` stores final scores (incl. bonus) + `scoreHistory` + **`moveHistory`**
+  (replay source of truth). (§7)
+- Division (numeric variants): **exact float in engine, 2-dp display rounding**; displayed history must
+  sum to the displayed total (test #32).
 - Level selector: **two-step Elementary → Secondary → variant**; Secondary selectable, all Coming
   Soon; Whole is the only enabled variant. Elem = Counting/Whole/Fraction; Sec =
   Integer/Rational/Radical/Polynomial/Binary. **Piece count is identical across levels** (24/12).
 - Damath AI: **score-greedy + 1-ply opponent check**, difficulty-tuned.
+
+- ✅ **B1 — operator board + chip values RESOLVED:** official `DAMATH_OPERATOR_BOARD` and the Whole
+  variant's `{0..11}` values + placement are embedded in §5.1 (with locked-variant values recorded for
+  the registry). Phase 1 is unblocked.
+
+**Still open (small; can be settled at Phase-1 start):**
+
+- ⚙️ **Damath type location (m1):** recommend a **new `shared/src/damath.ts`** (additive; does not touch
+  `game.ts`, so isolation holds) to match the repo's types-in-`shared` convention, rather than
+  game-engine. Confirm before Phase 1 freezes the type file.
+- ⚙️ **AI difficulty params (m2, Phase 3):** define concrete Easy/Normal/Hard behavior (blunder-rate
+  approach mirroring Classic's `BLUNDER={easy,normal,hard}`); resolve "deterministic vs randomness."
