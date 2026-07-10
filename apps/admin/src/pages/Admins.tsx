@@ -16,6 +16,15 @@ type AdminRow = {
 
 const ROLES: AdminRole[] = ["SUPPORT", "MODERATOR", "ECONOMY", "SUPERADMIN"];
 const ROLE_LABEL: Record<AdminRole, string> = { SUPPORT: "Support", MODERATOR: "Moderator", ECONOMY: "Economy admin", SUPERADMIN: "Superadmin" };
+/** Per-role accent, mirrors the mockup's role-color vocabulary (gold = highest tier down to dim). */
+const ROLE_TILE: Record<AdminRole, string> = { SUPERADMIN: "var(--gold-lt)", ECONOMY: "var(--blue)", MODERATOR: "var(--red-lt)", SUPPORT: "var(--dim-2)" };
+/** Initials for the avatar chip, e.g. "Juan Dela Cruz" -> "JD". */
+function initials(name: string): string {
+  const parts = name.trim().split(/\s+/).filter(Boolean);
+  if (parts.length === 0) return "?";
+  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
+  return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+}
 
 /** 2A. Admins — role management over existing adminRole. SUPERADMIN-gated. */
 export function Admins() {
@@ -40,36 +49,43 @@ export function Admins() {
       <div className="crumb">Access Control · Admin users</div>
       <h1 className="page">Admin users</h1>
 
-      <div className="kpi" style={{ marginBottom: 22 }}>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 12, marginBottom: 16 }}>
         {ROLES.map((r) => (
-          <div className="card" key={r}>
-            <div className="v mono">{stats?.byRole[r] ?? 0}</div>
+          <div className="fd-kpi pad-sm" key={r} style={{ ["--tile" as string]: ROLE_TILE[r] }}>
             <div className="l">{ROLE_LABEL[r]}</div>
+            <div className="v" style={{ fontSize: 22 }}>{stats?.byRole[r] ?? 0}</div>
           </div>
         ))}
-        <div className="card">
-          <div className="v mono">{stats?.total ?? 0}</div>
+        <div className="fd-kpi pad-sm">
           <div className="l">Total admins</div>
+          <div className="v" style={{ fontSize: 22 }}>{stats?.total ?? 0}</div>
         </div>
       </div>
 
       <GrantCard onDone={load} />
 
-      <div className="panel" style={{ marginTop: 22 }}>
-        <table className="tbl">
-          <thead>
-            <tr><th>Admin</th><th>Role</th><th>Last seen</th><th></th></tr>
-          </thead>
-          <tbody>
-            {loading ? (
-              <tr><td colSpan={4} className="dim" style={{ textAlign: "center", padding: 24 }}>Loading…</td></tr>
-            ) : rows.length === 0 ? (
-              <tr><td colSpan={4} className="dim" style={{ textAlign: "center", padding: 24 }}>No admins.</td></tr>
-            ) : (
-              rows.map((a) => <AdminRowView key={a.id} a={a} isMe={a.id === myId} onDone={load} />)
-            )}
-          </tbody>
-        </table>
+      <div className="panel" style={{ marginTop: 16, overflow: "hidden" }}>
+        <div style={{ overflowX: "auto" }}>
+          <table className="tbl" style={{ minWidth: 820 }}>
+            <thead>
+              <tr className="thead-raised">
+                <th>Admin</th>
+                <th>Role</th>
+                <th>Last active</th>
+                <th style={{ textAlign: "right" }}>Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {loading ? (
+                <tr><td colSpan={4} className="dim" style={{ textAlign: "center", padding: 24 }}>Loading…</td></tr>
+              ) : rows.length === 0 ? (
+                <tr><td colSpan={4} className="dim" style={{ textAlign: "center", padding: 24 }}>No admins.</td></tr>
+              ) : (
+                rows.map((a) => <AdminRowView key={a.id} a={a} isMe={a.id === myId} onDone={load} />)
+              )}
+            </tbody>
+          </table>
+        </div>
       </div>
     </>
   );
@@ -107,17 +123,22 @@ function AdminRowView({ a, isMe, onDone }: { a: AdminRow; isMe: boolean; onDone:
     });
 
   return (
-    <tr>
+    <tr className="arow">
       <td>
-        <div style={{ fontWeight: 600 }}>
-          {a.displayName} {isMe && <span className="badge-st st-active" style={{ marginLeft: 6 }}>You</span>}
+        <div style={{ display: "flex", alignItems: "center", gap: 11 }}>
+          <div className="fd-avatar">{initials(a.displayName || a.username)}</div>
+          <div style={{ minWidth: 0 }}>
+            <div style={{ fontWeight: 700 }}>
+              {a.displayName} {isMe && <span className="badge-st st-active" style={{ marginLeft: 6 }}>You</span>}
+            </div>
+            <div className="dim" style={{ fontSize: 11 }}>{a.username} {a.tag}{a.email ? ` · ${a.email}` : ""}</div>
+          </div>
         </div>
-        <div className="dim mono" style={{ fontSize: 12 }}>{a.username} {a.tag}{a.email ? ` · ${a.email}` : ""}</div>
       </td>
       <td>
         <select
           className="select"
-          style={{ maxWidth: 170 }}
+          style={{ maxWidth: 170, color: ROLE_TILE[role] }}
           value={role}
           disabled={isMe}
           onChange={(e) => changeRole(e.target.value as AdminRole)}
@@ -126,14 +147,22 @@ function AdminRowView({ a, isMe, onDone }: { a: AdminRow; isMe: boolean; onDone:
         </select>
       </td>
       <td className="mono dim" style={{ whiteSpace: "nowrap" }}>{new Date(a.lastSeenAt).toLocaleString()}</td>
-      <td className="num">
-        <button className="btn danger" disabled={isMe} onClick={revoke}>Revoke</button>
+      <td style={{ textAlign: "right", whiteSpace: "nowrap" }}>
+        <button className="abtn btn-danger btn-danger-sm" disabled={isMe} onClick={revoke}>Revoke</button>
       </td>
     </tr>
   );
 }
 
-/** Grant admin — query by email / username#tag / id, then pick a role. */
+/**
+ * Grant admin — visually matches the mockup's green "Invite an admin" card
+ * chrome, but the mockup's flow is an email invite (pending-invite state,
+ * password set on first sign-in) which we deliberately do not have: the
+ * approved scope is granting admin to an EXISTING user by email/username/id,
+ * effective immediately. Copy below reflects the real behavior; only the
+ * card's visual language (green-accented border, title/subtitle, inline
+ * form, green pill button) is borrowed from the mockup.
+ */
 function GrantCard({ onDone }: { onDone: () => void }) {
   const mutate = useAdminMutation();
   const [query, setQuery] = useState("");
@@ -152,9 +181,13 @@ function GrantCard({ onDone }: { onDone: () => void }) {
     });
 
   return (
-    <div className="panel panel-pad">
-      <div style={{ fontWeight: 700, marginBottom: 12 }}>Grant admin</div>
-      <div className="row">
+    <div className="panel panel-pad" style={{ borderColor: "rgba(126,224,192,.3)" }}>
+      <div style={{ fontWeight: 800, fontSize: 15 }}>Grant admin</div>
+      <div className="dim" style={{ marginTop: 4, fontSize: 12 }}>
+        Grants console access to an existing player immediately — no email invite, no password
+        setup. Access is scoped to the assigned role right away.
+      </div>
+      <div className="row" style={{ marginTop: 14, alignItems: "flex-end" }}>
         <input
           className="input" style={{ maxWidth: 300 }}
           placeholder="email, username#tag, or user id"
@@ -164,9 +197,20 @@ function GrantCard({ onDone }: { onDone: () => void }) {
         <select className="select" style={{ maxWidth: 170 }} value={role} onChange={(e) => setRole(e.target.value as AdminRole)}>
           {ROLES.map((r) => <option key={r} value={r}>{ROLE_LABEL[r]}</option>)}
         </select>
-        <button className="btn gold" disabled={!query.trim()} onClick={submit}>Grant</button>
+        <button
+          className="abtn"
+          disabled={!query.trim()}
+          onClick={submit}
+          style={{
+            font: "800 12px var(--sans)", borderRadius: 9, padding: "11px 18px",
+            border: "1px solid rgba(126,224,192,.5)", color: "#06251c",
+            background: "linear-gradient(180deg,#7fe0c0,#3ba98a)",
+          }}
+        >
+          Grant
+        </button>
       </div>
-      <div className="dim" style={{ fontSize: 12, marginTop: 8 }}>Every grant/revoke/role change is recorded in the audit log.</div>
+      <div className="dim" style={{ fontSize: 12, marginTop: 10 }}>Every grant/revoke/role change is recorded in the audit log.</div>
     </div>
   );
 }
