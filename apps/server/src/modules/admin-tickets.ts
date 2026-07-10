@@ -20,6 +20,8 @@ const listQ = z.object({
 });
 const replyBody = z.object({ body: z.string().trim().min(1).max(4000) });
 const resolveBody = z.object({ reason: z.string().trim().min(1).max(500) });
+const priorityBody = z.object({ priority: z.enum(["LOW", "MEDIUM", "HIGH", "URGENT"]) });
+const reopenBody = z.object({ reason: z.string().trim().min(1).max(500).optional() });
 
 export async function adminTicketsRoutes(app: FastifyInstance) {
   app.get("/admin/tickets", { preHandler: requireAdmin("SUPPORT") }, async (req) => {
@@ -41,6 +43,7 @@ export async function adminTicketsRoutes(app: FastifyInstance) {
       category: t.category,
       subject: t.subject,
       status: t.status,
+      priority: t.priority,
       createdAt: t.createdAt,
       updatedAt: t.updatedAt,
       msgCount: t._count.messages,
@@ -70,15 +73,17 @@ export async function adminTicketsRoutes(app: FastifyInstance) {
         category: ticket.category,
         subject: ticket.subject,
         status: ticket.status,
+        priority: ticket.priority,
         createdAt: ticket.createdAt,
         updatedAt: ticket.updatedAt,
         userGone: ticket.userId === null,
         user: ticket.user ?? { username: ticket.userName, tag: "", avatarUrl: null, id: null },
         userName: ticket.userName,
         userEmail: ticket.userEmail,
+        tag: ticket.user?.tag ?? "",
         resolvedAt: ticket.resolvedAt,
         canResolve: ticket.status === "OPEN",
-        canReopen: false,
+        canReopen: ticket.status === "RESOLVED",
       },
       thread: ticket.messages.map((m) => ({
         id: m.id,
@@ -170,5 +175,51 @@ export async function adminTicketsRoutes(app: FastifyInstance) {
       }
     });
     return ok({ status: "RESOLVED" });
+  });
+
+  app.patch<{ Params: { id: string } }>("/admin/tickets/:id/priority", { preHandler: requireAdmin("SUPPORT") }, async (req) => {
+    const { priority } = priorityBody.parse(req.body);
+    const actorId = req.userId!;
+    const result = await prisma.$transaction(async (tx) => {
+      const ticket = await tx.ticket.findUnique({ where: { id: req.params.id }, select: { id: true, priority: true } });
+      if (!ticket) throw err.notFound("NO_TICKET", "Ticket not found");
+
+      await tx.ticket.update({ where: { id: ticket.id }, data: { priority, updatedAt: new Date() } });
+
+      await audit(tx, {
+        actorId,
+        action: "ticket.priority",
+        targetType: "ticket",
+        targetId: ticket.id,
+        before: { priority: ticket.priority },
+        after: { priority },
+      });
+
+      return { id: ticket.id };
+    });
+    return ok({ id: result.id, priority });
+  });
+
+  app.post<{ Params: { id: string } }>("/admin/tickets/:id/reopen", { preHandler: requireAdmin("SUPPORT") }, async (req) => {
+    const { reason } = reopenBody.parse(req.body ?? {});
+    const actorId = req.userId!;
+    await prisma.$transaction(async (tx) => {
+      const reopened = await tx.ticket.updateMany({
+        where: { id: req.params.id, status: "RESOLVED" },
+        data: { status: "OPEN", resolvedById: null, resolvedAt: null, updatedAt: new Date() },
+      });
+      if (reopened.count === 0) throw err.conflict("TICKET_NOT_RESOLVED", "Ticket is not resolved");
+
+      await audit(tx, {
+        actorId,
+        action: "ticket.reopen",
+        targetType: "ticket",
+        targetId: req.params.id,
+        before: { status: "RESOLVED" },
+        after: { status: "OPEN" },
+        reason,
+      });
+    });
+    return ok({ status: "OPEN" });
   });
 }
