@@ -151,6 +151,12 @@ input:focus{outline:none;border-color:var(--gold)!important}
    rails sink. ── */
 @media(max-width:1000px){
   .fd-stack{display:flex!important;flex-direction:column!important;gap:16px!important}
+  /* When a multi-column page collapses to a flex column, its direct children were
+     sized for wide grid tracks. Force them to the container width so a stubborn
+     child (e.g. a nested grid that hasn't collapsed) can't overshoot the viewport
+     and push content off-screen. min-width:0 defeats the flex min-content floor;
+     max-width:100% + width:100% pins each stacked section to the column width. */
+  .fd-stack>*{min-width:0!important;max-width:100%!important;width:100%!important}
   .fd-order-1{order:1!important}.fd-order-2{order:2!important}.fd-order-3{order:3!important}
   .fd-order-4{order:4!important}.fd-order-5{order:5!important}.fd-order-6{order:6!important}
   .fd-order-last{order:99!important}
