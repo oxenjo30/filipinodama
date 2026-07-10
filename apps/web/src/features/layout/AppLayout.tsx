@@ -8,6 +8,7 @@ import { useDmStore } from "../../stores/dmStore";
 import { useCosmeticsStore } from "../../stores/cosmeticsStore";
 import { useSettingsStore } from "../../stores/settingsStore";
 import { ICONS, BRAND, avatar as avatarUrl } from "../../lib/assets";
+import { api } from "../../lib/api";
 import { Toasts } from "../shared/Toasts";
 import { TopUpModal } from "../store/TopUpModal";
 import { NotificationsMenu } from "../nav/NotificationsMenu";
@@ -59,6 +60,28 @@ export function AppLayout() {
   const dmUnread = useDmStore((s) => s.unread);
   const refreshDmUnread = useDmStore((s) => s.unreadTotal);
   const [acctOpen, setAcctOpen] = useState(false);
+  // Maintenance banner — purely additive: fetched once from the unauthenticated
+  // GET /api/config/public. A failed/empty fetch or a "false" flag just leaves
+  // this null, so the app renders exactly as before (never blocks/crashes).
+  const [maintenanceText, setMaintenanceText] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    api
+      .get<{ MAINTENANCE_BANNER?: string; MAINTENANCE_TEXT?: string }>("/api/config/public")
+      .then((cfg) => {
+        if (cancelled) return;
+        if (cfg?.MAINTENANCE_BANNER === "true") {
+          setMaintenanceText(cfg.MAINTENANCE_TEXT?.trim() || "The game is undergoing maintenance.");
+        }
+      })
+      .catch(() => {
+        // Non-blocking: config is unreachable or errored — just show no banner.
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   // Start live presence once signed in (guests included) so friends' online
   // dots + presence-driven UI work app-wide; tear down on sign-out.
@@ -168,6 +191,30 @@ export function AppLayout() {
       <div style={{ position: "fixed", inset: 0, zIndex: 0, opacity: 0.4, backgroundImage: "radial-gradient(rgba(232,184,75,.05) 1px,transparent 1px)", backgroundSize: "30px 30px", pointerEvents: "none" }} />
 
       <div style={{ position: "relative", zIndex: 1, minHeight: "100vh", display: "flex", flexDirection: "column" }}>
+        {/* ============ MAINTENANCE BANNER ============ */}
+        {/* Additive-only strip above the nav, driven by GET /api/config/public
+            (Task 4). Rendered only when MAINTENANCE_BANNER === "true"; any
+            fetch failure/absence leaves maintenanceText null → nothing renders. */}
+        {maintenanceText && (
+          <div
+            role="status"
+            style={{
+              position: "sticky",
+              top: 0,
+              zIndex: 60,
+              padding: "9px 18px",
+              textAlign: "center",
+              font: "700 13px Inter",
+              letterSpacing: ".2px",
+              color: "#3a2405",
+              background: "linear-gradient(180deg,#f0cf72,#c99a2e)",
+              borderBottom: "1px solid rgba(0,0,0,.15)",
+            }}
+          >
+            {maintenanceText}
+          </div>
+        )}
+
         {/* ============ TOP NAV ============ */}
         <header style={{ borderBottom: "1px solid rgba(232,184,75,.28)", background: "linear-gradient(180deg,rgba(24,12,44,.9),rgba(18,9,34,.75))", backdropFilter: "blur(10px)", position: "sticky", top: 0, zIndex: 50 }}>
           <div style={{ maxWidth: 1560, margin: "0 auto", padding: "12px 26px", display: "flex", alignItems: "center", gap: 22 }}>

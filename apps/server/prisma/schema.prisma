@@ -82,6 +82,7 @@ model User {
   reportsMade     Report[] @relation("reportsMade")
   reportsAgainst  Report[] @relation("reportsAgainst")
   reportsResolved Report[] @relation("reportsResolved")
+  campaignsSent Campaign[]
 
   @@index([trophies])
 }
@@ -468,4 +469,29 @@ model AuditLog {
 
   @@index([actorId, createdAt])
   @@index([targetType, targetId])
+}
+
+// ─────────────── Admin Phase 2: config flags & campaigns ───────────────
+model Config {
+  key       String   @id
+  value     String
+  type      String   // "bool" | "int" | "string"
+  category  String   // "flag"
+  label     String
+  updatedAt DateTime @updatedAt
+}
+
+model Campaign {
+  id         String   @id @default(cuid())
+  title      String
+  body       String   @db.Text
+  segment    String
+  status     String   @default("sent")
+  reach      Int      @default(0)
+  sentById   String?
+  sentBy     User?    @relation(fields: [sentById], references: [id], onDelete: SetNull)
+  sentByName String
+  createdAt  DateTime @default(now())
+
+  @@index([createdAt])
 }

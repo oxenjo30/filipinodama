@@ -3,6 +3,7 @@ import { prisma } from "../db/client.js";
 import { ok, err } from "../lib/errors.js";
 import { applyLedgerTx } from "../economy/ledger.js";
 import { requireAuth } from "../auth/guards.js";
+import { getBool } from "../lib/config-service.js";
 
 /**
  * Daily Login Bonus — server-authoritative (a client localStorage streak, as in
@@ -80,6 +81,7 @@ export async function rewardRoutes(app: FastifyInstance) {
   // a conditional update (only when lastLoginBonusAt is null or on an earlier
   // day) wins exactly once, so two concurrent clicks can't double-credit.
   app.post("/rewards/daily-login", { preHandler: requireAuth }, async (req) => {
+    if (!(await getBool("DAILY_LOGIN_ENABLED", true))) throw err.forbidden("DAILY_LOGIN_OFF", "Daily login bonus is disabled");
     const userId = req.userId!;
     const now = new Date();
     const todayStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
