@@ -45,6 +45,13 @@ type TicketDetail = {
 
 const STATUS_FILTERS = ["OPEN", "RESOLVED"] as const;
 
+// Mockup's tStatusStyle() colors for ticket status pills (open=green, resolved=dim purple).
+// "PENDING" doesn't exist in our real Ticket model — not rendered.
+const STATUS_COLOR: Record<TicketRow["status"], { fg: string; bg: string }> = {
+  OPEN: { fg: "#5fd08a", bg: "rgba(95,208,138,.14)" },
+  RESOLVED: { fg: "#8b78ad", bg: "rgba(139,120,173,.14)" },
+};
+
 function timeAgo(iso: string): string {
   const ms = Date.now() - new Date(iso).getTime();
   const min = Math.floor(ms / 60000);
@@ -57,17 +64,23 @@ function timeAgo(iso: string): string {
 }
 
 function initials(username: string): string {
-  return username.slice(0, 2).toUpperCase();
+  return username.replace(/[^a-zA-Z]/g, "").slice(0, 2).toUpperCase() || "PL";
 }
 
-const STATUS_ACCENT: Record<TicketRow["status"], string> = {
-  OPEN: "var(--amber)",
-  RESOLVED: "var(--green-lt)",
-};
+function StatusBadge({ status }: { status: TicketRow["status"] }) {
+  const c = STATUS_COLOR[status];
+  return (
+    <span className="badge-rect" style={{ color: c.fg, background: c.bg, borderColor: `${c.fg}44` }}>
+      {status === "OPEN" ? "Open" : "Resolved"}
+    </span>
+  );
+}
 
 /** 3.0 Support — the ticket queue (Player Support). Matches the approved secTickets
- * fidelity: a filtered ticket list on the left, the selected thread + composer on
- * the right. Status = OPEN | RESOLVED only (priority + pending are deferred). */
+ * fidelity: filter chips, a ticket list on the left, the selected thread + reply
+ * composer on the right, "Select a ticket" empty state. Two real statuses only
+ * (OPEN | RESOLVED) — the mockup's "Pending" filter and priority chip have no
+ * backing field on our Ticket model and are omitted (see report). */
 export function Support() {
   const [status, setStatus] = useState<(typeof STATUS_FILTERS)[number]>("OPEN");
   const [rows, setRows] = useState<TicketRow[]>([]);
@@ -93,17 +106,32 @@ export function Support() {
       <div className="crumb">Player Support · Support</div>
       <h1 className="page">Support tickets</h1>
 
-      <div className="row" style={{ marginBottom: 14 }}>
+      <div style={{ display: "flex", gap: 8, marginBottom: 16, flexWrap: "wrap" }}>
         {STATUS_FILTERS.map((s) => (
-          <button key={s} className={`chip${status === s ? " on" : ""}`} onClick={() => setStatus(s)}>
+          <button
+            key={s}
+            className="abtn"
+            onClick={() => setStatus(s)}
+            style={{
+              font: "700 11px var(--sans)",
+              borderRadius: 9,
+              padding: "10px 15px",
+              ...(status === s
+                ? { background: "var(--gold)", color: "#3a2405", border: "1px solid rgba(232,184,75,.5)" }
+                : { background: "var(--panel)", color: "#b9a9d6", border: "1px solid rgba(232,184,75,.18)" }),
+            }}
+          >
             {s === "OPEN" ? "Open" : "Resolved"}
           </button>
         ))}
       </div>
 
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1.3fr", gap: 16, alignItems: "start" }}>
+      <div className="fd-2col" style={{ gridTemplateColumns: "1fr 1.3fr", alignItems: "start" }}>
         <TicketList rows={rows} loading={loading} selectedId={selectedId} onSelect={setSelectedId} />
-        <div style={{ position: "sticky", top: 84 }}>
+        <div
+          className="panel"
+          style={{ position: "sticky", top: 0, minHeight: 420, display: "flex", flexDirection: "column" }}
+        >
           {selectedId ? (
             <TicketDetailPane
               id={selectedId}
@@ -113,13 +141,21 @@ export function Support() {
               }}
             />
           ) : (
-            <div className="panel panel-pad" style={{ textAlign: "center", padding: 48 }}>
-              <div style={{ fontSize: 30, marginBottom: 10 }}>📨</div>
-              <div style={{ fontWeight: 700, marginBottom: 6, color: "var(--gold-lt)", font: "800 16px var(--serif)" }}>
-                Select a ticket
-              </div>
-              <div className="dim" style={{ maxWidth: 360, margin: "0 auto" }}>
-                Choose a ticket from the list to read the thread and reply.
+            <div
+              style={{
+                flex: 1,
+                display: "flex",
+                flexDirection: "column",
+                alignItems: "center",
+                justifyContent: "center",
+                padding: 48,
+                textAlign: "center",
+              }}
+            >
+              <div style={{ fontSize: 34, marginBottom: 10 }}>📨</div>
+              <div style={{ font: "700 14px var(--serif)", color: "var(--gold-lt)" }}>Select a ticket</div>
+              <div className="dim" style={{ marginTop: 6, fontSize: 12, maxWidth: 220 }}>
+                Choose a conversation on the left to read the thread and reply.
               </div>
             </div>
           )}
@@ -145,7 +181,7 @@ function TicketList({
   }
   if (rows.length === 0) {
     return (
-      <div className="panel panel-pad dim" style={{ textAlign: "center", padding: 32 }}>
+      <div className="panel panel-pad dim" style={{ textAlign: "center", padding: 40 }}>
         No tickets in this view.
       </div>
     );
@@ -157,49 +193,42 @@ function TicketList({
         return (
           <div
             key={t.id}
-            className="acard"
+            className="arow"
             onClick={() => onSelect(t.id)}
             style={{
               cursor: "pointer",
-              padding: 14,
-              borderColor: active ? "var(--gold)" : "var(--edge)",
-              background: active ? "rgba(232,184,75,.08)" : "var(--panel)",
+              background: active ? "#241640" : "var(--panel)",
+              border: `1px solid ${active ? "rgba(232,184,75,.35)" : "rgba(232,184,75,.12)"}`,
+              borderRadius: 12,
+              padding: "15px 16px",
             }}
           >
-            <div className="row" style={{ justifyContent: "space-between", alignItems: "flex-start", flexWrap: "nowrap" }}>
-              <div className="row" style={{ gap: 10, minWidth: 0 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+              <div className="fd-avatar">{initials(t.userName)}</div>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 7 }}>
+                  <span className="mono" style={{ font: "600 10.5px var(--mono)", color: "#8b78ad" }}>{t.id}</span>
+                </div>
                 <div
                   style={{
-                    width: 30, height: 30, borderRadius: "50%", flex: "none",
-                    background: "linear-gradient(150deg, #4a2d7a, #2a1848)",
-                    border: "1px solid var(--edge-strong)",
-                    display: "flex", alignItems: "center", justifyContent: "center",
-                    font: "800 11px var(--sans)", color: "var(--gold-lt)",
+                    font: "700 12.5px var(--sans)",
+                    color: "#e9e0f7",
+                    marginTop: 2,
+                    whiteSpace: "nowrap",
+                    overflow: "hidden",
+                    textOverflow: "ellipsis",
                   }}
                 >
-                  {initials(t.userName)}
-                </div>
-                <div style={{ minWidth: 0 }}>
-                  <div className="row" style={{ gap: 8 }}>
-                    <span className="mono dim" style={{ fontSize: 11 }}>{t.id}</span>
-                    <span className="badge-st" style={{ color: "var(--dim)", background: "rgba(255,255,255,.04)", border: "1px solid var(--edge-strong)" }}>
-                      Normal
-                    </span>
-                  </div>
-                  <div style={{ fontWeight: 700, marginTop: 4, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                    {t.subject}
-                  </div>
+                  {t.subject}
                 </div>
               </div>
-              <span
-                className="badge-st"
-                style={{ flex: "none", color: STATUS_ACCENT[t.status], background: "rgba(255,255,255,.06)", border: `1px solid ${STATUS_ACCENT[t.status]}` }}
-              >
-                {t.status === "OPEN" ? "Open" : "Resolved"}
-              </span>
+              <StatusBadge status={t.status} />
             </div>
-            <div className="dim" style={{ marginTop: 8, fontSize: 12 }}>
-              {t.userName} · {t.category} · {timeAgo(t.updatedAt)}
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: 9, paddingLeft: 44 }}>
+              <span style={{ font: "500 11px var(--sans)", color: "#8b78ad" }}>
+                {t.userName} · {t.category}
+              </span>
+              <span style={{ font: "500 10.5px var(--sans)", color: "#6f5f92" }}>{timeAgo(t.updatedAt)}</span>
             </div>
           </div>
         );
@@ -257,87 +286,114 @@ function TicketDetailPane({ id, onClose, onChanged }: { id: string; onClose: () 
     });
 
   if (loading) {
-    return <div className="panel panel-pad dim" style={{ textAlign: "center" }}>Loading…</div>;
+    return <div className="dim" style={{ textAlign: "center", padding: 48 }}>Loading…</div>;
   }
   if (!detail) {
-    return <div className="panel panel-pad dim" style={{ textAlign: "center" }}>Ticket not found.</div>;
+    return <div className="dim" style={{ textAlign: "center", padding: 48 }}>Ticket not found.</div>;
   }
 
   const { ticket, thread } = detail;
+  const c = STATUS_COLOR[ticket.status];
 
   return (
-    <div className="panel" style={{ display: "flex", flexDirection: "column", maxHeight: "calc(100vh - 140px)" }}>
-      <div style={{ padding: "16px 18px", borderBottom: "1px solid var(--edge)" }}>
-        <div className="row" style={{ justifyContent: "space-between", alignItems: "flex-start" }}>
-          <div className="row" style={{ gap: 8 }}>
-            <span className="mono dim" style={{ fontSize: 11 }}>{ticket.id}</span>
-            <span
-              className="badge-st"
-              style={{ color: STATUS_ACCENT[ticket.status], background: "rgba(255,255,255,.06)", border: `1px solid ${STATUS_ACCENT[ticket.status]}` }}
-            >
+    <div style={{ display: "flex", flexDirection: "column", height: "100%" }}>
+      <div className="card-header" style={{ alignItems: "flex-start" }}>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <span className="mono" style={{ font: "600 10.5px var(--mono)", color: "#8b78ad" }}>{ticket.id}</span>
+            <span className="badge-rect" style={{ color: c.fg, background: c.bg, borderColor: `${c.fg}44` }}>
               {ticket.status === "OPEN" ? "Open" : "Resolved"}
             </span>
-            <span className="badge-st" style={{ color: "var(--dim)", background: "rgba(255,255,255,.04)", border: "1px solid var(--edge-strong)" }}>
-              Normal
-            </span>
           </div>
-          <button className="btn" onClick={onClose} title="Close">✕</button>
+          <div style={{ font: "800 15px var(--serif)", color: "var(--gold-lt)", marginTop: 6 }}>{ticket.subject}</div>
+          <div style={{ font: "500 11px var(--sans)", color: "#8b78ad", marginTop: 4 }}>
+            {ticket.userName}
+            {ticket.userEmail ? ` · ${ticket.userEmail}` : ""} · {ticket.category}
+            {ticket.userGone && " · account deleted"}
+          </div>
         </div>
-        <div style={{ marginTop: 8, font: "800 16px var(--serif)", color: "var(--gold-lt)" }}>{ticket.subject}</div>
-        <div className="dim" style={{ marginTop: 4, fontSize: 12 }}>
-          {ticket.userName}
-          {ticket.userEmail ? ` · ${ticket.userEmail}` : ""} · {ticket.category}
-          {ticket.userGone && " · account deleted"}
-        </div>
+        <button
+          className="abtn"
+          onClick={onClose}
+          title="Close"
+          style={{
+            background: "transparent",
+            border: "1px solid rgba(232,184,75,.2)",
+            color: "#b9a9d6",
+            width: 30,
+            height: 30,
+            borderRadius: 8,
+            font: "700 14px var(--sans)",
+            flex: "none",
+          }}
+        >
+          ✕
+        </button>
       </div>
 
-      <div style={{ padding: "14px 18px", overflowY: "auto", flex: 1, display: "flex", flexDirection: "column", gap: 10 }}>
+      <div style={{ flex: 1, padding: "18px 20px", display: "flex", flexDirection: "column", gap: 12, overflowY: "auto", maxHeight: 340 }}>
         {thread.map((m) => (
           <div key={m.id} style={{ display: "flex", flexDirection: "column", alignItems: m.isStaff ? "flex-end" : "flex-start" }}>
+            <div style={{ font: "600 10px var(--sans)", color: "#8b78ad", marginBottom: 4, textAlign: m.isStaff ? "right" : "left" }}>
+              {m.authorName} · {timeAgo(m.createdAt)}
+            </div>
             <div
               style={{
-                maxWidth: "80%",
-                padding: "9px 13px",
-                borderRadius: 12,
-                background: m.isStaff ? "rgba(232,184,75,.14)" : "var(--panel-2)",
-                border: m.isStaff ? "1px solid rgba(232,184,75,.3)" : "1px solid var(--edge)",
-                fontSize: 13,
+                maxWidth: "78%",
+                padding: "12px 14px",
+                borderRadius: 13,
+                font: "500 12.5px var(--sans)",
                 lineHeight: 1.5,
                 whiteSpace: "pre-wrap",
                 wordBreak: "break-word",
+                ...(m.isStaff
+                  ? {
+                      background: "linear-gradient(180deg,#3a2a12,#2a1e0c)",
+                      color: "#f3e6c8",
+                      border: "1px solid rgba(232,184,75,.25)",
+                    }
+                  : {
+                      background: "var(--bg-2)",
+                      color: "#d9ccf0",
+                      border: "1px solid rgba(232,184,75,.1)",
+                    }),
               }}
             >
               {m.body}
-            </div>
-            <div className="dim" style={{ marginTop: 4, fontSize: 11 }}>
-              {m.isStaff ? "Staff" : "Player"} · {m.authorName} · {timeAgo(m.createdAt)}
             </div>
           </div>
         ))}
       </div>
 
-      <div style={{ padding: "14px 18px", borderTop: "1px solid var(--edge)" }}>
+      <div style={{ padding: "16px 20px", borderTop: "1px solid rgba(232,184,75,.12)" }}>
         {ticket.canResolve ? (
           <>
             <textarea
               className="input"
-              rows={3}
-              placeholder="Write a reply…"
+              placeholder="Type your reply to the player…"
               value={reply}
               onChange={(e) => setReply(e.target.value)}
-              style={{ resize: "vertical", marginBottom: 10 }}
+              style={{ minHeight: 70, resize: "vertical", width: "100%" }}
             />
-            <div className="row" style={{ justifyContent: "flex-end" }}>
-              <button className="btn gold" disabled={sending || !reply.trim()} onClick={sendReply}>
+            <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
+              <button className="abtn btn-gold-pill" style={{ flex: 1 }} disabled={sending || !reply.trim()} onClick={sendReply}>
                 {sending ? "Sending…" : "Send reply"}
               </button>
               <button
-                className="btn"
-                style={{ background: "rgba(63,191,111,.16)", borderColor: "rgba(63,191,111,.45)", color: "var(--green-lt)" }}
+                className="abtn"
                 onClick={resolve}
+                style={{
+                  font: "700 12px var(--sans)",
+                  borderRadius: 9,
+                  padding: "11px 16px",
+                  border: "1px solid rgba(47,143,91,.5)",
+                  color: "#fff",
+                  background: "linear-gradient(180deg,#2f8f5b,#1c6e42)",
+                }}
               >
                 Resolve
               </button>
+              {/* Reopen omitted — mockup's canReopen action has no server route yet (only resolve exists). */}
             </div>
           </>
         ) : (

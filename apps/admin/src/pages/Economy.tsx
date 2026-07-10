@@ -41,42 +41,43 @@ export function EconomyPage() {
       <div className="crumb">Economy · Grants & Ledger</div>
       <h1 className="page">Grants & Ledger</h1>
 
-      <GrantCard onDone={load} />
+      <div className="fd-2col" style={{ alignItems: "start" }}>
+        <GrantCard onDone={load} />
 
-      <div className="row" style={{ margin: "22px 0 12px" }}>
-        <input className="input" style={{ maxWidth: 240 }} placeholder="Filter by player id" value={player} onChange={(e) => setPlayer(e.target.value)} />
-        <select className="select" style={{ maxWidth: 160 }} value={currency} onChange={(e) => setCurrency(e.target.value)}>
-          <option value="">All currencies</option>
-          <option value="GOLD">Gold</option>
-          <option value="DIAMONDS">Diamonds</option>
-          <option value="TROPHIES">Trophies</option>
-        </select>
-        <button className="btn" onClick={load}>Search</button>
-      </div>
+        <div className="panel" style={{ padding: 20 }}>
+          <div style={{ font: "700 14px var(--sans)", color: "var(--ink-2)" }}>Ledger explorer</div>
+          <div className="row" style={{ marginTop: 14, marginBottom: 12 }}>
+            <input className="input" style={{ maxWidth: 200 }} placeholder="Filter by player id" value={player} onChange={(e) => setPlayer(e.target.value)} />
+            <select className="select" style={{ maxWidth: 140 }} value={currency} onChange={(e) => setCurrency(e.target.value)}>
+              <option value="">All currencies</option>
+              <option value="GOLD">Gold</option>
+              <option value="DIAMONDS">Diamonds</option>
+              <option value="TROPHIES">Trophies</option>
+            </select>
+            <button className="abtn btn-ghost btn-ghost-sm" onClick={load}>Search</button>
+          </div>
 
-      <div className="panel">
-        <table className="tbl">
-          <thead>
-            <tr><th>When</th><th>Player</th><th>Currency</th><th className="num">Amount</th><th>Reason</th></tr>
-          </thead>
-          <tbody>
+          <div style={{ display: "flex", flexDirection: "column", gap: 8, maxHeight: 420, overflowY: "auto" }}>
             {loading ? (
-              <tr><td colSpan={5} className="dim" style={{ textAlign: "center", padding: 24 }}>Loading…</td></tr>
+              <div className="dim" style={{ textAlign: "center", padding: 24 }}>Loading…</div>
             ) : rows.length === 0 ? (
-              <tr><td colSpan={5} className="dim" style={{ textAlign: "center", padding: 24 }}>No ledger entries.</td></tr>
+              <div className="dim" style={{ textAlign: "center", padding: 24 }}>No ledger entries.</div>
             ) : (
               rows.map((r) => (
-                <tr key={r.id}>
-                  <td className="mono dim" style={{ whiteSpace: "nowrap" }}>{new Date(r.createdAt).toLocaleString()}</td>
-                  <td>{r.user?.username ?? "—"} <span className="dim mono">{r.user?.tag ?? ""}</span></td>
-                  <td className="mono">{r.currency}</td>
-                  <td className="num" style={{ color: r.amount >= 0 ? "var(--green)" : "var(--red)" }}>{r.amount >= 0 ? "+" : ""}{r.amount.toLocaleString()}</td>
-                  <td className="dim">{r.reason}{r.refType ? ` · ${r.refType}` : ""}</td>
-                </tr>
+                <div key={r.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "9px 11px", background: "var(--bg-2)", borderRadius: 8 }}>
+                  <span style={{ font: "600 11px var(--sans)", color: "var(--ink-3)", flex: 1 }}>
+                    {r.user?.username ?? "—"} <span className="dim mono" style={{ fontSize: 10 }}>{r.user?.tag ?? ""}</span>
+                    <span className="dim"> · {r.reason}{r.refType ? ` · ${r.refType}` : ""}</span>
+                    <span className="dim mono" style={{ fontSize: 10 }}> · {new Date(r.createdAt).toLocaleString()}</span>
+                  </span>
+                  <span className="mono" style={{ fontWeight: 700, fontSize: 12, color: r.amount >= 0 ? "var(--green)" : "var(--red)", whiteSpace: "nowrap" }}>
+                    {r.amount >= 0 ? "+" : ""}{r.amount.toLocaleString()} {r.currency}
+                  </span>
+                </div>
               ))
             )}
-          </tbody>
-        </table>
+          </div>
+        </div>
       </div>
     </>
   );
@@ -103,19 +104,26 @@ function GrantCard({ onDone }: { onDone: () => void }) {
     });
 
   return (
-    <div className="panel panel-pad">
-      <div style={{ fontWeight: 700, marginBottom: 12 }}>Grant currency</div>
-      <div className="row">
-        <input className="input" style={{ maxWidth: 260 }} placeholder="Player ID (from Players)" value={userId} onChange={(e) => setUserId(e.target.value)} />
-        <select className="select" style={{ maxWidth: 150 }} value={currency} onChange={(e) => setCurrency(e.target.value as any)}>
-          <option value="GOLD">Gold</option>
-          <option value="DIAMONDS">Diamonds</option>
-          <option value="TROPHIES">Trophies</option>
-        </select>
-        <input className="input" style={{ maxWidth: 160 }} type="number" placeholder="Amount" value={amount || ""} onChange={(e) => setAmount(Number(e.target.value))} />
-        <button className="btn gold" disabled={!userId || !amount} onClick={submit}>Grant</button>
+    <div className="panel" style={{ padding: 20 }}>
+      <div style={{ font: "700 14px var(--sans)", color: "var(--ink-2)" }}>Grant currency</div>
+      <div className="dim" style={{ marginTop: 6, fontSize: 12 }}>Credit or debit a player directly. Every grant is recorded in the ledger + audit log.</div>
+
+      <div style={{ display: "flex", flexDirection: "column", gap: 12, marginTop: 14 }}>
+        <div>
+          <div className="dim" style={{ fontSize: 11, marginBottom: 5, textTransform: "uppercase", letterSpacing: ".4px" }}>Player ID</div>
+          <input className="input" placeholder="Player ID (from Players)" value={userId} onChange={(e) => setUserId(e.target.value)} />
+        </div>
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+          <select className="select" style={{ maxWidth: 150 }} value={currency} onChange={(e) => setCurrency(e.target.value as any)}>
+            <option value="GOLD">Gold</option>
+            <option value="DIAMONDS">Diamonds</option>
+            <option value="TROPHIES">Trophies</option>
+          </select>
+          <input className="input" style={{ maxWidth: 140 }} type="number" placeholder="Amount" value={amount || ""} onChange={(e) => setAmount(Number(e.target.value))} />
+        </div>
+        <button className="abtn btn-gold-pill full" disabled={!userId || !amount} onClick={submit}>Grant</button>
       </div>
-      <div className="dim" style={{ fontSize: 12, marginTop: 8 }}>Use a negative amount to debit. Every grant is recorded in the ledger + audit log.</div>
+      <div className="dim" style={{ fontSize: 11, marginTop: 10 }}>Use a negative amount to debit.</div>
     </div>
   );
 }

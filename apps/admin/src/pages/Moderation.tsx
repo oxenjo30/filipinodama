@@ -167,42 +167,40 @@ function ReportCard({ r, onDone }: { r: Report; onDone: () => void }) {
 
   return (
     <div className="acard" style={{ borderLeft: `3px solid ${badge.accent}` }}>
-      <div className="row" style={{ justifyContent: "space-between", alignItems: "flex-start" }}>
-        <div>
+      <div className="row" style={{ alignItems: "flex-start", gap: 12, flexWrap: "wrap" }}>
+        <div style={{ flex: 1, minWidth: 240 }}>
           <div className="row" style={{ marginBottom: 6 }}>
-            <span className="badge-st" style={{ color: badge.accent, background: "rgba(255,255,255,.06)", border: `1px solid ${badge.accent}` }}>{badge.label}</span>
+            <span className="badge-rect" style={{ color: badge.accent, background: "rgba(255,255,255,.06)", borderColor: badge.accent }}>{badge.label}</span>
             <span className="dim mono" style={{ fontSize: 12 }}>{timeAgo(r.createdAt)}</span>
           </div>
           <div style={{ fontWeight: 700 }}>
-            Reported: {accusedLabel} <span className="dim" style={{ fontWeight: 500 }}>· by {reporterLabel} · in {r.context === "dm" ? "DM" : "profile"}</span>
+            <span className="dim" style={{ fontWeight: 500 }}>Reported:</span> {accusedLabel} <span className="dim" style={{ fontWeight: 500 }}>· by {reporterLabel} · in {r.context === "dm" ? "DM" : "profile"}</span>
           </div>
-        </div>
-      </div>
 
-      {r.context === "dm" && r.excerpt && (
-        <div className="panel" style={{ marginTop: 10, padding: "10px 14px", fontStyle: "italic", background: "var(--panel-2)" }}>
-          “{r.excerpt}”
-        </div>
-      )}
+          {r.context === "dm" && r.excerpt && (
+            <div className="quote-flagged">“{r.excerpt}”</div>
+          )}
 
-      {r.context === "profile" && r.profileSnapshot && (
-        <div className="panel" style={{ marginTop: 10, padding: "10px 14px", background: "var(--panel-2)" }}>
-          <div style={{ fontWeight: 600 }}>{r.profileSnapshot.displayName} <span className="dim mono">{r.profileSnapshot.username} {r.profileSnapshot.tag}</span></div>
-          {r.profileSnapshot.bio && <div className="dim" style={{ marginTop: 4, fontSize: 13 }}>{r.profileSnapshot.bio}</div>}
-        </div>
-      )}
+          {r.context === "profile" && r.profileSnapshot && (
+            <div className="panel" style={{ marginTop: 10, padding: "10px 14px", background: "var(--panel-2)" }}>
+              <div style={{ fontWeight: 600 }}>{r.profileSnapshot.displayName} <span className="dim mono">{r.profileSnapshot.username} {r.profileSnapshot.tag}</span></div>
+              {r.profileSnapshot.bio && <div className="dim" style={{ marginTop: 4, fontSize: 13 }}>{r.profileSnapshot.bio}</div>}
+            </div>
+          )}
 
-      {r.note && (
-        <div className="dim" style={{ marginTop: 10, fontSize: 13 }}>
-          <span style={{ fontWeight: 700, color: "var(--ink-2)" }}>Reporter note: </span>{r.note}
+          {r.note && (
+            <div className="dim" style={{ marginTop: 10, fontSize: 13 }}>
+              <span style={{ fontWeight: 700, color: "var(--ink-2)" }}>Reporter note: </span>{r.note}
+            </div>
+          )}
         </div>
-      )}
 
-      <div className="row" style={{ marginTop: 14 }}>
-        <button className="btn" onClick={dismiss}>Dismiss</button>
-        <button className="btn" disabled={r.accusedGone} title={r.accusedGone ? "Accused account no longer exists" : undefined} onClick={mute}>Mute</button>
-        <button className="btn danger" disabled={r.accusedGone} title={r.accusedGone ? "Accused account no longer exists" : undefined} onClick={ban}>Ban</button>
-        {r.accusedGone && <span className="dim" style={{ fontSize: 12 }}>Accused account deleted — dismiss only.</span>}
+        <div style={{ display: "flex", flexDirection: "column", gap: 7, minWidth: 130 }}>
+          <button className="abtn btn-ghost" onClick={dismiss}>Dismiss</button>
+          <button className="abtn btn-amber" disabled={r.accusedGone} title={r.accusedGone ? "Accused account no longer exists" : undefined} onClick={mute}>Mute</button>
+          <button className="abtn btn-danger" disabled={r.accusedGone} title={r.accusedGone ? "Accused account no longer exists" : undefined} onClick={ban}>Ban</button>
+          {r.accusedGone && <span className="dim" style={{ fontSize: 11 }}>Accused deleted — dismiss only.</span>}
+        </div>
       </div>
     </div>
   );

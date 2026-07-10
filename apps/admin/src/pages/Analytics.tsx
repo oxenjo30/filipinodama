@@ -66,9 +66,13 @@ export function Analytics() {
     <>
       <div className="row" style={{ justifyContent: "space-between", marginBottom: 16 }}>
         <div className="crumb">Insights · Analytics deep-dive</div>
-        <div className="row" style={{ gap: 6 }}>
+        <div className="row" style={{ gap: 8 }}>
           {WINDOWS.map((opt) => (
-            <button key={opt} className={`chip${w === opt ? " on" : ""}`} onClick={() => setW(opt)}>
+            <button
+              key={opt}
+              className={`abtn ${w === opt ? "btn-gold-pill" : "btn-ghost"}`}
+              onClick={() => setW(opt)}
+            >
               {opt}
             </button>
           ))}
@@ -95,15 +99,17 @@ function AnalyticsBody({ d }: { d: AnalyticsData }) {
 
   return (
     <>
-      {/* KPI grid — the mockup's 8-tile grid, all real scalars for the window. */}
-      <div className="kpi" style={{ gridTemplateColumns: "repeat(4,1fr)" }}>
+      {/* KPI grid — the mockup's 8-tile grid, all real scalars for the window. No fabricated
+          trend deltas: the API doesn't return a prior-window count to diff against, so each
+          tile's trend slot carries the honest window label instead of an invented ±%. */}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 14 }}>
         <Card label="Total Players" value={d.kpis.totalPlayers.toLocaleString()} sub="all-time real accounts" />
         <Card label="New Players" value={d.kpis.newPlayers.toLocaleString()} sub={`in ${d.window}`} />
         <Card label="Active Players" value={d.kpis.activePlayers.toLocaleString()} sub={`seen in ${d.window}`} />
         <Card label="Matches" value={d.kpis.matchesInWindow.toLocaleString()} sub={`started in ${d.window}`} />
         <Card label="Matches (all-time)" value={d.kpis.matchesTotal.toLocaleString()} sub="played to date" />
-        <Card label="Gold Faucet" value={d.kpis.goldFaucet.toLocaleString()} sub={`granted in ${d.window}`} />
-        <Card label="Gold Sink" value={d.kpis.goldSink.toLocaleString()} sub={`spent in ${d.window}`} />
+        <Card label="Gold Faucet" value={d.kpis.goldFaucet.toLocaleString()} sub={`granted in ${d.window}`} tile="up" />
+        <Card label="Gold Sink" value={d.kpis.goldSink.toLocaleString()} sub={`spent in ${d.window}`} tile="down" />
         <Card label="Guilds" value={d.kpis.guildsTotal.toLocaleString()} sub="all-time" />
       </div>
 
@@ -274,12 +280,25 @@ function AnalyticsBody({ d }: { d: AnalyticsData }) {
   );
 }
 
-function Card({ label, value, sub }: { label: string; value: string; sub: string }) {
+function Card({
+  label,
+  value,
+  sub,
+  tile,
+}: {
+  label: string;
+  value: string;
+  sub: string;
+  /** Optional tile accent (`.fd-kpi.up`/`.down`) for faucet/sink tiles — shape only, no fake trend %. */
+  tile?: "up" | "down";
+}) {
   return (
-    <div className="card">
+    <div className={`fd-kpi${tile ? ` ${tile}` : ""}`}>
       <div className="l">{label}</div>
       <div className="v">{value}</div>
-      <div style={{ marginTop: 8, font: "600 11px var(--sans)", color: "var(--dim)" }}>{sub}</div>
+      <div className="trend">
+        <span className="sub">{sub}</span>
+      </div>
     </div>
   );
 }

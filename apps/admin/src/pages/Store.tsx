@@ -246,17 +246,17 @@ export function StorePage() {
 
       <div className="panel" style={{ overflow: "hidden" }}>
         {/* header */}
-        <div style={{ padding: "15px 18px", borderBottom: "1px solid var(--edge)", display: "flex", alignItems: "center", gap: 12 }}>
-          <div style={{ font: "700 14px var(--sans)", color: "var(--ink)", flex: 1 }}>Store catalog</div>
-          <span className="dim" style={{ font: "600 11px var(--sans)" }}>{rows.length} items</span>
-          <button className="btn gold" onClick={openNew}>
+        <div className="card-header">
+          <span className="t">Store catalog</span>
+          <span className="sub">{rows.length} items</span>
+          <button className="abtn btn-gold-pill sm" onClick={openNew}>
             + Add item
           </button>
         </div>
 
         {/* inline create / edit form */}
         {form && (
-          <div style={{ padding: 18, borderBottom: "1px solid var(--edge)", background: "var(--panel-2)", display: "flex", flexDirection: "column", gap: 12 }}>
+          <div style={{ padding: 18, borderBottom: "1px solid rgba(232,184,75,.1)", background: "var(--panel-2)", display: "flex", flexDirection: "column", gap: 12 }}>
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(180px,1fr))", gap: 12 }}>
               <div className="field" style={{ gridColumn: "1/-1", marginBottom: 0 }}>
                 <label>Item name</label>
@@ -333,10 +333,10 @@ export function StorePage() {
             </div>
 
             <div className="row" style={{ justifyContent: "flex-end" }}>
-              <button className="btn" onClick={closeForm}>
+              <button className="abtn btn-ghost" onClick={closeForm}>
                 Cancel
               </button>
-              <button className="btn gold" disabled={!form.name.trim() || (!editId && !form.id.trim()) || !form.assetKey.trim()} onClick={save}>
+              <button className="abtn btn-gold-pill" disabled={!form.name.trim() || (!editId && !form.id.trim()) || !form.assetKey.trim()} onClick={save}>
                 {editId ? "Save changes" : "Add item"}
               </button>
             </div>
@@ -345,9 +345,9 @@ export function StorePage() {
 
         {/* catalog table */}
         <div style={{ overflowX: "auto" }}>
-          <table className="tbl" style={{ minWidth: 760 }}>
+          <table className="tbl" style={{ minWidth: 780 }}>
             <thead>
-              <tr>
+              <tr className="thead-raised">
                 <th>Item</th>
                 <th>Type</th>
                 <th className="num">Gold</th>
@@ -374,18 +374,28 @@ export function StorePage() {
                 </tr>
               ) : (
                 rows.map((it) => (
-                  <tr key={it.id}>
+                  <tr key={it.id} className="arow">
                     <td>
                       <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                        <span style={{ font: "700 12.5px var(--sans)", color: "var(--ink)" }}>{it.name}</span>
-                        {it.isPremium && (
-                          <span style={{ font: "700 8px var(--sans)", letterSpacing: 1, color: "var(--red-lt)", border: "1px solid rgba(255,154,168,.4)", borderRadius: 5, padding: "2px 5px" }}>PREMIUM</span>
-                        )}
-                        {it.featured && (
-                          <span style={{ font: "700 8px var(--sans)", letterSpacing: 1, color: "var(--gold-lt)", border: "1px solid rgba(232,184,75,.4)", borderRadius: 5, padding: "2px 5px" }}>FEATURED</span>
-                        )}
+                        <div
+                          title={it.previewKey || it.assetKey || undefined}
+                          style={{ width: 34, height: 34, borderRadius: 8, background: "var(--bg-2)", border: "1px solid rgba(232,184,75,.16)", display: "flex", alignItems: "center", justifyContent: "center", overflow: "hidden", flex: "none", font: "700 10px var(--sans)", color: "var(--dim)" }}
+                        >
+                          {typeGlyph(it.type)}
+                        </div>
+                        <div>
+                          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                            <span style={{ font: "700 12.5px var(--sans)", color: "var(--ink)" }}>{it.name}</span>
+                            {it.isPremium && (
+                              <span style={{ font: "700 8px var(--sans)", letterSpacing: 1, color: "var(--red-lt)", border: "1px solid rgba(255,154,168,.4)", borderRadius: 5, padding: "2px 5px" }}>PREMIUM</span>
+                            )}
+                            {it.featured && (
+                              <span style={{ font: "700 8px var(--sans)", letterSpacing: 1, color: "var(--gold-lt)", border: "1px solid rgba(232,184,75,.4)", borderRadius: 5, padding: "2px 5px" }}>FEATURED</span>
+                            )}
+                          </div>
+                          <div className="mono dim" style={{ fontSize: 10.5, marginTop: 2 }}>{it.id}{it.ownedCount > 0 ? ` · owned ×${it.ownedCount}` : ""}</div>
+                        </div>
                       </div>
-                      <div className="mono dim" style={{ fontSize: 10.5, marginTop: 2 }}>{it.id}{it.ownedCount > 0 ? ` · owned ×${it.ownedCount}` : ""}</div>
                     </td>
                     <td style={{ color: "var(--ink-3)" }}>{typeLabel(it.type)}</td>
                     <td className="num">{it.priceGold != null ? it.priceGold.toLocaleString() : "—"}</td>
@@ -410,13 +420,13 @@ export function StorePage() {
                     <td className="num">{it.sortOrder}</td>
                     <td style={{ textAlign: "center" }}>
                       <div style={{ display: "flex", gap: 6, justifyContent: "center" }}>
-                        <button className="btn" style={{ padding: "6px 10px" }} onClick={() => openEdit(it)}>
+                        <button className="abtn btn-ghost btn-ghost-sm" onClick={() => openEdit(it)}>
                           Edit
                         </button>
-                        <button className="btn" style={{ padding: "6px 10px" }} onClick={() => toggle(it)}>
+                        <button className="abtn btn-ghost btn-ghost-sm" onClick={() => toggle(it)}>
                           {it.active ? "Deactivate" : "Activate"}
                         </button>
-                        <button className="btn danger" style={{ padding: "6px 10px" }} onClick={() => remove(it)}>
+                        <button className="abtn btn-danger btn-danger-sm" onClick={() => remove(it)}>
                           Delete
                         </button>
                       </div>
@@ -434,6 +444,29 @@ export function StorePage() {
       </div>
     </>
   );
+}
+
+// Short glyph for the catalog thumbnail chip. The admin app has no access to the
+// player-facing asset bundle (that lives under apps/web/public/assets and isn't
+// served here), so we can't render the item's real art without fabricating a
+// path — this is an honest type-based placeholder, not a stand-in image.
+function typeGlyph(t: ItemType): string {
+  switch (t) {
+    case "BOARD":
+      return "BRD";
+    case "SKIN":
+      return "SKN";
+    case "AVATAR":
+      return "AVA";
+    case "FRAME":
+      return "FRM";
+    case "EMOTE":
+      return "EMO";
+    case "BUNDLE":
+      return "BND";
+    case "SEASON_PASS":
+      return "SPS";
+  }
 }
 
 function typeLabel(t: ItemType): string {

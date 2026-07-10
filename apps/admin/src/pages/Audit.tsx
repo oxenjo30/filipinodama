@@ -36,28 +36,34 @@ export function AuditPage() {
         <button className="btn" onClick={load}>Refresh</button>
       </div>
       <div className="panel">
-        <table className="tbl">
-          <thead>
-            <tr><th>When</th><th>Actor</th><th>Action</th><th>Target</th><th>Reason</th></tr>
-          </thead>
-          <tbody>
-            {loading ? (
-              <tr><td colSpan={5} className="dim" style={{ textAlign: "center", padding: 24 }}>Loading…</td></tr>
-            ) : rows.length === 0 ? (
-              <tr><td colSpan={5} className="dim" style={{ textAlign: "center", padding: 24 }}>No audit entries.</td></tr>
-            ) : (
-              rows.map((r) => (
-                <tr key={r.id}>
-                  <td className="mono dim" style={{ whiteSpace: "nowrap" }}>{new Date(r.createdAt).toLocaleString()}</td>
-                  <td>{r.actor.username} <span className="dim mono">{r.actor.tag}</span></td>
-                  <td className="mono" style={{ color: "var(--gold)" }}>{r.action}</td>
-                  <td className="dim mono">{r.targetType ?? ""} {r.targetId ? r.targetId.slice(0, 8) : ""}</td>
-                  <td className="dim">{r.reason ?? "—"}</td>
-                </tr>
-              ))
-            )}
-          </tbody>
-        </table>
+        <div className="card-header">
+          <span className="t">Audit log</span>
+          <span className="sub">append-only · {rows.length} entries</span>
+        </div>
+        <div style={{ overflowX: "auto" }}>
+          <table className="tbl" style={{ minWidth: 680 }}>
+            <thead>
+              <tr className="thead-raised"><th>When</th><th>Actor</th><th>Action</th><th>Target</th><th>Reason</th></tr>
+            </thead>
+            <tbody>
+              {loading ? (
+                <tr><td colSpan={5} className="dim" style={{ textAlign: "center", padding: 24 }}>Loading…</td></tr>
+              ) : rows.length === 0 ? (
+                <tr><td colSpan={5} className="dim" style={{ textAlign: "center", padding: 24 }}>No audit entries.</td></tr>
+              ) : (
+                rows.map((r) => (
+                  <tr key={r.id} className="arow">
+                    <td className="mono dim" style={{ whiteSpace: "nowrap" }}>{new Date(r.createdAt).toLocaleString()}</td>
+                    <td>{r.actor.username} <span className="dim mono">{r.actor.tag}</span></td>
+                    <td className="mono" style={{ color: "var(--gold)" }}>{r.action}</td>
+                    <td className="dim mono">{r.targetType ?? ""} {r.targetId ? r.targetId.slice(0, 8) : ""}</td>
+                    <td className="dim">{r.reason ?? "—"}</td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
       </div>
     </>
   );
