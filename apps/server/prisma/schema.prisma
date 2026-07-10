@@ -93,6 +93,7 @@ model User {
   ticketMessages  TicketMessage[] @relation("ticketMessages")
   tournamentsCreated Tournament[]      @relation("tournamentsCreated")
   tournamentEntries  TournamentEntry[] @relation("tournamentEntries")
+  liveEventsCreated  LiveEvent[]       @relation("liveEventsCreated")
 
   @@index([trophies])
 }
@@ -713,4 +714,29 @@ model TournamentMatch {
 
   @@unique([tournamentId, round, slot])
   @@index([tournamentId, round])
+}
+
+// ─────────────── Live ops: Scheduled Events ───────────────
+// Admin-authored calendar of live events (double-gold windows, tournaments,
+// fiestas, sales, etc.) shown on the Live-ops "Scheduled Events" panel.
+// startsLabel/endsLabel are free-text descriptive labels (mockup shows dates
+// like "Jul 12", not real datetimes) — V1 has no scheduler that flips
+// status automatically; admins set status via PATCH / the cancel route.
+model LiveEvent {
+  id            String   @id @default(cuid())
+  name          String
+  type          String                    // free-form select value: "double_gold" | "tournament" | "fiesta" | "sale" | "other"
+  status        String   @default("scheduled")  // "scheduled" | "live" | "ended"
+  scope         String                    // audience/segment label, free-form select value
+  reward        String                    // free-text reward description (gold-only phrasing)
+  startsLabel   String?                   // free-text "Jul 12" (mockup uses descriptive labels, not datetimes)
+  endsLabel     String?
+  color         String?                   // dot color hex for the row
+  createdById   String?
+  createdBy     User?    @relation("liveEventsCreated", fields: [createdById], references: [id], onDelete: SetNull)
+  createdByName String
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@index([createdAt])
 }
