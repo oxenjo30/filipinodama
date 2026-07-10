@@ -74,7 +74,7 @@ export function PlayersPage() {
         ))}
       </div>
 
-      <div className="panel">
+      <div className="panel" style={{ overflow: "hidden" }}>
         <div style={{ overflowX: "auto" }}>
         <table className="tbl" style={{ minWidth: 720 }}>
           <thead>
