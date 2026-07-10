@@ -12,6 +12,7 @@ type AdminRow = {
   avatarUrl: string | null;
   adminRole: AdminRole;
   lastSeenAt: string;
+  status: "active" | "disabled";
 };
 
 const ROLES: AdminRole[] = ["SUPPORT", "MODERATOR", "ECONOMY", "SUPERADMIN"];
@@ -31,13 +32,13 @@ export function Admins() {
   const auth = useAuth();
   const myId = auth.status === "ok" ? auth.me.id : null;
   const [rows, setRows] = useState<AdminRow[]>([]);
-  const [stats, setStats] = useState<{ byRole: Record<string, number>; total: number } | null>(null);
+  const [stats, setStats] = useState<{ byRole: Record<string, number>; total: number; active: number; disabled: number } | null>(null);
   const [loading, setLoading] = useState(true);
 
   const load = () => {
     setLoading(true);
     api
-      .get<{ items: AdminRow[]; stats: { byRole: Record<string, number>; total: number } }>("/api/admin/admins")
+      .get<{ items: AdminRow[]; stats: { byRole: Record<string, number>; total: number; active: number; disabled: number } }>("/api/admin/admins")
       .then((d) => { setRows(d.items); setStats(d.stats); })
       .catch(() => { setRows([]); setStats(null); })
       .finally(() => setLoading(false));
@@ -50,12 +51,14 @@ export function Admins() {
       <h1 className="page">Admin users</h1>
 
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 12, marginBottom: 16 }}>
-        {ROLES.map((r) => (
-          <div className="fd-kpi pad-sm" key={r} style={{ ["--tile" as string]: ROLE_TILE[r] }}>
-            <div className="l">{ROLE_LABEL[r]}</div>
-            <div className="v" style={{ fontSize: 22 }}>{stats?.byRole[r] ?? 0}</div>
-          </div>
-        ))}
+        <div className="fd-kpi pad-sm" style={{ ["--tile" as string]: "var(--green-lt)" }}>
+          <div className="l">Active admins</div>
+          <div className="v" style={{ fontSize: 22 }}>{stats?.active ?? 0}</div>
+        </div>
+        <div className="fd-kpi pad-sm" style={{ ["--tile" as string]: "var(--gold-lt)" }}>
+          <div className="l">Disabled</div>
+          <div className="v" style={{ fontSize: 22 }}>{stats?.disabled ?? 0}</div>
+        </div>
         <div className="fd-kpi pad-sm">
           <div className="l">Total admins</div>
           <div className="v" style={{ fontSize: 22 }}>{stats?.total ?? 0}</div>
@@ -71,15 +74,16 @@ export function Admins() {
               <tr className="thead-raised">
                 <th>Admin</th>
                 <th>Role</th>
+                <th>Status</th>
                 <th>Last active</th>
                 <th style={{ textAlign: "right" }}>Actions</th>
               </tr>
             </thead>
             <tbody>
               {loading ? (
-                <tr><td colSpan={4} className="dim" style={{ textAlign: "center", padding: 24 }}>Loading…</td></tr>
+                <tr><td colSpan={5} className="dim" style={{ textAlign: "center", padding: 24 }}>Loading…</td></tr>
               ) : rows.length === 0 ? (
-                <tr><td colSpan={4} className="dim" style={{ textAlign: "center", padding: 24 }}>No admins.</td></tr>
+                <tr><td colSpan={5} className="dim" style={{ textAlign: "center", padding: 24 }}>No admins.</td></tr>
               ) : (
                 rows.map((a) => <AdminRowView key={a.id} a={a} isMe={a.id === myId} onDone={load} />)
               )}
@@ -122,6 +126,29 @@ function AdminRowView({ a, isMe, onDone }: { a: AdminRow; isMe: boolean; onDone:
       onDone,
     });
 
+  const isDisabled = a.status === "disabled";
+  const toggle = () =>
+    isDisabled
+      ? mutate({
+          title: `Re-enable admin access for ${a.username}${a.tag}`,
+          body: "They regain console access immediately.",
+          confirmLabel: "Enable",
+          method: "POST",
+          path: `/api/admin/admins/${a.id}/enable`,
+          successMsg: "Admin access enabled.",
+          onDone,
+        })
+      : mutate({
+          title: `Disable admin access for ${a.username}${a.tag}`,
+          body: "They lose console access immediately, but keep their assigned role.",
+          requireReason: true,
+          confirmLabel: "Disable",
+          method: "POST",
+          path: `/api/admin/admins/${a.id}/disable`,
+          successMsg: "Admin access disabled.",
+          onDone,
+        });
+
   return (
     <tr className="arow">
       <td>
@@ -146,9 +173,11 @@ function AdminRowView({ a, isMe, onDone }: { a: AdminRow; isMe: boolean; onDone:
           {ROLES.map((r) => <option key={r} value={r}>{ROLE_LABEL[r]}</option>)}
         </select>
       </td>
+      <td><span className={`badge-st ${isDisabled ? "st-muted" : "st-active"}`}>{isDisabled ? "Disabled" : "Active"}</span></td>
       <td className="mono dim" style={{ whiteSpace: "nowrap" }}>{new Date(a.lastSeenAt).toLocaleString()}</td>
       <td style={{ textAlign: "right", whiteSpace: "nowrap" }}>
-        <button className="abtn btn-danger btn-danger-sm" disabled={isMe} onClick={revoke}>Revoke</button>
+        <button className="abtn btn-amber-sm" disabled={isMe} onClick={toggle}>{isDisabled ? "Enable" : "Disable"}</button>
+        <button className="abtn btn-danger btn-danger-sm" disabled={isMe} onClick={revoke} style={{ marginLeft: 6 }}>Revoke</button>
       </td>
     </tr>
   );
@@ -182,7 +211,7 @@ function GrantCard({ onDone }: { onDone: () => void }) {
 
   return (
     <div className="panel panel-pad" style={{ borderColor: "rgba(126,224,192,.3)" }}>
-      <div style={{ fontWeight: 800, fontSize: 15 }}>Grant admin</div>
+      <div style={{ font: "800 15px var(--serif)", color: "var(--ink)" }}>Grant admin</div>
       <div className="dim" style={{ marginTop: 4, fontSize: 12 }}>
         Grants console access to an existing player immediately — no email invite, no password
         setup. Access is scoped to the assigned role right away.

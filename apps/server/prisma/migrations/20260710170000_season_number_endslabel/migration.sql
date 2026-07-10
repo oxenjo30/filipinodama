@@ -1,0 +1,2 @@
+ALTER TABLE "Season" ADD COLUMN "number" INTEGER;
+ALTER TABLE "Season" ADD COLUMN "endsLabel" TEXT;

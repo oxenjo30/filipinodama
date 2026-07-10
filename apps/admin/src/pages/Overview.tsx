@@ -102,18 +102,20 @@ export function Overview() {
           </div>
         </div>
 
-        {/* Revenue — honest: real-money top-up is disabled (gold-only economy),
-            and there's no analytics pipeline for it even if it were enabled. */}
+        {/* Diamond revenue — honest: real-money top-up is disabled (gold-only
+            economy), and there's no analytics pipeline for it even if it were
+            enabled. Keeps the mockup's two-part footprint (chart-height block
+            + total line) rather than collapsing to one sentence. */}
         <div className="acard" style={{ padding: 20 }}>
           <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between" }}>
-            <div style={{ font: "700 13px var(--sans)", color: "var(--ink-2)" }}>Revenue</div>
+            <div style={{ font: "700 13px var(--sans)", color: "var(--ink-2)" }}>Diamond revenue</div>
             <div style={{ font: "600 11px var(--sans)", color: "var(--dim)" }}>USD · last 7 days</div>
           </div>
           <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: 110, marginTop: 16 }}>
             <div style={{ font: "600 12px var(--sans)", color: "var(--dim)", textAlign: "center" }}>Payments disabled (gold-only)</div>
           </div>
           <div style={{ marginTop: 12, font: "700 18px var(--mono)", color: "var(--dim)" }}>
-            — <span style={{ font: "600 11px var(--sans)", color: "var(--dim)" }}>needs analytics pipeline</span>
+            — <span style={{ font: "600 11px var(--sans)", color: "var(--dim)" }}>7d total · needs analytics pipeline</span>
           </div>
         </div>
       </div>

@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { api } from "../lib/api";
 import { useAdminMutation } from "../lib/ui";
 import { PlayerSearch } from "../components/PlayerSearch";
+import { StoreCatalog } from "./Store";
 
 type CurrencyT = "GOLD" | "DIAMONDS" | "TROPHIES";
 
@@ -16,7 +17,11 @@ type Ledger = {
   user: { username: string; tag: string } | null;
 };
 
-/** 1.5 Economy — grant currency to a player + browse the ledger. */
+/**
+ * 1.5 Economy — the merged "Store & economy" page (mockup secEconomy is one
+ * section): store catalog on top (full width), then a 2-column row of
+ * grant/compensation (left) + ledger explorer (right).
+ */
 export function EconomyPage() {
   const [rows, setRows] = useState<Ledger[]>([]);
   const [player, setPlayer] = useState("");
@@ -39,8 +44,10 @@ export function EconomyPage() {
 
   return (
     <>
-      <div className="crumb">Economy · Grants & Ledger</div>
-      <h1 className="page">Grants & Ledger</h1>
+      <div className="crumb">Economy · Store & currency</div>
+      <h1 className="page">Store & economy</h1>
+
+      <StoreCatalog />
 
       <div className="fd-2col" style={{ alignItems: "start" }}>
         <GrantCard onDone={load} />

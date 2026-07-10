@@ -8,7 +8,6 @@ import { PlayersPage } from "./pages/Players";
 import { Moderation } from "./pages/Moderation";
 import { Support } from "./pages/Support";
 import { EconomyPage } from "./pages/Economy";
-import { StorePage } from "./pages/Store";
 import { LiveOpsPage } from "./pages/LiveOps";
 import { TournamentsPage } from "./pages/Tournaments";
 import { GuildsPage } from "./pages/Guilds";
@@ -36,9 +35,8 @@ const NAV: Nav[] = [
   ["/players", "Players", "#7fb0ff", "Players & safety", "SUPPORT"],
   ["/moderation", "Moderation", "#c2495a", "Players & safety", "MODERATOR"],
   ["/support", "Support", "#5fd08a", "Players & safety", "SUPPORT"],
-  ["/matches", "Matches", "#d98a3a", "Players & safety", "MODERATOR"],
-  ["/economy", "Grants & ledger", "#f0cf72", "Economy", "ECONOMY"],
-  ["/store", "Store catalog", "#f0cf72", "Economy", "ECONOMY"],
+  ["/matches", "Anti-cheat", "#d98a3a", "Players & safety", "MODERATOR"],
+  ["/economy", "Store & economy", "#f0cf72", "Economy", "ECONOMY"],
   ["/financials", "Financials", "#4bd6a0", "Economy", "ECONOMY", true],
   ["/fraud", "Fraud & AML", "#ff7a7a", "Economy", "ECONOMY", true],
   ["/liveops", "Live ops", "#4fd0c0", "Engagement", "ECONOMY"],
@@ -58,9 +56,8 @@ const TITLES: Record<string, [string, string]> = {
   "/players": ["Player Management", "Players"],
   "/moderation": ["Trust & Safety", "Moderation queue"],
   "/support": ["Player Support", "Support tickets"],
-  "/matches": ["Integrity", "Match viewer"],
-  "/economy": ["Economy", "Grants & ledger"],
-  "/store": ["Economy", "Store catalog"],
+  "/matches": ["Integrity", "Matches & anti-cheat"],
+  "/economy": ["Economy", "Store & currency"],
   "/financials": ["Revenue & Payments", "Financials"],
   "/fraud": ["Risk", "Fraud & AML monitoring"],
   "/liveops": ["Live Ops", "Seasons, quests & events"],
@@ -179,7 +176,8 @@ export function App() {
             <Route path="/support" element={<Support />} />
             <Route path="/matches" element={<MatchesPage />} />
             <Route path="/economy" element={<EconomyPage />} />
-            <Route path="/store" element={<StorePage />} />
+            {/* Store catalog merged into the single "Store & economy" page (mockup secEconomy is one section). Old link redirects. */}
+            <Route path="/store" element={<Navigate to="/economy" replace />} />
             <Route path="/liveops" element={<LiveOpsPage />} />
             <Route path="/tournaments" element={<TournamentsPage />} />
             <Route path="/guilds" element={<GuildsPage />} />

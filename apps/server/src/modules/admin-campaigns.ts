@@ -32,6 +32,35 @@ function segmentWhere(segment: string): Prisma.UserWhereInput {
 
 const CHUNK = 1000;
 
+const channelSchema = z.enum(["push", "email", "in-app"]);
+const contentSchema = z.object({
+  title: z.string().trim().min(1).max(120),
+  body: z.string().trim().min(1).max(1000),
+  reason: z.string().trim().min(1).max(500),
+});
+
+/**
+ * Resolve the segment, fan out one "announcement" notification per target in
+ * CHUNKs, and persist a "sent" Campaign + audit row. Shared by the legacy
+ * POST /admin/campaigns/send route and the new create endpoint's send action so
+ * both behave identically. Throws EMPTY_SEGMENT (400) if no players match.
+ */
+async function sendCampaign(actorId: string, content: z.infer<typeof contentSchema>, seg: string, channel: string) {
+  const targets = await prisma.user.findMany({ where: segmentWhere(seg), select: { id: true } });
+  if (targets.length === 0) throw err.badRequest("EMPTY_SEGMENT", "No players match this segment");
+  const actor = await prisma.user.findUnique({ where: { id: actorId }, select: { username: true, tag: true } });
+  const sentByName = `${actor!.username}${actor!.tag}`;
+  let reach = 0;
+  for (let i = 0; i < targets.length; i += CHUNK) {
+    const slice = targets.slice(i, i + CHUNK);
+    const res = await prisma.notification.createMany({ data: slice.map((u) => ({ userId: u.id, type: "announcement", title: content.title, body: content.body })) });
+    reach += res.count;
+  }
+  const camp = await prisma.campaign.create({ data: { title: content.title, body: content.body, segment: seg, status: "sent", channel, reach, sentById: actorId, sentByName } });
+  await audit(prisma, { actorId, action: "campaign.send", targetType: "campaign", targetId: camp.id, after: { segment: seg, channel, reach }, reason: content.title });
+  return { id: camp.id, reach, status: "sent" as const };
+}
+
 export async function adminCampaignsRoutes(app: FastifyInstance) {
   app.get("/admin/campaigns", { preHandler: requireAdmin("ECONOMY") }, async () => {
     const items = await prisma.campaign.findMany({ orderBy: { createdAt: "desc" }, take: 100 });
@@ -44,22 +73,42 @@ export async function adminCampaignsRoutes(app: FastifyInstance) {
     return ok({ count });
   });
 
-  app.post("/admin/campaigns/send", { preHandler: requireAdmin("ECONOMY") }, async (req) => {
-    const body = z.object({ title: z.string().trim().min(1).max(120), body: z.string().trim().min(1).max(1000), reason: z.string().trim().min(1).max(500) }).parse(req.body);
+  // Unified create endpoint: draft | schedule | send.
+  app.post("/admin/campaigns", { preHandler: requireAdmin("ECONOMY") }, async (req) => {
+    const content = contentSchema.parse(req.body);
+    const { action, channel, scheduledFor } = z
+      .object({
+        action: z.enum(["draft", "schedule", "send"]).default("send"),
+        channel: channelSchema.default("in-app"),
+        scheduledFor: z.string().datetime().optional(),
+      })
+      .parse(req.body);
     const seg = parseSegment(req.body);
-    const targets = await prisma.user.findMany({ where: segmentWhere(seg), select: { id: true } });
-    if (targets.length === 0) throw err.badRequest("EMPTY_SEGMENT", "No players match this segment");
     const actor = await prisma.user.findUnique({ where: { id: req.userId! }, select: { username: true, tag: true } });
     const sentByName = `${actor!.username}${actor!.tag}`;
-    let reach = 0;
-    for (let i = 0; i < targets.length; i += CHUNK) {
-      const slice = targets.slice(i, i + CHUNK);
-      const res = await prisma.notification.createMany({ data: slice.map((u) => ({ userId: u.id, type: "announcement", title: body.title, body: body.body })) });
-      reach += res.count;
+
+    if (action === "draft") {
+      const camp = await prisma.campaign.create({ data: { title: content.title, body: content.body, segment: seg, status: "draft", channel, reach: 0, scheduledFor: null, sentById: req.userId!, sentByName } });
+      await audit(prisma, { actorId: req.userId!, action: "campaign.draft", targetType: "campaign", targetId: camp.id, after: { segment: seg, channel }, reason: content.title });
+      return ok({ id: camp.id, status: "draft" });
     }
-    const camp = await prisma.campaign.create({ data: { title: body.title, body: body.body, segment: seg, status: "sent", reach, sentById: req.userId!, sentByName } });
-    await audit(prisma, { actorId: req.userId!, action: "campaign.send", targetType: "campaign", targetId: camp.id, after: { segment: seg, reach }, reason: body.title });
-    return ok({ id: camp.id, reach });
+
+    if (action === "schedule") {
+      if (!scheduledFor) throw err.badRequest("SCHEDULE_REQUIRED", "A scheduledFor time is required to schedule a campaign");
+      const camp = await prisma.campaign.create({ data: { title: content.title, body: content.body, segment: seg, status: "scheduled", channel, reach: 0, scheduledFor: new Date(scheduledFor), sentById: req.userId!, sentByName } });
+      await audit(prisma, { actorId: req.userId!, action: "campaign.schedule", targetType: "campaign", targetId: camp.id, after: { segment: seg, channel, scheduledFor }, reason: content.title });
+      return ok({ id: camp.id, status: "scheduled" });
+    }
+
+    return ok(await sendCampaign(req.userId!, content, seg, channel));
+  });
+
+  // Legacy send route — kept for back-compat. Delegates to the shared send logic.
+  app.post("/admin/campaigns/send", { preHandler: requireAdmin("ECONOMY") }, async (req) => {
+    const content = contentSchema.parse(req.body);
+    const seg = parseSegment(req.body);
+    const { id, reach } = await sendCampaign(req.userId!, content, seg, "in-app");
+    return ok({ id, reach });
   });
 }
 

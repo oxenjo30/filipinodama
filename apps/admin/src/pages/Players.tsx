@@ -41,17 +41,24 @@ export function PlayersPage() {
   const [loading, setLoading] = useState(true);
   const [selId, setSelId] = useState<string | null>(null);
 
-  const load = () => {
+  const load = (query: string) => {
     setLoading(true);
     const qs = new URLSearchParams({ filter, limit: "50" });
-    if (q.trim()) qs.set("q", q.trim());
+    if (query.trim()) qs.set("q", query.trim());
     api
       .get<{ items: PlayerRow[]; total: number }>(`/api/admin/users?${qs}`)
       .then((d) => { setRows(d.items); setTotal(d.total); })
       .catch(() => { setRows([]); setTotal(0); })
       .finally(() => setLoading(false));
   };
-  useEffect(load, [filter]);
+
+  // Live/debounced search — reload 300ms after the user stops typing, or
+  // immediately when the filter pill changes.
+  useEffect(() => {
+    const t = setTimeout(() => load(q), 300);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [q, filter]);
 
   return (
     <>
@@ -64,17 +71,16 @@ export function PlayersPage() {
           placeholder="Search by username, tag, email, or ID…"
           value={q}
           onChange={(e) => setQ(e.target.value)}
-          onKeyDown={(e) => e.key === "Enter" && load()}
         />
         {FILTERS.map((f) => (
           <button key={f} className={`abtn chip${filter === f ? " on" : ""}`} onClick={() => setFilter(f)}>{f}</button>
         ))}
-        <button className="btn" onClick={load}>Search</button>
       </div>
       <div className="dim" style={{ marginBottom: 14, fontSize: 12 }}>{total} players</div>
 
       <div className="panel">
-        <table className="tbl">
+        <div style={{ overflowX: "auto" }}>
+        <table className="tbl" style={{ minWidth: 720 }}>
           <thead>
             <tr className="thead-raised">
               <th>Player</th><th>Rank</th><th className="num">Trophies</th><th className="num">Gold</th><th className="num">Diamonds</th><th style={{ textAlign: "center" }}>Status</th><th className="num">Joined</th>
@@ -95,7 +101,7 @@ export function PlayersPage() {
                         <div className="fd-avatar">{initials(p.displayName || p.username)}</div>
                         <div>
                           <div style={{ fontWeight: 600 }}>{p.displayName}</div>
-                          <div className="dim mono" style={{ fontSize: 12 }}>{p.username} {p.tag}</div>
+                          <div className="dim mono" style={{ fontSize: 12 }}>{p.tag}</div>
                         </div>
                       </div>
                     </td>
@@ -111,9 +117,10 @@ export function PlayersPage() {
             )}
           </tbody>
         </table>
+        </div>
       </div>
 
-      {selId && <PlayerDrawer id={selId} onClose={() => setSelId(null)} onChanged={load} />}
+      {selId && <PlayerDrawer id={selId} onClose={() => setSelId(null)} onChanged={() => load(q)} />}
     </>
   );
 }

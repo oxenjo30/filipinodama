@@ -21,6 +21,7 @@ import { adminRoutes } from "./modules/admin.js";
 import { adminReportsRoutes } from "./modules/admin-reports.js";
 import { adminStoreRoutes } from "./modules/admin-store.js";
 import { adminLiveOpsRoutes } from "./modules/admin-liveops.js";
+import { adminEventsRoutes } from "./modules/admin-events.js";
 import { adminGuildsRoutes } from "./modules/admin-guilds.js";
 import { adminMatchesRoutes } from "./modules/admin-matches.js";
 import { adminAdminsRoutes } from "./modules/admin-admins.js";
@@ -111,6 +112,7 @@ export async function buildApp(): Promise<FastifyInstance> {
   await app.register(adminReportsRoutes, { prefix: "/api" });
   await app.register(adminStoreRoutes, { prefix: "/api" });
   await app.register(adminLiveOpsRoutes, { prefix: "/api" });
+  await app.register(adminEventsRoutes, { prefix: "/api" });
   await app.register(adminGuildsRoutes, { prefix: "/api" });
   await app.register(adminMatchesRoutes, { prefix: "/api" });
   await app.register(adminAdminsRoutes, { prefix: "/api" });

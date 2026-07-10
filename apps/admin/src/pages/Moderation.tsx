@@ -81,7 +81,7 @@ export function Moderation() {
             action={<button className="btn gold" onClick={clearFilters}>Clear filters</button>}
           />
         ) : (
-          <EmptyState title="Queue clear" note="No open reports right now. Nice work." icon="✅" />
+          <EmptyState title="Queue clear" note="No open reports. Nicely done." />
         )
       ) : (
         <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
@@ -94,10 +94,10 @@ export function Moderation() {
   );
 }
 
-function EmptyState({ title, note, action, icon = "🔍" }: { title: string; note: string; action?: React.ReactNode; icon?: string }) {
+function EmptyState({ title, note, action, icon }: { title: string; note: string; action?: React.ReactNode; icon?: string }) {
   return (
     <div className="panel panel-pad" style={{ textAlign: "center", padding: 40 }}>
-      <div style={{ fontSize: 28, marginBottom: 8 }}>{icon}</div>
+      {icon && <div style={{ fontSize: 20, marginBottom: 6, opacity: 0.7 }}>{icon}</div>}
       <div style={{ fontWeight: 700, marginBottom: 6, color: "var(--gold-lt)", font: "800 16px var(--serif)" }}>{title}</div>
       <div className="dim" style={{ maxWidth: 420, margin: "0 auto" }}>{note}</div>
       {action && <div style={{ marginTop: 14 }}>{action}</div>}
