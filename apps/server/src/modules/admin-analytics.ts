@@ -21,24 +21,33 @@ function utcDayKey(d: Date): string {
 }
 
 /**
- * Build one bucket per day in the window, oldest -> newest, from a list of
- * dates. Anchored on `now` (not `since`): `since = now - days*DAY_MS` is a
- * fixed instant that isn't generally midnight UTC, so walking forward from
- * `since` in day-sized steps can produce bucket keys that never line up with
- * "today"'s actual UTC-day key — a row created seconds ago could then fall
- * outside every generated bucket even though it matches the `gte: since`
- * query. Walking backward from `now` guarantees the newest bucket is always
- * today, matching what the `gte: since` queries actually select.
+ * Build one bucket per UTC day spanning [since's UTC day, now's UTC day],
+ * from a list of dates.
+ *
+ * The feeder queries use `where: { gte: since }` where `since = now -
+ * days*DAY_MS` — a fixed instant that is generally NOT UTC midnight, so it
+ * sits partway through its own UTC day. That means the query's matched range
+ * covers `days + 1` distinct UTC days (a partial day at `since`, `days - 1`
+ * full days, and a partial day at `now`), not `days` days.
+ *
+ * We anchor the earliest bucket on `since`'s UTC day (not `now`) and walk
+ * FORWARD to `now`'s UTC day, so every row matched by `gte: since` falls
+ * into exactly one bucket — including rows in the oldest partial day right
+ * after `since`, which a `now`-anchored walk-back of `days` buckets would
+ * miss entirely (its earliest bucket lands one day later than `since`'s
+ * day). The returned array length is therefore the number of distinct UTC
+ * days actually spanned (days or days + 1), not a hardcoded `days`.
  */
-function bucketByDay(dates: Date[], now: Date, days: number): { day: string; count: number }[] {
+function bucketByDay(dates: Date[], now: Date, since: Date): { day: string; count: number }[] {
   const counts = new Map<string, number>();
   for (const d of dates) {
     const key = utcDayKey(d);
     counts.set(key, (counts.get(key) ?? 0) + 1);
   }
+  const start = new Date(Date.UTC(since.getUTCFullYear(), since.getUTCMonth(), since.getUTCDate()));
+  const end = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
   const buckets: { day: string; count: number }[] = [];
-  for (let i = days - 1; i >= 0; i--) {
-    const d = new Date(now.getTime() - i * DAY_MS);
+  for (let d = start; d.getTime() <= end.getTime(); d = new Date(d.getTime() + DAY_MS)) {
     const key = utcDayKey(d);
     buckets.push({ day: key, count: counts.get(key) ?? 0 });
   }
@@ -106,10 +115,10 @@ export async function adminAnalyticsRoutes(app: FastifyInstance) {
     ]);
 
     // ── §3 newPlayersPerDay ────────────────────────────────────────────────
-    const newPlayersPerDay = bucketByDay(newPlayerRows.map((r) => r.createdAt), now, days);
+    const newPlayersPerDay = bucketByDay(newPlayerRows.map((r) => r.createdAt), now, since);
 
     // ── §4 activePerDay (last-seen snapshot, not DAU — see spec §4) ────────
-    const activePerDay = bucketByDay(activeRows.map((r) => r.lastSeenAt), now, days);
+    const activePerDay = bucketByDay(activeRows.map((r) => r.lastSeenAt), now, since);
 
     // ── §5 gold faucet / sink / byReason ────────────────────────────────────
     let faucet = 0;

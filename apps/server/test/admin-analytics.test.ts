@@ -20,6 +20,19 @@ afterAll(async () => {
 
 const DAY = 86_400_000;
 
+/**
+ * Independent (non-implementation-reusing) computation of how many distinct
+ * UTC days [since's UTC day, now's UTC day] spans, inclusive of both ends.
+ * `since = now - windowDays*DAY_MS` is generally not UTC midnight, so this is
+ * `windowDays` or `windowDays + 1` — never a hardcoded `windowDays`.
+ */
+function expectedUtcDaySpan(windowDays: number, now: Date = new Date()): number {
+  const since = new Date(now.getTime() - windowDays * DAY);
+  const startDay = Date.UTC(since.getUTCFullYear(), since.getUTCMonth(), since.getUTCDate());
+  const endDay = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate());
+  return Math.round((endDay - startDay) / DAY) + 1;
+}
+
 describe("admin-analytics RBAC", () => {
   it("SUPPORT token -> 403", async () => {
     const app = await buildTestApp();
@@ -99,16 +112,18 @@ describe("admin-analytics metrics", () => {
     await app.close();
   });
 
-  it("newPlayersPerDay: length === days, buckets correct, sums to newPlayers", async () => {
+  it("newPlayersPerDay: length === UTC-day span of [since, now], buckets correct, sums to newPlayers", async () => {
     const app = await buildTestApp();
     const admin = await seedUser({ adminRole: "ECONOMY" });
     await seedUser();
     await seedUser();
 
+    const expectedBuckets = expectedUtcDaySpan(7);
+
     const res = await app.inject({ method: "GET", url: "/api/admin/analytics?window=7d", headers: { cookie: authFor({ sub: admin.id, adminRole: "ECONOMY" }) } });
     const { data } = res.json();
     expect(data.days).toBe(7);
-    expect(data.newPlayersPerDay).toHaveLength(7);
+    expect(data.newPlayersPerDay).toHaveLength(expectedBuckets);
     const sum = data.newPlayersPerDay.reduce((s: number, b: { count: number }) => s + b.count, 0);
     expect(sum).toBe(data.kpis.newPlayers);
     await app.close();
@@ -268,6 +283,60 @@ describe("admin-analytics metrics", () => {
     await app.close();
   });
 
+  it("boundary row at since+1h: counted in KPI AND lands in a bucket (sum still === KPI)", async () => {
+    // Regression for the bucketByDay/since off-by-one-day bug: the feeder
+    // queries use `gte: since` where `since = now - days*DAY_MS`, but
+    // bucketByDay (when anchored on `now`) only generates buckets covering
+    // [now-(days-1)*DAY_MS, now] — one day narrower/newer than the query
+    // range. A row landing in the oldest ~24h of the window (just after
+    // `since`) is counted by the `gte: since` KPI query but has no matching
+    // bucket key, so it silently vanishes from the per-day series and the
+    // invariant "sum of per-day counts === KPI total" breaks.
+    const app = await buildTestApp();
+    const admin = await seedUser({ adminRole: "ECONOMY" });
+    const days = 7;
+    const since = new Date(Date.now() - days * DAY);
+    const boundary = new Date(since.getTime() + 60 * 60 * 1000); // since + 1h — oldest edge of window
+    // Push both createdAt and lastSeenAt out past the window by default, then
+    // pull exactly one field back to the boundary per user, so each user only
+    // contributes to the KPI/bucket pair under test (no cross-contamination
+    // from the other field defaulting to "now").
+    const farPast = new Date(since.getTime() - 10 * DAY);
+
+    const newPlayerBoundary = await seedUser();
+    await prisma.user.update({
+      where: { id: newPlayerBoundary.id },
+      data: { createdAt: boundary, lastSeenAt: farPast },
+    });
+
+    const activeBoundary = await seedUser();
+    await prisma.user.update({
+      where: { id: activeBoundary.id },
+      data: { lastSeenAt: boundary, createdAt: farPast },
+    });
+
+    const res = await app.inject({ method: "GET", url: "/api/admin/analytics?window=7d", headers: { cookie: authFor({ sub: admin.id, adminRole: "ECONOMY" }) } });
+    expect(res.statusCode).toBe(200);
+    const { data } = res.json();
+
+    // (a) boundary rows ARE counted in the KPI totals (gte: since matches them)
+    // admin (seeded "now") + newPlayerBoundary = 2 new players in window
+    // (activeBoundary's createdAt was pushed to farPast, so it's excluded)
+    expect(data.kpis.newPlayers).toBe(2);
+    // admin (lastSeenAt defaults to now on creation) + activeBoundary = 2 active
+    // (newPlayerBoundary's lastSeenAt was pushed to farPast, so it's excluded)
+    expect(data.kpis.activePlayers).toBe(2);
+
+    // (b) the boundary row must land in SOME bucket — sum of per-day counts
+    // must still equal the KPI total (no silent drop).
+    const newSum = data.newPlayersPerDay.reduce((s: number, b: { count: number }) => s + b.count, 0);
+    expect(newSum).toBe(data.kpis.newPlayers);
+    const activeSum = data.activePerDay.reduce((s: number, b: { count: number }) => s + b.count, 0);
+    expect(activeSum).toBe(data.kpis.activePlayers);
+
+    await app.close();
+  });
+
   it("window param: 7d vs 90d differ; default (no param) === 30d", async () => {
     const app = await buildTestApp();
     const admin = await seedUser({ adminRole: "ECONOMY" });
@@ -279,8 +348,11 @@ describe("admin-analytics metrics", () => {
 
     expect(r7.json().data.days).toBe(7);
     expect(r90.json().data.days).toBe(90);
-    expect(r7.json().data.newPlayersPerDay).toHaveLength(7);
-    expect(r90.json().data.newPlayersPerDay).toHaveLength(90);
+    // [since, now] UTC-day span, not a hardcoded windowDays — see bucketByDay.
+    expect(r7.json().data.newPlayersPerDay).toHaveLength(expectedUtcDaySpan(7));
+    expect(r90.json().data.newPlayersPerDay).toHaveLength(expectedUtcDaySpan(90));
+    // The two windows must still produce meaningfully different bucket counts.
+    expect(r90.json().data.newPlayersPerDay.length).toBeGreaterThan(r7.json().data.newPlayersPerDay.length);
     expect(rDefault.json().data.window).toBe("30d");
     expect(rDefault.json().data.days).toBe(30);
     await app.close();
