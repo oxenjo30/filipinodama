@@ -1,7 +1,6 @@
 import { useEffect, useState } from "react";
 import { useParams, useNavigate, useLocation } from "react-router-dom";
 import { api, ApiError } from "../../lib/api";
-import { useAuthStore } from "../../stores/authStore";
 import { PlayerLink } from "../../components";
 
 type RosterMember = {
@@ -20,7 +19,6 @@ export function GuildProfilePage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const location = useLocation();
-  const me = useAuthStore((s) => s.me);
   const [data, setData] = useState<GuildDetail | null>(null);
   const [notFound, setNotFound] = useState(false);
   const [error, setError] = useState(false);
