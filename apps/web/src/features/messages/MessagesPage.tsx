@@ -3,6 +3,7 @@ import { useNavigate, useParams } from "react-router-dom";
 import { Avatar } from "../../components";
 import { avatar } from "../../lib/assets";
 import { EmotePicker } from "../shared/EmotePicker";
+import { ReportPlayerModal } from "../moderation/ReportPlayerModal";
 import { useAuthStore } from "../../stores/authStore";
 import { usePresenceStore } from "../../stores/presenceStore";
 import { useDmStore } from "../../stores/dmStore";
@@ -107,6 +108,7 @@ export function MessagesPage() {
 
   const [draft, setDraft] = useState("");
   const scrollRef = useRef<HTMLDivElement | null>(null);
+  const [reportMsg, setReportMsg] = useState<{ id: string; body: string } | null>(null);
 
   // Load the conversation list once on mount + prime the unread total.
   useEffect(() => {
@@ -514,8 +516,33 @@ export function MessagesPage() {
                         >
                           {m.body}
                         </div>
-                        <div style={{ font: "500 10px Inter", color: "var(--ink2)", marginTop: 3 }}>
-                          {clock(m.createdAt)}
+                        <div
+                          style={{
+                            display: "flex",
+                            alignItems: "center",
+                            gap: 8,
+                            marginTop: 3,
+                          }}
+                        >
+                          <span style={{ font: "500 10px Inter", color: "var(--ink2)" }}>
+                            {clock(m.createdAt)}
+                          </span>
+                          <button
+                            onClick={() => setReportMsg({ id: m.id, body: m.body })}
+                            title="Report this message"
+                            style={{
+                              padding: 0,
+                              border: "none",
+                              background: "transparent",
+                              color: "var(--ink2)",
+                              font: "600 10px Inter",
+                              letterSpacing: ".3px",
+                              cursor: "pointer",
+                              opacity: 0.75,
+                            }}
+                          >
+                            Report
+                          </button>
                         </div>
                       </div>
                     </div>
@@ -600,6 +627,17 @@ export function MessagesPage() {
           }
         }
       `}</style>
+
+      {openUser && (
+        <ReportPlayerModal
+          open={!!reportMsg}
+          accusedId={openUser.id}
+          context="dm"
+          messageId={reportMsg?.id}
+          quotedText={reportMsg?.body}
+          onClose={() => setReportMsg(null)}
+        />
+      )}
     </div>
   );
 }
