@@ -102,7 +102,7 @@ function AnalyticsBody({ d }: { d: AnalyticsData }) {
       {/* KPI grid — the mockup's 8-tile grid, all real scalars for the window. No fabricated
           trend deltas: the API doesn't return a prior-window count to diff against, so each
           tile's trend slot carries the honest window label instead of an invented ±%. */}
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 14 }}>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 12 }}>
         <Card label="Total Players" value={d.kpis.totalPlayers.toLocaleString()} sub="all-time real accounts" />
         <Card label="New Players" value={d.kpis.newPlayers.toLocaleString()} sub={`in ${d.window}`} />
         <Card label="Active Players" value={d.kpis.activePlayers.toLocaleString()} sub={`seen in ${d.window}`} />
@@ -190,14 +190,14 @@ function AnalyticsBody({ d }: { d: AnalyticsData }) {
             <div style={{ font: "700 13px var(--sans)", color: "var(--ink-2)", marginBottom: 14 }}>
               Matches by mode <span style={{ fontWeight: 500, color: "var(--dim)" }}>· {d.window}</span>
             </div>
-            <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+            <div style={{ display: "flex", flexDirection: "column", gap: 11 }}>
               {d.matchesByMode.map((m) => (
                 <div key={m.mode}>
                   <div style={{ display: "flex", justifyContent: "space-between", font: "600 12px var(--sans)", color: "var(--ink-3)" }}>
                     <span>{m.mode}</span>
                     <span className="mono dim">{m.count.toLocaleString()} · {Math.round(m.pct * 100)}%</span>
                   </div>
-                  <div style={{ height: 8, borderRadius: 5, overflow: "hidden", marginTop: 4, background: "var(--bg-2)" }}>
+                  <div style={{ height: 9, borderRadius: 5, overflow: "hidden", marginTop: 4, background: "var(--bg-2)" }}>
                     <div style={{ width: `${(m.count / maxMode) * 100}%`, height: "100%", background: "linear-gradient(90deg,#f0cf72,#c99a2e)" }} />
                   </div>
                 </div>
@@ -353,7 +353,7 @@ function Card({
   tile?: "up" | "down";
 }) {
   return (
-    <div className={`fd-kpi${tile ? ` ${tile}` : ""}`}>
+    <div className={`fd-kpi dense${tile ? ` ${tile}` : ""}`}>
       <div className="l">{label}</div>
       <div className="v">{value}</div>
       <div className="trend">
