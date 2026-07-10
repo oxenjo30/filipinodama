@@ -30,10 +30,16 @@ export function Settings() {
       <h1 className="page">Settings</h1>
 
       <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 16 }}>
-        <button className="abtn btn-ghost btn-ghost-sm" style={tab === "config" ? { borderColor: "var(--gold)", color: "var(--gold-lt)" } : undefined} onClick={() => setTab("config")}>
+        <button
+          className={tab === "config" ? "abtn btn-gold-pill sm" : "abtn btn-ghost btn-ghost-sm"}
+          onClick={() => setTab("config")}
+        >
           Config &amp; feature flags
         </button>
-        <button className="abtn btn-ghost btn-ghost-sm" style={tab === "api" ? { borderColor: "var(--gold)", color: "var(--gold-lt)" } : undefined} onClick={() => setTab("api")}>
+        <button
+          className={tab === "api" ? "abtn btn-gold-pill sm" : "abtn btn-ghost btn-ghost-sm"}
+          onClick={() => setTab("api")}
+        >
           API keys &amp; integrations
         </button>
       </div>
