@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, type CSSProperties } from "react";
 import { api } from "../lib/api";
 
 type Window = "7d" | "30d" | "90d";
@@ -145,6 +145,87 @@ function AnalyticsBody({ d }: { d: AnalyticsData }) {
         </div>
       </div>
 
+      {/* ===== Mockup layout slots below (secAnalytics.section.html lines 22-137) =====
+          These six panels are honest empty-states: the mockup design calls for them,
+          but they require an event-tracking pipeline / real-money revenue we don't have.
+          Kept in their mockup grid positions (never deleted) so the layout matches. */}
+
+      <div style={{ display: "grid", gridTemplateColumns: "1.35fr 1fr", gap: 14, marginTop: 14 }} className="ov-2col">
+        {/* Acquisition funnel — mockup lines 22-39. */}
+        <EmptyPanel
+          title="Acquisition funnel"
+          subtitle="last 30 days"
+          note="Requires event-tracking pipeline — not yet instrumented"
+          minHeight={186}
+        />
+        {/* Retention curve — mockup lines 41-52. */}
+        <EmptyPanel
+          title="Retention curve"
+          note="Requires event-tracking pipeline — not yet instrumented"
+          minHeight={186}
+        />
+      </div>
+
+      {/* Weekly retention cohort grid — mockup lines 56-78, full width. */}
+      <EmptyPanel
+        title="Weekly retention cohorts"
+        subtitle="% of signups still active"
+        note="Requires event-tracking pipeline — not yet instrumented"
+        style={{ marginTop: 14 }}
+        minHeight={140}
+      />
+
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14, marginTop: 14 }} className="ov-2col">
+        {/* Revenue by category — mockup lines 82-95. Gold-only economy: no real-money revenue. */}
+        <EmptyPanel
+          title="Revenue by category"
+          subtitle="30d"
+          note="Gold-only economy — real-money revenue is disabled, nothing to report"
+          minHeight={186}
+        />
+
+        <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+          {/* Matches by mode stays in the mockup's right-column slot — real data. */}
+          <div className="acard" style={{ padding: 20 }}>
+            <div style={{ font: "700 13px var(--sans)", color: "var(--ink-2)", marginBottom: 14 }}>
+              Matches by mode <span style={{ fontWeight: 500, color: "var(--dim)" }}>· {d.window}</span>
+            </div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+              {d.matchesByMode.map((m) => (
+                <div key={m.mode}>
+                  <div style={{ display: "flex", justifyContent: "space-between", font: "600 12px var(--sans)", color: "var(--ink-3)" }}>
+                    <span>{m.mode}</span>
+                    <span className="mono dim">{m.count.toLocaleString()} · {Math.round(m.pct * 100)}%</span>
+                  </div>
+                  <div style={{ height: 8, borderRadius: 5, overflow: "hidden", marginTop: 4, background: "var(--bg-2)" }}>
+                    <div style={{ width: `${(m.count / maxMode) * 100}%`, height: "100%", background: "linear-gradient(90deg,#f0cf72,#c99a2e)" }} />
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Platform split — mockup lines 110-121, bottom-right stat block. */}
+          <EmptyPanel
+            title="Platform split"
+            note="Requires event-tracking pipeline — not yet instrumented"
+            minHeight={90}
+          />
+        </div>
+      </div>
+
+      {/* Top regions — mockup lines 125-137, full width. */}
+      <EmptyPanel
+        title="Top regions"
+        subtitle="share of MAU"
+        note="Requires event-tracking pipeline — not yet instrumented"
+        style={{ marginTop: 14 }}
+        minHeight={140}
+      />
+
+      {/* ===== Real-data panels this page adds beyond the mockup — appended after
+          the mockup's defined layout, not displacing any mockup slot. ===== */}
+
       {/* Gold economy — faucet/sink bar + byReason breakdown. */}
       <div className="acard" style={{ padding: 20, marginTop: 14 }}>
         <div style={{ font: "700 13px var(--sans)", color: "var(--ink-2)" }}>
@@ -192,39 +273,18 @@ function AnalyticsBody({ d }: { d: AnalyticsData }) {
         </div>
       </div>
 
-      <div style={{ display: "grid", gridTemplateColumns: "1.6fr 1fr", gap: 14, marginTop: 14 }} className="ov-2col">
-        {/* Matches by mode — horizontal bar list. */}
-        <div className="acard" style={{ padding: 20 }}>
-          <div style={{ font: "700 13px var(--sans)", color: "var(--ink-2)" }}>
-            Matches by mode <span style={{ fontWeight: 500, color: "var(--dim)" }}>· {d.window}</span>
-          </div>
-          <div style={{ marginTop: 16, display: "flex", flexDirection: "column", gap: 12 }}>
-            {d.matchesByMode.map((m) => (
-              <div key={m.mode}>
-                <div style={{ display: "flex", justifyContent: "space-between", font: "600 12px var(--sans)", color: "var(--ink-3)" }}>
-                  <span>{m.mode}</span>
-                  <span className="mono dim">{m.count.toLocaleString()} · {Math.round(m.pct * 100)}%</span>
-                </div>
-                <div style={{ height: 8, borderRadius: 5, overflow: "hidden", marginTop: 4, background: "var(--bg-2)" }}>
-                  <div style={{ width: `${(m.count / maxMode) * 100}%`, height: "100%", background: "linear-gradient(90deg,#f0cf72,#c99a2e)" }} />
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-
-        {/* Match outcomes — compact stat block. */}
-        <div className="acard" style={{ padding: 20 }}>
-          <div style={{ font: "700 13px var(--sans)", color: "var(--ink-2)" }}>Match outcomes</div>
-          <div style={{ marginTop: 14, display: "flex", flexDirection: "column", gap: 11 }}>
-            <Stat label="Red wins" value={d.matchOutcomes.redWins} color="var(--red-lt)" />
-            <Stat label="Blue wins" value={d.matchOutcomes.blueWins} color="var(--blue)" />
-            <Stat label="Draws" value={d.matchOutcomes.draws} color="var(--dim-2)" />
-            <Stat label="Unfinished" value={d.matchOutcomes.unfinished} color="var(--dim)" />
-            <div style={{ borderTop: "1px solid var(--edge)", marginTop: 4, paddingTop: 10, display: "flex", justifyContent: "space-between", font: "700 12px var(--sans)", color: "var(--ink-2)" }}>
-              <span>Total</span>
-              <span className="mono">{d.matchOutcomes.total.toLocaleString()}</span>
-            </div>
+      {/* Match outcomes — compact stat block. (Matches by mode already lives in the
+          mockup's right-column slot above, so this panel stands alone here.) */}
+      <div className="acard" style={{ padding: 20, marginTop: 14, maxWidth: 420 }}>
+        <div style={{ font: "700 13px var(--sans)", color: "var(--ink-2)" }}>Match outcomes</div>
+        <div style={{ marginTop: 14, display: "flex", flexDirection: "column", gap: 11 }}>
+          <Stat label="Red wins" value={d.matchOutcomes.redWins} color="var(--red-lt)" />
+          <Stat label="Blue wins" value={d.matchOutcomes.blueWins} color="var(--blue)" />
+          <Stat label="Draws" value={d.matchOutcomes.draws} color="var(--dim-2)" />
+          <Stat label="Unfinished" value={d.matchOutcomes.unfinished} color="var(--dim)" />
+          <div style={{ borderTop: "1px solid var(--edge)", marginTop: 4, paddingTop: 10, display: "flex", justifyContent: "space-between", font: "700 12px var(--sans)", color: "var(--ink-2)" }}>
+            <span>Total</span>
+            <span className="mono">{d.matchOutcomes.total.toLocaleString()}</span>
           </div>
         </div>
       </div>
@@ -309,6 +369,50 @@ function Stat({ label, value, color }: { label: string; value: number; color: st
       <span style={{ width: 8, height: 8, borderRadius: "50%", background: color, boxShadow: `0 0 8px ${color}`, flex: "none" }} />
       <span style={{ font: "600 12px var(--sans)", color: "var(--ink-3)", flex: 1 }}>{label}</span>
       <span style={{ font: "700 12px var(--mono)", color: "var(--ink-2)" }}>{value.toLocaleString()}</span>
+    </div>
+  );
+}
+
+/**
+ * EmptyPanel — an honest, in-slot empty-state for mockup panels we can't fill
+ * with real data (no event-tracking pipeline, no real-money revenue). Keeps
+ * the mockup's title/subtitle header so the panel — and the grid slot it sits
+ * in — stays exactly where the mockup put it, instead of being deleted.
+ */
+function EmptyPanel({
+  title,
+  subtitle,
+  note,
+  minHeight = 140,
+  style,
+}: {
+  title: string;
+  subtitle?: string;
+  note: string;
+  minHeight?: number;
+  style?: CSSProperties;
+}) {
+  return (
+    <div className="acard" style={{ padding: 20, ...style }}>
+      <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between" }}>
+        <div style={{ font: "700 13px var(--sans)", color: "var(--ink-2)" }}>{title}</div>
+        {subtitle && <div style={{ font: "600 11px var(--sans)", color: "var(--dim)" }}>{subtitle}</div>}
+      </div>
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          textAlign: "center",
+          minHeight,
+          marginTop: 12,
+          border: "1px dashed var(--edge-strong)",
+          borderRadius: 10,
+          padding: 16,
+        }}
+      >
+        <div className="dim" style={{ font: "600 12px var(--sans)", maxWidth: 320 }}>{note}</div>
+      </div>
     </div>
   );
 }
