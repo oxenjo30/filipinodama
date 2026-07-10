@@ -50,6 +50,43 @@ export async function setRoleGuarded(targetId: string, newRole: AdminRole | null
   });
 }
 
+/**
+ * Atomic enable/disable of an admin account that never disables the last ACTIVE
+ * superadmin. Returns rows affected (0 = guard refused / no matching admin row).
+ *
+ * Mirrors setRoleGuarded exactly: it shares the SAME transaction-scoped advisory
+ * lock (SUPERADMIN_LOCK_KEY), so disable/enable serialize against each other AND
+ * against role grants/revokes. Without the shared lock a concurrent
+ * disable-superadmin + revoke-superadmin pair could each observe a stale
+ * active-superadmin count of 2 under READ COMMITTED and both commit, leaving zero
+ * reachable superadmins — the same class of race setRoleGuarded's comment
+ * describes. Serializing everything against one global lock is the conservative,
+ * correct choice for these rare admin actions.
+ */
+export async function setDisabledGuarded(targetId: string, disabled: boolean): Promise<number> {
+  return prisma.$transaction(async (tx) => {
+    await tx.$executeRaw`SELECT pg_advisory_xact_lock(${SUPERADMIN_LOCK_KEY})`;
+    if (disabled) {
+      // Can't disable the last ACTIVE (non-deleted, non-disabled) superadmin.
+      // IS DISTINCT FROM guards NULL-role rows the same way setRoleGuarded does,
+      // though in practice the route already 404s a null-role target first.
+      return tx.$executeRaw`
+        UPDATE "User" SET "adminDisabledAt" = now()
+        WHERE id = ${targetId}
+          AND "adminRole" IS NOT NULL
+          AND ("adminRole" IS DISTINCT FROM 'SUPERADMIN'
+               OR (SELECT count(*) FROM "User"
+                   WHERE "adminRole" = 'SUPERADMIN'
+                     AND "deletedAt" IS NULL
+                     AND "adminDisabledAt" IS NULL) > 1)`;
+    }
+    // Re-enabling never reduces superadmin coverage, so no count guard is needed.
+    return tx.$executeRaw`
+      UPDATE "User" SET "adminDisabledAt" = NULL
+      WHERE id = ${targetId} AND "adminRole" IS NOT NULL`;
+  });
+}
+
 export async function adminAdminsRoutes(app: FastifyInstance) {
   app.get("/admin/admins", { preHandler: requireAdmin("SUPERADMIN") }, async () => {
     const rows = await prisma.user.findMany({
@@ -62,13 +99,19 @@ export async function adminAdminsRoutes(app: FastifyInstance) {
         displayName: true,
         avatarUrl: true,
         adminRole: true,
+        adminDisabledAt: true,
         lastSeenAt: true,
       },
       orderBy: { adminRole: "asc" },
     });
     const byRole: Record<string, number> = { SUPPORT: 0, MODERATOR: 0, ECONOMY: 0, SUPERADMIN: 0 };
-    for (const r of rows) if (r.adminRole) byRole[r.adminRole] += 1;
-    return ok({ items: rows, stats: { byRole, total: rows.length } });
+    let active = 0;
+    for (const r of rows) {
+      if (r.adminRole) byRole[r.adminRole] += 1;
+      if (!r.adminDisabledAt) active += 1;
+    }
+    const items = rows.map((r) => ({ ...r, status: r.adminDisabledAt ? "disabled" : "active" }));
+    return ok({ items, stats: { byRole, total: rows.length, active, disabled: rows.length - active } });
   });
 
   app.post("/admin/admins/grant", { preHandler: requireAdmin("SUPERADMIN") }, async (req) => {
@@ -154,6 +197,48 @@ export async function adminAdminsRoutes(app: FastifyInstance) {
         after: { adminRole: role },
       });
       return ok({ id: req.params.id, role });
+    },
+  );
+
+  app.post<{ Params: { id: string } }>(
+    "/admin/admins/:id/disable",
+    { preHandler: requireAdmin("SUPERADMIN") },
+    async (req) => {
+      const { reason } = z.object({ reason: z.string().trim().min(1).max(500) }).parse(req.body);
+      if (req.params.id === req.userId) throw err.badRequest("SELF_ADMIN_CHANGE", "You can't change your own admin status");
+      const target = await prisma.user.findUnique({ where: { id: req.params.id }, select: { adminRole: true } });
+      if (!target || !target.adminRole) throw err.notFound("NO_USER", "Admin not found");
+      const n = await setDisabledGuarded(req.params.id, true);
+      if (n === 0) throw err.conflict("LAST_SUPERADMIN", "Cannot disable the last active superadmin");
+      await audit(prisma, {
+        actorId: req.userId!,
+        action: "admin.disable",
+        targetType: "user",
+        targetId: req.params.id,
+        before: { adminDisabledAt: null },
+        after: { adminDisabledAt: "set" },
+        reason,
+      });
+      return ok({ id: req.params.id, status: "disabled" });
+    },
+  );
+
+  app.post<{ Params: { id: string } }>(
+    "/admin/admins/:id/enable",
+    { preHandler: requireAdmin("SUPERADMIN") },
+    async (req) => {
+      if (req.params.id === req.userId) throw err.badRequest("SELF_ADMIN_CHANGE", "You can't change your own admin status");
+      const n = await setDisabledGuarded(req.params.id, false);
+      if (n === 0) throw err.notFound("NO_USER", "Admin not found");
+      await audit(prisma, {
+        actorId: req.userId!,
+        action: "admin.enable",
+        targetType: "user",
+        targetId: req.params.id,
+        before: { adminDisabledAt: "set" },
+        after: { adminDisabledAt: null },
+      });
+      return ok({ id: req.params.id, status: "active" });
     },
   );
 }
