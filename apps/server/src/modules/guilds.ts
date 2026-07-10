@@ -153,12 +153,12 @@ export async function guildRoutes(app: FastifyInstance) {
     });
   });
 
-  // GET /api/guilds/:id — detail + roster
+  // GET /api/guilds/:id — public detail + roster + viewer joinState
   app.get<{ Params: { id: string } }>(
     "/guilds/:id",
-    { preHandler: requireAuth },
+    { preHandler: attachUser },
     async (req) => {
-      const me = req.userId!;
+      const me = req.userId ?? null;
       const guild = await prisma.guild.findUnique({
         where: { id: req.params.id },
         include: {
@@ -170,7 +170,31 @@ export async function guildRoutes(app: FastifyInstance) {
       });
       if (!guild) throw err.notFound("GUILD_NOT_FOUND", "Guild not found");
 
-      const mine = guild.members.find((m) => m.userId === me);
+      const mine = me ? guild.members.find((m) => m.userId === me) : undefined;
+
+      // joinState mirrors POST /guilds/:id/join eligibility (guilds.ts join route):
+      //  - guest: signed out
+      //  - member: already in THIS guild
+      //  - in-other-guild: in a DIFFERENT guild
+      //  - requested: has a pending join request to this guild
+      //  - joinable: everything else (open/request policy, or below-floor request path)
+      let joinState: "member" | "in-other-guild" | "requested" | "joinable" | "guest";
+      if (!me) {
+        joinState = "guest";
+      } else if (mine) {
+        joinState = "member";
+      } else {
+        const otherMembership = await prisma.guildMember.findUnique({ where: { userId: me } });
+        if (otherMembership) {
+          joinState = "in-other-guild";
+        } else {
+          const pending = await prisma.guildJoinRequest.findUnique({
+            where: { guildId_userId: { guildId: guild.id, userId: me } },
+          });
+          joinState = pending && pending.status === "pending" ? "requested" : "joinable";
+        }
+      }
+
       return ok({
         guild: {
           id: guild.id,
@@ -186,6 +210,7 @@ export async function guildRoutes(app: FastifyInstance) {
         },
         roster: guild.members.map(memberRow),
         myRole: mine?.role ?? null,
+        joinState,
       });
     },
   );
