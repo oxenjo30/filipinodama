@@ -144,7 +144,7 @@ export function LiveOpsPage() {
       <EventsPanel events={events} loading={loadingE} onDone={loadEvents} />
 
       {/* All seasons table — real admin need beyond the current-season banner. */}
-      <div className="panel" style={{ overflow: "hidden", marginTop: 22 }}>
+      <div className="panel" style={{ overflow: "hidden" }}>
         <div className="card-header">
           <span className="t">All seasons</span>
         </div>
@@ -567,7 +567,7 @@ function EventsPanel({ events, loading, onDone }: { events: LiveEvent[]; loading
     });
 
   return (
-    <div className="panel" style={{ padding: 18, marginBottom: 22 }}>
+    <div className="panel" style={{ padding: 18, marginBottom: 14 }}>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
         <div style={{ font: "700 14px var(--sans)", color: "var(--ink-2)" }}>Scheduled events</div>
         <button className="abtn btn-gold-pill sm" onClick={() => { setCreating(true); setEditing(null); }}>+ Schedule</button>
