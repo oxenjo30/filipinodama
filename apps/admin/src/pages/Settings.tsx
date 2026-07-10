@@ -26,17 +26,30 @@ export function Settings() {
       <div className="crumb">Platform · Settings</div>
       <h1 className="page">Feature flags</h1>
 
-      <div className="panel">
-        {loading ? (
-          <div className="dim" style={{ textAlign: "center", padding: 24 }}>Loading…</div>
-        ) : items.length === 0 && locked.length === 0 ? (
-          <div className="dim" style={{ textAlign: "center", padding: 24 }}>No config rows.</div>
-        ) : (
-          <>
-            {items.map((row) => <FlagRow key={row.key} row={row} onDone={load} />)}
-            {locked.map((row) => <LockedFlagRow key={row.key} row={row} />)}
-          </>
-        )}
+      <div className="fd-2col">
+        <div className="acard">
+          <div style={{ font: "700 14px var(--sans)", color: "var(--ink-2)" }}>Feature flags</div>
+          <div style={{ marginTop: 14, display: "flex", flexDirection: "column", gap: 4 }}>
+            {loading ? (
+              <div className="dim" style={{ textAlign: "center", padding: 24 }}>Loading…</div>
+            ) : items.length === 0 && locked.length === 0 ? (
+              <div className="dim" style={{ textAlign: "center", padding: 24 }}>No config rows.</div>
+            ) : (
+              <>
+                {items.map((row) => <FlagRow key={row.key} row={row} onDone={load} />)}
+                {locked.map((row) => <LockedFlagRow key={row.key} row={row} />)}
+              </>
+            )}
+          </div>
+        </div>
+
+        <div className="acard">
+          <div style={{ font: "700 14px var(--sans)", color: "var(--ink-2)" }}>Economy constants</div>
+          <div style={{ marginTop: 6, font: "500 11px var(--sans)", color: "var(--dim)" }}>
+            Deferred — no runtime consumer reads these yet.
+          </div>
+          <div className="dim" style={{ textAlign: "center", padding: "28px 0" }}>—</div>
+        </div>
       </div>
     </>
   );
@@ -62,22 +75,22 @@ function FlagRow({ row, onDone }: { row: ConfigRow; onDone: () => void }) {
     });
 
   return (
-    <div className="row" style={{ padding: "14px 18px", borderBottom: "1px solid rgba(232, 184, 75, 0.08)", justifyContent: "space-between", flexWrap: "wrap" }}>
-      <div style={{ minWidth: 200 }}>
-        <div style={{ fontWeight: 600 }}>{row.label}</div>
-        <div className="dim mono" style={{ fontSize: 11 }}>{row.key} · {row.category}</div>
+    <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "11px 0", borderBottom: "1px solid rgba(232, 184, 75, .07)", flexWrap: "wrap" }}>
+      <div style={{ flex: 1, minWidth: 200 }}>
+        <div style={{ font: "700 12.5px var(--sans)", color: "var(--ink-2)" }}>{row.label}</div>
+        <div className="dim mono" style={{ fontSize: 10.5 }}>{row.key} · {row.category}</div>
       </div>
       <div className="row" style={{ flexWrap: "nowrap" }}>
         {row.type === "bool" ? (
-          <button className={`chip${val === "true" ? " on" : ""}`} onClick={() => setVal(val === "true" ? "false" : "true")}>
-            {val === "true" ? "ON" : "OFF"}
+          <button className={`abtn fd-switch${val === "true" ? " on" : ""}`} onClick={() => setVal(val === "true" ? "false" : "true")}>
+            <span className="knob" />
           </button>
         ) : row.type === "int" ? (
           <input className="input" style={{ maxWidth: 140 }} type="number" value={val} onChange={(e) => setVal(e.target.value)} />
         ) : (
           <input className="input" style={{ maxWidth: 240 }} value={val} onChange={(e) => setVal(e.target.value)} />
         )}
-        <button className="btn gold" disabled={!dirty} onClick={save}>Save</button>
+        <button className="abtn btn-gold-pill btn-gold-pill-sm" disabled={!dirty} onClick={save} style={dirty ? undefined : { opacity: 0.45, cursor: "not-allowed" }}>Save</button>
       </div>
     </div>
   );
@@ -85,15 +98,17 @@ function FlagRow({ row, onDone }: { row: ConfigRow; onDone: () => void }) {
 
 function LockedFlagRow({ row }: { row: ConfigRow }) {
   return (
-    <div className="row" style={{ padding: "14px 18px", borderBottom: "1px solid rgba(232, 184, 75, 0.08)", justifyContent: "space-between", flexWrap: "wrap", opacity: 0.6 }}>
-      <div style={{ minWidth: 200 }}>
-        <div style={{ fontWeight: 600 }}>{row.label}</div>
-        <div className="dim mono" style={{ fontSize: 11 }}>{row.key} · {row.category}</div>
+    <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "11px 0", borderBottom: "1px solid rgba(232, 184, 75, .07)", flexWrap: "wrap", opacity: 0.6 }}>
+      <div style={{ flex: 1, minWidth: 200 }}>
+        <div style={{ font: "700 12.5px var(--sans)", color: "var(--ink-2)" }}>{row.label}</div>
+        <div className="dim mono" style={{ fontSize: 10.5 }}>{row.key} · {row.category}</div>
         <div className="dim" style={{ fontSize: 11, marginTop: 4 }}>Disabled for legal compliance — real-money top-up is locked.</div>
       </div>
       <div className="row" style={{ flexWrap: "nowrap" }}>
-        <button className="chip" disabled>{row.value === "true" ? "ON" : "OFF"}</button>
-        <button className="btn" disabled>Save</button>
+        <button className={`abtn fd-switch${row.value === "true" ? " on" : ""}`} disabled style={{ cursor: "not-allowed" }}>
+          <span className="knob" />
+        </button>
+        <button className="abtn btn-gold-pill btn-gold-pill-sm" disabled style={{ opacity: 0.45, cursor: "not-allowed" }}>Save</button>
       </div>
     </div>
   );
