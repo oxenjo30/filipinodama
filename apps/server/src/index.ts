@@ -28,6 +28,7 @@ import { adminConfigRoutes } from "./modules/admin-config.js";
 import { adminCampaignsRoutes } from "./modules/admin-campaigns.js";
 import { adminAnalyticsRoutes } from "./modules/admin-analytics.js";
 import { adminTicketsRoutes } from "./modules/admin-tickets.js";
+import { adminTournamentsRoutes } from "./modules/admin-tournaments.js";
 import { leaderboardRoutes } from "./modules/leaderboard.js";
 import { matchRoutes } from "./modules/matches.js";
 import { learnRoutes } from "./modules/learn.js";
@@ -36,6 +37,7 @@ import { paymentRoutes } from "./modules/payments.js";
 import { dmRoutes } from "./modules/dm.js";
 import { reportRoutes } from "./modules/reports.js";
 import { supportRoutes } from "./modules/support.js";
+import { tournamentsRoutes } from "./modules/tournaments.js";
 import { registerRealtime } from "./realtime/index.js";
 
 export { prisma };
@@ -116,6 +118,7 @@ export async function buildApp(): Promise<FastifyInstance> {
   await app.register(adminCampaignsRoutes, { prefix: "/api" });
   await app.register(adminAnalyticsRoutes, { prefix: "/api" });
   await app.register(adminTicketsRoutes, { prefix: "/api" });
+  await app.register(adminTournamentsRoutes, { prefix: "/api" });
   await app.register(leaderboardRoutes, { prefix: "/api" });
   await app.register(matchRoutes, { prefix: "/api" });
   await app.register(learnRoutes, { prefix: "/api" });
@@ -124,6 +127,7 @@ export async function buildApp(): Promise<FastifyInstance> {
   await app.register(dmRoutes, { prefix: "/api" });
   await app.register(reportRoutes, { prefix: "/api" });
   await app.register(supportRoutes, { prefix: "/api" });
+  await app.register(tournamentsRoutes, { prefix: "/api" });
   // more modules register here as they land
 
   return app;
