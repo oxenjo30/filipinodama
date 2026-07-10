@@ -201,8 +201,11 @@ const grp = await prisma.inventoryItem.groupBy({
 //   select: { id:true, name:true, type:true } })
 ```
 `owners` = distinct inventory rows per item (`InventoryItem` is `@@unique([userId,itemId])`
-(`schema.prisma:181`), so one row === one owner). `pct` = owners / realPlayerCount. All-time
-(ownership is durable). Rendered as a small table or bar list.
+(`schema.prisma:181`), so one row === one owner). `pct` is computed server-side as
+`owners / kpis.totalPlayers` — the same all-time `{ isBot:false, isGuest:false, deletedAt:null }`
+player count already computed for the KPI tile (§2, around line 85), not a new field or query.
+Falls under the same divide-by-zero guard as every other `pct` (§Error handling: return 0 when
+`totalPlayers === 0`). All-time (ownership is durable). Rendered as a small table or bar list.
 
 **Full response shape:**
 ```ts
@@ -307,10 +310,19 @@ New file `apps/server/test/admin-analytics.test.ts`, using `buildTestApp`/`seedU
 `truncateAll` (`apps/server/test/helpers.ts`) exactly like `admin-config.test.ts`. `afterEach`
 truncates; `afterAll` disconnects. (Note: `helpers.ts:53-59` `truncateAll` currently truncates
 `Report/AuditLog/Message/ChannelMember/Channel` + deletes `t_user_` users. This suite also creates
-`Match`, `LedgerEntry`, and `InventoryItem` rows; those FK-cascade from the `t_user_` deletes
-(`Match.red/blue` are nullable and `LedgerEntry`/`InventoryItem` reference `User`) — verify cascade
-during impl, and if any rows survive, extend `truncateAll` to include `"Match","LedgerEntry"` in the
-`TRUNCATE` list. Flagged so it isn't missed.)
+`Match`, `LedgerEntry`, and `InventoryItem` rows.
+
+> **`LedgerEntry` cleanup must be unconditional, not cascade-dependent.** `LedgerEntry.userId` is a
+> plain `@relation` with **no `onDelete: Cascade`** (`schema.prisma:119-120` → defaults to
+> Restrict), so deleting a `t_user_` test user does **not** clear their ledger rows — and this
+> suite's gold faucet/sink assertions (§ below) are **exact** numbers, so any leftover in-window
+> `GOLD` row from another test breaks them. This suite's own `afterEach` therefore clears
+> `LedgerEntry` (and any `Match` rows it seeds) **unconditionally**, not "only if survivors." This
+> is coordinated across specs: the shared `truncateAll` in `helpers.ts` is being extended (by the
+> reports-queue / economy specs) to include `LedgerEntry` and `Match` in its `TRUNCATE` list —
+> Analytics relies on that shared truncate covering both tables, on top of its own explicit
+> `afterEach` clear, so test isolation holds regardless of run order. `InventoryItem` does cascade
+> from `User` (`schema.prisma:181` FK — confirm during impl) and needs no special handling.)
 
 **RBAC:**
 - SUPPORT token → `GET /api/admin/analytics` → **403**.
@@ -340,7 +352,7 @@ during impl, and if any rows survive, extend `truncateAll` to include `"Match","
 - **rankTiers:** seed users across ≥2 tiers → all 7 tiers present in canonical order; counts
   correct; 0-count tiers included; `accent` present.
 - **topItems:** seed `InventoryItem` rows for 2 items with differing owner counts → ordered by
-  `owners` desc; `owners` correct; `pct` = owners / realPlayerCount; names/types resolved from
+  `owners` desc; `owners` correct; `pct` = owners / `kpis.totalPlayers`; names/types resolved from
   `StoreItem`.
 - **window param:** `?window=7d` vs `?window=90d` return different `days` and different bucket
   lengths; default (no param) === `30d`.
@@ -356,9 +368,12 @@ Admin page has no test harness (no `"test"` script in `apps/admin`) → verified
 - `apps/server/src/modules/admin-analytics.ts` — NEW: `GET /admin/analytics` (ECONOMY, read-only).
 - `apps/server/src/index.ts` — import + `app.register(adminAnalyticsRoutes, { prefix: "/api" })`
   (next to `index.ts:113`).
-- `apps/server/test/admin-analytics.test.ts` — NEW integration tests.
-- `apps/server/test/helpers.ts` — (only if impl shows survivors) extend `truncateAll` to include
-  `Match`/`LedgerEntry`.
+- `apps/server/test/admin-analytics.test.ts` — NEW integration tests; `afterEach` unconditionally
+  clears `LedgerEntry` and `Match` rows it seeded (no `onDelete: Cascade` from `User` on
+  `LedgerEntry.userId` — see §Testing).
+- `apps/server/test/helpers.ts` — extend shared `truncateAll` to include `"Match","LedgerEntry"` in
+  the `TRUNCATE` list (coordinated across specs; Analytics' exact faucet/sink assertions depend on
+  this).
 
 **Admin:**
 - `apps/admin/src/pages/Analytics.tsx` — NEW page.

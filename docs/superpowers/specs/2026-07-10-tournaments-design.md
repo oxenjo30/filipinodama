@@ -131,11 +131,13 @@ crux risk of getting the lazy-match-creation + `matchResync` handoff right on th
   html:1925) and the one the player "Cups" screen implies. Shipping it first delivers the visible
   product; the other three are additive later.
 
-**Bracket sizing rule (V1).** On **Start**, let `n` = registered entries. Reject `n < 2`.
-The bracket size `B` = the smallest power of two `≥ n` (capped at `maxPlayers`, itself a power of
-two ∈ {2,4,8,16,32,64,128,256}). The top `B - n` seeds receive a **bye** in round 1 (auto-advanced,
-no match). Seeding is **by registration order** in V1 (deterministic, explained in-UI as
-"seeded by join order"); trophy-seeding is V2.
+**Bracket sizing rule (V1).** On **Start**, let `n` = `min(registered entries, maxPlayers)` — the
+`registeredCount` capacity guard (see "Capacity" under "Economy / ledger flows") should already
+make `entries.length ≤ maxPlayers` an invariant, but Start clamps to `n` defensively rather than
+trusting it blindly. Reject `n < 2`. The bracket size `B` = the smallest power of two `≥ n`
+(capped at `maxPlayers`, itself a power of two ∈ {2,4,8,16,32,64,128,256}). The top `B - n` seeds
+receive a **bye** in round 1 (auto-advanced, no match). Seeding is **by registration order** in V1
+(deterministic, explained in-UI as "seeded by join order"); trophy-seeding is V2.
 
 ---
 
@@ -173,9 +175,14 @@ model Tournament {
   prizePoolGold Int              @default(0)    // total gold paid out across placements
 
   // Bracket sizing — must be a power of two in {2..256}; validated on write.
-  maxPlayers    Int              @default(16)
-  minTrophies   Int              @default(0)    // trophy gate to join (0 = open to all)
-  matchMode     MatchMode        @default(CASUAL) // the MatchMode tournament games run as (see below)
+  maxPlayers      Int              @default(16)
+  registeredCount Int              @default(0)   // serialized counter — the capacity guard
+                                                   // (see "Join" below). Incremented/decremented
+                                                   // inside the same $transaction as entry
+                                                   // create/delete; NEVER derived from a plain
+                                                   // COUNT(*) on TournamentEntry at request time.
+  minTrophies     Int              @default(0)    // trophy gate to join (0 = open to all)
+  matchMode       MatchMode        @default(CASUAL) // the MatchMode tournament games run as (see below)
 
   startsAt      DateTime?        // descriptive in V1 (admin-triggered start); scheduler is V2
 
@@ -220,6 +227,24 @@ model TournamentEntry {
   @@unique([tournamentId, userId])   // one entry per player per tournament (dedupe)
   @@index([tournamentId, seed])
 }
+
+> **Entry lifecycle decision — HARD DELETE on leave (V1).** `POST /leave` deletes the
+> `TournamentEntry` row (as already stated below), it does not soft-delete it. Rejoining after a
+> leave creates a **brand-new** `TournamentEntry` with a new `id`. This is deliberate: every
+> per-entry money movement (charge and refund — see "Economy / ledger flows" below) is keyed off
+> `entry.id`, not `tournamentId`, specifically so a `join → leave → rejoin → cancel` sequence
+> produces two *distinct* entries with two *distinct* idempotency keys — the leave-refund and the
+> cancel-refund can never collide. The trade-off: a hard delete loses the row-level history of the
+> player's first stint (no `leftAt` audit trail beyond the `AuditLog` row already written for
+> `tournament.leave` — see Admin API's "every mutation writes an audit row", which for the player
+> API means the player route also writes an `AuditLog` row on join/leave so the history survives
+> at the audit layer even though the `TournamentEntry` row itself is gone). A soft-delete
+> alternative (`leftAt DateTime?` + a partial/conditional unique on active entries only) would
+> preserve the row, but V1 prefers the simpler hard-delete: it needs no partial-index migration,
+> the plain `@@unique([tournamentId, userId])` above keeps working unmodified (a rejoin after
+> leave is just a fresh insert), and the audit log already captures what a soft-delete's history
+> would show. Revisit if a V1.5/V2 feature needs to query a player's full multi-stint history for
+> one tournament.
 
 model TournamentMatch {
   id           String     @id @default(cuid())
@@ -269,7 +294,9 @@ model TournamentMatch {
   `onDelete: SetNull` keeps the bracket if a `Match` row is ever purged. In V1 this is purely a
   reference for the admin's own bookkeeping — no code path creates a `Match` from this field.
 - **`TournamentEntry.refunded`** + the ledger's idempotency index together make cancel-refund
-  double-safe (belt and suspenders).
+  double-safe (belt and suspenders). Because refunds are now keyed off `entry.id` (see the entry
+  lifecycle decision above), this flag only needs to dedupe *within* a single entry's lifetime —
+  it can never collide with a different entry's refund the way a `tournamentId`-keyed ref could.
 - **`matchMode`** lets the admin choose whether tournament games count as CASUAL (default) or
   RANKED. **V1 recommendation: `CASUAL`** so tournament play doesn't move ladder trophies and
   can't be farmed; the field exists so this is a per-tournament admin choice, not hardcoded.
@@ -280,40 +307,102 @@ model TournamentMatch {
 
 ## Economy / ledger flows (GOLD only, audited, idempotent)
 
-All three money movements go through `applyLedger(prisma, { userId, currency:"GOLD", amount,
-reason, refType:"tournament", refId })` (`economy/ledger.ts:51`). The `LedgerEntry` unique index
-`@@unique([userId, currency, reason, refType, refId])` (schema.prisma:134) makes each **idempotent**
-by `(reason, refType, refId)`, and `applyLedger` already swallows the P2002 as an
-already-applied no-op (`ledger.ts:56-68`). Refs are chosen so each distinct movement is a distinct
-ledger row:
+All three money movements go through `applyLedger`/`applyLedgerTx(tx, { userId, currency:"GOLD",
+amount, reason, refType:"tournament", refId })` (`economy/ledger.ts:21,51`). The `LedgerEntry`
+unique index `@@unique([userId, currency, reason, refType, refId])` (schema.prisma:134) makes each
+**idempotent** by `(reason, refType, refId)` — **but only when the caller catches P2002.**
+`applyLedger` (the non-tx wrapper, `ledger.ts:51-69`) already swallows P2002 as an already-applied
+no-op, **but `applyLedgerTx` (the in-transaction primitive, `ledger.ts:21-43`) does NOT** — it
+lets P2002 propagate to the caller's `$transaction`, which the caller must catch itself. Every
+flow below that calls `applyLedgerTx` inside its own `$transaction` is responsible for its own
+P2002 mapping (see "Join" below for the concrete pattern, mirroring `seasons.ts` /
+`payments.ts`).
+
+**Keying — `refId` is `entry.id`, NOT `tournamentId`.** Every per-entry money movement (debit and
+refund) is keyed off the `TournamentEntry.id` that movement belongs to, not the tournament. This
+is required because leave is a **hard delete** (see the entry lifecycle decision above): a
+`join → leave → rejoin → cancel` sequence produces two different `TournamentEntry` rows, so
+keying off `tournamentId` alone would put the join-debit, the leave-refund, and the (later)
+cancel-refund for the *second* entry all in a search space that collides with the first entry's
+movements — the leave-refund and the cancel-refund would land on the **same** idempotency slot
+(`reason=tournament-refund, refType=tournament, refId=tournamentId`) and the second one would be
+silently swallowed as "already applied", permanently losing the player one entry fee. Keying off
+`entry.id` makes each entry's fee+refund pair distinct no matter how many times the same user
+joins/leaves/rejoins the same tournament. Prize payout is keyed the same way for consistency (a
+champion only ever has one entry at completion time, so this is not itself a race, but it keeps
+the whole table on one rule).
 
 | Movement | When | `amount` | `reason` | `refType` | `refId` | Idempotency key |
 |---|---|---|---|---|---|---|
-| **Entry fee (spend)** | player joins | `-entryFeeGold` | `tournament-entry` | `tournament` | `tournamentId` | one debit per (user, tournament) |
-| **Refund (grant)** | tournament cancelled | `+entryFeeGold` | `tournament-refund` | `tournament` | `tournamentId` | one refund per (user, tournament) |
-| **Prize (grant)** | tournament completed | `+prizeSplitGold[0]` to the champion, `+prizeSplitGold[1]` to the runner-up (only) | `tournament-prize` | `tournament` | `tournamentId` | one prize per (user, tournament) |
+| **Entry fee (spend)** | player joins | `-entryFeeGold` | `tournament-entry` | `tournament` | `entry.id` | one debit per entry |
+| **Refund (grant)** | player leaves (OPEN) or tournament cancelled | `+entryFeeGold` | `tournament-refund` | `tournament` | `entry.id` | one refund per entry |
+| **Prize (grant)** | tournament completed | `+prizeSplitGold[0]` to the champion, `+prizeSplitGold[1]` to the runner-up (only) | `tournament-prize` | `tournament` | `entry.id` | one prize per entry |
 
-Because `refId = tournamentId` and `reason` differs per movement, a user can have at most one
-entry-debit, one refund, and one prize per tournament — retries/double-clicks/re-runs of complete
-or cancel are safe no-ops. (Entry fee `0` is a no-op: skip the ledger call when `entryFeeGold === 0`.)
+Because `refId = entry.id` and `reason` differs per movement, a given entry can have at most one
+debit, one refund, and one prize — retries/double-clicks/re-runs of complete or cancel are safe
+no-ops **and** a leave-then-rejoin can never cannibalize a later cancel's refund slot, because the
+rejoin is a new entry with a new `id`. (Entry fee `0` is a no-op: skip the ledger call when
+`entryFeeGold === 0`.)
 
-- **Join (spend)** runs **inside a `$transaction`** that also creates the `TournamentEntry`, so
-  "charged but not entered" or "entered but not charged" can't happen. Insufficient gold →
-  `applyLedgerTx` throws `INSUFFICIENT_GOLD` → surfaced as 400. The `@@unique([tournamentId,
-  userId])` makes a double-join a P2002 → 409 `ALREADY_JOINED` (checked before charging via a
-  pre-read, and enforced by the constraint under a race).
-- **Refund (cancel)** iterates all **paid** entries (`entryFeeGold > 0 && !refunded`), calling
-  `applyLedger` per user with the fixed `refId=tournamentId`; sets `refunded=true`. Idempotent by
-  the ledger index **and** the `refunded` flag, so a re-run refunds nobody twice.
+- **Join (spend) — must create the entry FIRST, then charge, with explicit P2002 mapping.**
+  Runs **inside a `$transaction`**, in this order: (1) `tx.tournamentEntry.create(...)` — the
+  `@@unique([tournamentId, userId])` constraint is the concurrency guard for a double-join, and
+  creating the row first means its `id` exists before the ledger call needs it as `refId`; (2)
+  the capacity guard (`registeredCount` conditional `updateMany`, see "Capacity" below); (3)
+  `applyLedgerTx(tx, { ..., refId: entry.id })` to charge `entryFeeGold`. The whole `$transaction`
+  call is wrapped in a `try/catch`:
+  - `P2002` (from the entry create — a concurrent duplicate join) → `err.conflict("ALREADY_JOINED")`
+    (409). This is the fix: **`applyLedgerTx` itself does not swallow P2002**, so without this
+    explicit catch a concurrent double-join throws a raw, unmapped 500 instead of the documented
+    409 — the spec's earlier claim that the join transaction was idempotent "for free" via
+    `applyLedger`'s P2002 handling was wrong, because join uses `applyLedgerTx` (the tx-scoped
+    primitive), not `applyLedger`.
+  - `INSUFFICIENT_GOLD` (thrown by `applyLedgerTx` when the balance would go negative) →
+    `err.badRequest("INSUFFICIENT_GOLD")` (400).
+  - `TOURNAMENT_FULL` (from the capacity guard) → `err.conflict("TOURNAMENT_FULL")` (409).
+  A fast-path pre-read (existing-entry check + registered-count check) is kept before opening the
+  transaction purely as a cheap short-circuit for the common sequential case — it is **not** the
+  concurrency guard; the `@@unique` and the conditional `updateMany` inside the transaction are.
+- **Refund (leave or cancel)** — leave (single entry, while `OPEN`) and cancel (all paid,
+  un-refunded entries) both call `applyLedgerTx(tx, { ..., refId: entry.id })` per entry, inside
+  the same `$transaction` that deletes the entry (leave) or flips it `refunded=true` (cancel).
+  Because the key is `entry.id`, leave's refund and a later cancel's refund (against a *different*
+  entry created by a rejoin) never share a slot — see the keying note above. Cancel additionally
+  guards on `refunded=false` at the app level (belt-and-suspenders alongside the ledger index).
 - **Prize (complete) — V1 pays only placements 1 and 2, no ties.** `prizeSplitGold` in V1 is a
   fixed 2-tuple `[firstPrizeGold, secondPrizeGold]`. Complete grants `firstPrizeGold` to the
   entry at `placement=1` (champion) and `secondPrizeGold` to the entry at `placement=2`
-  (runner-up) — skip a grant if its amount is `0`. Validated up front:
-  `firstPrizeGold + secondPrizeGold === prizePoolGold` (else 400 `PRIZE_SPLIT_MISMATCH`) so the
-  console can't pay out more or less than the declared pool. Single-elimination always produces
-  **exactly one** champion and **exactly one** runner-up, so this pair is never ambiguous or
-  shared — see "Prize payout (V1: top-2 only, no ties)" below for why placements 3+ are recorded
-  but not paid.
+  (runner-up) — skip a grant if its amount is `0`; `refId` is each winner's `entry.id`. Validated
+  up front: `firstPrizeGold + secondPrizeGold === prizePoolGold` (else 400
+  `PRIZE_SPLIT_MISMATCH`) so the console can't pay out more or less than the declared pool.
+  Single-elimination always produces **exactly one** champion and **exactly one** runner-up, so
+  this pair is never ambiguous or shared — see "Prize payout (V1: top-2 only, no ties)" below for
+  why placements 3+ are recorded but not paid.
+
+**Capacity — the `registeredCount` serialization guard.** `@@unique([tournamentId, userId])`
+only stops the *same* user joining twice; it does nothing to cap the number of *distinct* users,
+and under Read Committed a plain "COUNT(*) entries, then INSERT if below cap" is **not**
+serialized — two concurrent joins can both read `count < maxPlayers` and both insert, overfilling
+the bracket. V1 closes this with a real counter column and a conditional update as the
+serialization point, inside the same join `$transaction` from the "Join" bullet above:
+
+```
+const claim = await tx.tournament.updateMany({
+  where: { id: tournamentId, status: "OPEN", registeredCount: { lt: maxPlayers } },
+  data: { registeredCount: { increment: 1 } },
+});
+if (claim.count === 0) throw new Error("TOURNAMENT_FULL"); // mapped to 409 in the catch above
+```
+
+This `updateMany` is atomic at the row level — only one of any number of concurrent joins can
+increment past the last remaining seat, because each is a single UPDATE that re-checks
+`registeredCount < maxPlayers` at write time, not at an earlier read time. `registeredCount` is
+**decremented** on both leave (single entry) and cancel (per refunded entry) in their own
+`$transaction`s, so it always reflects the live entry count. **Start** additionally clamps against
+a slipped overfill defensively: seed with `n = min(entries.length, maxPlayers)` (or reject Start
+outright with 409 if `entries.length > maxPlayers`, which should be unreachable given the guard
+above, but costs nothing to check) so a bug or manual DB edit can never orphan a seed beyond the
+bracket size.
 
 > **Anti-fabrication (rule 1):** every gold number a page shows — prize pool, entry fee, "gold
 > paid" — is a real column (`prizePoolGold`, `entryFeeGold`) or a real `LedgerEntry` aggregate.
@@ -351,15 +440,24 @@ no lazy `Match` creation off a bracket slot, and no new socket handoff in V1 —
 V1.5: lazy match creation + live handoff" below for the mechanism reserved for later.
 
 **Report result + advance (V1: the only way the bracket advances).** The admin reports the
-winner of a `ready` (or otherwise unresolved) slot via `POST /admin/tournaments/:id/matches/
+winner of a `ready` slot via `POST /admin/tournaments/:id/matches/
 :tmId/report { winnerEntryId, matchId?, reason }` (`matchId` optional — a reference link to the
 `Match` that was actually played, purely for the admin's own audit trail; not required, not
 validated against live-match state). `resolveTournamentSlot(tx, tmId, winnerEntryId)`:
-1. In a `$transaction`, `updateMany({ where:{ id:tmId, status:{ not:"done" } }, data:{
-   winnerEntryId, matchId, status:"done", resolvedAt } })` (atomic guard → idempotent, no
-   double-advance; two admins reporting the same slot race safely — the loser gets 409
-   `SLOT_DONE`).
-2. If `count === 0` (already resolved) → 409 `SLOT_DONE`.
+1. In a `$transaction`, `updateMany({ where:{ id:tmId, status:"ready" }, data:{
+   winnerEntryId, matchId, status:"done", resolvedAt } })`. The guard is intentionally
+   `status:"ready"`, **not** `status:{ not:"done" }` — a slot only becomes reportable once both
+   feeders have filled it (`redEntryId` and `blueEntryId` both set); a `pending` slot (one or both
+   sides still null, still waiting on an earlier round) must not resolve just because it isn't yet
+   `done`. This atomic guard is idempotent and prevents double-advance; two admins reporting the
+   same slot race safely — the loser sees `count === 0`.
+2. If `count === 0`, re-read the slot to disambiguate: if `status === "done"` → 409 `SLOT_DONE`
+   (already resolved — a race or a retry); if `status === "pending"` → 409 `SLOT_NOT_READY` (one
+   or both competitors aren't filled in yet — nothing to report). Byes never hit this path: they
+   auto-resolve at Start (step 3 below) and are never reported through `/report`, so a
+   `ready`-only guard rejects nothing legitimate. The abandoned-match flow (no `Match` ever
+   played) is unaffected — those slots reach `ready` normally once both feeders resolve; there's
+   just no linked `matchId`.
 3. Mark the losing entry `eliminated = true`.
 4. Compute the parent slot `(round+1, slot>>1)`; fill `redEntryId` (even slot) or `blueEntryId`
    (odd) with the winner entry. If the parent now has both sides → `status="ready"`.
@@ -392,22 +490,31 @@ the one and only advance path, which is exactly what makes V1 fully server-testa
 > where matchId=null` guard) must ensure only one `Match` is created under a race, with the loser
 > of the race joining the existing `matchId` via `matchResync`.
 
-**Complete (pay prizes) — V1: top-2 only, no ties.** Guard: `status === RUNNING` and the final
-slot is `done` (a champion exists) — else 409 `NOT_FINISHED`. Single-elimination guarantees
-**exactly one champion** (the final slot's winner) and **exactly one runner-up** (the final
-slot's loser) — there is never a tie for either of these two placements, so paying them is
-unambiguous. In one `$transaction`:
-1. Set `placement=1` on the champion's entry and `placement=2` on the runner-up's entry.
-2. **Optionally**, for display only, set `placement=3` on the two semifinal losers (and so on for
+**Complete (pay prizes) — V1: top-2 only, no ties.** Pre-check: the final slot is `done` (a
+champion exists) — else 409 `NOT_FINISHED`. Single-elimination guarantees **exactly one champion**
+(the final slot's winner) and **exactly one runner-up** (the final slot's loser) — there is never
+a tie for either of these two placements, so paying them is unambiguous. In one `$transaction`,
+**the guarded status flip is the explicit first step** (matching the atomic-claim pattern already
+used for Start/Cancel and `admin-reports.ts:48`), so a losing concurrent Complete 409s cleanly
+instead of racing into the payout logic and surfacing a raw P2002/500:
+1. **First:** `const flip = await tx.tournament.updateMany({ where:{ id, status:"RUNNING" },
+   data:{ status:"COMPLETED", completedAt: new Date() } }); if (flip.count === 0) throw
+   err.conflict("ALREADY_TERMINAL")`. Only one concurrent Complete call can win this flip; the
+   loser 409s immediately, before touching placements or the ledger.
+2. Set `placement=1` on the champion's entry and `placement=2` on the runner-up's entry.
+3. **Optionally**, for display only, set `placement=3` on the two semifinal losers (and so on for
    earlier rounds, by the round a player was eliminated in) — this is informational bracket
    history, not a payout instruction. **V1 does not pay placement 3+ under any circumstances**,
    even if `prizeSplitGold` were extended, because ties for shared placements are exactly the
    ambiguity this rule avoids (double-pay risk vs. the `sum === prizePoolGold` invariant). If a
    future version wants to pay 3rd, it needs an explicit tiebreak rule (e.g. a real 3rd-place
    match) — tracked as a V2 backlog item, not V1.
-3. Grant `prizeSplitGold[0]` to the champion and `prizeSplitGold[1]` to the runner-up (skip a
-   grant if its amount is `0`) — per the ledger table above.
-4. Set `status=COMPLETED`, `completedAt`.
+4. Grant `prizeSplitGold[0]` to the champion and `prizeSplitGold[1]` to the runner-up (skip a
+   grant if its amount is `0`), keyed `refId = entry.id` — per the ledger table above. Because the
+   status flip already happened atomically in step 1, this grant can never run twice for the same
+   tournament even without relying solely on the `LedgerEntry` unique index — the flip is the
+   primary guard, the ledger index is the belt-and-suspenders backstop.
+5. (`completedAt` already set in step 1.)
 
 Audit `tournament.complete` with before/after + the payout map (exactly two grants at most).
 
@@ -421,10 +528,13 @@ applies to matches actually in progress, but nothing in V1 requires a tournament
 been started via the normal match loop before the admin can report a winner). Auto-forfeit
 automation for tournament matches is V1.5/V2 backlog.
 
-**Cancel (refund).** Allowed from `DRAFT` (no refunds needed), `OPEN`, or `RUNNING`. In one
-`$transaction`: refund every paid, un-refunded entry (ledger table above); set `status=CANCELLED`,
-`cancelledAt`. Audit `tournament.cancel` with the refund total. Any live tournament `Match` rows
-are left to settle normally (harmless — the tournament is gone); optionally notify participants.
+**Cancel (refund).** Allowed from `DRAFT` (no refunds needed), `OPEN`, or `RUNNING`. Guarded status
+flip first (same pattern as Complete): `updateMany({ where:{ id, status:{ in:["DRAFT","OPEN",
+"RUNNING"] } }, data:{ status:"CANCELLED", cancelledAt } })`, `count===0` → 409
+`ALREADY_TERMINAL`. Then, in the same `$transaction`: refund every paid, un-refunded entry (ledger
+table above, `refId = entry.id`). Audit `tournament.cancel` with the refund total. Any live
+tournament `Match` rows are left to settle normally (harmless — the tournament is gone);
+optionally notify participants.
 
 ---
 
@@ -444,9 +554,9 @@ at `App.tsx:42`). **Every mutation writes an `audit()` row** with before/after/r
 | PATCH | `/admin/tournaments/:id` | ECONOMY | editBody | `tournament.update` | **only when `status===DRAFT`** (else 409 `NOT_EDITABLE` — can't change fees after players may have joined). |
 | POST | `/admin/tournaments/:id/open` | ECONOMY | `{reason}` | `tournament.open` | `DRAFT→OPEN`; sets `openedAt`. Else 409 `BAD_STATE`. |
 | POST | `/admin/tournaments/:id/start` | ECONOMY | `{reason}` | `tournament.start` | `OPEN→RUNNING`; seeds bracket (see lifecycle). Rejects `< 2` entries → 400 `TOO_FEW_PLAYERS`. |
-| POST | `/admin/tournaments/:id/matches/:tmId/report` | ECONOMY | `{winnerEntryId, matchId?, reason}` | `tournament.match.report` | **the only bracket-advance path in V1** — admin reports the winner of a slot; resolves + advances (see lifecycle). `matchId` optional (audit reference to a `Match` actually played, if any — not validated against live state). 409 `SLOT_DONE` if already resolved; 400 if winner isn't a competitor of that slot. |
-| POST | `/admin/tournaments/:id/complete` | ECONOMY | `{reason}` | `tournament.complete` | pays gold prizes to placements 1 and 2 only (see lifecycle). 409 `NOT_FINISHED`; 400 `PRIZE_SPLIT_MISMATCH`. |
-| POST | `/admin/tournaments/:id/cancel` | ECONOMY | `{reason}` | `tournament.cancel` | refunds entry fees (see lifecycle). 409 `ALREADY_TERMINAL` if COMPLETED/CANCELLED. |
+| POST | `/admin/tournaments/:id/matches/:tmId/report` | ECONOMY | `{winnerEntryId, matchId?, reason}` | `tournament.match.report` | **the only bracket-advance path in V1** — admin reports the winner of a `ready` slot; resolves + advances (see lifecycle). `matchId` optional (audit reference to a `Match` actually played, if any — not validated against live state). Atomic guard is `status:"ready"` (not merely "not done"). 409 `SLOT_DONE` if already resolved, 409 `SLOT_NOT_READY` if the slot's competitors aren't both filled yet; 400 if winner isn't a competitor of that slot. |
+| POST | `/admin/tournaments/:id/complete` | ECONOMY | `{reason}` | `tournament.complete` | guarded status flip `RUNNING→COMPLETED` is the first step in the transaction, then pays gold prizes to placements 1 and 2 only (see lifecycle). 409 `NOT_FINISHED` if no champion yet; 409 `ALREADY_TERMINAL` if the flip loses a race; 400 `PRIZE_SPLIT_MISMATCH`. |
+| POST | `/admin/tournaments/:id/cancel` | ECONOMY | `{reason}` | `tournament.cancel` | guarded status flip first, then refunds entry fees keyed `refId=entry.id` (see lifecycle). 409 `ALREADY_TERMINAL` if COMPLETED/CANCELLED. |
 
 `createBody`/`editBody` (zod): `name` (1..80), `format` (enum, **must be `SINGLE_ELIM` in V1**,
 else 400 `FORMAT_UNSUPPORTED`), `entryFeeGold` (int 0..1_000_000), `prizePoolGold` (int 0..),
@@ -461,8 +571,12 @@ start/complete/cancel the same tournament (mirrors admin-reports' atomic OPEN-cl
 
 **Error helpers:** reuse `errors.ts` (`err.conflict(code,msg)` 409, `err.badRequest` 400,
 `err.notFound` 404). New codes (`NOT_EDITABLE`, `BAD_STATE`, `TOO_FEW_PLAYERS`, `SLOT_DONE`,
-`NOT_FINISHED`, `PRIZE_SPLIT_MISMATCH`, `ALREADY_TERMINAL`, `FORMAT_UNSUPPORTED`) are just
-overrides on the existing helpers — no new helper functions (same approach as reports-queue).
+`SLOT_NOT_READY`, `NOT_FINISHED`, `PRIZE_SPLIT_MISMATCH`, `ALREADY_TERMINAL`,
+`FORMAT_UNSUPPORTED`, `ALREADY_JOINED`, `TOURNAMENT_FULL`) are just overrides on the existing
+helpers — no new helper functions (same approach as reports-queue). `ALREADY_JOINED` and
+`TOURNAMENT_FULL` are surfaced from the **player** join route (see "Player-facing API" below) but
+listed here too since they're mapped through the same `err.conflict` helper and the same
+join-transaction catch block described in "Economy / ledger flows" above.
 
 ---
 
@@ -477,8 +591,8 @@ overrides on the existing helpers — no new helper functions (same approach as 
 |---|---|---|
 | GET | `/api/tournaments?status=OPEN\|RUNNING` | public list of joinable/live tournaments. Returns fee, prize pool, `registered/maxPlayers`, `startsAt`, `minTrophies`, and `joined` (does the caller have an entry). |
 | GET | `/api/tournaments/:id` | detail + bracket (entries with public user fields, matches by round) + `myEntry` (seed, eliminated, current placement if set). |
-| POST | `/api/tournaments/:id/join` | **charges `entryFeeGold` via ledger + creates the entry, in one `$transaction`.** Guards: status `OPEN`; not already joined (409 `ALREADY_JOINED`); capacity `registered < maxPlayers` (409 `TOURNAMENT_FULL`); `user.trophies >= minTrophies` (403 `TROPHY_GATE`); not a guest/bot; sufficient gold (400 `INSUFFICIENT_GOLD` from `applyLedgerTx`). Idempotent debit by the ledger ref. |
-| POST | `/api/tournaments/:id/leave` | **only while `OPEN`** (once RUNNING you can't leave a live bracket). Refunds the entry fee (ledger `tournament-refund`) + deletes the entry, in one `$transaction`. 409 `BAD_STATE` if not OPEN. |
+| POST | `/api/tournaments/:id/join` | **creates the entry, claims a seat, then charges `entryFeeGold` via ledger — in that order, in one `$transaction`** (see "Join" under "Economy / ledger flows" above for why the order matters). A fast pre-read short-circuits the common case: status `OPEN`; not already joined; capacity; `user.trophies >= minTrophies` (403 `TROPHY_GATE`); not a guest/bot. The transaction itself is the concurrency guard: `tx.tournamentEntry.create` racing on `@@unique([tournamentId,userId])` → caught, mapped to 409 `ALREADY_JOINED`; the `registeredCount` conditional `updateMany` racing on the last seat → 409 `TOURNAMENT_FULL`; `applyLedgerTx` throwing `INSUFFICIENT_GOLD` → 400. Never a raw 500 on a concurrent double-join (see the join-race regression test). |
+| POST | `/api/tournaments/:id/leave` | **only while `OPEN`** (once RUNNING you can't leave a live bracket). Refunds the entry fee (ledger `tournament-refund`, `refId=entry.id`) + **hard-deletes** the entry + decrements `registeredCount`, all in one `$transaction`. 409 `BAD_STATE` if not OPEN. A subsequent rejoin creates a brand-new `TournamentEntry` (new `id`) — see the entry lifecycle decision under "Data model" for why this is deliberate (it's what keeps leave's refund and a later cancel's refund from colliding). |
 
 Note what's **not** here: there is no `/api/tournaments/:id/matches/:tmId/play` endpoint in V1.
 Players play their tournament matches through the platform's existing, ordinary match flow
@@ -511,8 +625,9 @@ Replaces the Phase-2 stub. Matches the approved `secTournaments` markup (html:70
 consuming via `api.get` and mutating via `useAdminMutation` (`apps/admin/src/lib/ui.tsx:105`).
 
 - **4-stat header** (html:704–709): Live now (`status===RUNNING` count), Upcoming
-  (`OPEN` count), Players registered (`SUM(entries)`), Gold prize pool scheduled
-  (`SUM(prizePoolGold)` over OPEN+RUNNING). All from real queries (rule 1).
+  (`OPEN` count), Players registered (`SUM(registeredCount)` — the serialized counter, not a
+  live `COUNT(entries)`, so the header stat and the join-capacity guard always agree), Gold prize
+  pool scheduled (`SUM(prizePoolGold)` over OPEN+RUNNING). All from real queries (rule 1).
 - **"+ New tournament" form** (html:716–735): name, format (**Single elimination** selectable;
   the other three shown **disabled with a "V2" note**), bracket-size cap (power-of-two select),
   entry-fee currency (**Gold only** — Diamonds option removed/disabled), entry fee, prize-pool
@@ -550,9 +665,13 @@ from the `<Phase2 …>` stub to `<Tournaments />`. Keep the dot color `#e0a24a` 
 
 **Server (V1)**
 - `apps/server/prisma/schema.prisma` — 3 models + 2 enums + 3 back-relations (additive migration).
-- `apps/server/src/economy/tournament-ledger.ts` — NEW: thin helpers `chargeEntryFeeTx`,
-  `refundEntryFee`, `payPrize` wrapping `applyLedger`/`applyLedgerTx` with the fixed
-  `refType:"tournament"` / `reason` per the table (keeps refs consistent + idempotent).
+- `apps/server/src/economy/tournament-ledger.ts` — NEW: thin helpers `chargeEntryFeeTx(tx, entry,
+  amount)`, `refundEntryFeeTx(tx, entry, amount)`, `payPrizeTx(tx, entry, amount)` wrapping
+  `applyLedgerTx` with the fixed `refType:"tournament"` / `reason` per the table and
+  **`refId = entry.id`** (never `tournamentId` — see the keying note under "Economy / ledger
+  flows"). These are thin `applyLedgerTx` wrappers, **not** `applyLedger` wrappers — callers
+  (join/leave/cancel/complete) remain responsible for catching P2002 around the `$transaction`
+  that calls them, since `applyLedgerTx` itself does not swallow it.
 - `apps/server/src/lib/tournament-bracket.ts` — NEW: pure functions `seedPairings(n, B)`,
   `parentSlot(round, slot)`, `resolveTournamentSlot(tx, tmId, winnerEntryId)`,
   `computePlacements(matches)` — unit-testable, no I/O beyond the passed tx.
@@ -604,40 +723,78 @@ starting `gold` balance for the economy tests.
   401; the hardened `requireAdmin` rejects a now-demoted admin with a stale ECONOMY token.
 - **Create/edit lifecycle:** create DRAFT → PATCH allowed; open → PATCH now 409 `NOT_EDITABLE`.
 - **Join charges gold (core):** seed a user with 500 gold, `entryFeeGold=100`, join → entry
-  exists, balance = 400, exactly one `LedgerEntry` `tournament-entry` `amount=-100`
-  `refId=tournamentId`. Re-POST join → 409 `ALREADY_JOINED`, balance unchanged, still one debit
-  (idempotent).
-- **Join guards:** insufficient gold → 400 `INSUFFICIENT_GOLD`, no entry, no ledger row; below
-  `minTrophies` → 403 `TROPHY_GATE`; at capacity → 409 `TOURNAMENT_FULL`; guest → 403
-  `GUEST_CANNOT_JOIN`; **concurrency:** N simultaneous joins for the last seat create at most one
-  entry (capacity respected under `Promise.all`).
-- **Leave refunds:** join (balance 400) → leave while OPEN → balance back to 500, entry gone,
-  one `tournament-refund` `+100`. Leave while RUNNING → 409 `BAD_STATE`.
+  exists, balance = 400, `registeredCount` incremented by 1, exactly one `LedgerEntry`
+  `tournament-entry` `amount=-100` `refId=<the new entry's id>`. Re-POST join → 409
+  `ALREADY_JOINED`, balance unchanged, still one debit (idempotent).
+- **Join guards:** insufficient gold → 400 `INSUFFICIENT_GOLD`, no entry, no ledger row, no
+  `registeredCount` change; below `minTrophies` → 403 `TROPHY_GATE`; at capacity → 409
+  `TOURNAMENT_FULL`; guest → 403 `GUEST_CANNOT_JOIN`.
+- **Join race (HIGH #1 regression — must never 500):** `Promise.all` of two identical concurrent
+  join requests for the *same user* against the same tournament. Assert: exactly one
+  `TournamentEntry` row is created, exactly one `LedgerEntry` `tournament-entry` row exists,
+  `registeredCount` incremented exactly once, one response is `201` and the other is `409
+  ALREADY_JOINED` — **never a `500`**. This is the direct regression test for the
+  `applyLedgerTx`-does-not-swallow-P2002 bug: without the create-first + explicit `try/catch`
+  fix, the loser of the race throws an unmapped Prisma error out of the route handler.
+- **Capacity race (MEDIUM #3 regression):** a tournament with `maxPlayers=8` and 7 existing
+  entries; fire `N` (e.g. 5) concurrent joins from **different** users for the last seat via
+  `Promise.all`. Assert the final entry count **never exceeds `maxPlayers`** (exactly one of the
+  N succeeds with `201`, the rest get `409 TOURNAMENT_FULL`), and `registeredCount === maxPlayers`
+  afterward with no drift from the true `COUNT(TournamentEntry)`. This replaces the earlier,
+  weaker "capacity respected under `Promise.all`" assertion with an explicit exceeds-cap check.
+- **Leave refunds:** join (balance 400) → leave while OPEN → balance back to 500, entry
+  hard-deleted, `registeredCount` decremented by 1, one `tournament-refund` `+100`
+  `refId=<that entry's id>`. Leave while RUNNING → 409 `BAD_STATE`.
+- **Leave→rejoin→cancel regression (HIGH #2 regression):** join (entry A, debit −100,
+  `refId=A.id`) → leave while OPEN (refund +100, `refId=A.id`, entry A hard-deleted,
+  `registeredCount` back down) → rejoin (entry B, a **new** id, debit −100, `refId=B.id`) →
+  cancel (refund +100, `refId=B.id`). Assert: exactly one debit ledger row per entry (two total,
+  A and B), exactly one refund ledger row per entry (two total, A and B), the player's net gold
+  balance is unchanged from before the sequence (500 → 400 → 500 → 400 → 500), and specifically
+  that the **cancel refund was not swallowed** by colliding with the leave refund's idempotency
+  slot (the bug this test guards against: both used to share `refId=tournamentId`, so the second
+  `applyLedger` call would have silently no-op'd as "already applied", permanently losing the
+  player their second entry fee).
 - **Bracket seeding:** register 6 users, start → `status=RUNNING`, 6 seeds assigned by join order,
   round-1 has byes for the top 2 seeds (their round-2 slots pre-filled), all rounds' slot rows
   exist; start with <2 → 400 `TOO_FEW_PLAYERS`; start twice concurrently → one succeeds, other 409.
+  Also: if `registeredCount` were ever to exceed `maxPlayers` (defensively, e.g. via a seeded DB
+  fixture bypassing the guard), Start clamps seeding to `n = min(entries.length, maxPlayers)`
+  rather than seeding an oversized bracket.
 - **Report result + advance (core — the only V1 advance path):** for a `ready` slot, admin
   `POST /report {winnerEntryId}` marks the slot `done`, eliminates the loser, and fills the
   parent slot's `redEntryId`/`blueEntryId` correctly (even/odd slot → red/blue); when the parent
   now has both sides, its `status` flips to `ready`. Re-`POST /report` on an already-`done` slot
   → 409 `SLOT_DONE` (idempotent atomic guard — the earlier report wins, no double-advance).
-  Winner not a competitor of that slot → 400. Optional `matchId` is stored as-is with no
-  validation against any live-match state (there is none to validate against in V1). This test
-  suite requires **no socket connection, no live-match harness, and no `matchResync`** — pure
-  `app.inject()` HTTP calls, which is the concrete proof that V1 is fully server-testable.
+  **`POST /report` on a `pending` slot (one or both competitors not yet filled) → 409
+  `SLOT_NOT_READY`**, not a silent resolve — this is the regression test for restricting the
+  guard from `status:{not:"done"}` to `status:"ready"`. Winner not a competitor of that slot →
+  400. Optional `matchId` is stored as-is with no validation against any live-match state (there
+  is none to validate against in V1). This test suite requires **no socket connection, no
+  live-match harness, and no `matchResync`** — pure `app.inject()` HTTP calls, which is the
+  concrete proof that V1 is fully server-testable.
 - **Prize payout (core, top-2 only):** a 4-player tournament to completion (admin reports every
   round), `prizePoolGold=1000`, `prizeSplitGold=[700,300]` → champion `placement=1` +700,
-  runner-up `placement=2` +300 (exactly two `tournament-prize` ledger rows, correct `refId`),
-  balances reflect it, `status=COMPLETED`; assert **no** `tournament-prize` ledger row exists for
-  either semifinal loser even if the implementation also stamps `placement=3` on them for
-  display. Re-run complete → 409 `ALREADY_TERMINAL`, no double-pay. `prizeSplitGold` not summing
-  to pool → 400 `PRIZE_SPLIT_MISMATCH`; `prizeSplitGold` with a length other than 2 → 400
-  `PRIZE_SPLIT_MISMATCH`. Complete before a champion exists → 409 `NOT_FINISHED`.
+  runner-up `placement=2` +300 (exactly two `tournament-prize` ledger rows, `refId` = each
+  winner's `entry.id`), balances reflect it, `status=COMPLETED`; assert **no** `tournament-prize`
+  ledger row exists for either semifinal loser even if the implementation also stamps
+  `placement=3` on them for display. Re-run complete → 409 `ALREADY_TERMINAL`, no double-pay
+  (asserted both via the ledger's unique index **and** via the guarded status-flip being the
+  first transaction step, per the Complete-guard-ordering fix). `prizeSplitGold` not summing to
+  pool → 400 `PRIZE_SPLIT_MISMATCH`; `prizeSplitGold` with a length other than 2 → 400
+  `PRIZE_SPLIT_MISMATCH`. Complete before a champion exists → 409 `NOT_FINISHED`. **Concurrent
+  complete race:** `Promise.all` of two `POST /complete` calls on the same finished tournament →
+  exactly one `200` and one `409 ALREADY_TERMINAL`, exactly two `tournament-prize` ledger rows
+  total (never four) — proves the status flip, not just the ledger index, is what prevents a
+  double-pay.
 - **Abandoned match:** a `ready` slot with no `Match` ever created/settled — admin `POST /report`
   still resolves and advances it exactly like any other slot (no special-case error, no
-  dependency on match state); confirms V1 has no auto-forfeit dependency.
+  dependency on match state); confirms V1 has no auto-forfeit dependency. (The slot reaches
+  `ready` the normal way — both feeders resolved — so the `status:"ready"` guard change doesn't
+  affect this case.)
 - **Cancel refunds (core):** OPEN tournament with 3 paid entries → cancel → each user refunded
-  once (3 `tournament-refund` rows, `refunded=true`), `status=CANCELLED`; re-run cancel → 409
+  once (3 `tournament-refund` rows, `refId` = each entry's own id, `refunded=true`),
+  `status=CANCELLED`, `registeredCount` reset/irrelevant post-cancel; re-run cancel → 409
   `ALREADY_TERMINAL`, no second refund. Free tournament (`entryFeeGold=0`) cancel → no ledger rows.
 - **Audit:** every mutation writes an `AuditLog` row with the expected `action`, `targetType:
   "tournament"`, before/after, and the passed `reason`.

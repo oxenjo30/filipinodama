@@ -174,7 +174,7 @@ const bodySchema = z.object({
    ("Guests can't file support tickets") — same anti-spam stance as `GUEST_CANNOT_REPORT`
    (`reports.ts:24`). `req.isGuest` is populated by `attachUser` (`guards.ts:34`).
 3. Parse the body (over-length / too-short / bad category → 400 via zod).
-4. Load the filer for the snapshot: `prisma.user.findUnique({ where:{id:reporterId},
+4. Load the filer for the snapshot: `prisma.user.findUnique({ where:{id:userId},
    select:{ username:true, tag:true, email:true } })`. `userName = ${username}${tag}`,
    `userEmail = email ?? null`.
 5. **Rate-limit — atomic advisory-locked insert (reuse the Reports pattern exactly).** Cap: **5
@@ -187,7 +187,7 @@ const bodySchema = z.object({
    The first `TicketMessage` is created **in the same transaction** after the ticket row is
    confirmed inserted, so a rate-limited attempt writes neither row.
 6. Create the ticket + first message atomically. The first message is the player's:
-   `isStaff:false, authorId:reporterId, authorName:userName, body:message`.
+   `isStaff:false, authorId:userId, authorName:userName, body:message`.
 7. Structured log `req.log.info({ evt:"ticket.create", userId, ticketId, category })`.
    Return `ok({ id })`.
 
@@ -217,11 +217,27 @@ if (inserted === 0) throw err.tooMany("RATE_LIMITED", "You're filing tickets too
 
 Minimal, additive change to the existing page (read in full: it already has `name/email/category/
 subject/message` state, `CATEGORIES`, `MIN_MESSAGE_LENGTH`, `me` from `useAuthStore`, and a
-`handleSend`). The page keeps its mailto path; `handleSend` gains a branch:
+`handleSend`). The page keeps its mailto path; `handleSend` must be **restructured**, not just
+appended to.
 
-- **Logged-in, non-guest** (`me && !me.isGuest`): after the existing local validation, call
+**Why a restructure, not an append:** `handleSend` currently opens with a single guard —
+`if (!name.trim() || !email.trim() || !subject.trim()) { showToast(...); return; }`
+(`ContactPage.tsx:86-89`) — that runs unconditionally, before any branching. For a logged-in
+non-guest, `email` state is initialized as `me?.email ?? ""`; if the account's email is `null`
+(the exact case the intake endpoint tolerates — see the Null-email test above), `email` is `""`,
+and since the email input is hidden for logged-in users (see below) the user has no way to fill
+it. That guard fires every time and the authenticated user can **never submit**, even though the
+server has no such requirement. Fix: put the auth check first and give each branch its own,
+independent validation — do not let the name/email guard run ahead of the branch check.
+
+- **Logged-in, non-guest** (`me && !me.isGuest`) — checked **first**, before the
+  name/email/subject guard: validate **only** `subject` non-empty and `message` length
+  (`>= MIN_MESSAGE_LENGTH` and `<= 4000`, matching the server's zod bounds) — do **not** gate this
+  branch on `name`/`email` at all. On passing that check, call
   `api.post("/api/support/tickets", { category, subject, message })` (the web `api` client at
-  `apps/web/src/lib/api.ts:60`, which unwraps the envelope and sends the session cookie).
+  `apps/web/src/lib/api.ts:60`, which unwraps the envelope and sends the session cookie; note the
+  POST body is `{ category, subject, message }` only — no `name`/`email`, matching the server's
+  zod schema).
   - Success → set the success panel exactly as today, but the ticket reference is the **real
     server `id`** (not the client-generated `makeTicket()` stub), and the copy changes from
     "on its way to support@…" to "Our support team has your ticket and will reply in your
@@ -232,8 +248,12 @@ subject/message` state, `CATEGORIES`, `MIN_MESSAGE_LENGTH`, `me` from `useAuthSt
     filing tickets too fast — please wait a bit."; `GUEST_CANNOT_FILE` shouldn't happen (guests
     take the mailto branch) but if it does, fall back to mailto; any other error → toast the
     message + leave the form filled so nothing is lost.
-- **Logged-out / guest**: the EXISTING `mailto:` path is unchanged (opens the mail client,
-  shows the client-side `FDR-…` reference). Keep `makeTicket()` for this branch only.
+- **Logged-out / guest** (the `else` branch): the EXISTING
+  `if (!name.trim() || !email.trim() || !subject.trim())` guard (`ContactPage.tsx:86-89`) is
+  **kept, but scoped to only this branch** — here `name`/`email` inputs remain visible and
+  required, so the guard is meaningful. Below the guard, the rest of the existing `mailto:` path
+  is unchanged (opens the mail client, shows the client-side `FDR-…` reference). Keep
+  `makeTicket()` for this branch only.
 
 `CATEGORIES` already equals the server enum, so no mapping is needed. No new web design tokens —
 reuse the page's existing styles.
@@ -386,18 +406,29 @@ open-report count is sourced. If no such shared count fetch exists yet, omit the
   other `admin-*` registrations (near `index.ts:106`). No new plugins/deps.
 - `apps/server/test/support-intake.test.ts` + `apps/server/test/admin-support.test.ts` — NEW
   (see Testing).
-- **`apps/server/test/helpers.ts` — MODIFIED (shared file).** Today `truncateAll()`
-  (`helpers.ts:53-59`) runs `TRUNCATE "Report", "AuditLog", "Message", "ChannelMember", "Channel"
-  RESTART IDENTITY CASCADE` — a **fixed list that does NOT include `Ticket` or `TicketMessage`**.
-  This task **must edit that TRUNCATE list to add `"Ticket"`** (the FK from `TicketMessage` means
-  `RESTART IDENTITY CASCADE` on `Ticket` clears `TicketMessage` too — no need to list
-  `TicketMessage` separately). **`truncateAll()` does NOT truncate `Notification`** either — that
-  table has never been in the shared list; the Reports/Campaigns tests instead `deleteMany` their
-  own Notification rows in their own `afterEach` (`admin-campaigns.test.ts:5-7`). This build
-  follows that exact precedent: it does **not** add `Notification` to `truncateAll()`, and each
-  ticket test file `deleteMany`s its own `support_reply`/`support_resolved` Notification rows in
-  `afterEach` instead. Since `truncateAll()` is a shared helper, this edit affects every other test
-  file that calls it — the change is additive (one more table name in the list) and safe.
+- **`apps/server/test/helpers.ts` — MODIFIED (shared file).** Two edits, both additive:
+  - **`truncateAll()` TRUNCATE list.** Today `truncateAll()` (`helpers.ts:53-59`) runs
+    `TRUNCATE "Report", "AuditLog", "Message", "ChannelMember", "Channel" RESTART IDENTITY CASCADE`
+    — a **fixed list that does NOT include `Ticket` or `TicketMessage`**. This task **must edit
+    that TRUNCATE list to add `"Ticket"`** (the FK from `TicketMessage` means
+    `RESTART IDENTITY CASCADE` on `Ticket` clears `TicketMessage` too — no need to list
+    `TicketMessage` separately). **`truncateAll()` does NOT truncate `Notification`** either — that
+    table has never been in the shared list; the Reports/Campaigns tests instead `deleteMany` their
+    own Notification rows in their own `afterEach` (`admin-campaigns.test.ts:5-7`). This build
+    follows that exact precedent: it does **not** add `Notification` to `truncateAll()`, and each
+    ticket test file `deleteMany`s its own `support_reply`/`support_resolved` Notification rows in
+    `afterEach` instead. Since `truncateAll()` is a shared helper, this edit affects every other
+    test file that calls it — the change is additive (one more table name in the list) and safe.
+  - **`seedUser()` email override.** Today `seedUser` (`helpers.ts:25-49`) has **no `email` field
+    in its overrides type and never sets `email` on the created row** — every seeded user gets
+    Prisma's column default (`null`), and there is no way to seed a non-null email. This task
+    **must extend `seedUser`'s overrides type to add `email?: string | null`** and pass
+    `email: overrides.email ?? null` into the `prisma.user.create({ data: { … } })` call. Without
+    this edit, `seedUser({ email: "player@example.com" })` won't compile, and every seeded user's
+    email is `null` — so the intake test can never exercise the non-null `userEmail` snapshot
+    branch. This is a shared-helper edit (same category as the TRUNCATE-list change above) and is
+    purely additive — existing callers that don't pass `email` are unaffected (they still get
+    `null`).
 
 **Web (player app):**
 - `apps/web/src/features/contact/ContactPage.tsx` — add the authenticated branch in `handleSend`
@@ -447,15 +478,18 @@ clear Notifications. `Ticket`/`TicketMessage` rows need no manual per-test clean
 - **Auth:** unauthenticated `POST /api/support/tickets` → 401.
 - **Guest block:** a `seedUser({ isGuest:true })` token → 403 `GUEST_CANNOT_FILE`; asserts **no
   Ticket row** was created.
-- **Happy path:** a real player files → 200; a `Ticket` row exists with `status="OPEN"`,
-  `userName`/`userEmail` snapshotted from the account (not the request), `category`/`subject`
-  match; **exactly one `TicketMessage`** exists with `isStaff=false`, `authorId = filer`,
-  `body = message`.
+- **Happy path:** a real player seeded via `seedUser({ email: "player@example.com" })` files a
+  ticket → 200; a `Ticket` row exists with `status="OPEN"`, `userName`/`userEmail` snapshotted from
+  the account (not the request) — assert `Ticket.userEmail === "player@example.com"` (covers the
+  non-null snapshot branch, which requires the `seedUser` email-override edit above) —
+  `category`/`subject` match; **exactly one `TicketMessage`** exists with `isStaff=false`,
+  `authorId = filer`, `body = message`.
 - **Null email:** `User.email` is nullable (`schema.prisma:13`, `email String? @unique`). A real
   (non-guest) `seedUser({ email: null })` files a ticket → 200; the created `Ticket.userEmail` is
   `null` (the `userEmail = email ?? null` snapshot in step 4 of Server logic handles a null account
   email without throwing) — assert the row's `userEmail` field is exactly `null`, not the string
-  `"null"` or `undefined`.
+  `"null"` or `undefined`. (Requires the `seedUser` email-override edit above — without it,
+  `seedUser({ email: null })` doesn't compile.)
 - **Validation:** category not in the enum → 400; `subject:""` → 400; message < 10 chars → 400;
   message > 4000 → 400.
 - **Rate-limit:** 6th ticket within the hour from one user → 429 `RATE_LIMITED` (asserts only 5
