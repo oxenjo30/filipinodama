@@ -60,6 +60,21 @@ export const EV = {
 
   // notifications
   notifNew: "notif:new",
+
+  // ── Math Dama (Damath) — parallel to the Classic match/mm events, additive.
+  //    Server-authoritative + unranked (no economy). See damath-match.ts. ──
+  damathMmJoin: "damath:mm:join",
+  damathMmLeave: "damath:mm:leave",
+  damathMmSearching: "damath:mm:searching",
+  damathMmFound: "damath:mm:found",
+  damathMmCancelled: "damath:mm:cancelled",
+  damathState: "damath:state",
+  damathMove: "damath:move",
+  damathMoved: "damath:moved",
+  damathIllegal: "damath:illegal",
+  damathResign: "damath:resign",
+  damathEnded: "damath:ended",
+  damathResync: "damath:resync",
 } as const;
 
 export type EventName = (typeof EV)[keyof typeof EV];

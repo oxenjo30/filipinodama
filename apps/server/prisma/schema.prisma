@@ -70,6 +70,8 @@ model User {
   payments       Payment[]
   matchesRed     Match[]          @relation("red")
   matchesBlue    Match[]          @relation("blue")
+  damathRed      DamathMatch[]    @relation("damathRed")
+  damathBlue     DamathMatch[]    @relation("damathBlue")
   sentReqs       FriendRequest[]  @relation("from")
   recvReqs       FriendRequest[]  @relation("to")
   friendshipsA   Friendship[]     @relation("a")
@@ -213,6 +215,7 @@ enum MatchMode {
   RANKED
   PRIVATE
   LOCAL
+  DAMATH
 }
 
 model Match {
@@ -235,6 +238,32 @@ model Match {
   @@index([redId])
   @@index([blueId])
   @@index([mode, endedAt])
+}
+
+/// Math Dama (Damath) match record. Unranked, no economy at launch: scores +
+/// history persist for replay/stats only. Fully separate from `Match` so the
+/// Classic table is never touched. `redScore`/`blueScore` are FINAL totals
+/// (captures + end-of-game chip bonus); `scoreHistory` holds the score events
+/// and `moveHistory` is the replay source of truth.
+model DamathMatch {
+  id           String    @id @default(cuid())
+  variant      String    // DamathVariant, e.g. "whole"
+  redId        String?
+  red          User?     @relation("damathRed", fields: [redId], references: [id])
+  blueId       String?
+  blue         User?     @relation("damathBlue", fields: [blueId], references: [id])
+  redScore     Float     @default(0)
+  blueScore    Float     @default(0)
+  winner       String?   // "red" | "blue" | "draw"
+  reason       String?   // DamathEndReason
+  scoreHistory Json      @default("[]")
+  moveHistory  Json      @default("[]")
+  startedAt    DateTime  @default(now())
+  endedAt      DateTime?
+
+  @@index([redId])
+  @@index([blueId])
+  @@index([endedAt])
 }
 
 // ─────────────── Social ───────────────

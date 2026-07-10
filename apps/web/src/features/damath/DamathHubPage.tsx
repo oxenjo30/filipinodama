@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import type { AiDifficulty, DamathVariant } from "@dama/shared";
 import { Button } from "../../components";
 import { useAppStore } from "../../stores/appStore";
+import { useAuthStore } from "../../stores/authStore";
 import { useDamathStore } from "../../stores/damathStore";
 import { variantsFor, variantInfo, type DamathLevel } from "./variants";
 
@@ -16,7 +17,7 @@ const LEVELS: { key: DamathLevel; title: string; blurb: string; icon: string }[]
 const OPPONENTS: { key: "local" | "ai" | "online"; title: string; blurb: string; icon: string; ready: boolean }[] = [
   { key: "local", title: "Pass & Play", blurb: "Two players on one device.", icon: "👥", ready: true },
   { key: "ai", title: "Play vs AI", blurb: "Practice against the computer.", icon: "🤖", ready: true },
-  { key: "online", title: "Online", blurb: "Server-matched, unranked.", icon: "🌐", ready: false },
+  { key: "online", title: "Online", blurb: "Server-matched, unranked.", icon: "🌐", ready: true },
 ];
 
 const DIFFICULTIES: { key: AiDifficulty; title: string; blurb: string; dots: number; color: string }[] = [
@@ -35,6 +36,7 @@ const goldHeading: React.CSSProperties = {
 export function DamathHubPage() {
   const navigate = useNavigate();
   const showToast = useAppStore((s) => s.showToast);
+  const me = useAuthStore((s) => s.me);
   const newLocalGame = useDamathStore((s) => s.newLocalGame);
   const newAiGame = useDamathStore((s) => s.newAiGame);
 
@@ -50,6 +52,16 @@ export function DamathHubPage() {
   const startAi = (v: DamathVariant, d: AiDifficulty) => {
     newAiGame(v, d);
     navigate("/damath/game");
+  };
+
+  const startOnline = (v: DamathVariant) => {
+    // Online needs a session (guests count as logged in, matching PlayHub).
+    if (!me) {
+      showToast("Sign in to play Math Dama online.");
+      navigate(`/login?next=${encodeURIComponent(`/damath/online?variant=${v}`)}`);
+      return;
+    }
+    navigate(`/damath/online?variant=${v}`);
   };
 
   return (
@@ -141,6 +153,7 @@ export function DamathHubPage() {
                     return;
                   }
                   if (o.key === "ai") setStep("difficulty");
+                  else if (o.key === "online") startOnline(variant);
                   else startLocal(variant);
                 }}
                 style={{ ...selectCard(false), opacity: o.ready ? 1 : 0.6, cursor: o.ready ? "pointer" : "not-allowed" }}

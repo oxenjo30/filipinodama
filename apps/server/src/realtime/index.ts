@@ -3,6 +3,8 @@ import { verifyAccess, COOKIE } from "../auth/tokens.js";
 import { prisma } from "../db/client.js";
 import { registerMatchmaking } from "./matchmaking.js";
 import { registerMatch } from "./match.js";
+import { registerDamathMatchmaking } from "./damath-matchmaking.js";
+import { registerDamathMatch } from "./damath-match.js";
 import { registerGuildChat } from "./guild-chat.js";
 import { registerPresence } from "./presence.js";
 import { registerRooms } from "./rooms.js";
@@ -86,6 +88,8 @@ export function registerRealtime(io: IOServer) {
     registerPresence(io, socket); // must run first — joins presence:<userId> room
     registerMatchmaking(io, socket);
     registerMatch(io, socket);
+    registerDamathMatchmaking(io, socket);
+    registerDamathMatch(io, socket);
     registerGuildChat(io, socket);
     registerRooms(io, socket);
 
