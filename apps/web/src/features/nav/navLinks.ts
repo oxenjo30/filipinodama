@@ -9,6 +9,7 @@ export const NAV_LINKS: NavLink[] = [
   { to: "/", label: "Home" },
   { to: "/play", label: "Play" },
   { to: "/leaderboard", label: "Leaderboard", mobileLabel: "Ranks" },
+  { to: "/cups", label: "Cups" },
   { to: "/store", label: "Store" },
 ];
 
