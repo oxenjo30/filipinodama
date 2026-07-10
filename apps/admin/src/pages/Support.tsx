@@ -85,19 +85,23 @@ function initials(username: string): string {
   return username.replace(/[^a-zA-Z]/g, "").slice(0, 2).toUpperCase() || "PL";
 }
 
+/* Mockup ticket-status pill: radius 20px, font 9.5px (Support page only — the
+ * shared .badge-rect build class is 6px/10px, so override inline here). */
 function StatusBadge({ status }: { status: TicketRow["status"] }) {
   const c = STATUS_COLOR[status];
   return (
-    <span className="badge-rect" style={{ color: c.fg, background: c.bg, borderColor: `${c.fg}44` }}>
+    <span className="badge-rect" style={{ color: c.fg, background: c.bg, borderColor: `${c.fg}44`, borderRadius: 20, fontSize: 9.5 }}>
       {status === "OPEN" ? "Open" : "Resolved"}
     </span>
   );
 }
 
+/* Mockup priority = plain colored text, no chip background/border (unlike the
+ * ticket-status pill). */
 function PriorityBadge({ priority }: { priority: Priority }) {
   const c = PRIORITY_COLOR[priority];
   return (
-    <span className="badge-rect" style={{ color: c.fg, background: c.bg, borderColor: `${c.fg}44` }}>
+    <span style={{ font: "700 10px var(--sans)", color: c.fg }}>
       {priorityLabel(priority)}
     </span>
   );
@@ -232,7 +236,7 @@ function TicketList({
             }}
           >
             <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-              <div className="fd-avatar">{initials(t.userName)}</div>
+              <div className="fd-avatar" style={{ borderColor: "rgba(232,184,75,.25)" }}>{initials(t.userName)}</div>
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 7 }}>
                   <span className="mono" style={{ font: "600 10.5px var(--mono)", color: "#8b78ad" }}>{t.id}</span>
@@ -356,7 +360,7 @@ function TicketDetailPane({ id, onClose, onChanged }: { id: string; onClose: () 
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
             <span className="mono" style={{ font: "600 10.5px var(--mono)", color: "#8b78ad" }}>{ticket.id}</span>
-            <span className="badge-rect" style={{ color: c.fg, background: c.bg, borderColor: `${c.fg}44` }}>
+            <span className="badge-rect" style={{ color: c.fg, background: c.bg, borderColor: `${c.fg}44`, borderRadius: 20, fontSize: 9.5 }}>
               {ticket.status === "OPEN" ? "Open" : "Resolved"}
             </span>
             <PriorityBadge priority={ticket.priority} />
