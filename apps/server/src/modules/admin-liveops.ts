@@ -51,12 +51,17 @@ export async function adminLiveOpsRoutes(app: FastifyInstance) {
   app.get("/admin/liveops/seasons", { preHandler: requireAdmin("SUPPORT") }, async () => {
     const seasons = await prisma.season.findMany({
       orderBy: { startsAt: "desc" },
-      select: { id: true, name: true, startsAt: true, endsAt: true, tiers: true, _count: { select: { progress: true } } },
+      select: {
+        id: true, name: true, number: true, endsLabel: true, startsAt: true, endsAt: true, tiers: true,
+        _count: { select: { progress: true } },
+      },
     });
     return ok({
       items: seasons.map((s) => ({
         id: s.id,
         name: s.name,
+        number: s.number,
+        endsLabel: s.endsLabel,
         startsAt: s.startsAt,
         endsAt: s.endsAt,
         tiers: s.tiers,
@@ -72,6 +77,8 @@ export async function adminLiveOpsRoutes(app: FastifyInstance) {
     const body = z
       .object({
         name: z.string().trim().min(1).max(120),
+        number: z.number().int().min(1).optional(),
+        endsLabel: z.string().trim().max(120).optional(),
         startsAt: z.coerce.date(),
         endsAt: z.coerce.date(),
         tiers: tiersSchema.default([]),
@@ -80,15 +87,30 @@ export async function adminLiveOpsRoutes(app: FastifyInstance) {
       .parse(req.body);
     if (body.endsAt <= body.startsAt) throw err.badRequest("BAD_DATES", "endsAt must be after startsAt");
     const created = await prisma.season.create({
-      data: { id: `S_${Date.now()}`, name: body.name, startsAt: body.startsAt, endsAt: body.endsAt, tiers: body.tiers as any },
-      select: { id: true, name: true, startsAt: true, endsAt: true, tiers: true },
+      data: {
+        id: `S_${Date.now()}`,
+        name: body.name,
+        number: body.number,
+        endsLabel: body.endsLabel,
+        startsAt: body.startsAt,
+        endsAt: body.endsAt,
+        tiers: body.tiers as any,
+      },
+      select: { id: true, name: true, number: true, endsLabel: true, startsAt: true, endsAt: true, tiers: true },
     });
     await audit(prisma, {
       actorId: req.userId!,
       action: "season.create",
       targetType: "season",
       targetId: created.id,
-      after: { name: created.name, startsAt: created.startsAt, endsAt: created.endsAt, tierCount: tierCount(created.tiers) },
+      after: {
+        name: created.name,
+        number: created.number,
+        endsLabel: created.endsLabel,
+        startsAt: created.startsAt,
+        endsAt: created.endsAt,
+        tierCount: tierCount(created.tiers),
+      },
       reason: body.reason,
     });
     return ok({ id: created.id });
@@ -99,6 +121,8 @@ export async function adminLiveOpsRoutes(app: FastifyInstance) {
     const body = z
       .object({
         name: z.string().trim().min(1).max(120).optional(),
+        number: z.number().int().min(1).optional(),
+        endsLabel: z.string().trim().max(120).optional(),
         startsAt: z.coerce.date().optional(),
         endsAt: z.coerce.date().optional(),
         tiers: tiersSchema.optional(),
@@ -107,7 +131,7 @@ export async function adminLiveOpsRoutes(app: FastifyInstance) {
       .parse(req.body);
     const before = await prisma.season.findUnique({
       where: { id: req.params.id },
-      select: { id: true, name: true, startsAt: true, endsAt: true, tiers: true },
+      select: { id: true, name: true, number: true, endsLabel: true, startsAt: true, endsAt: true, tiers: true },
     });
     if (!before) throw err.notFound("NO_SEASON", "Season not found");
     const startsAt = body.startsAt ?? before.startsAt;
@@ -115,21 +139,37 @@ export async function adminLiveOpsRoutes(app: FastifyInstance) {
     if (endsAt <= startsAt) throw err.badRequest("BAD_DATES", "endsAt must be after startsAt");
     const data: Record<string, unknown> = {};
     if (body.name !== undefined) data.name = body.name;
+    if (body.number !== undefined) data.number = body.number;
+    if (body.endsLabel !== undefined) data.endsLabel = body.endsLabel;
     if (body.startsAt !== undefined) data.startsAt = body.startsAt;
     if (body.endsAt !== undefined) data.endsAt = body.endsAt;
     if (body.tiers !== undefined) data.tiers = body.tiers;
     const after = await prisma.season.update({
       where: { id: req.params.id },
       data: data as any,
-      select: { id: true, name: true, startsAt: true, endsAt: true, tiers: true },
+      select: { id: true, name: true, number: true, endsLabel: true, startsAt: true, endsAt: true, tiers: true },
     });
     await audit(prisma, {
       actorId: req.userId!,
       action: "season.update",
       targetType: "season",
       targetId: after.id,
-      before: { name: before.name, startsAt: before.startsAt, endsAt: before.endsAt, tierCount: tierCount(before.tiers) },
-      after: { name: after.name, startsAt: after.startsAt, endsAt: after.endsAt, tierCount: tierCount(after.tiers) },
+      before: {
+        name: before.name,
+        number: before.number,
+        endsLabel: before.endsLabel,
+        startsAt: before.startsAt,
+        endsAt: before.endsAt,
+        tierCount: tierCount(before.tiers),
+      },
+      after: {
+        name: after.name,
+        number: after.number,
+        endsLabel: after.endsLabel,
+        startsAt: after.startsAt,
+        endsAt: after.endsAt,
+        tierCount: tierCount(after.tiers),
+      },
       reason: body.reason,
     });
     return ok({ id: after.id });

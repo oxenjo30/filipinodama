@@ -449,12 +449,14 @@ model QuestProgress {
 }
 
 model Season {
-  id       String           @id
-  name     String
-  startsAt DateTime
-  endsAt   DateTime
-  tiers    Json
-  progress SeasonProgress[]
+  id        String           @id
+  name      String
+  number    Int?
+  endsLabel String?
+  startsAt  DateTime
+  endsAt    DateTime
+  tiers     Json
+  progress  SeasonProgress[]
 }
 
 model SeasonProgress {
