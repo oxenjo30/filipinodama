@@ -45,7 +45,7 @@ export function EconomyPage() {
     <>
       <StoreCatalog />
 
-      <div className="fd-2col" style={{ alignItems: "start" }}>
+      <div className="fd-2col">
         <GrantCard onDone={load} />
 
         <div className="panel" style={{ padding: 20 }}>

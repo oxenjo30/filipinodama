@@ -245,7 +245,7 @@ export function StoreCatalog() {
         </div>
       </div>
 
-      <div className="panel" style={{ overflow: "hidden" }}>
+      <div className="panel" style={{ overflow: "hidden", marginBottom: 14 }}>
         {/* header */}
         <div className="card-header">
           <span className="t">Store catalog</span>
@@ -438,10 +438,6 @@ export function StoreCatalog() {
             </tbody>
           </table>
         </div>
-      </div>
-
-      <div className="dim" style={{ fontSize: 12, margin: "10px 0 14px" }}>
-        Every create, edit, toggle, and delete is recorded in the audit log with a required reason. Items owned by players are soft-deleted (deactivated) to protect inventory.
       </div>
     </>
   );
