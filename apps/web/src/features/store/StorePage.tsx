@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { api, ApiError } from "../../lib/api";
 import { useAppStore } from "../../stores/appStore";
 import { useAuthStore } from "../../stores/authStore";
+import { useCartStore } from "../../stores/cartStore";
 import { Piece } from "../../components/Piece";
 import { StorePreviewModal, type StorePreview } from "./StorePreviewModal";
 import { TopUpModal } from "./TopUpModal";
@@ -390,7 +391,13 @@ export function StorePage() {
   const navigate = useNavigate();
 
   const [tab, setTab] = useState<string>("All");
-  const [cart, setCart] = useState<CartLine[]>([]);
+  // Cart IDs are persisted to localStorage (see cartStore) so the cart SURVIVES a
+  // page refresh. The full display lines are derived from these ids + the live
+  // catalog below (`cart`), keeping names/prices always fresh.
+  const cartIds = useCartStore((s) => s.ids);
+  const cartAdd = useCartStore((s) => s.add);
+  const cartRemove = useCartStore((s) => s.remove);
+  const cartSetIds = useCartStore((s) => s.setIds);
   const [checkoutOpen, setCheckoutOpen] = useState(false); // checkout confirmation modal
   const [checkoutSeq, setCheckoutSeq] = useState(0); // bumped on each open to reset the modal's internal Review/Receipt state
 
@@ -525,14 +532,27 @@ export function StorePage() {
     };
   }, [me]);
 
-  const addToCart = (line: CartLine) => {
-    setCart((c) => (c.some((x) => x.id === line.id) ? c : [...c, line]));
-    showToast(`${line.name} added to cart`);
-  };
-  const removeFromCart = (id: string) => setCart((c) => c.filter((x) => x.id !== id));
-
   // A real StoreItem → a cart line (name/price/currency all straight from the API).
   const cartLineOf = (it: ShopItem): CartLine => ({ id: it.id, name: it.name, sub: it.sub, price: it.price, cur: it.cur, thumb: it.thumb });
+
+  // Derive the display cart from the persisted ids + the LIVE catalog. Any id that
+  // no longer resolves (item removed, or now owned) is silently dropped, so a
+  // stale/owned line can never linger after a refresh.
+  const cart: CartLine[] = useMemo(() => {
+    if (!items) return [];
+    return cartIds
+      .map((id) => items.find((it) => it.id === id))
+      .filter((it): it is ShopItem => !!it && !owned.has(it.id))
+      .map(cartLineOf);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cartIds, items, owned]);
+
+  const addToCart = (line: CartLine) => {
+    if (cartIds.includes(line.id)) return;
+    cartAdd(line.id);
+    showToast(`${line.name} added to cart`);
+  };
+  const removeFromCart = (id: string) => cartRemove(id);
 
   // Look up a live catalog item by id (used by the Featured Pack / Seasonal Offer
   // marketing banners, which are backed by real BUNDLE items "heritage"/"lunar").
@@ -588,7 +608,8 @@ export function StorePage() {
         break;
       }
     }
-    setCart(failedFrom >= 0 ? lines.slice(failedFrom) : []);
+    // Keep only the unpurchased lines (the failed one + everything after it).
+    cartSetIds(failedFrom >= 0 ? lines.slice(failedFrom).map((l) => l.id) : []);
     if (granted.length === 0) {
       // Nothing was granted (e.g. first line failed) — surface it and keep the
       // modal in Review so the CheckoutModal never shows an empty receipt.
