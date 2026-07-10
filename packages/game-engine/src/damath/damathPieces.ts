@@ -1,35 +1,29 @@
 import type { DamathPiece, DamathPlayerId, DamathVariant } from "@dama/shared";
 import { getPlayableColumns } from "./damathBoard.js";
+import { VARIANT_CHIPS } from "./damathVariants.js";
 
 /**
- * Official Whole-variant chip values in placement order: read left→right,
- * top→bottom across a player's three home rows (matches the official piece
- * sheet's 3×4 layout). The multiset is exactly {0..11}. (Spec §5.1.)
+ * Official Whole-variant chip values in placement order (kept for tests that
+ * pin the canonical Whole sequence). The full per-variant tables live in
+ * damathVariants.ts. (Spec §5.1.)
  */
-export const WHOLE_VALUE_SEQUENCE: readonly number[] = [
-  9, 6, 1, 4, // row A (home back rank)
-  0, 3, 10, 7, // row B
-  11, 8, 5, 2, // row C (home front rank)
-];
-
-/** Value sequences per numeric variant. MVP builds `whole`; the rest are
- *  recorded for the registry but not wired into playable modes yet. */
-const VALUE_SEQUENCES: Partial<Record<DamathVariant, readonly number[]>> = {
-  whole: WHOLE_VALUE_SEQUENCE,
-};
+export const WHOLE_VALUE_SEQUENCE: readonly number[] = [9, 6, 1, 4, 0, 3, 10, 7, 11, 8, 5, 2];
 
 /**
  * Build the starting pieces for a variant.
  *
- * Blue (top) fills rows y=0,1,2 with the value sequence, each row read
+ * Blue (top) fills rows y=0,1,2 with the variant's chip sequence, each row read
  * left→right over that row's playable columns. Red (bottom) is the
  * point-symmetric reflection through the board centre: Red@(x,y) mirrors
- * Blue@(7−x,7−y) with the same value, so both players see their own
- * 9,6,1,4 on their own back rank. (Spec §5.1, per-design seat convention.)
+ * Blue@(7−x,7−y) with the same chip, so both players see their own first row
+ * on their own back rank. (Spec §5.1, per-design seat convention.)
+ *
+ * A chip carries its canonical numeric `value` plus, for non-plain-numeric
+ * variants, an `expr` for display / coordinate evaluation.
  */
 export function createDamathPieces(variant: DamathVariant): DamathPiece[] {
-  const seq = VALUE_SEQUENCES[variant];
-  if (!seq) throw new Error(`Damath variant "${variant}" has no value sequence (locked variant).`);
+  const seq = VARIANT_CHIPS[variant];
+  if (!seq) throw new Error(`Damath variant "${variant}" has no chip table.`);
 
   const pieces: DamathPiece[] = [];
   let idc = 0;
@@ -40,21 +34,25 @@ export function createDamathPieces(variant: DamathVariant): DamathPiece[] {
   let i = 0;
   for (const y of blueRows) {
     for (const x of getPlayableColumns(y)) {
-      const value = seq[i++];
-      pieces.push({ id: nextId("blue"), player: "blue", value, dama: false, pos: { x, y } });
+      const spec = seq[i++];
+      const piece: DamathPiece = { id: nextId("blue"), player: "blue", value: spec.value, dama: false, pos: { x, y } };
+      if (spec.expr) piece.expr = spec.expr;
+      pieces.push(piece);
     }
   }
 
-  // Red is the 180° rotation of Blue: same value at (7−x, 7−y).
+  // Red is the 180° rotation of Blue: same chip at (7−x, 7−y).
   const blue = pieces.slice();
   for (const b of blue) {
-    pieces.push({
+    const piece: DamathPiece = {
       id: nextId("red"),
       player: "red",
       value: b.value,
       dama: false,
       pos: { x: 7 - b.pos.x, y: 7 - b.pos.y },
-    });
+    };
+    if (b.expr) piece.expr = b.expr;
+    pieces.push(piece);
   }
 
   return pieces;

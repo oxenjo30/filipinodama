@@ -578,8 +578,10 @@ describe("Damath initial state (§5.5)", () => {
 });
 
 describe("Damath guards & edge branches", () => {
-  it("createDamathPieces throws for a locked variant with no value sequence", () => {
-    expect(() => createDamathPieces("radical")).toThrow(/locked/);
+  it("createDamathPieces builds all 8 variants (24 pieces each)", () => {
+    for (const v of ["counting", "whole", "fraction", "integer", "rational", "radical", "polynomial", "binary"] as const) {
+      expect(createDamathPieces(v)).toHaveLength(24);
+    }
   });
 
   it("applyDamathMove throws on an unknown mover id", () => {

@@ -1,4 +1,5 @@
-import type { DamathPlayerId } from "@dama/shared";
+import type { DamathExpr, DamathPlayerId } from "@dama/shared";
+import { formatChip } from "./chipDisplay";
 
 /**
  * Piece-face palette per player. Same glossy-disc language as Classic's
@@ -21,6 +22,8 @@ const FACE: Record<DamathPlayerId, { face: string; rim: string; ink: string }> =
 export type DamathPieceProps = {
   player: DamathPlayerId;
   value: number;
+  /** symbolic form for non-plain-numeric variants (fraction/radical/poly/binary) */
+  expr?: DamathExpr;
   dama?: boolean;
   /** gold selection ring */
   selected?: boolean;
@@ -36,11 +39,20 @@ export type DamathPieceProps = {
 export function DamathPiece({
   player,
   value,
+  expr,
   dama = false,
   selected = false,
   glow = false,
 }: DamathPieceProps) {
   const pal = FACE[player];
+  const label = formatChip(value, expr);
+  // Longer labels (fractions, radicals, monomials, binary) shrink to fit the disc.
+  const fontSize =
+    label.length <= 2
+      ? "clamp(13px,3.4vw,26px)"
+      : label.length <= 4
+        ? "clamp(10px,2.6vw,19px)"
+        : "clamp(8px,2vw,15px)";
   const ringColor = glow ? "rgba(120,240,160,.95)" : selected ? "#F5D783" : null;
   const stateRing = glow
     ? ", 0 0 0 4px rgba(120,240,160,.95), 0 0 18px rgba(90,220,130,.6)"
@@ -83,7 +95,7 @@ export function DamathPiece({
             boxShadow: "inset 0 2px 3px rgba(0,0,0,.4)",
           }}
         />
-        {/* the value — the hero of the chip */}
+        {/* the value — the hero of the chip (variant-formatted) */}
         <div
           style={{
             position: "absolute",
@@ -91,14 +103,17 @@ export function DamathPiece({
             display: "flex",
             alignItems: "center",
             justifyContent: "center",
+            padding: "0 6%",
+            textAlign: "center",
             color: pal.ink,
-            font: "800 clamp(13px,3.4vw,26px) 'JetBrains Mono', monospace",
+            font: `800 ${fontSize} 'JetBrains Mono', monospace`,
             textShadow: "0 1px 2px rgba(0,0,0,.7), 0 0 5px rgba(0,0,0,.4)",
             lineHeight: 1,
             userSelect: "none",
+            wordBreak: "break-all",
           }}
         >
-          {value}
+          {label}
         </div>
         {/* dama crown, tucked top-centre so it never fights the number */}
         {dama && (

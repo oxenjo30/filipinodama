@@ -9,7 +9,7 @@ import type {
   DamathRuleOptions,
   DamathScoreEvent,
 } from "@dama/shared";
-import { calculateDamathScore } from "./damathScoring.js";
+import { calculateVariantScore } from "./damathScoring.js";
 
 /**
  * Default Damath rule options (spec §5.2, §5.4). All forcing rules on;
@@ -46,15 +46,20 @@ export function applyDamathMove(
   const scoreEvents: DamathScoreEvent[] = [];
   let gained = 0;
 
-  // score each jump against its own landing operator, in order.
+  // score each jump against its own landing operator, in order. The capturing
+  // chip is evaluated at THIS jump's landing square (matters for polynomial,
+  // whose value depends on board coords); the victim at its own square.
   for (let i = 0; i < move.capturedIds.length; i++) {
     const victim = state.pieces.find((p) => p.id === move.capturedIds[i]);
     if (!victim) throw new Error(`Damath move references unknown victim ${move.capturedIds[i]}`);
     const op = move.landingOperators[i];
-    const r = calculateDamathScore(
-      { value: mover.value, dama: mover.dama },
-      { value: victim.value, dama: victim.dama },
+    const landing = move.path[i];
+    const r = calculateVariantScore(
+      state.variant,
+      { value: mover.value, dama: mover.dama, pos: landing, expr: mover.expr },
+      { value: victim.value, dama: victim.dama, pos: victim.pos, expr: victim.expr },
       op,
+      landing,
     );
     gained += r.points;
     const ev: DamathScoreEvent = {
@@ -100,11 +105,22 @@ export function applyDamathMove(
   };
 }
 
+/** A remaining chip's numeric value for the end-of-game bonus. For polynomial
+ *  this substitutes the chip's FINAL board coords into its monomial (per the
+ *  official rule: "the value of x & y depends on its last location"). All other
+ *  variants use the canonical `value`. */
+function chipNumericValue(p: DamathPiece): number {
+  if (p.expr?.kind === "polynomial") {
+    return p.expr.coeff * Math.pow(p.pos.x, p.expr.ex) * Math.pow(p.pos.y, p.expr.ey);
+  }
+  return p.value;
+}
+
 /** Sum a player's own remaining chips, dama doubled (§5.4 end-of-game bonus). */
 function chipBonus(pieces: DamathPiece[], player: DamathPlayerId): number {
   return pieces
     .filter((p) => p.player === player)
-    .reduce((sum, p) => sum + p.value * (p.dama ? 2 : 1), 0);
+    .reduce((sum, p) => sum + chipNumericValue(p) * (p.dama ? 2 : 1), 0);
 }
 
 /**

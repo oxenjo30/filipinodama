@@ -25,13 +25,34 @@ export type DamathVariant =
 /** Damath board coordinate: x = column 0..7 (L→R), y = row 0..7 (top→bottom). */
 export type DamathCoord = { x: number; y: number };
 
+/**
+ * A symbolic chip value for non-plain-numeric variants. `value` on the piece is
+ * always the canonical NUMBER used for scoring + the end-of-game total; `expr`
+ * carries the extra structure a variant needs to render and (for polynomial)
+ * evaluate correctly:
+ *  - fraction/rational: exact numerator/denominator so display reads "7/10".
+ *  - radical: coefficient·√radicand; `value` is its decimal, `expr` the surds.
+ *  - polynomial: a monomial (coeff·x^ex·y^ey); its numeric `value` is derived
+ *    by substituting the chip's CURRENT board coords for x,y at scoring time.
+ *  - binary: plain integer `value`; `expr.kind:"binary"` flags base-2 display.
+ */
+export type DamathExpr =
+  | { kind: "fraction"; num: number; den: number }
+  | { kind: "radical"; coeff: number; radicand: number }
+  | { kind: "polynomial"; coeff: number; ex: number; ey: number }
+  | { kind: "binary" };
+
 export type DamathPiece = {
   id: string;
   player: DamathPlayerId;
-  /** numeric chip value for numeric variants (whole/counting/integer). */
+  /** canonical numeric chip value — scoring + end-of-game total use THIS. For
+   *  polynomial it is a cache; the authoritative value is recomputed from
+   *  `expr` at the chip's coords when scoring (see damathScoring). */
   value: number;
   dama: boolean;
   pos: DamathCoord;
+  /** optional symbolic form for non-plain-numeric variants (see DamathExpr). */
+  expr?: DamathExpr;
 };
 
 /** One scoring event. `capture` events read a landing operator; the

@@ -207,6 +207,7 @@ export function DamathBoard({
             <DamathPiece
               player={p.player}
               value={p.value}
+              expr={p.expr}
               dama={p.dama}
               selected={p.id === selectedId}
               glow={glowIds.has(p.id)}
@@ -228,7 +229,7 @@ export function DamathBoard({
               animation: "fdcapture .3s ease-out forwards",
             }}
           >
-            <DamathPiece player={p.player} value={p.value} dama={p.dama} />
+            <DamathPiece player={p.player} value={p.value} expr={p.expr} dama={p.dama} />
           </div>
         );
       })}
