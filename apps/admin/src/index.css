@@ -183,7 +183,7 @@ h1.page { font: 800 24px var(--serif); color: var(--gold-lt); margin: 4px 0 20px
 .fd-kpi .trend .delta.down, .fd-kpi .trend .delta.neg { color: var(--red-lt); }
 .fd-kpi.up { --tile: var(--green-lt); }
 .fd-kpi.down { --tile: var(--red-lt); }
-.fd-kpi.amber { --tile: var(--amber); }
+.fd-kpi.amber { --tile: #d9911f; } /* distinct warm-amber, not the gold-toned --amber, so amber tiles read apart from gold */
 .fd-kpi.ink { --tile: var(--ink); }
 .fd-kpi.gold { --tile: var(--gold-lt); }
 
@@ -218,7 +218,7 @@ h1.page { font: 800 24px var(--serif); color: var(--gold-lt); margin: 4px 0 20px
   font: 700 11px var(--sans); letter-spacing: .4px; border-radius: 8px; padding: 9px 14px; cursor: pointer;
 }
 .btn-ghost { border: 1px solid rgba(232, 184, 75, .3); color: var(--ink-2); background: var(--panel-2); }
-.btn-amber { border: 1px solid rgba(217, 145, 31, .5); color: #3a2405; background: linear-gradient(180deg, var(--gold-2), #c98a1e); }
+.btn-amber { border: 1px solid rgba(217, 145, 31, .5); color: #3a2405; background: linear-gradient(180deg, #e6a636, #c98a1e); } /* warm-amber gradient, distinct from the gold-pill, so the caution tier reads apart from primary gold */
 .btn-danger { border: 1px solid rgba(194, 73, 90, .5); color: #fff; background: linear-gradient(180deg, var(--red), #8a2f3c); }
 .btn-ghost-sm, .btn-amber-sm, .btn-danger-sm { padding: 6px 10px; font-size: 10px; }
 
