@@ -9,13 +9,18 @@ type OverviewData = {
   sink: number;
   faucetPct: number;
   matchesPerDay: { day: string; count: number }[];
+  totalPlayersPrev: number;
+  activePlayersPrev: number;
+  matches7d: number;
+  matchesPrev7d: number;
 };
 
 /**
  * Overview — matches the approved dashboard layout, but every number is REAL
  * (from the DB): player counts, matches/day, and the gold faucet-vs-sink from
- * the ledger. Metrics that need an analytics pipeline (DAU trend, revenue) are
- * honestly labeled rather than faked.
+ * the ledger. KPI trend deltas are real period-over-period comparisons against
+ * prior-window counts (also from the DB — no analytics pipeline). Metrics that
+ * need an analytics pipeline (revenue) are honestly labeled rather than faked.
  */
 export function Overview() {
   const [d, setD] = useState<OverviewData | null>(null);
@@ -32,15 +37,16 @@ export function Overview() {
 
   return (
     <>
-      {/* KPI cards — real counts; the two we can't compute yet are labeled. */}
-      <div className="kpi" style={{ gridTemplateColumns: "repeat(4,1fr)" }}>
-        <Card label="Total Players" value={d.totalPlayers.toLocaleString()} sub="registered accounts" />
-        <Card label="Active (7d)" value={d.activePlayers.toLocaleString()} sub="seen in last 7 days" />
-        <Card label="Matches (all-time)" value={d.matchesTotal.toLocaleString()} sub="played to date" />
+      {/* KPI cards — real counts; each tile's trend is a real prior-window delta.
+          The one metric with no data source (Revenue) is honestly labeled instead. */}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 14 }}>
+        <Card label="Total Players" value={d.totalPlayers.toLocaleString()} delta={delta(d.totalPlayers, d.totalPlayersPrev)} deltaCaption="vs last wk" />
+        <Card label="Active (7d)" value={d.activePlayers.toLocaleString()} delta={delta(d.activePlayers, d.activePlayersPrev)} deltaCaption="vs prior 7d" />
+        <Card label="Matches (all-time)" value={d.matchesTotal.toLocaleString()} delta={delta(d.matches7d, d.matchesPrev7d)} deltaCaption="7d vs prior 7d" />
         <Card label="Revenue" value="—" sub="needs analytics pipeline" muted />
       </div>
 
-      <div style={{ display: "grid", gridTemplateColumns: "1.6fr 1fr", gap: 14, marginTop: 14 }} className="ov-2col">
+      <div className="fd-2col chart" style={{ marginTop: 14 }}>
         {/* Matches per day — real */}
         <div className="acard" style={{ padding: 20 }}>
           <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between" }}>
@@ -71,39 +77,86 @@ export function Overview() {
         </div>
       </div>
 
-      {/* Economy health — real faucet vs sink from the ledger */}
-      <div className="acard" style={{ padding: 20, marginTop: 14 }}>
-        <div style={{ font: "700 13px var(--sans)", color: "var(--ink-2)" }}>
-          Economy health <span style={{ fontWeight: 500, color: "var(--dim)" }}>· gold faucet vs sink (7d)</span>
-        </div>
-        <div style={{ display: "flex", gap: 20, marginTop: 16 }}>
-          <div style={{ flex: 1 }}>
-            <div style={{ font: "700 10px var(--sans)", letterSpacing: 1, color: "var(--green)" }}>FAUCET (granted)</div>
-            <div style={{ font: "700 20px var(--mono)", color: "var(--ink-2)", marginTop: 5 }}>{d.faucet.toLocaleString()}</div>
+      <div className="fd-2col" style={{ marginTop: 14 }}>
+        {/* Economy health — real faucet vs sink from the ledger */}
+        <div className="acard" style={{ padding: 20 }}>
+          <div style={{ font: "700 13px var(--sans)", color: "var(--ink-2)" }}>
+            Economy health <span style={{ fontWeight: 500, color: "var(--dim)" }}>· gold faucet vs sink (7d)</span>
           </div>
-          <div style={{ flex: 1 }}>
-            <div style={{ font: "700 10px var(--sans)", letterSpacing: 1, color: "var(--red)" }}>SINK (spent)</div>
-            <div style={{ font: "700 20px var(--mono)", color: "var(--ink-2)", marginTop: 5 }}>{d.sink.toLocaleString()}</div>
+          <div style={{ display: "flex", gap: 20, marginTop: 16 }}>
+            <div style={{ flex: 1 }}>
+              <div style={{ font: "700 10px var(--sans)", letterSpacing: 1, color: "var(--green)" }}>FAUCET (granted)</div>
+              <div style={{ font: "700 20px var(--mono)", color: "var(--ink-2)", marginTop: 5 }}>{d.faucet.toLocaleString()}</div>
+            </div>
+            <div style={{ flex: 1 }}>
+              <div style={{ font: "700 10px var(--sans)", letterSpacing: 1, color: "var(--red)" }}>SINK (spent)</div>
+              <div style={{ font: "700 20px var(--mono)", color: "var(--ink-2)", marginTop: 5 }}>{d.sink.toLocaleString()}</div>
+            </div>
+          </div>
+          <div style={{ height: 10, borderRadius: 6, overflow: "hidden", display: "flex", marginTop: 16, background: "var(--bg-2)" }}>
+            <div style={{ width: `${d.faucetPct}%`, background: "linear-gradient(90deg,#2f8f5b,#3fb574)" }} />
+            <div style={{ flex: 1, background: "linear-gradient(90deg,#a53b4a,#c2495a)" }} />
+          </div>
+          <div style={{ marginTop: 10, font: "600 11px var(--sans)", color: d.faucetPct >= 55 ? "var(--green-lt)" : "var(--amber)" }}>
+            {d.faucetPct >= 55 ? "Healthy — faucet ahead of sink" : d.faucetPct <= 45 ? "Sink ahead of faucet — watch inflation" : "Balanced faucet vs sink"} ({d.faucetPct}/{100 - d.faucetPct}).
           </div>
         </div>
-        <div style={{ height: 10, borderRadius: 6, overflow: "hidden", display: "flex", marginTop: 16, background: "var(--bg-2)" }}>
-          <div style={{ width: `${d.faucetPct}%`, background: "linear-gradient(90deg,#2f8f5b,#3fb574)" }} />
-          <div style={{ flex: 1, background: "linear-gradient(90deg,#a53b4a,#c2495a)" }} />
-        </div>
-        <div style={{ marginTop: 10, font: "600 11px var(--sans)", color: d.faucetPct >= 55 ? "var(--green-lt)" : "var(--amber)" }}>
-          {d.faucetPct >= 55 ? "Healthy — faucet ahead of sink" : d.faucetPct <= 45 ? "Sink ahead of faucet — watch inflation" : "Balanced faucet vs sink"} ({d.faucetPct}/{100 - d.faucetPct}).
+
+        {/* Revenue — honest: real-money top-up is disabled (gold-only economy),
+            and there's no analytics pipeline for it even if it were enabled. */}
+        <div className="acard" style={{ padding: 20 }}>
+          <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between" }}>
+            <div style={{ font: "700 13px var(--sans)", color: "var(--ink-2)" }}>Revenue</div>
+            <div style={{ font: "600 11px var(--sans)", color: "var(--dim)" }}>USD · last 7 days</div>
+          </div>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: 110, marginTop: 16 }}>
+            <div style={{ font: "600 12px var(--sans)", color: "var(--dim)", textAlign: "center" }}>Payments disabled (gold-only)</div>
+          </div>
+          <div style={{ marginTop: 12, font: "700 18px var(--mono)", color: "var(--dim)" }}>
+            — <span style={{ font: "600 11px var(--sans)", color: "var(--dim)" }}>needs analytics pipeline</span>
+          </div>
         </div>
       </div>
     </>
   );
 }
 
-function Card({ label, value, sub, muted }: { label: string; value: string; sub: string; muted?: boolean }) {
+/** Real period-over-period delta from a prior-window count. Returns null (no
+ * fabricated number) if the prior count is unavailable — callers fall back to
+ * the plain descriptor caption instead of rendering a fake delta. */
+function delta(current: number, prior: number): { pct: number; up: boolean } | null {
+  if (prior <= 0) return null;
+  const pct = ((current - prior) / prior) * 100;
+  return { pct, up: pct >= 0 };
+}
+
+function Card({
+  label,
+  value,
+  sub,
+  muted,
+  delta: dv,
+  deltaCaption,
+}: {
+  label: string;
+  value: string;
+  sub?: string;
+  muted?: boolean;
+  delta?: { pct: number; up: boolean } | null;
+  deltaCaption?: string;
+}) {
   return (
-    <div className="card">
+    <div className={muted ? "fd-kpi" : dv ? (dv.up ? "fd-kpi up" : "fd-kpi down") : "fd-kpi"}>
       <div className="l">{label}</div>
       <div className="v" style={muted ? { color: "var(--dim)" } : undefined}>{value}</div>
-      <div style={{ marginTop: 8, font: "600 11px var(--sans)", color: "var(--dim)" }}>{sub}</div>
+      {dv ? (
+        <div className="trend">
+          <span className="sub">{deltaCaption}</span>
+          <span className={`delta ${dv.up ? "up" : "down"}`}>{dv.up ? "+" : ""}{dv.pct.toFixed(1)}%</span>
+        </div>
+      ) : (
+        <div style={{ marginTop: 8, font: "600 11px var(--sans)", color: "var(--dim)" }}>{sub ?? deltaCaption}</div>
+      )}
     </div>
   );
 }

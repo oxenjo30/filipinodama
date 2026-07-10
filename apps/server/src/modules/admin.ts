@@ -45,12 +45,18 @@ export async function adminRoutes(app: FastifyInstance) {
     const now = new Date();
     const dayMs = 86_400_000;
     const since7 = new Date(now.getTime() - 7 * dayMs);
+    const since14 = new Date(now.getTime() - 14 * dayMs);
 
-    const [totalPlayers, activePlayers, matchesTotal, matches7d] = await Promise.all([
+    const [totalPlayers, activePlayers, matchesTotal, matches7d, totalPlayersPrev, activePlayersPrev, matchesPrev7d] = await Promise.all([
       prisma.user.count({ where: { isBot: false, isGuest: false, deletedAt: null } }),
       prisma.user.count({ where: { isBot: false, deletedAt: null, lastSeenAt: { gte: since7 } } }),
       prisma.match.count(),
       prisma.match.findMany({ where: { startedAt: { gte: since7 } }, select: { startedAt: true } }),
+      // Prior-window counts (no analytics pipeline needed) — used to derive an
+      // honest period-over-period delta for the KPI tiles instead of faking one.
+      prisma.user.count({ where: { isBot: false, isGuest: false, deletedAt: null, createdAt: { lt: since7 } } }),
+      prisma.user.count({ where: { isBot: false, deletedAt: null, lastSeenAt: { gte: since14, lt: since7 } } }),
+      prisma.match.count({ where: { startedAt: { gte: since14, lt: since7 } } }),
     ]);
 
     // Gold faucet vs sink over the last 7d, straight from the ledger.
@@ -75,7 +81,12 @@ export async function adminRoutes(app: FastifyInstance) {
       buckets.push({ day: label, count });
     }
 
-    return ok({ totalPlayers, activePlayers, matchesTotal, faucet, sink, faucetPct, matchesPerDay: buckets });
+    const matches7dCount = matches7d.length;
+    return ok({
+      totalPlayers, activePlayers, matchesTotal, faucet, sink, faucetPct, matchesPerDay: buckets,
+      // Prior-window counts for period-over-period deltas (real, DB-derived — no pipeline).
+      totalPlayersPrev, activePlayersPrev, matches7d: matches7dCount, matchesPrev7d,
+    });
   });
 
   // ── 1.2 Who am I (drives client RBAC) ──────────────────────────────────────
