@@ -3,11 +3,14 @@ import { NavLink, Navigate, Route, Routes, useLocation } from "react-router-dom"
 import { useAuth, type AdminRole } from "./lib/auth";
 import { Login } from "./pages/Login";
 import { Overview } from "./pages/Overview";
+import { Analytics } from "./pages/Analytics";
 import { PlayersPage } from "./pages/Players";
 import { Moderation } from "./pages/Moderation";
+import { Support } from "./pages/Support";
 import { EconomyPage } from "./pages/Economy";
 import { StorePage } from "./pages/Store";
 import { LiveOpsPage } from "./pages/LiveOps";
+import { TournamentsPage } from "./pages/Tournaments";
 import { GuildsPage } from "./pages/Guilds";
 import { MatchesPage } from "./pages/Matches";
 import { AuditPage } from "./pages/Audit";
@@ -29,17 +32,17 @@ import { Campaigns } from "./pages/Campaigns";
 type Nav = [string, string, string, string, AdminRole, boolean?];
 const NAV: Nav[] = [
   ["/overview", "Overview", "#E8B84B", "Monitor", "SUPPORT"],
-  ["/analytics", "Analytics", "#5fd0e0", "Monitor", "ECONOMY", true],
+  ["/analytics", "Analytics", "#5fd0e0", "Monitor", "ECONOMY"],
   ["/players", "Players", "#7fb0ff", "Players & safety", "SUPPORT"],
   ["/moderation", "Moderation", "#c2495a", "Players & safety", "MODERATOR"],
-  ["/support", "Support", "#5fd08a", "Players & safety", "SUPPORT", true],
+  ["/support", "Support", "#5fd08a", "Players & safety", "SUPPORT"],
   ["/matches", "Matches", "#d98a3a", "Players & safety", "MODERATOR"],
   ["/economy", "Grants & ledger", "#f0cf72", "Economy", "ECONOMY"],
   ["/store", "Store catalog", "#f0cf72", "Economy", "ECONOMY"],
   ["/financials", "Financials", "#4bd6a0", "Economy", "ECONOMY", true],
   ["/fraud", "Fraud & AML", "#ff7a7a", "Economy", "ECONOMY", true],
   ["/liveops", "Live ops", "#4fd0c0", "Engagement", "ECONOMY"],
-  ["/tournaments", "Tournaments", "#e0a24a", "Engagement", "ECONOMY", true],
+  ["/tournaments", "Tournaments", "#e0a24a", "Engagement", "ECONOMY"],
   ["/guilds", "Guilds", "#e39aa8", "Engagement", "MODERATOR"],
   ["/campaigns", "Campaigns", "#ff9ec4", "Engagement", "ECONOMY"],
   ["/settings", "Settings", "#b98cff", "System & access", "SUPERADMIN"],
@@ -170,23 +173,23 @@ export function App() {
           <Routes>
             <Route path="/" element={<Navigate to="/overview" replace />} />
             <Route path="/overview" element={<Overview />} />
+            <Route path="/analytics" element={<Analytics />} />
             <Route path="/players" element={<PlayersPage />} />
             <Route path="/moderation" element={<Moderation />} />
+            <Route path="/support" element={<Support />} />
             <Route path="/matches" element={<MatchesPage />} />
             <Route path="/economy" element={<EconomyPage />} />
             <Route path="/store" element={<StorePage />} />
             <Route path="/liveops" element={<LiveOpsPage />} />
+            <Route path="/tournaments" element={<TournamentsPage />} />
             <Route path="/guilds" element={<GuildsPage />} />
             <Route path="/audit" element={<AuditPage />} />
             <Route path="/campaigns" element={<Campaigns />} />
             <Route path="/settings" element={<Settings />} />
             <Route path="/admins" element={<Admins />} />
             {/* Phase-2 stubs */}
-            <Route path="/analytics" element={<Phase2 title="Analytics deep-dive" note="DAU/WAU/MAU, funnels, retention cohorts. Needs an analytics pipeline." />} />
-            <Route path="/support" element={<Phase2 title="Support tickets" note="Ticket model + intake." />} />
             <Route path="/financials" element={<Phase2 title="Financials" note="Blocked — real-money top-up is disabled for legal compliance." />} />
             <Route path="/fraud" element={<Phase2 title="Fraud & AML" note="Payment-driven risk engine (blocked on payments)." />} />
-            <Route path="/tournaments" element={<Phase2 title="Tournaments" note="Needs a Tournament model." />} />
             <Route path="*" element={<Navigate to="/overview" replace />} />
           </Routes>
         </main>

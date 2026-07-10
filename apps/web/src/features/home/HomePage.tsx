@@ -22,11 +22,13 @@ import { recentUpdates, timeAgo } from "./updates";
 
 const SB = (n: string) => `/assets/${n}`;
 
-// Featured modes — prototype `modes` array (line 3808).
+// Featured modes — prototype `modes` array (line 3808), plus Math Dama (the
+// educational Damath variant mode).
 const MODES = [
   { title: "Classic Mode", desc: "Timeless Dama fun for everyone.", border: "rgba(60,110,200,.55)", btn: "btn-blue", icon: "mc-classic.png" },
   { title: "Ranked Mode", desc: "Climb the ladder, prove your skill.", border: "rgba(180,60,70,.55)", btn: "btn-red", icon: "mc-ranked.png" },
   { title: "Play vs AI", desc: "Practice offline against the computer.", border: "rgba(50,150,100,.55)", btn: "btn-green", icon: "mc-training.png" },
+  { title: "Math Dama", desc: "Dama with math scoring — win by score.", border: "rgba(232,184,75,.55)", btn: "btn-gold", icon: "mc-mathdama.png" },
 ];
 
 // prototype `updates` (line 3816) & `quickStats` (line 3819).
@@ -292,7 +294,9 @@ export function HomePage() {
   const updates = useMemo(() => recentUpdates(), []);
 
   const onMode = (title: string) => {
-    if (title === "Ranked Mode") {
+    if (title === "Math Dama") {
+      navigate("/damath"); // educational Damath variant selector
+    } else if (title === "Ranked Mode") {
       if (me && !me.isGuest) navigate("/play/online?mode=ranked");
       // A guest can't play ranked, and routing to /login would loop (its guest
       // option sends them right back). Tell them; a logged-out user signs in.
@@ -344,7 +348,12 @@ export function HomePage() {
             <div key={m.title} className="frame" style={{ padding: 18, display: "flex", flexDirection: "column", gap: 11, borderColor: m.border }}>
               <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
                 <img src={SB(m.icon)} alt="" width={48} height={48} style={{ objectFit: "contain", flex: "none" }} />
-                <div style={{ font: "700 16px Cinzel,serif", color: "var(--gold-lt)", lineHeight: 1.12 }}>{m.title}</div>
+                <div style={{ display: "flex", alignItems: "center", gap: 7, flexWrap: "wrap" }}>
+                  <div style={{ font: "700 16px Cinzel,serif", color: "var(--gold-lt)", lineHeight: 1.12 }}>{m.title}</div>
+                  {m.title === "Math Dama" && (
+                    <span style={{ font: "700 8px Inter", letterSpacing: 1, textTransform: "uppercase", color: "#8ce0ad", background: "rgba(50,150,100,.18)", padding: "2px 6px", borderRadius: 100 }}>New</span>
+                  )}
+                </div>
               </div>
               <div style={{ font: "400 13px/1.45 Inter", color: "var(--ink)" }}>{m.desc}</div>
               <button className={`btn ${m.btn}`} onClick={() => onMode(m.title)} style={{ marginTop: "auto", width: "100%" }}>Play Now</button>
