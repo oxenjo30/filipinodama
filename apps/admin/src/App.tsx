@@ -6,6 +6,7 @@ import { Overview } from "./pages/Overview";
 import { Analytics } from "./pages/Analytics";
 import { PlayersPage } from "./pages/Players";
 import { Moderation } from "./pages/Moderation";
+import { Support } from "./pages/Support";
 import { EconomyPage } from "./pages/Economy";
 import { StorePage } from "./pages/Store";
 import { LiveOpsPage } from "./pages/LiveOps";
@@ -33,7 +34,7 @@ const NAV: Nav[] = [
   ["/analytics", "Analytics", "#5fd0e0", "Monitor", "ECONOMY"],
   ["/players", "Players", "#7fb0ff", "Players & safety", "SUPPORT"],
   ["/moderation", "Moderation", "#c2495a", "Players & safety", "MODERATOR"],
-  ["/support", "Support", "#5fd08a", "Players & safety", "SUPPORT", true],
+  ["/support", "Support", "#5fd08a", "Players & safety", "SUPPORT"],
   ["/matches", "Matches", "#d98a3a", "Players & safety", "MODERATOR"],
   ["/economy", "Grants & ledger", "#f0cf72", "Economy", "ECONOMY"],
   ["/store", "Store catalog", "#f0cf72", "Economy", "ECONOMY"],
@@ -174,6 +175,7 @@ export function App() {
             <Route path="/analytics" element={<Analytics />} />
             <Route path="/players" element={<PlayersPage />} />
             <Route path="/moderation" element={<Moderation />} />
+            <Route path="/support" element={<Support />} />
             <Route path="/matches" element={<MatchesPage />} />
             <Route path="/economy" element={<EconomyPage />} />
             <Route path="/store" element={<StorePage />} />
@@ -184,7 +186,6 @@ export function App() {
             <Route path="/settings" element={<Settings />} />
             <Route path="/admins" element={<Admins />} />
             {/* Phase-2 stubs */}
-            <Route path="/support" element={<Phase2 title="Support tickets" note="Ticket model + intake." />} />
             <Route path="/financials" element={<Phase2 title="Financials" note="Blocked — real-money top-up is disabled for legal compliance." />} />
             <Route path="/fraud" element={<Phase2 title="Fraud & AML" note="Payment-driven risk engine (blocked on payments)." />} />
             <Route path="/tournaments" element={<Phase2 title="Tournaments" note="Needs a Tournament model." />} />

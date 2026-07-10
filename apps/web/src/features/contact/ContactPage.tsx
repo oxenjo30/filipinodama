@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { api, ApiError } from "../../lib/api";
 import { useAppStore } from "../../stores/appStore";
 import { useAuthStore } from "../../stores/authStore";
 
@@ -10,12 +11,13 @@ import { useAuthStore } from "../../stores/authStore";
  * a two-column grid with the message form on the left and a "Reach Us" /
  * "Before You Write" sidebar on the right.
  *
- * There is no support-ticket backend yet, so submitting does NOT invent an email
- * delivery it can't guarantee. Instead it validates the form locally, opens the
- * user's mail client (mailto:) so the message actually reaches support, and then
- * shows the prototype's "Message Sent!" success panel with a client-generated
- * ticket reference the user can quote. The "Before You Write" links and Privacy
- * links navigate to real routes.
+ * Logged-in, non-guest players POST a real support ticket to
+ * `/api/support/tickets` — it's persisted, triaged by SUPPORT staff in the admin
+ * console, and the reply arrives via the bell notification. Logged-out/guest
+ * visitors keep the original mailto fallback (no ticket backend reachable
+ * without an account to attach it to), opening the user's mail client so the
+ * message still genuinely reaches support, with a client-generated ticket
+ * reference the user can quote.
  */
 
 const SUPPORT_EMAIL = "support@filipinodama.com";
@@ -26,7 +28,7 @@ type Category = (typeof CATEGORIES)[number];
 
 const MIN_MESSAGE_LENGTH = 10;
 
-/** Client-side ticket reference (no support backend yet), e.g. "FDR-A1B2C3". */
+/** Client-side ticket reference for the mailto fallback, e.g. "FDR-A1B2C3". */
 function makeTicket(): string {
   return "FDR-" + Date.now().toString(36).toUpperCase().slice(-6);
 }
@@ -59,6 +61,10 @@ export function ContactPage() {
   // Player tag threaded into the outgoing support message so the team can find
   // the account. Falls back to "#0000" when signed out (mirrors the prototype).
   const playerTag = me?.tag || "#0000";
+  // Authenticated, non-guest players file a real ticket; guests/logged-out
+  // visitors keep the mailto fallback (guests are treated as logged-out here —
+  // the server also rejects guest-filed tickets, defense in depth).
+  const isAuthedFiler = Boolean(me && !me.isGuest);
 
   const [name, setName] = useState(me?.displayName ?? "");
   const [email, setEmail] = useState(me?.email ?? "");
@@ -66,9 +72,13 @@ export function ContactPage() {
   const [subject, setSubject] = useState("");
   const [message, setMessage] = useState("");
   const [messageError, setMessageError] = useState<string | null>(null);
+  const [sending, setSending] = useState(false);
   // Success panel: prototype's "Message Sent!" state with a ticket reference.
   const [sent, setSent] = useState(false);
   const [ticket, setTicket] = useState("");
+  // Real server ticket id when the authenticated branch succeeded — drives the
+  // honest success copy ("your ticket" vs. "on its way to <email>").
+  const [persisted, setPersisted] = useState(false);
 
   function chipStyle(active: boolean): React.CSSProperties {
     return {
@@ -82,22 +92,76 @@ export function ContactPage() {
     };
   }
 
-  function handleSend() {
+  async function handleSend() {
+    // Authenticated (non-guest) players file a REAL persisted ticket. Checked
+    // FIRST, with its own independent validation: only subject + message are
+    // required. Do NOT gate this branch on name/email — a logged-in player with
+    // a null account email has email="" here, and the email input is hidden for
+    // logged-in users (nothing to fill it with), so the old unconditional
+    // `!email.trim()` guard would block them from ever submitting even though
+    // the server tolerates userEmail=null (it snapshots the account's email
+    // server-side, not from this form).
+    if (isAuthedFiler) {
+      if (!subject.trim()) {
+        showToast("Please fill in a subject.");
+        return;
+      }
+      const trimmedMessage = message.trim();
+      if (trimmedMessage.length < MIN_MESSAGE_LENGTH) {
+        setMessageError(`Please write at least ${MIN_MESSAGE_LENGTH} characters.`);
+        return;
+      }
+      if (trimmedMessage.length > 4000) {
+        setMessageError("Message is too long (4000 characters max).");
+        return;
+      }
+      setMessageError(null);
+      setSending(true);
+      try {
+        const { id } = await api.post<{ id: string }>("/api/support/tickets", {
+          category,
+          subject: subject.trim(),
+          message: trimmedMessage,
+        });
+        setTicket(id);
+        setPersisted(true);
+        setSent(true);
+        showToast("Ticket submitted — we'll get back to you");
+      } catch (e) {
+        if (e instanceof ApiError && e.code === "RATE_LIMITED") {
+          showToast("You're filing tickets too fast — please wait a bit.");
+        } else if (e instanceof ApiError && e.code === "GUEST_CANNOT_FILE") {
+          // Shouldn't happen (guests take the mailto branch below) — fall back
+          // to mailto so the message still reaches support.
+          sendViaMailto();
+        } else {
+          showToast(e instanceof ApiError ? e.message : "Couldn't submit your ticket. Please try again.");
+        }
+      } finally {
+        setSending(false);
+      }
+      return;
+    }
+
+    // Logged-out / guest — the original guard is kept, scoped to this branch
+    // only: here name/email inputs are visible and required, so the guard is
+    // meaningful (unlike the authenticated branch above).
     if (!name.trim() || !email.trim() || !subject.trim()) {
       showToast("Please fill in your name, email, and subject.");
       return;
     }
-    // Require a minimum message length (matches the prototype, line 3413) with an
-    // honest inline error rather than firing an empty support request.
     if (message.trim().length < MIN_MESSAGE_LENGTH) {
       setMessageError(`Please write at least ${MIN_MESSAGE_LENGTH} characters.`);
       return;
     }
     setMessageError(null);
+    sendViaMailto();
+  }
 
-    // No support-ticket backend yet — generate a client-side reference and open
-    // the user's mail client so the message is genuinely delivered. The player
-    // tag is included so support can locate the account.
+  /** No support-ticket backend for logged-out/guest visitors — open the user's
+   * mail client so the message is genuinely delivered, with a client-generated
+   * reference the user can quote. */
+  function sendViaMailto() {
     const ref = makeTicket();
     const emlSubject = `[${category}] ${subject} (Ticket ${ref})`;
     const body =
@@ -116,6 +180,7 @@ export function ContactPage() {
     window.location.href = href;
 
     setTicket(ref);
+    setPersisted(false);
     setSent(true);
     showToast("Opening your email app to notify support…");
   }
@@ -126,6 +191,7 @@ export function ContactPage() {
     setMessage("");
     setMessageError(null);
     setSent(false);
+    setPersisted(false);
   }
 
   return (
@@ -213,11 +279,18 @@ export function ContactPage() {
             <h2 style={{ margin: 0, font: "800 22px Cinzel,serif", color: "var(--gold-lt)" }}>
               Message Sent!
             </h2>
-            <p style={{ margin: 0, maxWidth: 420, font: "400 14px/1.65 Inter", color: "var(--ink)" }}>
-              Your message is on its way to{" "}
-              <b style={{ color: "var(--gold-lt)" }}>{SUPPORT_EMAIL}</b>. We typically reply within
-              24–48 hours. Your ticket reference is <b style={{ color: "#fff" }}>{ticket}</b>.
-            </p>
+            {persisted ? (
+              <p style={{ margin: 0, maxWidth: 420, font: "400 14px/1.65 Inter", color: "var(--ink)" }}>
+                Our support team has your ticket and will reply in your notifications. Your ticket
+                reference is <b style={{ color: "#fff" }}>{ticket}</b>.
+              </p>
+            ) : (
+              <p style={{ margin: 0, maxWidth: 420, font: "400 14px/1.65 Inter", color: "var(--ink)" }}>
+                Your message is on its way to{" "}
+                <b style={{ color: "var(--gold-lt)" }}>{SUPPORT_EMAIL}</b>. We typically reply within
+                24–48 hours. Your ticket reference is <b style={{ color: "#fff" }}>{ticket}</b>.
+              </p>
+            )}
             <button
               type="button"
               className="btn btn-gold fd-cta-full"
@@ -232,28 +305,30 @@ export function ContactPage() {
           className="frame fd-card-m"
           style={{ padding: "26px 28px", display: "flex", flexDirection: "column", gap: 16 }}
         >
-          <div className="fd-collapse-2" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
-            <div>
-              <label style={labelStyle}>Your Name</label>
-              <input
-                className="fd-nozoom"
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                placeholder="Juan dela Cruz"
-                style={inputStyle}
-              />
+          {!isAuthedFiler && (
+            <div className="fd-collapse-2" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
+              <div>
+                <label style={labelStyle}>Your Name</label>
+                <input
+                  className="fd-nozoom"
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  placeholder="Juan dela Cruz"
+                  style={inputStyle}
+                />
+              </div>
+              <div>
+                <label style={labelStyle}>Your Email</label>
+                <input
+                  className="fd-nozoom"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  placeholder="you@email.com"
+                  style={inputStyle}
+                />
+              </div>
             </div>
-            <div>
-              <label style={labelStyle}>Your Email</label>
-              <input
-                className="fd-nozoom"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                placeholder="you@email.com"
-                style={inputStyle}
-              />
-            </div>
-          </div>
+          )}
           <div>
             <label style={{ ...labelStyle, marginBottom: 9 }}>Topic</label>
             <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
@@ -311,9 +386,10 @@ export function ContactPage() {
             type="button"
             className="btn btn-gold fd-cta-full"
             onClick={handleSend}
-            style={{ width: "100%", padding: 14, fontSize: 13 }}
+            disabled={sending}
+            style={{ width: "100%", padding: 14, fontSize: 13, opacity: sending ? 0.7 : 1 }}
           >
-            Send Message
+            {sending ? "Sending…" : "Send Message"}
           </button>
           <div
             style={{
@@ -329,7 +405,10 @@ export function ContactPage() {
             >
               Privacy Policy
             </span>
-            . This opens your email app to deliver the message to our support team.
+            .{" "}
+            {isAuthedFiler
+              ? "Our support team will reply in your notifications."
+              : "This opens your email app to deliver the message to our support team."}
           </div>
         </div>
         )}
