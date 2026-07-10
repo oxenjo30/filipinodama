@@ -4,6 +4,7 @@ import type { DamathVariant } from "@dama/shared";
 import { Button } from "../../components";
 import { Modal } from "../shared/Modal";
 import { useDamathOnlineStore } from "../../stores/damathOnlineStore";
+import { useDamathSounds } from "../../lib/useDamathSounds";
 import { DamathBoard } from "./DamathBoard";
 import { DamathScorePanel } from "./DamathScorePanel";
 import { DamathMoveHistory } from "./DamathMoveHistory";
@@ -54,6 +55,10 @@ export function DamathOnlineMatchPage() {
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Board SFX on each server-state transition. myColor is null for spectators →
+  // neutral flourish (the hook handles it).
+  useDamathSounds(state, myColor);
 
   const over = status === "ended";
   // Spectator: arrived via a room but the server gave us no colour (read-only).

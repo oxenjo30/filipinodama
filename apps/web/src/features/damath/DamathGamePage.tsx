@@ -5,6 +5,7 @@ import { Button } from "../../components";
 import { Modal } from "../shared/Modal";
 import { useDamathStore, DAMATH_HUMAN } from "../../stores/damathStore";
 import { useAppStore } from "../../stores/appStore";
+import { useDamathSounds } from "../../lib/useDamathSounds";
 import { DamathBoard } from "./DamathBoard";
 import { DamathScorePanel } from "./DamathScorePanel";
 import { DamathMoveHistory } from "./DamathMoveHistory";
@@ -49,6 +50,11 @@ export function DamathGamePage() {
   const isAi = mode === "ai";
   const result = state.result;
   const over = !!result;
+
+  // Board SFX: move / capture / dama-promotion / win-lose-draw on each state
+  // transition. vs-AI → the human is Red (real win/lose); local pass-and-play →
+  // null so both seats get the neutral victory flourish.
+  useDamathSounds(state, isAi ? DAMATH_HUMAN : null);
   const redToMove = !over && state.turn === "red";
   const blueToMove = !over && state.turn === "blue";
   const aiThinking = isAi && status === "thinking";

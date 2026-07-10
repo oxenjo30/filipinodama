@@ -28,7 +28,7 @@ export const DAMATH_VARIANTS: DamathVariantInfo[] = [
   { key: "rational", level: "secondary", label: "Rational Damath", grade: "Grade 8", system: "Signed fractions", enabled: true },
   { key: "radical", level: "secondary", label: "Radical Damath", grade: "Grade 9", system: "Radicals", enabled: true },
   { key: "polynomial", level: "secondary", label: "Polynomial Damath", grade: "Fourth Year", system: "Polynomials", enabled: true },
-  { key: "binary", level: "secondary", label: "Binary Damath", grade: "—", system: "Binary", enabled: true },
+  { key: "binary", level: "secondary", label: "Binary Damath", grade: "Senior High", system: "Binary numbers", enabled: true },
 ];
 
 export const variantsFor = (level: DamathLevel) =>
