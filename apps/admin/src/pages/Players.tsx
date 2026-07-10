@@ -1,11 +1,12 @@
 import { useEffect, useState } from "react";
+import { RANK_TIERS } from "@dama/shared";
 import { api } from "../lib/api";
 import { useAuth } from "../lib/auth";
 import { useAdminMutation, useToast } from "../lib/ui";
 
 type PlayerRow = {
   id: string; username: string; displayName: string; tag: string; email: string | null;
-  rankTier: string; trophies: number; gold: number; diamonds: number; status: string;
+  rankTier: string; trophies: number; gold: number; diamonds: number; status: string; createdAt: string;
 };
 type Detail = PlayerRow & {
   bio: string | null; countryCode: string | null; isGuest: boolean; adminRole: string | null;
@@ -22,6 +23,13 @@ const FILTERS = ["all", "active", "muted", "banned"] as const;
 function StatusBadge({ s }: { s: string }) {
   const cls = s === "banned" ? "st-banned" : s === "muted" ? "st-muted" : s === "deleted" ? "st-deleted" : "st-active";
   return <span className={`badge-st ${cls}`}>{s}</span>;
+}
+
+function initials(name: string): string {
+  const parts = name.trim().split(/\s+/).filter(Boolean);
+  if (parts.length === 0) return "?";
+  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
+  return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
 }
 
 /** 1.3/1.4 Players — search, list, detail drawer, sanctions. */
@@ -50,44 +58,56 @@ export function PlayersPage() {
       <div className="crumb">Player Management · Players</div>
       <h1 className="page">Players</h1>
 
-      <div className="row" style={{ marginBottom: 12 }}>
+      <div className="row" style={{ marginBottom: 12, gap: 10, flexWrap: "wrap" }}>
         <input
-          className="input" style={{ maxWidth: 340 }}
-          placeholder="Search username / tag / email / id"
+          className="input" style={{ flex: 1, minWidth: 220 }}
+          placeholder="Search by username, tag, email, or ID…"
           value={q}
           onChange={(e) => setQ(e.target.value)}
           onKeyDown={(e) => e.key === "Enter" && load()}
         />
-        <button className="btn" onClick={load}>Search</button>
-        <div style={{ marginLeft: "auto" }} className="dim">{total} players</div>
-      </div>
-      <div className="row" style={{ marginBottom: 14 }}>
         {FILTERS.map((f) => (
-          <button key={f} className={`chip${filter === f ? " on" : ""}`} onClick={() => setFilter(f)}>{f}</button>
+          <button key={f} className={`abtn chip${filter === f ? " on" : ""}`} onClick={() => setFilter(f)}>{f}</button>
         ))}
+        <button className="btn" onClick={load}>Search</button>
       </div>
+      <div className="dim" style={{ marginBottom: 14, fontSize: 12 }}>{total} players</div>
 
       <div className="panel">
         <table className="tbl">
           <thead>
-            <tr><th>Player</th><th>Rank</th><th className="num">Trophies</th><th className="num">Gold</th><th className="num">Diamonds</th><th>Status</th></tr>
+            <tr className="thead-raised">
+              <th>Player</th><th>Rank</th><th className="num">Trophies</th><th className="num">Gold</th><th className="num">Diamonds</th><th style={{ textAlign: "center" }}>Status</th><th className="num">Joined</th>
+            </tr>
           </thead>
           <tbody>
             {loading ? (
-              <tr><td colSpan={6} className="dim" style={{ textAlign: "center", padding: 24 }}>Loading…</td></tr>
+              <tr><td colSpan={7} className="dim" style={{ textAlign: "center", padding: 24 }}>Loading…</td></tr>
             ) : rows.length === 0 ? (
-              <tr><td colSpan={6} className="dim" style={{ textAlign: "center", padding: 24 }}>No players match your search.</td></tr>
+              <tr><td colSpan={7} className="dim" style={{ textAlign: "center", padding: 24 }}>No players match your search.</td></tr>
             ) : (
-              rows.map((p) => (
-                <tr key={p.id} className="click" onClick={() => setSelId(p.id)}>
-                  <td><div style={{ fontWeight: 600 }}>{p.displayName}</div><div className="dim mono" style={{ fontSize: 12 }}>{p.username} {p.tag}</div></td>
-                  <td className="mono dim">{p.rankTier}</td>
-                  <td className="num">{p.trophies.toLocaleString()}</td>
-                  <td className="num">{p.gold.toLocaleString()}</td>
-                  <td className="num">{p.diamonds.toLocaleString()}</td>
-                  <td><StatusBadge s={p.status} /></td>
-                </tr>
-              ))
+              rows.map((p) => {
+                const tier = RANK_TIERS.find((t) => t.key === p.rankTier);
+                return (
+                  <tr key={p.id} className="arow" style={{ cursor: "pointer" }} onClick={() => setSelId(p.id)}>
+                    <td>
+                      <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                        <div className="fd-avatar">{initials(p.displayName || p.username)}</div>
+                        <div>
+                          <div style={{ fontWeight: 600 }}>{p.displayName}</div>
+                          <div className="dim mono" style={{ fontSize: 12 }}>{p.username} {p.tag}</div>
+                        </div>
+                      </div>
+                    </td>
+                    <td><span className="rank-chip" style={{ color: tier?.accent }}>{tier?.label ?? p.rankTier}</span></td>
+                    <td className="num">{p.trophies.toLocaleString()}</td>
+                    <td className="num">{p.gold.toLocaleString()}</td>
+                    <td className="num">{p.diamonds.toLocaleString()}</td>
+                    <td style={{ textAlign: "center" }}><StatusBadge s={p.status} /></td>
+                    <td className="num dim">{new Date(p.createdAt).toLocaleDateString()}</td>
+                  </tr>
+                );
+              })
             )}
           </tbody>
         </table>
