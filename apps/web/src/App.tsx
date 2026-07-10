@@ -13,6 +13,7 @@ import { NotFoundPage } from "./features/shared/NotFoundPage";
 import { ErrorBoundary } from "./features/shared/ErrorBoundary";
 import { FriendsPage } from "./features/friends/FriendsPage";
 import { ProfilePage } from "./features/profile/ProfilePage";
+import { PublicProfilePage } from "./features/profile/PublicProfilePage";
 import { QuestsPage } from "./features/quests/QuestsPage";
 import { GuildsPage } from "./features/guilds/GuildsPage";
 import { StorePage } from "./features/store/StorePage";
@@ -118,6 +119,7 @@ export function App() {
           <Route path="/orders" element={<OrdersPage />} />
           <Route path="/inventory" element={<InventoryPage />} />
           <Route path="/profile" element={<ProfilePage />} />
+          <Route path="/profile/:id" element={<PublicProfilePage />} />
           <Route path="/friends" element={<FriendsPage />} />
           <Route path="/messages" element={<MessagesPage />} />
           <Route path="/messages/:userId" element={<MessagesPage />} />
