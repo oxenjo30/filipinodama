@@ -141,33 +141,37 @@ export function App() {
       </aside>
 
       <div className="body">
+        {/* Full-width sticky bar; inner content constrained to 1240px so the title/controls
+            line up with the .main content column below (same max-width + centering). */}
         <header className="topbar">
-          <div style={{ minWidth: 0 }}>
-            <div className="eyebrow">{eyebrow}</div>
-            <div className="title">{title}</div>
-          </div>
-          <div style={{ flex: 1 }} />
-          {/* Viewing-as — SUPERADMIN can preview lower-role views (client-only). */}
-          {realRole === "SUPERADMIN" && (
-            <div className="viewingas">
-              <span>VIEWING AS</span>
-              <select className="select" style={{ width: "auto", padding: "7px 10px", color: "var(--gold-lt)", font: "700 11px var(--sans)" }}
-                value={effRole} onChange={(e) => setViewAs(e.target.value === realRole ? null : (e.target.value as AdminRole))}>
-                <option value="SUPPORT">Support</option>
-                <option value="MODERATOR">Moderator</option>
-                <option value="ECONOMY">Economy admin</option>
-                <option value="SUPERADMIN">Superadmin</option>
-              </select>
+          <div className="topbar-inner">
+            <div style={{ minWidth: 0 }}>
+              <div className="eyebrow">{eyebrow}</div>
+              <div className="title">{title}</div>
             </div>
-          )}
-          <div className="userchip">
-            <div className="av">{initials}</div>
-            <div>
-              <div style={{ font: "700 12px var(--sans)", color: "var(--ink-2)", lineHeight: 1 }}>{me.displayName}</div>
-              <div style={{ font: "600 10px var(--sans)", color: "var(--dim)", marginTop: 2 }}>{ROLE_LABEL[realRole]}</div>
+            <div style={{ flex: 1 }} />
+            {/* Viewing-as — SUPERADMIN can preview lower-role views (client-only). */}
+            {realRole === "SUPERADMIN" && (
+              <div className="viewingas">
+                <span>VIEWING AS</span>
+                <select className="select" style={{ width: "auto", padding: "7px 10px", color: "var(--gold-lt)", font: "700 11px var(--sans)" }}
+                  value={effRole} onChange={(e) => setViewAs(e.target.value === realRole ? null : (e.target.value as AdminRole))}>
+                  <option value="SUPPORT">Support</option>
+                  <option value="MODERATOR">Moderator</option>
+                  <option value="ECONOMY">Economy admin</option>
+                  <option value="SUPERADMIN">Superadmin</option>
+                </select>
+              </div>
+            )}
+            <div className="userchip">
+              <div className="av">{initials}</div>
+              <div>
+                <div style={{ font: "700 12px var(--sans)", color: "var(--ink-2)", lineHeight: 1 }}>{me.displayName}</div>
+                <div style={{ font: "600 10px var(--sans)", color: "var(--dim)", marginTop: 2 }}>{ROLE_LABEL[realRole]}</div>
+              </div>
             </div>
+            <button className="btn" onClick={() => logout()}>Sign out</button>
           </div>
-          <button className="btn" onClick={() => logout()}>Sign out</button>
         </header>
 
         <main className="main">

@@ -72,9 +72,16 @@ button { font-family: inherit; }
 .sidebar .foot { margin-top: auto; padding: 12px 14px; border-top: 1px solid rgba(232, 184, 75, 0.1); font: 600 10px var(--sans); color: #6f5f92; line-height: 1.5; }
 
 .body { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+/* Full-width sticky bar (background + border span the whole width). */
 .topbar {
   position: sticky; top: 0; z-index: 20; background: rgba(16, 7, 32, 0.86); backdrop-filter: blur(10px);
-  border-bottom: 1px solid var(--edge); padding: 14px 24px; display: flex; align-items: center; gap: 16px;
+  border-bottom: 1px solid var(--edge);
+}
+/* Inner row constrained to the same 1240px column as .main, so the title/controls
+   line up exactly with the content below (no full-width vs centered misalignment). */
+.topbar-inner {
+  max-width: 1240px; margin: 0 auto; padding: 14px 24px;
+  display: flex; align-items: center; gap: 16px;
 }
 .topbar .eyebrow { font: 700 9px var(--sans); letter-spacing: 2.5px; text-transform: uppercase; color: var(--dim); }
 .topbar .title { font: 800 20px var(--serif); color: var(--gold-lt); line-height: 1.1; margin-top: 2px; }
