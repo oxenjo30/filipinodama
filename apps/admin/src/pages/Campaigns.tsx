@@ -107,9 +107,6 @@ export function Campaigns() {
 
   return (
     <>
-      <div className="crumb">Growth · Campaign composer</div>
-      <h1 className="page">Campaign composer</h1>
-
       <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
         <div className="fd-2col" style={{ gridTemplateColumns: "1.5fr 1fr", alignItems: "start", gap: 16 }}>
           {/* composer */}
@@ -137,22 +134,22 @@ export function Campaigns() {
               </div>
             </div>
 
-            <div className="field">
+            <div className="field" style={{ marginBottom: 0 }}>
               <label>Audience segment</label>
               <select className="select" value={segment} onChange={(e) => { setSegment(e.target.value); setReach(null); }}>
                 {SEGMENTS.map((s) => <option key={s.value} value={s.value}>{s.label}</option>)}
               </select>
             </div>
 
-            <div className="field">
+            <div className="field" style={{ marginBottom: 0 }}>
               <label>Title</label>
               <input className="input" placeholder="e.g. Weekend 2× Gold is live!" value={title} onChange={(e) => setTitle(e.target.value)} />
             </div>
-            <div className="field">
+            <div className="field" style={{ marginBottom: 0 }}>
               <label>Message</label>
               <textarea className="input" placeholder="Write your message…" style={{ minHeight: 100, resize: "vertical" }} value={body} onChange={(e) => setBody(e.target.value)} />
             </div>
-            <div className="field">
+            <div className="field" style={{ marginBottom: 0 }}>
               <label>Schedule (leave for immediate send)</label>
               <input className="input" type="datetime-local" value={scheduledFor} onChange={(e) => setScheduledFor(e.target.value)} />
             </div>
@@ -197,7 +194,7 @@ export function Campaigns() {
 
           {/* preview + reach */}
           <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-            <div className="acard">
+            <div className="acard" style={{ padding: "16px 18px" }}>
               <div className="field" style={{ marginBottom: 0 }}><label>Estimated reach · {CHANNEL_LABEL[channel]}</label></div>
               <div className="mono" style={{ font: "800 30px var(--mono)", color: "var(--green-lt)", marginTop: 4 }}>
                 {previewing ? "…" : reach !== null ? reach.toLocaleString() : "—"}
@@ -206,7 +203,7 @@ export function Campaigns() {
                 {SEGMENT_LABEL[segment] ?? segment} player(s) match this segment.
               </div>
             </div>
-            <div className="acard" style={{ background: "var(--bg-2)" }}>
+            <div className="acard" style={{ padding: "16px 18px", background: "var(--bg-2)" }}>
               <div className="field" style={{ marginBottom: 0 }}><label>Live preview</label></div>
               <div style={{ marginTop: 10, background: "var(--panel)", border: "1px solid var(--edge)", borderRadius: 11, padding: 14, display: "flex", gap: 11, alignItems: "flex-start" }}>
                 <div style={{ width: 34, height: 34, borderRadius: 9, flex: "none", background: "linear-gradient(135deg,#e8b04a,#c98a1e)", display: "flex", alignItems: "center", justifyContent: "center", font: "900 15px var(--serif)", color: "#3a2405" }}>D</div>

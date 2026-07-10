@@ -29,8 +29,6 @@ export function AuditPage() {
 
   return (
     <>
-      <div className="crumb">System · Audit</div>
-      <h1 className="page">Audit Log</h1>
       <div className="row" style={{ marginBottom: 14 }}>
         <input className="input" style={{ maxWidth: 280 }} placeholder="Filter by action (e.g. user.ban)" value={action} onChange={(e) => setAction(e.target.value)} />
         <button className="btn" onClick={load}>Refresh</button>

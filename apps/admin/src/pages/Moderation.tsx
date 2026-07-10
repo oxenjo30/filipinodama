@@ -57,9 +57,6 @@ export function Moderation() {
 
   return (
     <>
-      <div className="crumb">Trust & Safety · Moderation</div>
-      <h1 className="page">Moderation queue</h1>
-
       <div className="row" style={{ marginBottom: 14 }}>
         {STATUS_FILTERS.map((s) => (
           <button key={s} className={`chip${status === s ? " on" : ""}`} onClick={() => setStatus(s)}>{s.toLowerCase()}</button>

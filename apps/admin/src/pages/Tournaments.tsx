@@ -132,84 +132,83 @@ export function TournamentsPage() {
 
   return (
     <>
-      <div className="crumb">Live Ops · Tournaments</div>
-      <h1 className="page">Tournaments</h1>
-
-      {/* 4-stat header */}
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(150px,1fr))", gap: 12, marginBottom: 18 }}>
-        <div className="fd-kpi up">
-          <div className="l">Live now</div>
-          <div className="v" style={{ font: "800 22px var(--mono)", marginTop: 5 }}>{stats?.liveNow ?? "—"}</div>
+      <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+        {/* 4-stat header */}
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(150px,1fr))", gap: 12 }}>
+          <div className="fd-kpi up">
+            <div className="l">Live now</div>
+            <div className="v" style={{ font: "800 22px var(--mono)", marginTop: 5 }}>{stats?.liveNow ?? "—"}</div>
+          </div>
+          <div className="fd-kpi amber" style={{ ["--tile" as string]: "var(--gold-2)" }}>
+            <div className="l">Upcoming</div>
+            <div className="v" style={{ font: "800 22px var(--mono)", marginTop: 5 }}>{stats?.upcoming ?? "—"}</div>
+          </div>
+          <div className="fd-kpi ink">
+            <div className="l">Players registered</div>
+            <div className="v" style={{ font: "800 22px var(--mono)", marginTop: 5 }}>{(stats?.playersRegistered ?? 0).toLocaleString()}</div>
+          </div>
+          <div className="fd-kpi gold" style={{ ["--tile" as string]: "var(--gold)" }}>
+            <div className="l">Gold prize pool (scheduled)</div>
+            <div className="v" style={{ font: "800 22px var(--mono)", marginTop: 5 }}>{(stats?.goldPrizePool ?? 0).toLocaleString()} 🪙</div>
+          </div>
         </div>
-        <div className="fd-kpi amber" style={{ ["--tile" as string]: "var(--gold-2)" }}>
-          <div className="l">Upcoming</div>
-          <div className="v" style={{ font: "800 22px var(--mono)", marginTop: 5 }}>{stats?.upcoming ?? "—"}</div>
-        </div>
-        <div className="fd-kpi ink">
-          <div className="l">Players registered</div>
-          <div className="v" style={{ font: "800 22px var(--mono)", marginTop: 5 }}>{(stats?.playersRegistered ?? 0).toLocaleString()}</div>
-        </div>
-        <div className="fd-kpi gold" style={{ ["--tile" as string]: "var(--gold)" }}>
-          <div className="l">Gold prize pool (scheduled)</div>
-          <div className="v" style={{ font: "800 22px var(--mono)", marginTop: 5 }}>{(stats?.goldPrizePool ?? 0).toLocaleString()} 🪙</div>
-        </div>
-      </div>
 
-      <div className="row" style={{ marginBottom: 14, justifyContent: "space-between", flexWrap: "wrap", gap: 12 }}>
-        <div style={{ font: "700 12px var(--sans)", letterSpacing: ".4px", color: "var(--dim)" }}>
-          All tournaments — create, schedule &amp; manage the cups shown on the player Cups screen
+        <div className="row" style={{ justifyContent: "space-between", flexWrap: "wrap", gap: 12 }}>
+          <div style={{ font: "700 12px var(--sans)", letterSpacing: ".4px", color: "var(--dim)" }}>
+            All tournaments — create, schedule &amp; manage the cups shown on the player Cups screen
+          </div>
+          <button className="btn gold" style={PRIMARY_GOLD_STYLE} onClick={() => { setCreating(true); setEditing(null); }}>+ New tournament</button>
         </div>
-        <button className="btn gold" style={PRIMARY_GOLD_STYLE} onClick={() => { setCreating(true); setEditing(null); }}>+ New tournament</button>
-      </div>
 
-      <div className="row" style={{ marginBottom: 14 }}>
-        <button className={`chip${status === "" ? " on" : ""}`} onClick={() => setStatus("")}>all</button>
-        {(["DRAFT", "OPEN", "RUNNING", "COMPLETED", "CANCELLED"] as TournamentStatus[]).map((s) => (
-          <button key={s} className={`chip${status === s ? " on" : ""}`} onClick={() => setStatus(s)}>
-            {STATUS_LABEL[s].toLowerCase()}
-          </button>
-        ))}
-      </div>
+        <div className="row">
+          <button className={`chip${status === "" ? " on" : ""}`} onClick={() => setStatus("")}>all</button>
+          {(["DRAFT", "OPEN", "RUNNING", "COMPLETED", "CANCELLED"] as TournamentStatus[]).map((s) => (
+            <button key={s} className={`chip${status === s ? " on" : ""}`} onClick={() => setStatus(s)}>
+              {STATUS_LABEL[s].toLowerCase()}
+            </button>
+          ))}
+        </div>
 
-      {creating && <TournamentForm onClose={() => setCreating(false)} onDone={load} />}
-      {editing && <TournamentForm tournament={editing} onClose={() => setEditing(null)} onDone={load} />}
+        {creating && <TournamentForm onClose={() => setCreating(false)} onDone={load} />}
+        {editing && <TournamentForm tournament={editing} onClose={() => setEditing(null)} onDone={load} />}
 
-      <div className="panel">
-        <table className="tbl">
-          <thead>
-            <tr>
-              <th>Tournament</th>
-              <th>Status</th>
-              <th>Format</th>
-              <th className="num">Entry</th>
-              <th className="num">Prize pool</th>
-              <th className="num">Players</th>
-              <th>Starts</th>
-              <th></th>
-            </tr>
-          </thead>
-          <tbody>
-            {loading ? (
-              <tr><td colSpan={8} className="dim" style={{ textAlign: "center", padding: 24 }}>Loading…</td></tr>
-            ) : rows.length === 0 ? (
+        <div className="panel">
+          <table className="tbl">
+            <thead>
               <tr>
-                <td colSpan={8} className="dim" style={{ textAlign: "center", padding: 24 }}>
-                  {status ? "No tournaments match this filter." : "No tournaments yet — create one."}
-                </td>
+                <th>Tournament</th>
+                <th>Status</th>
+                <th>Format</th>
+                <th className="num">Entry</th>
+                <th className="num">Prize pool</th>
+                <th className="num">Players</th>
+                <th>Starts</th>
+                <th></th>
               </tr>
-            ) : (
-              rows.map((t) => (
-                <TournamentRow
-                  key={t.id}
-                  t={t}
-                  onEdit={() => { setEditing(t); setCreating(false); }}
-                  onView={() => setViewingId(t.id)}
-                  onDone={load}
-                />
-              ))
-            )}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {loading ? (
+                <tr><td colSpan={8} className="dim" style={{ textAlign: "center", padding: 24 }}>Loading…</td></tr>
+              ) : rows.length === 0 ? (
+                <tr>
+                  <td colSpan={8} className="dim" style={{ textAlign: "center", padding: 24 }}>
+                    {status ? "No tournaments match this filter." : "No tournaments yet — create one."}
+                  </td>
+                </tr>
+              ) : (
+                rows.map((t) => (
+                  <TournamentRow
+                    key={t.id}
+                    t={t}
+                    onEdit={() => { setEditing(t); setCreating(false); }}
+                    onView={() => setViewingId(t.id)}
+                    onDone={load}
+                  />
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
       </div>
 
       {viewingId && <BracketDrawer id={viewingId} onClose={() => setViewingId(null)} onDone={load} />}
@@ -376,7 +375,7 @@ function TournamentForm({ tournament, onClose, onDone }: { tournament?: Tourname
   };
 
   return (
-    <div className="panel panel-pad" style={{ marginBottom: 14 }}>
+    <div className="panel panel-pad">
       <div style={{ font: "800 16px var(--serif)", color: "var(--ink)", marginBottom: 12 }}>{isEdit ? "Edit tournament" : "New tournament"}</div>
 
       <div className="field">

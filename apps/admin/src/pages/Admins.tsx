@@ -46,11 +46,8 @@ export function Admins() {
   useEffect(load, []);
 
   return (
-    <>
-      <div className="crumb">Access Control · Admin users</div>
-      <h1 className="page">Admin users</h1>
-
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 12, marginBottom: 16 }}>
+    <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 12 }}>
         <div className="fd-kpi pad-sm" style={{ ["--tile" as string]: "var(--green-lt)" }}>
           <div className="l">Active admins</div>
           <div className="v" style={{ fontSize: 22, fontWeight: 800 }}>{stats?.active ?? 0}</div>
@@ -67,7 +64,7 @@ export function Admins() {
 
       <GrantCard onDone={load} />
 
-      <div className="panel" style={{ marginTop: 16, overflow: "hidden" }}>
+      <div className="panel" style={{ overflow: "hidden" }}>
         <div style={{ overflowX: "auto" }}>
           <table className="tbl" style={{ minWidth: 820 }}>
             <thead>
@@ -91,7 +88,7 @@ export function Admins() {
           </table>
         </div>
       </div>
-    </>
+    </div>
   );
 }
 
@@ -233,7 +230,7 @@ function GrantCard({ onDone }: { onDone: () => void }) {
     });
 
   return (
-    <div className="panel panel-pad" style={{ borderColor: "rgba(126,224,192,.3)" }}>
+    <div className="panel" style={{ padding: 20, borderColor: "rgba(126,224,192,.3)" }}>
       <div style={{ font: "800 15px var(--serif)", color: "var(--ink)" }}>Grant admin</div>
       <div className="dim" style={{ marginTop: 4, fontSize: 12 }}>
         Grants console access to an existing player immediately — no email invite, no password
@@ -262,7 +259,6 @@ function GrantCard({ onDone }: { onDone: () => void }) {
           Grant
         </button>
       </div>
-      <div className="dim" style={{ fontSize: 12, marginTop: 10 }}>Every grant/revoke/role change is recorded in the audit log.</div>
     </div>
   );
 }

@@ -98,15 +98,12 @@ export function MatchesPage() {
 
   return (
     <>
-      <div className="crumb">Match Integrity · Matches</div>
-      <h1 className="page">Matches</h1>
-
       <div className="flag-banner" style={{ marginBottom: 14 }}>
         <span className="dot" />
         <span>Anti-cheat detection is a Phase 2 subsystem — this is a read-only match review view. No flags, confidence scores, or decisions below are real.</span>
       </div>
 
-      <div className="row" style={{ marginBottom: 12 }}>
+      <div className="row" style={{ marginBottom: 14 }}>
         <input
           className="input" style={{ maxWidth: 300 }}
           placeholder="Filter by player id (red or blue)"

@@ -44,12 +44,9 @@ export function EconomyPage() {
 
   return (
     <>
-      <div className="crumb">Economy · Store & currency</div>
-      <h1 className="page">Store & economy</h1>
-
       <StoreCatalog />
 
-      <div className="fd-2col" style={{ alignItems: "start" }}>
+      <div className="fd-2col">
         <GrantCard onDone={load} />
 
         <div className="panel" style={{ padding: 20 }}>
