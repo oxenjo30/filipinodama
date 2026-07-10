@@ -220,7 +220,22 @@ export function DamathRoomPage() {
 
   const info = variantInfo(inRoom ? liveVariant : variant);
 
-  // ── Logged-out prompt ──
+  // ── Auto-joining from a shared link (guest sign-in + join/spectate in flight):
+  //    show a clear connecting state instead of flashing the create/join screen. ──
+  if (queryCode && !inRoom && !error) {
+    return (
+      <div style={{ maxWidth: 560, margin: "0 auto", padding: "60px 26px", textAlign: "center" }}>
+        <div style={{ font: "700 12px Inter", letterSpacing: 3, color: "var(--gold)" }}>✦ PRIVATE MATCH ✦</div>
+        <h1 style={{ margin: "12px 0 8px", font: "800 clamp(24px,4vw,34px) Cinzel,serif", color: "var(--gold-lt)" }}>
+          {querySpectate ? "Joining as spectator…" : "Joining the room…"}
+        </h1>
+        <p style={{ font: "400 13px Inter", color: "var(--ink)", marginBottom: 24 }}>Connecting to room {queryCode.toUpperCase()}.</p>
+        <div style={{ width: 44, height: 44, margin: "0 auto", borderRadius: "50%", border: "3px solid rgba(232,184,75,.25)", borderTopColor: "var(--gold)", animation: "fdspin .9s linear infinite" }} />
+      </div>
+    );
+  }
+
+  // ── Logged-out prompt (no shared code — a fresh visit to /damath/room) ──
   if (!me) {
     return (
       <div className="fd-page-pad" style={{ maxWidth: 640, margin: "0 auto", padding: "48px 26px 60px", textAlign: "center" }}>

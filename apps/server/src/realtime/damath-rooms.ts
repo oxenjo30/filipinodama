@@ -153,6 +153,7 @@ export function registerDamathRooms(io: IOServer, socket: Socket) {
   socket.on(EV.damathRoomSpectate, async (payload: { code?: unknown } = {}) => {
     if (!allow(socket, "damath:room:spectate", 15, 10_000)) return;
     const code = typeof payload?.code === "string" ? payload.code.trim().toUpperCase() : null;
+    console.log("[damath-rooms] spectate", { userId, code, roomExists: code ? rooms.has(code) : false, openRooms: rooms.size });
     if (!code) return;
     const room = rooms.get(code);
     if (!room) {
