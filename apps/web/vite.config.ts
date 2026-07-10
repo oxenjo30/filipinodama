@@ -16,6 +16,10 @@ export default defineConfig({
         clientsClaim: true,
         cleanupOutdatedCaches: true,
         navigateFallback: "/index.html",
+        // The app bundle grew past workbox's default 2 MiB precache limit (the
+        // Damath variants + room pages pushed it over), which failed the PWA
+        // step. Raise the cap so the main bundle is still precached.
+        maximumFileSizeToCacheInBytes: 4 * 1024 * 1024,
       },
       manifest: {
         name: "FilipinoDama Royal",

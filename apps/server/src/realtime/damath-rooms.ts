@@ -1,6 +1,7 @@
 import type { Server as IOServer, Socket } from "socket.io";
 import { EV, type DamathVariant } from "@dama/shared";
 import { prisma } from "../db/client.js";
+import { isMuted } from "../lib/mute.js";
 import { createLiveDamathMatch } from "./damath-match.js";
 import { allow } from "./rate-limit.js";
 
@@ -167,6 +168,23 @@ export function registerDamathRooms(io: IOServer, socket: Socket) {
     } catch (e) {
       console.error("[damath-rooms] start failed", e);
     }
+  });
+
+  // Lobby chat — relay to everyone in the room (ephemeral; not persisted).
+  socket.on(EV.damathRoomChat, async (payload: { body?: unknown } = {}) => {
+    if (!allow(socket, "damath:room:chat", 8, 4000)) return; // anti-flood
+    const code = userRoom.get(userId);
+    const room = code ? rooms.get(code) : null;
+    if (!room) return;
+    const body = typeof payload?.body === "string" ? payload.body.trim().slice(0, 300) : "";
+    if (!body) return;
+    if (await isMuted(userId)) return; // admin-muted players can't chat
+    const from = memberIn(room, userId);
+    io.to(PREFIX(code!)).emit(EV.damathRoomChat, {
+      from: from ? publicMember(from) : { userId, name: "Player", avatarUrl: null, tag: "" },
+      body,
+      at: Date.now(),
+    });
   });
 
   socket.on(EV.damathRoomLeave, () => removeMember(io, userId));

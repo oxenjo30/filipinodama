@@ -83,6 +83,7 @@ export const EV = {
   damathRoomLeave: "damath:room:leave",
   damathRoomState: "damath:room:state",
   damathRoomStart: "damath:room:start", // host starts → server seeds the match
+  damathRoomChat: "damath:room:chat", // lobby chat, relayed to the room
 } as const;
 
 export type EventName = (typeof EV)[keyof typeof EV];
