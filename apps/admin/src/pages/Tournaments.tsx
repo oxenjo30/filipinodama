@@ -117,22 +117,22 @@ export function TournamentsPage() {
       <h1 className="page">Tournaments</h1>
 
       {/* 4-stat header */}
-      <div className="kpi" style={{ marginBottom: 18 }}>
-        <div className="card">
-          <div className="v mono">{stats?.liveNow ?? "—"}</div>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(150px,1fr))", gap: 12, marginBottom: 18 }}>
+        <div className="fd-kpi up">
           <div className="l">Live now</div>
+          <div className="v">{stats?.liveNow ?? "—"}</div>
         </div>
-        <div className="card">
-          <div className="v mono">{stats?.upcoming ?? "—"}</div>
+        <div className="fd-kpi amber">
           <div className="l">Upcoming</div>
+          <div className="v">{stats?.upcoming ?? "—"}</div>
         </div>
-        <div className="card">
-          <div className="v mono">{(stats?.playersRegistered ?? 0).toLocaleString()}</div>
+        <div className="fd-kpi ink">
           <div className="l">Players registered</div>
+          <div className="v">{(stats?.playersRegistered ?? 0).toLocaleString()}</div>
         </div>
-        <div className="card">
-          <div className="v mono">{(stats?.goldPrizePool ?? 0).toLocaleString()} 🪙</div>
+        <div className="fd-kpi gold">
           <div className="l">Gold prize pool (scheduled)</div>
+          <div className="v">{(stats?.goldPrizePool ?? 0).toLocaleString()} 🪙</div>
         </div>
       </div>
 
@@ -354,7 +354,7 @@ function TournamentForm({ tournament, onClose, onDone }: { tournament?: Tourname
 
   return (
     <div className="panel panel-pad" style={{ marginBottom: 14 }}>
-      <div style={{ fontWeight: 700, marginBottom: 12 }}>{isEdit ? "Edit tournament" : "New tournament"}</div>
+      <div style={{ font: "800 16px var(--serif)", color: "var(--ink)", marginBottom: 12 }}>{isEdit ? "Edit tournament" : "New tournament"}</div>
 
       <div className="field">
         <label>Name</label>
