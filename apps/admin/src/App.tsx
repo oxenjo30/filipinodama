@@ -4,6 +4,7 @@ import { useAuth, type AdminRole } from "./lib/auth";
 import { Login } from "./pages/Login";
 import { Overview } from "./pages/Overview";
 import { PlayersPage } from "./pages/Players";
+import { Moderation } from "./pages/Moderation";
 import { EconomyPage } from "./pages/Economy";
 import { StorePage } from "./pages/Store";
 import { LiveOpsPage } from "./pages/LiveOps";
@@ -27,7 +28,7 @@ const NAV: Nav[] = [
   ["/overview", "Overview", "#E8B84B", "Monitor", "SUPPORT"],
   ["/analytics", "Analytics", "#5fd0e0", "Monitor", "ECONOMY", true],
   ["/players", "Players", "#7fb0ff", "Players & safety", "SUPPORT"],
-  ["/moderation", "Moderation", "#c2495a", "Players & safety", "MODERATOR", true],
+  ["/moderation", "Moderation", "#c2495a", "Players & safety", "MODERATOR"],
   ["/support", "Support", "#5fd08a", "Players & safety", "SUPPORT", true],
   ["/matches", "Matches", "#d98a3a", "Players & safety", "MODERATOR"],
   ["/economy", "Grants & ledger", "#f0cf72", "Economy", "ECONOMY"],
@@ -167,6 +168,7 @@ export function App() {
             <Route path="/" element={<Navigate to="/overview" replace />} />
             <Route path="/overview" element={<Overview />} />
             <Route path="/players" element={<PlayersPage />} />
+            <Route path="/moderation" element={<Moderation />} />
             <Route path="/matches" element={<MatchesPage />} />
             <Route path="/economy" element={<EconomyPage />} />
             <Route path="/store" element={<StorePage />} />
@@ -175,7 +177,6 @@ export function App() {
             <Route path="/audit" element={<AuditPage />} />
             {/* Phase-2 stubs */}
             <Route path="/analytics" element={<Phase2 title="Analytics deep-dive" note="DAU/WAU/MAU, funnels, retention cohorts. Needs an analytics pipeline." />} />
-            <Route path="/moderation" element={<Phase2 title="Moderation queue" note="Reports intake + queue. Coming in Phase 1.5." />} />
             <Route path="/support" element={<Phase2 title="Support tickets" note="Ticket model + intake." />} />
             <Route path="/financials" element={<Phase2 title="Financials" note="Blocked — real-money top-up is disabled for legal compliance." />} />
             <Route path="/fraud" element={<Phase2 title="Fraud & AML" note="Payment-driven risk engine (blocked on payments)." />} />

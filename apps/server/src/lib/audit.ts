@@ -1,4 +1,4 @@
-import type { PrismaClient } from "@prisma/client";
+import type { Prisma, PrismaClient } from "@prisma/client";
 
 /**
  * Write one append-only audit row. EVERY admin mutation must call this
@@ -7,7 +7,7 @@ import type { PrismaClient } from "@prisma/client";
  * you pass a tx client and await it inside that transaction.
  */
 export async function audit(
-  db: PrismaClient,
+  db: Prisma.TransactionClient | PrismaClient,
   entry: {
     actorId: string;
     action: string;

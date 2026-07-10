@@ -7,6 +7,7 @@ import { requireAdmin } from "../auth/guards.js";
 import { audit } from "../lib/audit.js";
 import { applyLedger } from "../economy/ledger.js";
 import { sendEmail, banEmailHtml } from "../lib/email.js";
+import { muteUser, banUser } from "../lib/sanctions.js";
 
 /**
  * Admin console API — /api/admin/*. Every route is role-gated by requireAdmin()
@@ -35,11 +36,6 @@ const durationSchema = z.object({
   durationHours: z.number().int().min(0).max(24 * 365).optional(),
   reason: z.string().trim().min(1, "reason required").max(500),
 });
-const PERMANENT = new Date("2999-01-01T00:00:00Z");
-function untilFrom(durationHours?: number): Date {
-  if (!durationHours || durationHours <= 0) return PERMANENT;
-  return new Date(Date.now() + durationHours * 3600_000);
-}
 
 export async function adminRoutes(app: FastifyInstance) {
   // ── Overview KPIs — only REAL, computable metrics (no fabricated analytics).
@@ -213,7 +209,8 @@ export async function adminRoutes(app: FastifyInstance) {
       take: 20,
       select: { id: true, currency: true, amount: true, reason: true, refType: true, refId: true, createdAt: true },
     });
-    return ok({ ...u, status: statusOf(u), ledger });
+    const openReportsAgainst = await prisma.report.count({ where: { accusedId: u.id, status: "OPEN" } });
+    return ok({ ...u, status: statusOf(u), ledger, openReportsAgainst });
   });
 
   // ── 1.3 Player recent matches (SUPPORT) ────────────────────────────────────
@@ -235,21 +232,15 @@ export async function adminRoutes(app: FastifyInstance) {
   // ── 1.4 Sanctions: ban / unban / mute / unlock / notify ────────────────────
   app.post<{ Params: { id: string } }>("/admin/users/:id/ban", { preHandler: requireAdmin("MODERATOR") }, async (req) => {
     const { durationHours, reason } = durationSchema.parse(req.body);
-    const before = await prisma.user.findUnique({ where: { id: req.params.id }, select: { bannedUntil: true, email: true, username: true, isGuest: true } });
-    if (!before) throw err.notFound("NO_USER", "Player not found");
-    const bannedUntil = untilFrom(durationHours);
-    await prisma.user.update({ where: { id: req.params.id }, data: { bannedUntil } });
-    await audit(prisma, { actorId: req.userId!, action: "user.ban", targetType: "user", targetId: req.params.id, before: { bannedUntil: before.bannedUntil }, after: { bannedUntil }, reason });
+    if (req.params.id === req.userId) throw err.badRequest("SELF_BAN", "You can't ban yourself");
+    const target = await prisma.user.findUnique({ where: { id: req.params.id }, select: { adminRole: true } });
+    if (!target) throw err.notFound("NO_USER", "Player not found");
+    if (target.adminRole && req.adminRole !== "SUPERADMIN") throw err.forbidden("BAN_ADMIN", "Only a superadmin can ban another admin");
+    const { bannedUntil, email } = await prisma.$transaction((tx) =>
+      banUser(tx, { targetId: req.params.id, actorId: req.userId!, durationHours, reason }),
+    );
     // Notify the suspended player by email (best-effort; never fail the sanction).
-    if (before.email && !before.isGuest) {
-      void sendEmail(
-        before.email,
-        "Your FilipinoDama Royal account has been suspended",
-        banEmailHtml({ username: before.username, reason, until: bannedUntil.getTime() === PERMANENT.getTime() ? null : bannedUntil }),
-      ).catch(() => {
-        /* non-fatal — the ban is already applied */
-      });
-    }
+    if (email) void sendEmail(email.email, "Your FilipinoDama Royal account has been suspended", banEmailHtml({ username: email.username, reason, until: email.until })).catch(() => {});
     return ok({ bannedUntil });
   });
 
@@ -264,11 +255,11 @@ export async function adminRoutes(app: FastifyInstance) {
 
   app.post<{ Params: { id: string } }>("/admin/users/:id/mute", { preHandler: requireAdmin("MODERATOR") }, async (req) => {
     const { durationHours, reason } = durationSchema.parse(req.body);
-    const before = await prisma.user.findUnique({ where: { id: req.params.id }, select: { mutedUntil: true } });
-    if (!before) throw err.notFound("NO_USER", "Player not found");
-    const mutedUntil = untilFrom(durationHours);
-    await prisma.user.update({ where: { id: req.params.id }, data: { mutedUntil } });
-    await audit(prisma, { actorId: req.userId!, action: "user.mute", targetType: "user", targetId: req.params.id, before, after: { mutedUntil }, reason });
+    const target = await prisma.user.findUnique({ where: { id: req.params.id }, select: { id: true } });
+    if (!target) throw err.notFound("NO_USER", "Player not found");
+    const { mutedUntil } = await prisma.$transaction((tx) =>
+      muteUser(tx, { targetId: req.params.id, actorId: req.userId!, durationHours, reason }),
+    );
     return ok({ mutedUntil });
   });
 

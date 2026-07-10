@@ -1,4 +1,5 @@
-import Fastify from "fastify";
+import { fileURLToPath } from "node:url";
+import Fastify, { type FastifyInstance } from "fastify";
 import cors from "@fastify/cors";
 import cookie from "@fastify/cookie";
 import helmet from "@fastify/helmet";
@@ -17,6 +18,7 @@ import { questRoutes } from "./modules/quests.js";
 import { seasonRoutes } from "./modules/seasons.js";
 import { rewardRoutes } from "./modules/rewards.js";
 import { adminRoutes } from "./modules/admin.js";
+import { adminReportsRoutes } from "./modules/admin-reports.js";
 import { adminStoreRoutes } from "./modules/admin-store.js";
 import { adminLiveOpsRoutes } from "./modules/admin-liveops.js";
 import { adminGuildsRoutes } from "./modules/admin-guilds.js";
@@ -27,11 +29,16 @@ import { learnRoutes } from "./modules/learn.js";
 import { notificationRoutes } from "./modules/notifications.js";
 import { paymentRoutes } from "./modules/payments.js";
 import { dmRoutes } from "./modules/dm.js";
+import { reportRoutes } from "./modules/reports.js";
 import { registerRealtime } from "./realtime/index.js";
 
 export { prisma };
 
-async function main() {
+function corsOriginsFromEnv(): string[] {
+  return env.CORS_ORIGIN.split(",").map((o) => o.trim()).filter(Boolean);
+}
+
+export async function buildApp(): Promise<FastifyInstance> {
   const app = Fastify({ logger: true });
 
   // Global safety net: a floating promise rejection anywhere (e.g. a fired-and-
@@ -57,7 +64,7 @@ async function main() {
   // CORS accepts a COMMA-SEPARATED list of allowed origins so the player app
   // (filipinodama.com) and the admin console (app.filipinodama.com) can both call
   // the API with the shared cookie. Any of the listed origins is allowed.
-  const corsOrigins = env.CORS_ORIGIN.split(",").map((o) => o.trim()).filter(Boolean);
+  const corsOrigins = corsOriginsFromEnv();
   await app.register(cors, { origin: corsOrigins.length > 1 ? corsOrigins : corsOrigins[0], credentials: true });
   await app.register(cookie);
 
@@ -93,6 +100,7 @@ async function main() {
   await app.register(rewardRoutes, { prefix: "/api" });
   await app.register(adminRoutes, { prefix: "/api" });
   // Admin section modules — each is role-gated + audited (see modules/admin-*.ts).
+  await app.register(adminReportsRoutes, { prefix: "/api" });
   await app.register(adminStoreRoutes, { prefix: "/api" });
   await app.register(adminLiveOpsRoutes, { prefix: "/api" });
   await app.register(adminGuildsRoutes, { prefix: "/api" });
@@ -103,10 +111,18 @@ async function main() {
   await app.register(notificationRoutes, { prefix: "/api" });
   await app.register(paymentRoutes, { prefix: "/api" });
   await app.register(dmRoutes, { prefix: "/api" });
+  await app.register(reportRoutes, { prefix: "/api" });
   // more modules register here as they land
+
+  return app;
+}
+
+async function main() {
+  const app = await buildApp();
 
   await app.listen({ port: env.PORT, host: "0.0.0.0" });
 
+  const corsOrigins = corsOriginsFromEnv();
   const io = new IOServer(app.server, {
     path: "/rt",
     cors: { origin: corsOrigins.length > 1 ? corsOrigins : corsOrigins[0], credentials: true },
@@ -116,7 +132,14 @@ async function main() {
   app.log.info(`FilipinoDama server listening on :${env.PORT}`);
 }
 
-main().catch((e) => {
-  console.error(e);
-  process.exit(1);
-});
+// Only auto-run main() when this file is the process entry point (e.g. `node
+// dist/index.js`, per the "start" script), NOT when it's imported — the test
+// harness imports `buildApp` from this module and must not boot a real
+// listening HTTP + Socket.IO server as a side effect of that import.
+const isEntry = process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1];
+if (isEntry) {
+  main().catch((e) => {
+    console.error(e);
+    process.exit(1);
+  });
+}

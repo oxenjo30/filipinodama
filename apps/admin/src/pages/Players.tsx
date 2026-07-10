@@ -13,6 +13,7 @@ type Detail = PlayerRow & {
   bannedUntil: string | null; mutedUntil: string | null; createdAt: string; lastSeenAt: string;
   guildMember: { guild: { name: string; tag: string }; role: string } | null;
   ledger: { id: string; currency: string; amount: number; reason: string; createdAt: string }[];
+  openReportsAgainst: number;
 };
 type MatchRow = { id: string; mode: string; winner: string | null; startedAt: string; red: { username: string } | null; blue: { username: string } | null };
 
@@ -186,6 +187,8 @@ function PlayerDrawer({ id, onClose, onChanged }: { id: string; onClose: () => v
               {d.guildMember ? ` · Guild: ${d.guildMember.guild.name} (${d.guildMember.role})` : ""}
               {d.adminRole ? ` · ADMIN: ${d.adminRole}` : ""}
             </div>
+
+            {d.openReportsAgainst > 0 && <div className="dim">⚠ Reports against: {d.openReportsAgainst}</div>}
 
             {/* Actions — role-gated (server enforces too) */}
             <div style={{ fontWeight: 700, margin: "10px 0 8px" }}>Actions</div>

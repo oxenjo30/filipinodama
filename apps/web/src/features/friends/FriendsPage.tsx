@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { rankTierFor } from "@dama/shared";
 import { Avatar } from "../../components";
 import { api, ApiError } from "../../lib/api";
+import { ReportPlayerModal } from "../moderation/ReportPlayerModal";
 import { useAppStore } from "../../stores/appStore";
 import { useAuthStore } from "../../stores/authStore";
 import { usePresenceStore } from "../../stores/presenceStore";
@@ -269,6 +270,7 @@ export function FriendsPage() {
   const [profile, setProfile] = useState<PublicProfile | null>(null);
   const [profileLoading, setProfileLoading] = useState(false);
   const [profileError, setProfileError] = useState<string | null>(null);
+  const [reportOpen, setReportOpen] = useState(false);
 
   useEffect(() => {
     if (!me) {
@@ -306,6 +308,7 @@ export function FriendsPage() {
 
   // Load the public profile whenever the modal target changes.
   useEffect(() => {
+    setReportOpen(false);
     if (!profileId) {
       setProfile(null);
       setProfileError(null);
@@ -1147,10 +1150,38 @@ export function FriendsPage() {
                 {/* NOTE: "recent form" is intentionally omitted — the public
                     profile endpoint does not return a match-history summary, so
                     showing one would be fabricated. */}
+
+                {me && profile.id !== me.id && (
+                  <button
+                    onClick={() => setReportOpen(true)}
+                    style={{
+                      alignSelf: "flex-start",
+                      padding: 0,
+                      border: "none",
+                      background: "transparent",
+                      color: "var(--ink2)",
+                      font: "600 11px Inter",
+                      letterSpacing: ".3px",
+                      cursor: "pointer",
+                      opacity: 0.8,
+                    }}
+                  >
+                    Report player
+                  </button>
+                )}
               </div>
             ) : null}
           </div>
         </div>
+      )}
+
+      {profile && (
+        <ReportPlayerModal
+          open={reportOpen}
+          accusedId={profile.id}
+          context="profile"
+          onClose={() => setReportOpen(false)}
+        />
       )}
     </div>
   );

@@ -79,6 +79,9 @@ model User {
   notifications  Notification[]
   questProgress  QuestProgress[]
   seasonProgress SeasonProgress[]
+  reportsMade     Report[] @relation("reportsMade")
+  reportsAgainst  Report[] @relation("reportsAgainst")
+  reportsResolved Report[] @relation("reportsResolved")
 
   @@index([trophies])
 }
@@ -292,6 +295,48 @@ model Message {
   createdAt DateTime @default(now())
 
   @@index([channelId, createdAt])
+}
+
+enum ReportReason {
+  HARASSMENT
+  HATE_SPEECH
+  CHEATING
+  INAPPROPRIATE
+  SPAM
+  OTHER
+}
+
+enum ReportStatus {
+  OPEN
+  RESOLVED
+  DISMISSED
+}
+
+model Report {
+  id              String       @id @default(cuid())
+  reporterId      String?
+  reporter        User?        @relation("reportsMade", fields: [reporterId], references: [id], onDelete: SetNull)
+  reporterName    String
+  accusedId       String?
+  accused         User?        @relation("reportsAgainst", fields: [accusedId], references: [id], onDelete: SetNull)
+  accusedName     String
+  reason          ReportReason
+  note            String?      @db.Text
+  context         String       // "dm" | "profile"
+  channelId       String?
+  messageId       String?
+  excerpt         String?      @db.Text
+  profileSnapshot Json?
+  status          ReportStatus @default(OPEN)
+  resolvedById    String?
+  resolvedBy      User?        @relation("reportsResolved", fields: [resolvedById], references: [id], onDelete: SetNull)
+  resolution      String?
+  createdAt       DateTime     @default(now())
+  resolvedAt      DateTime?
+
+  @@index([status, createdAt])
+  @@index([accusedId])
+  @@index([reporterId, createdAt])
 }
 
 // ─────────────── Guilds ───────────────
