@@ -64,17 +64,24 @@ export function GuildsPage() {
   const [loading, setLoading] = useState(true);
   const [selId, setSelId] = useState<string | null>(null);
 
-  const load = () => {
+  const load = (query: string) => {
     setLoading(true);
     const qs = new URLSearchParams({ sort, limit: "50" });
-    if (q.trim()) qs.set("q", q.trim());
+    if (query.trim()) qs.set("q", query.trim());
     api
       .get<{ items: GuildRow[]; total: number }>(`/api/admin/guilds?${qs}`)
       .then((d) => { setRows(d.items); setTotal(d.total); })
       .catch(() => { setRows([]); setTotal(0); })
       .finally(() => setLoading(false));
   };
-  useEffect(load, [sort]);
+
+  // Live/debounced search — reload 300ms after the user stops typing, or
+  // immediately when the sort changes.
+  useEffect(() => {
+    const t = setTimeout(() => load(q), 300);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [q, sort]);
 
   /** Row-level rename — same PATCH the drawer's Edit form uses, just a focused one-field prompt (mockup's inline "Rename" action). */
   const rename = (g: GuildRow) =>
@@ -85,7 +92,7 @@ export function GuildsPage() {
       method: "PATCH",
       path: `/api/admin/guilds/${g.id}`,
       successMsg: "Guild renamed.",
-      onDone: load,
+      onDone: () => load(q),
       extra: (set, vals) => (
         <div className="field"><label>Name</label>
           <input className="input" autoFocus value={(vals.name as string) ?? g.name} onChange={(e) => set("name", e.target.value)} />
@@ -103,7 +110,7 @@ export function GuildsPage() {
       method: "DELETE",
       path: `/api/admin/guilds/${g.id}`,
       successMsg: "Guild disbanded.",
-      onDone: load,
+      onDone: () => load(q),
     });
 
   return (
@@ -118,9 +125,7 @@ export function GuildsPage() {
           placeholder="Search guilds by name or tag…"
           value={q}
           onChange={(e) => setQ(e.target.value)}
-          onKeyDown={(e) => e.key === "Enter" && load()}
         />
-        <button className="abtn btn-ghost btn-ghost-sm" onClick={load}>Search</button>
         <div style={{ marginLeft: "auto" }} className="dim">{total} guilds</div>
       </div>
       <div className="row" style={{ marginBottom: 14 }}>
@@ -152,12 +157,7 @@ export function GuildsPage() {
                     <td>
                       <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
                         <div className="fd-avatar" style={{ borderRadius: 8, background: crestFor(g.tag), font: "800 11px var(--serif)", color: "#3a2405" }}>{g.tag}</div>
-                        <div>
-                          <div style={{ fontWeight: 700, fontSize: 12.5 }}>{g.name}</div>
-                          <div className="dim mono" style={{ fontSize: 11 }}>
-                            {g.tag}{g.leader ? ` · ${g.leader.username}${g.leader.tag}` : ""}
-                          </div>
-                        </div>
+                        <span style={{ fontWeight: 700, fontSize: 12.5 }}>{g.name}</span>
                       </div>
                     </td>
                     <td className="num">{g.memberCount.toLocaleString()}</td>
@@ -177,7 +177,7 @@ export function GuildsPage() {
         </div>
       </div>
 
-      {selId && <GuildDrawer id={selId} onClose={() => setSelId(null)} onChanged={load} />}
+      {selId && <GuildDrawer id={selId} onClose={() => setSelId(null)} onChanged={() => load(q)} />}
     </>
   );
 }
@@ -199,6 +199,7 @@ function GuildDrawer({ id, onClose, onChanged }: { id: string; onClose: () => vo
   useEffect(load, [id]);
 
   const after = () => { load(); onChanged(); };
+  const leader = d?.roster.find((m) => m.role === "LEADER") ?? null;
 
   const edit = () =>
     mutate({
@@ -272,7 +273,10 @@ function GuildDrawer({ id, onClose, onChanged }: { id: string; onClose: () => vo
                 <div className="fd-avatar lg" style={{ borderRadius: 9, background: crestFor(d.tag), font: "800 13px var(--serif)", color: "#3a2405" }}>{d.tag}</div>
                 <div>
                   <div style={{ font: "800 20px var(--sans)" }}>{d.name}</div>
-                  <div className="dim mono">{d.tag} · {d.joinPolicy}</div>
+                  <div className="dim mono">
+                    {d.tag} · {d.joinPolicy}
+                    {leader ? ` · led by ${leader.username}${leader.tag}` : ""}
+                  </div>
                 </div>
               </div>
               <button className="abtn btn-ghost btn-ghost-sm" onClick={onClose}>Close</button>
