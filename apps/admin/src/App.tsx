@@ -105,11 +105,15 @@ export function App() {
   return (
     <div className="app">
       <aside className="sidebar">
+        {/* Logo lockup — exact mockup: gold-gradient "D" tile + FilipinoDama / ADMIN CONSOLE */}
         <div className="brand">
-          <span className="mark">☀</span>
-          <span className="name">DAMA ADMIN</span>
+          <span className="mark">D</span>
+          <div className="brandtext">
+            <span className="name">FilipinoDama</span>
+            <span className="sub">ADMIN CONSOLE</span>
+          </div>
         </div>
-        <div style={{ overflowY: "auto", flex: 1 }}>
+        <div className="navwrap">
           {grouped.map(({ g, items }) => (
             <div key={g}>
               <div className="navsec">{g}</div>
