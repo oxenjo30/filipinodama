@@ -26,6 +26,9 @@ type MatchDetail = MatchRow & {
 
 const MODES = ["AI", "CASUAL", "RANKED", "PRIVATE", "LOCAL"] as const;
 
+/** A note shown on every disabled Phase-2 control — never silently disabled. */
+const PHASE2_NOTE = "Anti-cheat detection is a Phase 2 subsystem — not yet built. No detection data exists to act on.";
+
 /** Colour a winner cell: red side / blue side / draw / unfinished. */
 function winnerColor(winner: string | null): string {
   if (!winner) return "var(--dim)";
@@ -51,12 +54,28 @@ function Delta({ v }: { v: number | null }) {
   return <span style={{ color: v >= 0 ? "var(--green)" : "var(--red)" }}>{v >= 0 ? "+" : ""}{v}</span>;
 }
 
+/** Status pill for the queue table — real outcome only (win/draw/unfinished). */
+function StatusBadge({ winner }: { winner: string | null }) {
+  if (!winner) {
+    return <span className="badge-rect" style={{ color: "var(--dim)", background: "rgba(139,120,173,.14)", borderColor: "rgba(139,120,173,.3)" }}>Unfinished</span>;
+  }
+  if (winner === "draw") {
+    return <span className="badge-rect" style={{ color: "var(--dim-2)", background: "rgba(111,95,146,.16)", borderColor: "rgba(111,95,146,.35)" }}>Draw</span>;
+  }
+  const color = winner === "red" ? "var(--red-lt)" : "var(--blue)";
+  return <span className="badge-rect" style={{ color, background: "rgba(255,255,255,.06)", borderColor: color }}>{winner === "red" ? "Red won" : "Blue won"}</span>;
+}
+
 /**
- * Match integrity viewer — a read-only inspector over the real Match model.
- * List with mode + player filters; a row opens a detail drawer showing the two
- * sides, outcome, trophy/gold deltas, timing, settings, and the raw moves JSON.
- * No write actions (the anti-cheat detection subsystem is Phase 2 and is not
- * faked here — every value shown is a real column).
+ * Match review queue — re-skinned to the approved anti-cheat review-queue
+ * layout (flag banner, queue table, per-row decision buttons, detail drawer
+ * with a decision bar). We have NO anti-cheat detection subsystem, so this
+ * stays an honest read-only inspector over the real Match model: the queue
+ * shows real matches (id, players, mode, outcome), the flag-reason/confidence
+ * columns the approved design calls for are rendered as "—" (no fabricated
+ * scores), and every decision button (Review is real; Replay / Clear flag /
+ * Void / Ban are Phase-2) is disabled with a tooltip explaining why, per the
+ * no-fabrication rule. Settings + raw moves in the drawer are real API data.
  */
 export function MatchesPage() {
   const [rows, setRows] = useState<MatchRow[]>([]);
@@ -83,6 +102,11 @@ export function MatchesPage() {
       <div className="crumb">Match Integrity · Matches</div>
       <h1 className="page">Matches</h1>
 
+      <div className="flag-banner" style={{ marginBottom: 14 }}>
+        <span className="dot" />
+        <span>Anti-cheat detection is a Phase 2 subsystem — this is a read-only match review view. No flags, confidence scores, or decisions below are real.</span>
+      </div>
+
       <div className="row" style={{ marginBottom: 12 }}>
         <input
           className="input" style={{ maxWidth: 300 }}
@@ -101,44 +125,52 @@ export function MatchesPage() {
         ))}
       </div>
 
-      <div className="panel">
-        <table className="tbl">
-          <thead>
-            <tr>
-              <th>Match</th>
-              <th>Mode</th>
-              <th>Red</th>
-              <th>Blue</th>
-              <th>Winner</th>
-              <th className="num">Trophy Δ</th>
-              <th className="num">Gold</th>
-              <th className="num">Duration</th>
-            </tr>
-          </thead>
-          <tbody>
-            {loading ? (
-              <tr><td colSpan={8} className="dim" style={{ textAlign: "center", padding: 24 }}>Loading…</td></tr>
-            ) : rows.length === 0 ? (
-              <tr><td colSpan={8} className="dim" style={{ textAlign: "center", padding: 24 }}>No matches found.</td></tr>
-            ) : (
-              rows.map((m) => (
-                <tr key={m.id} className="click" onClick={() => setSelId(m.id)}>
-                  <td>
-                    <div className="dim mono" style={{ fontSize: 12 }}>{m.id}</div>
-                    <div className="dim" style={{ fontSize: 11 }}>{new Date(m.startedAt).toLocaleString()}</div>
-                  </td>
-                  <td className="mono">{m.mode}</td>
-                  <td>{playerLabel(m.red)}</td>
-                  <td>{playerLabel(m.blue)}</td>
-                  <td style={{ color: winnerColor(m.winner), fontWeight: 600 }}>{m.winner ?? "unfinished"}</td>
-                  <td className="num"><Delta v={m.redTrophyDelta} /> / <Delta v={m.blueTrophyDelta} /></td>
-                  <td className="num">{(m.goldReward ?? 0).toLocaleString()}</td>
-                  <td className="num">{fmtDuration(m.durationSec)}</td>
-                </tr>
-              ))
-            )}
-          </tbody>
-        </table>
+      <div className="panel" style={{ overflow: "hidden" }}>
+        <div style={{ overflowX: "auto" }}>
+          <table className="tbl" style={{ minWidth: 900 }}>
+            <thead>
+              <tr className="thead-raised">
+                <th>Match</th>
+                <th>Mode</th>
+                <th>Flag reason</th>
+                <th className="num">Confidence</th>
+                <th>Status</th>
+                <th className="num">Trophy Δ</th>
+                <th className="num">Gold</th>
+                <th style={{ textAlign: "center" }}>Action</th>
+              </tr>
+            </thead>
+            <tbody>
+              {loading ? (
+                <tr><td colSpan={8} className="dim" style={{ textAlign: "center", padding: 24 }}>Loading…</td></tr>
+              ) : rows.length === 0 ? (
+                <tr><td colSpan={8} className="dim" style={{ textAlign: "center", padding: 24 }}>No matches found.</td></tr>
+              ) : (
+                rows.map((m) => (
+                  <tr key={m.id} className="arow">
+                    <td>
+                      <div style={{ fontWeight: 700, color: "var(--ink-2)" }}>{playerLabel(m.red)} <span className="dim" style={{ fontWeight: 500 }}>vs</span> {playerLabel(m.blue)}</div>
+                      <div className="dim mono" style={{ fontSize: 10.5 }}>{m.id} · {new Date(m.startedAt).toLocaleString()}</div>
+                    </td>
+                    <td className="mono" style={{ color: "var(--ink-3)" }}>{m.mode}</td>
+                    <td className="dim" title={PHASE2_NOTE}>—</td>
+                    <td className="num dim" title={PHASE2_NOTE}>—</td>
+                    <td><StatusBadge winner={m.winner} /></td>
+                    <td className="num"><Delta v={m.redTrophyDelta} /> / <Delta v={m.blueTrophyDelta} /></td>
+                    <td className="num">{(m.goldReward ?? 0).toLocaleString()}</td>
+                    <td>
+                      <div className="row" style={{ gap: 6, justifyContent: "center" }}>
+                        <button className="abtn btn-ghost btn-ghost-sm" onClick={() => setSelId(m.id)}>Review</button>
+                        <button className="abtn btn-ghost btn-ghost-sm" disabled title={PHASE2_NOTE}>Replay</button>
+                        <button className="abtn btn-danger btn-danger-sm" disabled title={PHASE2_NOTE}>Void</button>
+                      </div>
+                    </td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
       </div>
 
       {selId && <MatchDrawer id={selId} onClose={() => setSelId(null)} />}
@@ -159,7 +191,7 @@ function MatchDrawer({ id, onClose }: { id: string; onClose: () => void }) {
   return (
     <div className="drawer-wrap">
       <div className="drawer-bd" onClick={onClose} />
-      <div className="drawer">
+      <div className="drawer" style={{ display: "flex", flexDirection: "column", gap: 16 }}>
         {err ? (
           <div className="dim">Couldn't load match.</div>
         ) : !d ? (
@@ -168,55 +200,79 @@ function MatchDrawer({ id, onClose }: { id: string; onClose: () => void }) {
           <>
             <div className="row" style={{ justifyContent: "space-between", alignItems: "flex-start" }}>
               <div>
-                <div className="crumb">{d.mode} match</div>
-                <div style={{ font: "800 18px var(--serif)", color: "var(--gold-lt)", marginTop: 4 }}>
-                  {playerLabel(d.red)} <span className="dim">vs</span> {playerLabel(d.blue)}
+                <div className="dim mono" style={{ fontSize: 10, letterSpacing: 1 }}>CASE {d.id.slice(0, 8).toUpperCase()} · {d.winner ? "REVIEWED" : "UNFINISHED"}</div>
+                <div style={{ font: "800 18px var(--serif)", color: "var(--ink)", marginTop: 4 }}>
+                  {playerLabel(d.red)} <span className="dim" style={{ fontWeight: 500 }}>vs</span> {playerLabel(d.blue)}
                 </div>
-                <div className="dim mono" style={{ fontSize: 12, marginTop: 2 }}>{d.id}</div>
+                <div className="dim" style={{ fontSize: 12, marginTop: 2 }}>{d.mode} · {new Date(d.startedAt).toLocaleString()}</div>
               </div>
               <button className="btn" onClick={onClose}>Close</button>
             </div>
 
-            {/* Outcome stat cards — real columns only */}
-            <div className="kpi" style={{ margin: "18px 0", gridTemplateColumns: "repeat(2,1fr)" }}>
-              <div className="card">
-                <div className="v mono" style={{ color: winnerColor(d.winner) }}>{d.winner ?? "—"}</div>
-                <div className="l">Winner{d.reason ? ` · ${d.reason}` : ""}</div>
-              </div>
-              <div className="card">
-                <div className="v mono">{fmtDuration(d.durationSec)}</div>
-                <div className="l">Duration</div>
-              </div>
-              <div className="card">
-                <div className="v mono"><Delta v={d.redTrophyDelta} /> / <Delta v={d.blueTrophyDelta} /></div>
-                <div className="l">Trophy Δ · red / blue</div>
-              </div>
-              <div className="card">
-                <div className="v mono">{(d.goldReward ?? 0).toLocaleString()}</div>
-                <div className="l">Gold reward</div>
+            {/* Phase-2 notice — replaces the mockup's flagged-case banner (no real flag exists) */}
+            <div className="flag-banner" style={{ alignItems: "flex-start" }}>
+              <span className="dot" style={{ marginTop: 3 }} />
+              <div style={{ flex: 1 }}>
+                <div style={{ fontWeight: 700 }}>No anti-cheat signal available</div>
+                <div className="dim" style={{ fontSize: 11, marginTop: 2 }}>
+                  Detection subsystem not yet built (Phase 2). This match was not flagged — it is shown because it matched your filters.
+                </div>
               </div>
             </div>
 
-            <div className="dim" style={{ fontSize: 12, marginBottom: 16 }}>
+            {/* Outcome stat cards — real columns only */}
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 10 }}>
+              <div className="fd-kpi pad-sm" style={{ ["--tile" as string]: winnerColor(d.winner) }}>
+                <div className="l">Winner</div>
+                <div className="v mono" style={{ fontSize: 15 }}>{d.winner ?? "—"}</div>
+              </div>
+              <div className="fd-kpi pad-sm ink">
+                <div className="l">Duration</div>
+                <div className="v mono" style={{ fontSize: 15 }}>{fmtDuration(d.durationSec)}</div>
+              </div>
+              <div className="fd-kpi pad-sm ink">
+                <div className="l">Trophy Δ</div>
+                <div className="v mono" style={{ fontSize: 15 }}><Delta v={d.redTrophyDelta} /> / <Delta v={d.blueTrophyDelta} /></div>
+              </div>
+              <div className="fd-kpi pad-sm gold">
+                <div className="l">Gold reward</div>
+                <div className="v mono" style={{ fontSize: 15 }}>{(d.goldReward ?? 0).toLocaleString()}</div>
+              </div>
+            </div>
+
+            <div className="dim" style={{ fontSize: 12 }}>
               Started {new Date(d.startedAt).toLocaleString()}
               {d.endedAt ? ` · ended ${new Date(d.endedAt).toLocaleString()}` : " · not yet ended"}
+              {d.reason ? ` · ${d.reason}` : ""}
               {` · ${d.moveCount} move${d.moveCount === 1 ? "" : "s"}`}
             </div>
 
             {/* Settings (Json) */}
-            <div style={{ fontWeight: 700, margin: "10px 0 8px" }}>Settings</div>
-            <div className="panel panel-pad">
-              <pre className="mono" style={{ margin: 0, fontSize: 12, whiteSpace: "pre-wrap", wordBreak: "break-word", color: "var(--ink-3)" }}>
-                {JSON.stringify(d.settings, null, 2)}
-              </pre>
+            <div>
+              <div style={{ fontWeight: 700, marginBottom: 8 }}>Settings</div>
+              <div className="panel panel-pad">
+                <pre className="mono" style={{ margin: 0, fontSize: 12, whiteSpace: "pre-wrap", wordBreak: "break-word", color: "var(--ink-3)" }}>
+                  {JSON.stringify(d.settings, null, 2)}
+                </pre>
+              </div>
             </div>
 
             {/* Raw moves (Json array) — for integrity inspection */}
-            <div style={{ fontWeight: 700, margin: "22px 0 8px" }}>Moves <span className="dim" style={{ fontWeight: 500 }}>· {d.moveCount} total (raw JSON)</span></div>
-            <div className="panel panel-pad">
-              <pre className="mono" style={{ margin: 0, fontSize: 12, whiteSpace: "pre-wrap", wordBreak: "break-word", color: "var(--ink-3)", maxHeight: 360, overflow: "auto" }}>
-                {JSON.stringify(d.moves, null, 2)}
-              </pre>
+            <div>
+              <div style={{ fontWeight: 700, marginBottom: 8 }}>Moves <span className="dim" style={{ fontWeight: 500 }}>· {d.moveCount} total (raw JSON)</span></div>
+              <div className="panel panel-pad">
+                <pre className="mono" style={{ margin: 0, fontSize: 12, whiteSpace: "pre-wrap", wordBreak: "break-word", color: "var(--ink-3)", maxHeight: 300, overflow: "auto" }}>
+                  {JSON.stringify(d.moves, null, 2)}
+                </pre>
+              </div>
+            </div>
+
+            {/* Decision bar — approved 3-tier hierarchy, all disabled: no detection subsystem to act on */}
+            <div className="row" style={{ gap: 9, flexWrap: "wrap", marginTop: 2 }}>
+              <button className="abtn btn-ghost" style={{ flex: 1, minWidth: 130 }} disabled title={PHASE2_NOTE}>Watch replay</button>
+              <button className="abtn btn-ghost" style={{ flex: 1, minWidth: 130, borderColor: "rgba(75,214,160,.35)", color: "var(--green-lt)" }} disabled title={PHASE2_NOTE}>Clear flag</button>
+              <button className="abtn btn-amber" style={{ flex: 1, minWidth: 130 }} disabled title={PHASE2_NOTE}>Void match</button>
+              <button className="abtn btn-danger" style={{ flex: 1, minWidth: 130 }} disabled title={PHASE2_NOTE}>Ban &amp; void</button>
             </div>
           </>
         )}
