@@ -16,6 +16,7 @@ import { ProfilePage } from "./features/profile/ProfilePage";
 import { PublicProfilePage } from "./features/profile/PublicProfilePage";
 import { QuestsPage } from "./features/quests/QuestsPage";
 import { GuildsPage } from "./features/guilds/GuildsPage";
+import { GuildProfilePage } from "./features/guilds/GuildProfilePage";
 import { StorePage } from "./features/store/StorePage";
 import { InventoryPage } from "./features/inventory/InventoryPage";
 import { SettingsPage } from "./features/settings/SettingsPage";
@@ -124,6 +125,7 @@ export function App() {
           <Route path="/messages" element={<MessagesPage />} />
           <Route path="/messages/:userId" element={<MessagesPage />} />
           <Route path="/guilds" element={<GuildsPage />} />
+          <Route path="/guilds/:id" element={<GuildProfilePage />} />
           <Route path="/quests" element={<QuestsPage />} />
           <Route path="/season" element={<SeasonPage />} />
           <Route path="/settings" element={<SettingsPage />} />
