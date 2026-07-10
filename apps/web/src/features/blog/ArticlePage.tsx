@@ -1,6 +1,7 @@
-import { useCallback, useEffect, useMemo, type MouseEvent } from "react";
+import { useCallback, useEffect, useMemo, useState, type MouseEvent } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { articles, allBySlug, isPublished, formatDate, type BlogCategory } from "./blog";
+import { api } from "../../lib/api";
 
 /**
  * ArticlePage — the /blog/:slug reader.
@@ -24,6 +25,41 @@ const CAT_ACCENT: Record<BlogCategory, string> = {
   Strategy: "#c9a0f5",
   Culture: "#f5a0a0",
 };
+
+// ── Sidebar (mirrors BlogPage's rail so the reader matches the index) ──
+type FeaturedItem = { id: string; type: string; name: string; assetKey: string; priceGold: number | null; priceDiamonds: number | null; featured: boolean };
+
+const A = (n: string) => `/assets/${n}`;
+
+/** Resolve a store item's thumbnail per type — same mapping as BlogPage/Store. */
+function featuredThumb(it: FeaturedItem): string {
+  const a = it.assetKey;
+  switch (it.type) {
+    case "BOARD":
+      return A(a.endsWith(".png") ? a : `board-${a}.png`);
+    case "SKIN":
+      return a === "classic" ? A("crimson-king.png") : A(`pieces/skins/${a}/red-king.png`);
+    case "AVATAR":
+      return A(a.startsWith("avatars/") ? a : `avatars/${a}`);
+    case "FRAME":
+      return A(a);
+    case "BUNDLE":
+      return A(a.endsWith(".png") ? a : "me-banner.png");
+    case "SEASON_PASS":
+      return A("me-crown.png");
+    default:
+      return A(a.endsWith(".png") || a.endsWith(".webp") ? a : "me-banner.png");
+  }
+}
+
+function SidebarCard({ title, children }: { title: string; children: React.ReactNode }) {
+  return (
+    <div style={{ borderRadius: 14, border: "1px solid rgba(232,184,75,.16)", background: "linear-gradient(180deg,rgba(38,22,60,.55),rgba(24,13,40,.5))", padding: 18 }}>
+      <div style={{ font: "700 11px Inter", letterSpacing: "2px", textTransform: "uppercase", color: "var(--gold)", marginBottom: 12 }}>{title}</div>
+      {children}
+    </div>
+  );
+}
 
 // Scoped prose styles for the article body — gold headings, comfortable line
 // height, ~720px measure. Static string, injected once per mount.
@@ -84,6 +120,22 @@ function rewriteBodyLinks(html: string): string {
 export function ArticlePage() {
   const { slug } = useParams<{ slug: string }>();
   const navigate = useNavigate();
+
+  // Featured store items for the sidebar rail (public catalog; real data only).
+  const [featured, setFeatured] = useState<FeaturedItem[]>([]);
+  useEffect(() => {
+    let alive = true;
+    api
+      .get<{ items: FeaturedItem[] }>("/api/store/items")
+      .then((d) => {
+        if (alive) setFeatured(d.items.filter((i) => i.featured).slice(0, 3));
+      })
+      .catch(() => {/* leave empty on failure */});
+    return () => {
+      alive = false;
+    };
+  }, []);
+
   // Look up across ALL articles (published + future) so a future-dated slug is
   // "found" — we then gate it below rather than 404'ing it.
   const found = slug ? allBySlug[slug] : undefined;
@@ -182,120 +234,141 @@ export function ArticlePage() {
   const date = formatDate(article.datePublished);
 
   return (
-    <div style={{ maxWidth: 900, margin: "0 auto", padding: 26 }}>
+    <div className="fd-page-pad" style={{ maxWidth: 1200, margin: "0 auto", padding: "26px 26px 60px" }}>
       <style>{PROSE_CSS}</style>
 
-      <div style={{ maxWidth: 720, margin: "0 auto" }}>
-        <Link
-          to="/blog"
-          style={{ font: "600 12px Inter", color: "var(--ink2)", textDecoration: "none" }}
-        >
-          ← All articles
-        </Link>
-
-        {/* META: category pill + date · read time */}
-        <div style={{ display: "flex", alignItems: "center", gap: 12, margin: "18px 0 12px", flexWrap: "wrap" }}>
-          <span
-            style={{
-              display: "inline-flex",
-              alignItems: "center",
-              padding: "3px 10px",
-              borderRadius: 100,
-              border: `1px solid ${accent}55`,
-              background: `${accent}18`,
-              color: accent,
-              font: "700 10px Inter",
-              letterSpacing: ".6px",
-              textTransform: "uppercase",
-            }}
+      {/* Two-column: reading column + sidebar rail (collapses on mobile). */}
+      <div className="fd-two-col" style={{ display: "grid", gridTemplateColumns: "minmax(0,1fr) 300px", gap: 26, alignItems: "start" }}>
+        {/* MAIN: header + article body + footer */}
+        <div style={{ minWidth: 0 }}>
+          <Link
+            to="/blog"
+            style={{ font: "600 12px Inter", color: "var(--ink2)", textDecoration: "none" }}
           >
-            {article.category}
-          </span>
-          <span style={{ font: "500 12px Inter", color: "var(--ink2)" }}>
-            {date ? `${date} · ` : ""}
-            {article.readMin} min read
-          </span>
-        </div>
+            ← All articles
+          </Link>
 
-        <h1 style={{ font: "800 34px/1.25 Cinzel,serif", color: "var(--gold-lt)", margin: "0 0 24px" }}>
-          {article.title}
-        </h1>
-      </div>
-
-      {/* BODY — pre-sanitized static HTML we ship (no scripts); safe to render. */}
-      <article
-        className="fd-article"
-        onClick={onBodyClick}
-        dangerouslySetInnerHTML={{ __html: bodyHtml }}
-      />
-
-      {/* FOOTER: back link + CTA */}
-      <div
-        style={{
-          maxWidth: 720,
-          margin: "36px auto 0",
-          paddingTop: 24,
-          borderTop: "1px solid rgba(232,184,75,.18)",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "space-between",
-          gap: 14,
-          flexWrap: "wrap",
-        }}
-      >
-        <Link
-          to="/blog"
-          style={{ font: "600 13px Inter", color: "var(--ink2)", textDecoration: "none" }}
-        >
-          ← All articles
-        </Link>
-        <Link to="/play" className="btn btn-gold" style={{ textDecoration: "none" }}>
-          ♟ Play Dama online
-        </Link>
-      </div>
-
-      {/* RELATED — up to 3 more from the same category */}
-      {related.length > 0 && (
-        <div style={{ maxWidth: 720, margin: "40px auto 0" }}>
-          <div className="ptitle" style={{ textAlign: "left" }}>
-            More in {article.category}
+          {/* META: category pill + date · read time */}
+          <div style={{ display: "flex", alignItems: "center", gap: 12, margin: "18px 0 12px", flexWrap: "wrap" }}>
+            <span
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                padding: "3px 10px",
+                borderRadius: 100,
+                border: `1px solid ${accent}55`,
+                background: `${accent}18`,
+                color: accent,
+                font: "700 10px Inter",
+                letterSpacing: ".6px",
+                textTransform: "uppercase",
+              }}
+            >
+              {article.category}
+            </span>
+            <span style={{ font: "500 12px Inter", color: "var(--ink2)" }}>
+              {date ? `${date} · ` : ""}
+              {article.readMin} min read
+            </span>
           </div>
+
+          <h1 style={{ font: "800 clamp(26px,3.6vw,34px)/1.25 Cinzel,serif", color: "var(--gold-lt)", margin: "0 0 24px", overflowWrap: "anywhere" }}>
+            {article.title}
+          </h1>
+
+          {/* BODY — pre-sanitized static HTML we ship (no scripts); safe to render.
+              The .fd-article measure caps at 720px so long prose stays readable
+              even though the column can be wider. */}
+          <article
+            className="fd-article"
+            style={{ marginLeft: 0, marginRight: 0 }}
+            onClick={onBodyClick}
+            dangerouslySetInnerHTML={{ __html: bodyHtml }}
+          />
+
+          {/* FOOTER: back link + CTA */}
           <div
             style={{
-              display: "grid",
-              gridTemplateColumns: "repeat(auto-fill,minmax(210px,1fr))",
+              maxWidth: 720,
+              margin: "36px 0 0",
+              paddingTop: 24,
+              borderTop: "1px solid rgba(232,184,75,.18)",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
               gap: 14,
+              flexWrap: "wrap",
             }}
           >
-            {related.map((r) => {
-              const rDate = formatDate(r.datePublished);
-              return (
-                <Link
-                  key={r.slug}
-                  to={`/blog/${r.slug}`}
-                  className="frame"
-                  style={{
-                    display: "flex",
-                    flexDirection: "column",
-                    gap: 8,
-                    padding: 16,
-                    textDecoration: "none",
-                    color: "inherit",
-                  }}
-                >
-                  <div style={{ font: "700 15px Cinzel,serif", color: "var(--gold-lt)", lineHeight: 1.25 }}>
-                    {r.title}
-                  </div>
-                  <div style={{ marginTop: "auto", font: "500 11px Inter", color: "var(--ink2)" }}>
-                    {rDate ? `${rDate} · ` : ""}
-                    {r.readMin} min read
-                  </div>
-                </Link>
-              );
-            })}
+            <Link
+              to="/blog"
+              style={{ font: "600 13px Inter", color: "var(--ink2)", textDecoration: "none" }}
+            >
+              ← All articles
+            </Link>
+            <Link to="/play" className="btn btn-gold" style={{ textDecoration: "none" }}>
+              ♟ Play Dama online
+            </Link>
           </div>
         </div>
-      )}
+
+        {/* SIDEBAR — matches the blog index rail (Play CTA, Featured store, Related). */}
+        <aside style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+          <SidebarCard title="Play Dama">
+            <div style={{ font: "400 13px/1.6 Inter", color: "var(--ink)", marginBottom: 12 }}>
+              Ready to test what you&apos;ve read? Jump into a match.
+            </div>
+            <Link to="/play" className="btn btn-gold" style={{ width: "100%", justifyContent: "center", padding: 12, textDecoration: "none", boxSizing: "border-box" }}>
+              ♟ Play Now
+            </Link>
+          </SidebarCard>
+
+          {related.length > 0 && (
+            <SidebarCard title={`More in ${article.category}`}>
+              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                {related.map((r) => {
+                  const rDate = formatDate(r.datePublished);
+                  return (
+                    <Link
+                      key={r.slug}
+                      to={`/blog/${r.slug}`}
+                      style={{ display: "block", padding: 10, borderRadius: 10, border: "1px solid rgba(232,184,75,.12)", background: "rgba(0,0,0,.2)", textDecoration: "none", color: "inherit" }}
+                    >
+                      <div style={{ font: "700 13px Cinzel,serif", color: "var(--gold-lt)", lineHeight: 1.3 }}>{r.title}</div>
+                      <div style={{ marginTop: 4, font: "500 11px Inter", color: "var(--ink2)" }}>
+                        {rDate ? `${rDate} · ` : ""}{r.readMin} min read
+                      </div>
+                    </Link>
+                  );
+                })}
+              </div>
+            </SidebarCard>
+          )}
+
+          {featured.length > 0 && (
+            <SidebarCard title="Featured in Store">
+              <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                {featured.map((it) => (
+                  <button
+                    key={it.id}
+                    onClick={() => navigate("/store")}
+                    style={{ display: "flex", alignItems: "center", gap: 11, padding: 8, borderRadius: 10, border: "1px solid rgba(232,184,75,.12)", background: "rgba(0,0,0,.2)", cursor: "pointer", textAlign: "left" }}
+                  >
+                    <img src={featuredThumb(it)} alt="" style={{ width: 40, height: 40, objectFit: "contain", flex: "none" }} />
+                    <div style={{ minWidth: 0 }}>
+                      <div style={{ font: "700 12px Inter", color: "#fff", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{it.name}</div>
+                      <div style={{ font: "600 11px 'JetBrains Mono',monospace", color: it.priceDiamonds ? "#ff9aa8" : "#f2d493" }}>
+                        {it.priceDiamonds ? `${it.priceDiamonds.toLocaleString()} 💎` : it.priceGold ? `${it.priceGold.toLocaleString()} 🪙` : "Free"}
+                      </div>
+                    </div>
+                  </button>
+                ))}
+              </div>
+              <button onClick={() => navigate("/store")} style={{ marginTop: 12, width: "100%", background: "none", border: "none", color: "var(--gold)", font: "700 11px Inter", letterSpacing: ".5px", textTransform: "uppercase", cursor: "pointer" }}>Visit Store →</button>
+            </SidebarCard>
+          )}
+        </aside>
+      </div>
     </div>
   );
 }

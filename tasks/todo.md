@@ -70,7 +70,19 @@ states, scroll-to-top, and the whole sidebar (Play CTA, Featured-in-Store from /
 - [x] Review the subagent's diff myself — all functionality markers present; empty states, filter/search/
       pagination, sidebar, scroll-to-top intact; motion has reduced-motion fallback + no content-gating
 - [x] Verify: web typecheck (exit 0) + eslint (exit 0) + vite build (✓ built) all clean
-- [ ] Commit + deploy (with user approval) + confirm live — USE PATHSPEC COMMIT (shared worktree race, see lessons.md)
+- [x] Commit (pathspec-scoped, 5067461) + deploy → web SUCCESS on 5067461 at app.filipinodama.com/blog
 
 **Constraints:** minimal impact (only BlogPage.tsx + its helpers), match existing design tokens (no new
 palette), no functionality regressions, verify before "done", get approval before deploy.
+
+## Article reader sidebar (ArticlePage.tsx — follow-up)
+
+**Goal:** The /blog/:slug reader is a narrow centered column with a big empty right gap (looks like a
+missing sidebar). User wants a sidebar matching the blog index. Add Play CTA + Featured in Store +
+"More in {category}" rail to the right, two-column layout that collapses on mobile.
+
+- [x] Convert ArticlePage layout to two-col grid (minmax(0,1fr) 300px, fd-two-col) — reading column left
+- [x] Sidebar: Play CTA + Featured in Store (/api/store/items) + related-articles ("More in {category}")
+- [x] Keep the ~720px prose measure (.fd-article, left-aligned in the column); collapses on mobile
+- [x] Preserved: not-found / not-published states, link rewriting, SPA-click, SEO meta, CTA (all verified present)
+- [x] Verify: tsc (0) + eslint (0) + build (✓); commit (pathspec) + deploy → confirm live
