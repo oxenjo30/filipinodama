@@ -34,6 +34,7 @@ import { notificationRoutes } from "./modules/notifications.js";
 import { paymentRoutes } from "./modules/payments.js";
 import { dmRoutes } from "./modules/dm.js";
 import { reportRoutes } from "./modules/reports.js";
+import { supportRoutes } from "./modules/support.js";
 import { registerRealtime } from "./realtime/index.js";
 
 export { prisma };
@@ -120,6 +121,7 @@ export async function buildApp(): Promise<FastifyInstance> {
   await app.register(paymentRoutes, { prefix: "/api" });
   await app.register(dmRoutes, { prefix: "/api" });
   await app.register(reportRoutes, { prefix: "/api" });
+  await app.register(supportRoutes, { prefix: "/api" });
   // more modules register here as they land
 
   return app;
