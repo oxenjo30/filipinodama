@@ -12,6 +12,9 @@ import { GuildsPage } from "./pages/Guilds";
 import { MatchesPage } from "./pages/Matches";
 import { AuditPage } from "./pages/Audit";
 import { Phase2 } from "./pages/Phase2";
+import { Admins } from "./pages/Admins";
+import { Settings } from "./pages/Settings";
+import { Campaigns } from "./pages/Campaigns";
 
 /**
  * Admin shell — reproduces the approved FilipinoDama Admin.dc.html layout: the
@@ -38,9 +41,9 @@ const NAV: Nav[] = [
   ["/liveops", "Live ops", "#4fd0c0", "Engagement", "ECONOMY"],
   ["/tournaments", "Tournaments", "#e0a24a", "Engagement", "ECONOMY", true],
   ["/guilds", "Guilds", "#e39aa8", "Engagement", "MODERATOR"],
-  ["/campaigns", "Campaigns", "#ff9ec4", "Engagement", "SUPPORT", true],
-  ["/settings", "Settings", "#b98cff", "System & access", "SUPERADMIN", true],
-  ["/admins", "Admins", "#7fe0c0", "System & access", "SUPERADMIN", true],
+  ["/campaigns", "Campaigns", "#ff9ec4", "Engagement", "ECONOMY"],
+  ["/settings", "Settings", "#b98cff", "System & access", "SUPERADMIN"],
+  ["/admins", "Admins", "#7fe0c0", "System & access", "SUPERADMIN"],
   ["/audit", "Audit log", "#8b78ad", "System & access", "SUPERADMIN"],
 ];
 const GROUPS = ["Monitor", "Players & safety", "Economy", "Engagement", "System & access"];
@@ -175,15 +178,15 @@ export function App() {
             <Route path="/liveops" element={<LiveOpsPage />} />
             <Route path="/guilds" element={<GuildsPage />} />
             <Route path="/audit" element={<AuditPage />} />
+            <Route path="/campaigns" element={<Campaigns />} />
+            <Route path="/settings" element={<Settings />} />
+            <Route path="/admins" element={<Admins />} />
             {/* Phase-2 stubs */}
             <Route path="/analytics" element={<Phase2 title="Analytics deep-dive" note="DAU/WAU/MAU, funnels, retention cohorts. Needs an analytics pipeline." />} />
             <Route path="/support" element={<Phase2 title="Support tickets" note="Ticket model + intake." />} />
             <Route path="/financials" element={<Phase2 title="Financials" note="Blocked — real-money top-up is disabled for legal compliance." />} />
             <Route path="/fraud" element={<Phase2 title="Fraud & AML" note="Payment-driven risk engine (blocked on payments)." />} />
             <Route path="/tournaments" element={<Phase2 title="Tournaments" note="Needs a Tournament model." />} />
-            <Route path="/campaigns" element={<Phase2 title="Campaign composer" note="Segmented notifications + campaigns." />} />
-            <Route path="/settings" element={<Phase2 title="Settings" note="Runtime feature flags + economy constants (needs a config table)." />} />
-            <Route path="/admins" element={<Phase2 title="Admin users" note="Role management over existing adminRole." />} />
             <Route path="*" element={<Navigate to="/overview" replace />} />
           </Routes>
         </main>
