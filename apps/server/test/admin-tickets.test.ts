@@ -258,3 +258,115 @@ describe("admin tickets queue", () => {
     await app.close();
   });
 });
+
+describe("ticket priority + reopen", () => {
+  it("PATCH priority persists (GET detail shows it) and writes a ticket.priority audit row", async () => {
+    const app = await buildTestApp();
+    const support = await seedUser({ adminRole: "SUPPORT" });
+    const cookie = authFor({ sub: support.id, adminRole: "SUPPORT" });
+    const player = await seedUser();
+    const ticket = await seedTicket(player.id);
+
+    const res = await app.inject({
+      method: "PATCH",
+      url: `/api/admin/tickets/${ticket.id}/priority`,
+      headers: { cookie },
+      payload: { priority: "HIGH" },
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.json().data.priority).toBe("HIGH");
+
+    const detail = await app.inject({ method: "GET", url: `/api/admin/tickets/${ticket.id}`, headers: { cookie } });
+    expect(detail.statusCode).toBe(200);
+    expect(detail.json().data.ticket.priority).toBe("HIGH");
+
+    const audits = await prisma.auditLog.findMany({ where: { action: "ticket.priority", targetId: ticket.id } });
+    expect(audits.length).toBe(1);
+    expect(audits[0]!.actorId).toBe(support.id);
+    expect((audits[0]!.before as { priority: string }).priority).toBe("MEDIUM");
+    expect((audits[0]!.after as { priority: string }).priority).toBe("HIGH");
+    await app.close();
+  });
+
+  it("new tickets default to MEDIUM priority", async () => {
+    const app = await buildTestApp();
+    const support = await seedUser({ adminRole: "SUPPORT" });
+    const cookie = authFor({ sub: support.id, adminRole: "SUPPORT" });
+    const player = await seedUser();
+    const ticket = await seedTicket(player.id);
+
+    const row = await prisma.ticket.findUnique({ where: { id: ticket.id } });
+    expect(row!.priority).toBe("MEDIUM");
+
+    const detail = await app.inject({ method: "GET", url: `/api/admin/tickets/${ticket.id}`, headers: { cookie } });
+    expect(detail.json().data.ticket.priority).toBe("MEDIUM");
+    await app.close();
+  });
+
+  it("reopen flips a RESOLVED ticket to OPEN, clears resolvedAt, audits ticket.reopen; detail then shows canResolve/canReopen correctly", async () => {
+    const app = await buildTestApp();
+    const support = await seedUser({ adminRole: "SUPPORT" });
+    const cookie = authFor({ sub: support.id, adminRole: "SUPPORT" });
+    const player = await seedUser();
+    const ticket = await seedTicket(player.id, { status: "RESOLVED", resolvedById: support.id, resolvedAt: new Date() });
+
+    const res = await app.inject({
+      method: "POST",
+      url: `/api/admin/tickets/${ticket.id}/reopen`,
+      headers: { cookie },
+      payload: { reason: "player replied" },
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.json().data.status).toBe("OPEN");
+
+    const after = await prisma.ticket.findUnique({ where: { id: ticket.id } });
+    expect(after!.status).toBe("OPEN");
+    expect(after!.resolvedAt).toBeNull();
+    expect(after!.resolvedById).toBeNull();
+
+    const audits = await prisma.auditLog.findMany({ where: { action: "ticket.reopen", targetId: ticket.id } });
+    expect(audits.length).toBe(1);
+    expect((audits[0]!.before as { status: string }).status).toBe("RESOLVED");
+    expect((audits[0]!.after as { status: string }).status).toBe("OPEN");
+
+    const detail = await app.inject({ method: "GET", url: `/api/admin/tickets/${ticket.id}`, headers: { cookie } });
+    expect(detail.json().data.ticket.canResolve).toBe(true);
+    expect(detail.json().data.ticket.canReopen).toBe(false);
+    await app.close();
+  });
+
+  it("reopen on an already-OPEN ticket → 409 TICKET_NOT_RESOLVED", async () => {
+    const app = await buildTestApp();
+    const support = await seedUser({ adminRole: "SUPPORT" });
+    const cookie = authFor({ sub: support.id, adminRole: "SUPPORT" });
+    const player = await seedUser();
+    const ticket = await seedTicket(player.id);
+
+    const res = await app.inject({
+      method: "POST",
+      url: `/api/admin/tickets/${ticket.id}/reopen`,
+      headers: { cookie },
+      payload: {},
+    });
+    expect(res.statusCode).toBe(409);
+    expect(res.json().error.code).toBe("TICKET_NOT_RESOLVED");
+    expect(await prisma.auditLog.count({ where: { action: "ticket.reopen", targetId: ticket.id } })).toBe(0);
+    await app.close();
+  });
+
+  it("detail on a RESOLVED ticket shows canReopen true / canResolve false and exposes priority", async () => {
+    const app = await buildTestApp();
+    const support = await seedUser({ adminRole: "SUPPORT" });
+    const cookie = authFor({ sub: support.id, adminRole: "SUPPORT" });
+    const player = await seedUser();
+    const ticket = await seedTicket(player.id, { status: "RESOLVED", resolvedById: support.id, resolvedAt: new Date(), priority: "URGENT" });
+
+    const detail = await app.inject({ method: "GET", url: `/api/admin/tickets/${ticket.id}`, headers: { cookie } });
+    expect(detail.statusCode).toBe(200);
+    const t = detail.json().data.ticket;
+    expect(t.canReopen).toBe(true);
+    expect(t.canResolve).toBe(false);
+    expect(t.priority).toBe("URGENT");
+    await app.close();
+  });
+});

@@ -654,7 +654,7 @@ export function StorePage() {
   return (
     <div className="fd-stack fd-page-pad" style={{ maxWidth: 1560, margin: "0 auto", padding: 26, display: "grid", gridTemplateColumns: "230px minmax(0,1fr) 320px", gap: 20, alignItems: "start" }}>
       {/* LEFT: categories */}
-      <div className="fd-order-last" style={{ display: "flex", flexDirection: "column", gap: 18 }}>
+      <div className="fd-order-last" style={{ display: "flex", flexDirection: "column", gap: 18, minWidth: 0 }}>
         <div className="frame" style={{ padding: "14px 12px" }}>
           <div className="ptitle">Store Categories</div>
           <button key="All" onClick={() => setTab("All")} style={catBtn(tab === "All")}>
@@ -697,7 +697,7 @@ export function StorePage() {
       </div>
 
       {/* CENTER */}
-      <div className="fd-order-1" style={{ display: "flex", flexDirection: "column", gap: 18 }}>
+      <div className="fd-order-1" style={{ display: "flex", flexDirection: "column", gap: 18, minWidth: 0 }}>
         {/* FEATURED PACK (prototype marketing chrome — no real StoreItem backs it) */}
         <div className="frame fd-collapse-2" style={{ padding: 0, overflow: "hidden", display: "grid", gridTemplateColumns: "1.1fr .9fr" }}>
           <div style={{ padding: 28 }}>
@@ -854,16 +854,16 @@ export function StorePage() {
               </span>
               <i />
             </div>
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(2,1fr)", gap: 14 }}>
+            <div className="fd-collapse-2" style={{ display: "grid", gridTemplateColumns: "repeat(2,1fr)", gap: 14 }}>
               {deals.map((it) => {
                 const isOwned = owned.has(it.id);
                 const isBuying = buying === it.id;
                 return (
-                  <div key={it.id} className="frame" style={{ padding: 16, display: "flex", alignItems: "center", gap: 14, position: "relative" }}>
+                  <div key={it.id} className="frame" style={{ padding: 16, display: "flex", alignItems: "center", gap: 14, position: "relative", minWidth: 0 }}>
                     <div onClick={() => setPreview(it)} title="Preview" style={{ flex: "none", display: "flex", alignItems: "center", justifyContent: "center", width: 60, cursor: "pointer" }}>
                       {renderThumb(it.thumb, it.thumb.kind === "portrait" ? 56 : 60)}
                     </div>
-                    <div style={{ flex: 1 }}>
+                    <div style={{ flex: 1, minWidth: 0 }}>
                       <div style={{ font: "700 14px Inter", color: "#fff" }}>{it.name}</div>
                       <div style={{ font: "500 11px Inter", color: "var(--ink2)", margin: "2px 0 8px" }}>{it.sub}</div>
                       <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
@@ -900,7 +900,7 @@ export function StorePage() {
       </div>
 
       {/* RIGHT: cart + seasonal */}
-      <div className="fd-order-2" style={{ display: "flex", flexDirection: "column", gap: 18 }}>
+      <div className="fd-order-2" style={{ display: "flex", flexDirection: "column", gap: 18, minWidth: 0 }}>
         <div className="frame" style={{ padding: 20 }}>
           <div className="ptitle">Your Cart</div>
           {cart.length === 0 ? (

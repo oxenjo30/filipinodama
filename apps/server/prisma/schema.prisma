@@ -538,6 +538,13 @@ enum TicketStatus {
   RESOLVED
 }
 
+enum TicketPriority {
+  LOW
+  MEDIUM
+  HIGH
+  URGENT
+}
+
 model Ticket {
   id         String        @id @default(cuid())
 
@@ -551,6 +558,7 @@ model Ticket {
   category   String        // "General" | "Account" | "Bug Report" | "Billing" (matches ContactPage CATEGORIES)
   subject    String        @db.Text
   status     TicketStatus  @default(OPEN)
+  priority   TicketPriority @default(MEDIUM)
 
   resolvedById String?     // staff who resolved it (nullable FK, SetNull)
   resolvedBy   User?       @relation("ticketsResolved", fields: [resolvedById], references: [id], onDelete: SetNull)
