@@ -83,6 +83,9 @@ model User {
   reportsAgainst  Report[] @relation("reportsAgainst")
   reportsResolved Report[] @relation("reportsResolved")
   campaignsSent Campaign[]
+  ticketsFiled    Ticket[]        @relation("ticketsFiled")
+  ticketsResolved Ticket[]        @relation("ticketsResolved")
+  ticketMessages  TicketMessage[] @relation("ticketMessages")
 
   @@index([trophies])
 }
@@ -494,4 +497,56 @@ model Campaign {
   createdAt  DateTime @default(now())
 
   @@index([createdAt])
+}
+
+// ─────────────── Admin Phase 3: support tickets ───────────────
+enum TicketStatus {
+  OPEN
+  RESOLVED
+}
+
+model Ticket {
+  id         String        @id @default(cuid())
+
+  // The player who filed it. SetNull (not Cascade) so the ticket + thread survive a
+  // hard account delete for the support record; a snapshot keeps it human-readable.
+  userId     String?
+  user       User?         @relation("ticketsFiled", fields: [userId], references: [id], onDelete: SetNull)
+  userName   String        // snapshot: "username#tag" at file time
+  userEmail  String?       // snapshot: the player's email at file time (staff-visible; from account)
+
+  category   String        // "General" | "Account" | "Bug Report" | "Billing" (matches ContactPage CATEGORIES)
+  subject    String        @db.Text
+  status     TicketStatus  @default(OPEN)
+
+  resolvedById String?     // staff who resolved it (nullable FK, SetNull)
+  resolvedBy   User?       @relation("ticketsResolved", fields: [resolvedById], references: [id], onDelete: SetNull)
+  resolvedAt   DateTime?
+
+  createdAt  DateTime      @default(now())
+  updatedAt  DateTime      @updatedAt   // bumped on every new message so the list can sort by "last activity"
+
+  messages   TicketMessage[]
+
+  @@index([status, updatedAt])   // serves the default queue: open tickets, most-recently-active first
+  @@index([userId])
+}
+
+model TicketMessage {
+  id         String    @id @default(cuid())
+
+  ticketId   String
+  ticket     Ticket    @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+
+  // Author SetNull so a message survives the author's account delete; isStaff records
+  // which side wrote it (drives the thread bubble alignment + the "notify the player" rule).
+  authorId   String?
+  author     User?     @relation("ticketMessages", fields: [authorId], references: [id], onDelete: SetNull)
+  authorName String    // snapshot: "username#tag" (or staff display) at write time
+  isStaff    Boolean   @default(false)
+  body       String    @db.Text
+
+  createdAt  DateTime  @default(now())
+
+  @@index([ticketId, createdAt])
 }

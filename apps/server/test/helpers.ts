@@ -31,6 +31,7 @@ export async function seedUser(
     adminRole: AdminRole | null;
     bannedUntil: Date | null;
     deletedAt: Date | null;
+    email: string | null;
   }> = {},
 ) {
   seq += 1;
@@ -45,6 +46,7 @@ export async function seedUser(
       adminRole: overrides.adminRole ?? null,
       bannedUntil: overrides.bannedUntil ?? null,
       deletedAt: overrides.deletedAt ?? null,
+      email: overrides.email ?? null,
     },
   });
 }
@@ -52,7 +54,7 @@ export async function seedUser(
 /** Wipe the tables these tests write, leaving durable seed rows (bots/store) intact. */
 export async function truncateAll() {
   await prisma.$executeRawUnsafe(
-    `TRUNCATE "Report", "AuditLog", "Message", "ChannelMember", "Channel" RESTART IDENTITY CASCADE`,
+    `TRUNCATE "Report", "AuditLog", "Message", "ChannelMember", "Channel", "Ticket" RESTART IDENTITY CASCADE`,
   );
   // remove only test-created users (prefix-scoped) to keep seed accounts
   await prisma.user.deleteMany({ where: { username: { startsWith: "t_user_" } } });
