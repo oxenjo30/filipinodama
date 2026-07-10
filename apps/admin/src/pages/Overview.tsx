@@ -114,7 +114,7 @@ export function Overview() {
           <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: 110, marginTop: 16 }}>
             <div style={{ font: "600 12px var(--sans)", color: "var(--dim)", textAlign: "center" }}>Payments disabled (gold-only)</div>
           </div>
-          <div style={{ marginTop: 12, font: "700 18px var(--mono)", color: "var(--dim)" }}>
+          <div style={{ marginTop: 12, font: "700 18px var(--mono)", color: "var(--gold-lt)" }}>
             — <span style={{ font: "600 11px var(--sans)", color: "var(--dim)" }}>7d total · needs analytics pipeline</span>
           </div>
         </div>
@@ -150,7 +150,7 @@ function Card({
   return (
     <div className={muted ? "fd-kpi" : dv ? (dv.up ? "fd-kpi up" : "fd-kpi down") : "fd-kpi"}>
       <div className="l">{label}</div>
-      <div className="v" style={muted ? { color: "var(--dim)" } : undefined}>{value}</div>
+      <div className="v" style={muted ? { color: "var(--gold-lt)" } : undefined}>{value}</div>
       {dv ? (
         <div className="trend">
           <span className="sub">{deltaCaption}</span>
