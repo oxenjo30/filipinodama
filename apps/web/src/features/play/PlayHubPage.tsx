@@ -179,6 +179,39 @@ export function PlayHubPage() {
         }}
       >
         <div>
+          {/* Math Dama — educational mode feature banner (full-width, above the
+              four standard modes). Routes to the two-step variant selector. */}
+          <button
+            onClick={() => navigate("/damath")}
+            style={{
+              width: "100%",
+              display: "flex",
+              alignItems: "center",
+              gap: 18,
+              padding: 22,
+              marginBottom: 18,
+              borderRadius: 16,
+              cursor: "pointer",
+              textAlign: "left",
+              background: "linear-gradient(120deg,rgba(232,184,75,.14),rgba(140,90,210,.12))",
+              border: "1.5px solid rgba(245,215,131,.4)",
+              boxShadow: "0 0 26px rgba(232,184,75,.1)",
+            }}
+          >
+            <div style={{ fontSize: 42, flex: "none" }}>🧮</div>
+            <div style={{ minWidth: 0, flex: 1 }}>
+              <div style={{ display: "flex", alignItems: "center", flexWrap: "wrap", gap: 8, marginBottom: 3 }}>
+                <span style={{ font: "800 22px Cinzel,serif", color: "var(--gold-lt)" }}>Math Dama</span>
+                <span style={pmTag("#f0e2b8", "rgba(232,184,75,.15)")}>Educational</span>
+                <span style={pmTag("#8ce0ad", "rgba(50,150,100,.18)")}>New</span>
+              </div>
+              <div style={{ font: "500 13px Inter", color: "var(--ink)", lineHeight: 1.5 }}>
+                Dama with math scoring. Capture pieces, solve operations, and win by score.
+              </div>
+            </div>
+            <div style={{ flex: "none", color: "var(--gold)", font: "700 20px Inter" }}>›</div>
+          </button>
+
           <div style={{ display: "grid", gridTemplateColumns: "repeat(2,1fr)", gap: 18 }}>
             {playModes.map((pm) => (
               <button key={pm.title} onClick={pm.onSelect} style={CARD_STYLE}>

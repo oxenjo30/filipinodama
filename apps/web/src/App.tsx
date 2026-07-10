@@ -5,6 +5,8 @@ import { HomePage } from "./features/home/HomePage";
 import { PlayHubPage } from "./features/play/PlayHubPage";
 import { AiSetupPage } from "./features/play/AiSetupPage";
 import { GamePage } from "./features/play/GamePage";
+import { DamathHubPage } from "./features/damath/DamathHubPage";
+import { DamathGamePage } from "./features/damath/DamathGamePage";
 import { NotFoundPage } from "./features/shared/NotFoundPage";
 import { ErrorBoundary } from "./features/shared/ErrorBoundary";
 import { FriendsPage } from "./features/friends/FriendsPage";
@@ -99,6 +101,8 @@ export function App() {
           <Route path="/play/ai" element={<AiSetupPage />} />
           <Route path="/play/ai/game" element={<GamePage />} />
           <Route path="/play/local" element={<GamePage mode="local" />} />
+          <Route path="/damath" element={<DamathHubPage />} />
+          <Route path="/damath/game" element={<DamathGamePage />} />
           <Route path="/play/online" element={<OnlineMatchPage />} />
           <Route path="/rooms" element={<PrivateRoomPage />} />
 
