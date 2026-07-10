@@ -23,6 +23,8 @@ type Opponent = {
   rankTier: string;
   /** opponent's equipped piece-skin art key (null = default discs) */
   skin?: string | null;
+  /** opponent's equipped profile-frame item id (null = no frame) */
+  frameId?: string | null;
 } | null;
 
 export type MMStatus = "idle" | "searching" | "found" | "playing" | "ended";

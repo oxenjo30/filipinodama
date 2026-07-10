@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { rankTierFor } from "@dama/shared";
 import type { Move, Square } from "@dama/shared";
-import { Board } from "../../components";
+import { Board, Avatar } from "../../components";
 import { useOnlineStore } from "../../stores/onlineStore";
 import { useAuthStore } from "../../stores/authStore";
 import { useAppStore } from "../../stores/appStore";
@@ -459,7 +459,7 @@ export function OnlineMatchPage() {
           the board sits above the fold, and "you" sits directly under it. */}
       <div className="fd-game-center" style={{ display: "flex", flexDirection: "column", alignItems: "stretch", gap: 14 }}>
         <OpponentPanel name={blueName === (me?.displayName ?? "You") ? redName : blueName} sub="Opponent"
-          avatar={opponent?.avatarUrl ?? "champion"} active={!!state && state.turn !== myColor && !state.result} />
+          avatar={opponent?.avatarUrl ?? "champion"} frame={opponent?.frameId ?? undefined} active={!!state && state.turn !== myColor && !state.result} />
 
         <div style={{
           alignSelf: "center",
@@ -504,7 +504,7 @@ export function OnlineMatchPage() {
         </div>
 
         <OpponentPanel name={me?.displayName ?? "You"} sub={`You · ${myColor}`}
-          avatar={me?.avatarUrl ?? "strategist"} active={myTurn} you />
+          avatar={me?.avatarUrl ?? "strategist"} frame={me?.frameId ?? undefined} active={myTurn} you />
       </div>
 
       {/* RIGHT: move history (real) + quick chat (honest) + tip of the day */}
@@ -715,12 +715,12 @@ export function OnlineMatchPage() {
   );
 }
 
-function OpponentPanel({ name, sub, avatar, active, you }: { name: string; sub: string; avatar: string; active: boolean; you?: boolean }) {
+function OpponentPanel({ name, sub, avatar, frame, active, you }: { name: string; sub: string; avatar: string; frame?: string; active: boolean; you?: boolean }) {
+  // With an equipped frame, the frame IS the ring; without one, show the gold
+  // ring (a touch brighter for your own seat).
   return (
     <div className="frame" style={{ padding: 14, display: "flex", alignItems: "center", gap: 12, borderColor: active ? "rgba(50,150,100,.55)" : undefined }}>
-      <div style={{ width: 48, height: 48, borderRadius: "50%", overflow: "hidden", border: `2px solid ${you ? "var(--gold)" : "rgba(232,184,75,.5)"}`, flex: "none" }}>
-        <img src={avatarUrl(avatar)} alt="" style={{ width: "100%", height: "100%", objectFit: "cover", filter: "brightness(1.25)" }} />
-      </div>
+      <Avatar src={avatar} frame={frame} size={48} ring={!frame} style={{ flex: "none", ...(you && !frame ? { outline: "2px solid var(--gold)", outlineOffset: -2, borderRadius: "50%" } : {}) }} />
       <div style={{ flex: 1 }}>
         <div style={{ font: "700 14px Inter", color: "#fff" }}>{name}</div>
         <div style={{ font: "500 11px Inter", color: "var(--ink2)" }}>{sub}</div>

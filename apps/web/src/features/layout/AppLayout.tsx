@@ -7,7 +7,8 @@ import { usePresenceStore } from "../../stores/presenceStore";
 import { useDmStore } from "../../stores/dmStore";
 import { useCosmeticsStore } from "../../stores/cosmeticsStore";
 import { useSettingsStore } from "../../stores/settingsStore";
-import { ICONS, BRAND, avatar as avatarUrl } from "../../lib/assets";
+import { ICONS, BRAND } from "../../lib/assets";
+import { Avatar } from "../../components";
 import { api } from "../../lib/api";
 import { Toasts } from "../shared/Toasts";
 import { TopUpModal } from "../store/TopUpModal";
@@ -23,12 +24,24 @@ import { DailyLoginBonusModal } from "../rewards/DailyLoginBonusModal";
  * Routed screens render into <Outlet/>. Bindings resolve to the real appStore.
  */
 
-const NAV: { label: string; to: string; mobileLabel?: string }[] = [
+type NavItem = { label: string; to: string; mobileLabel?: string; children?: { label: string; to: string; icon?: string }[] };
+
+// Quests + Learn now live UNDER Play as a dropdown (desktop). The `to` on Play
+// still navigates to the hub; `children` populate the dropdown + the mobile
+// drawer's nested list.
+const NAV: NavItem[] = [
   { label: "Home", to: "/" },
-  { label: "Play", to: "/play" },
-  { label: "Quests", to: "/quests" },
+  {
+    label: "Play",
+    to: "/play",
+    children: [
+      { label: "Play Now", to: "/play", icon: "🎮" },
+      { label: "Math Dama", to: "/damath", icon: "🧮" },
+      { label: "Quests", to: "/quests", icon: "🎯" },
+      { label: "Learn", to: "/learn", icon: "📖" },
+    ],
+  },
   { label: "Leaderboard", to: "/leaderboard", mobileLabel: "Ranks" },
-  { label: "Learn", to: "/learn" },
   { label: "Store", to: "/store" },
   { label: "Blog", to: "/blog" },
 ];
@@ -122,6 +135,7 @@ export function AppLayout() {
   const [notifOpen, setNotifOpen] = useState(false);
   const [notifUnread, setNotifUnread] = useState(0);
   const [menuOpen, setMenuOpen] = useState(false); // mobile hamburger drawer
+  const [openMenu, setOpenMenu] = useState<string | null>(null); // desktop nav dropdown (e.g. "Play")
 
   // Close the mobile drawer on any route change (tapping a link navigates → close).
   useEffect(() => {
@@ -178,11 +192,10 @@ export function AppLayout() {
     { icon: "⚙️", label: "Settings", on: () => navigate("/settings") },
   ];
 
-  const avatarToken = (
-    <div style={{ width: 40, height: 40, borderRadius: "50%", overflow: "hidden", border: "2px solid var(--gold)", flex: "none" }}>
-      <img src={avatarUrl(avatarSrc)} alt="" style={{ width: "100%", height: "100%", objectFit: "cover", filter: "brightness(1.25)" }} />
-    </div>
-  );
+  // The nav avatar uses the shared <Avatar>, so the equipped profile frame
+  // (me.frameId) overlays here just like on the profile page — and updates
+  // live on equip (patchMe → me.frameId) with no refresh, across every page.
+  const avatarToken = <Avatar src={avatarSrc} frame={me?.frameId ?? undefined} size={40} />;
 
   return (
     <>
@@ -242,11 +255,63 @@ export function AppLayout() {
                 header (Sign In + Play Now on the right) is preserved. Hidden on
                 narrow screens, where the hamburger drawer takes over. */}
             <nav className="fd-hide-narrow" style={{ flex: 1, alignItems: "center", justifyContent: "center", gap: 30 }}>
-              {NAV.map((n) => (
-                <button key={n.to} className={`navlink ${isOn(n.to) ? "on" : ""}`} onClick={() => navigate(n.to)}>
-                  {n.label}
-                </button>
-              ))}
+              {NAV.map((n) =>
+                n.children ? (
+                  // Dropdown parent (e.g. Play → Quests / Learn). Opens on hover
+                  // or click; the parent label itself still navigates to its hub.
+                  <div
+                    key={n.to}
+                    style={{ position: "relative" }}
+                    onMouseEnter={() => setOpenMenu(n.label)}
+                    onMouseLeave={() => setOpenMenu((m) => (m === n.label ? null : m))}
+                  >
+                    <button
+                      className={`navlink ${isOn(n.to) || n.children.some((c) => isOn(c.to)) ? "on" : ""}`}
+                      onClick={() => navigate(n.to)}
+                      aria-haspopup="true"
+                      aria-expanded={openMenu === n.label}
+                      style={{ display: "inline-flex", alignItems: "center", gap: 5 }}
+                    >
+                      {n.label}
+                      <span style={{ fontSize: 9, opacity: 0.75, transform: openMenu === n.label ? "rotate(180deg)" : "none", transition: "transform .15s ease" }}>▼</span>
+                    </button>
+                    {openMenu === n.label && (
+                      <div
+                        role="menu"
+                        style={{
+                          position: "absolute", top: "calc(100% + 8px)", left: "50%", transform: "translateX(-50%)",
+                          zIndex: 71, minWidth: 190, padding: 6, borderRadius: 12,
+                          border: "1px solid rgba(232,184,75,.28)", background: "linear-gradient(180deg,#20132f,#170c26)",
+                          boxShadow: "0 18px 44px rgba(0,0,0,.55)", animation: "fdrise .16s ease both",
+                        }}
+                      >
+                        {n.children.map((c) => (
+                          <button
+                            key={c.to}
+                            role="menuitem"
+                            onClick={() => { setOpenMenu(null); navigate(c.to); }}
+                            style={{
+                              display: "flex", alignItems: "center", gap: 10, width: "100%", textAlign: "left",
+                              padding: "9px 11px", borderRadius: 8, border: "none", cursor: "pointer",
+                              background: isOn(c.to) ? "rgba(232,184,75,.14)" : "transparent",
+                              color: isOn(c.to) ? "var(--gold-lt)" : "var(--ink)", font: "700 13px Inter",
+                            }}
+                            onMouseEnter={(e) => { if (!isOn(c.to)) e.currentTarget.style.background = "rgba(255,255,255,.05)"; }}
+                            onMouseLeave={(e) => { if (!isOn(c.to)) e.currentTarget.style.background = "transparent"; }}
+                          >
+                            {c.icon && <span aria-hidden style={{ fontSize: 15 }}>{c.icon}</span>}
+                            {c.label}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <button key={n.to} className={`navlink ${isOn(n.to) ? "on" : ""}`} onClick={() => navigate(n.to)}>
+                    {n.label}
+                  </button>
+                ),
+              )}
             </nav>
             <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 10 }}>
               {registered ? (
@@ -397,12 +462,32 @@ export function AppLayout() {
               )}
 
               <div className="fd-drawer-scroll">
-                {/* primary nav */}
+                {/* primary nav. A parent with children (Play) renders its own
+                    link, then its children indented beneath it. */}
                 <div className="fd-drawer-sec">
                   {NAV.map((n) => (
-                    <button key={n.to} className={`fd-drawer-item ${isOn(n.to) ? "on" : ""}`} onClick={() => navigate(n.to)}>
-                      {n.label}
-                    </button>
+                    <div key={n.to}>
+                      <button className={`fd-drawer-item ${isOn(n.to) ? "on" : ""}`} onClick={() => navigate(n.to)}>
+                        {n.label}
+                      </button>
+                      {n.children && (
+                        <div style={{ paddingLeft: 14 }}>
+                          {n.children
+                            .filter((c) => c.to !== n.to) // parent link already shown above
+                            .map((c) => (
+                              <button
+                                key={c.to}
+                                className={`fd-drawer-item ${isOn(c.to) ? "on" : ""}`}
+                                onClick={() => navigate(c.to)}
+                                style={{ display: "flex", alignItems: "center", gap: 9, opacity: 0.92 }}
+                              >
+                                {c.icon && <span aria-hidden style={{ fontSize: 14 }}>{c.icon}</span>}
+                                {c.label}
+                              </button>
+                            ))}
+                        </div>
+                      )}
+                    </div>
                   ))}
                 </div>
 

@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { RANK_TIERS, rankTierFor, type RankTier } from "@dama/shared";
 import { api, ApiError } from "../../lib/api";
-import { avatar } from "../../lib/assets";
+import { Avatar } from "../../components";
 import { useAuthStore } from "../../stores/authStore";
 import { AvatarPickerModal } from "./AvatarPickerModal";
 import { EditProfileModal } from "./EditProfileModal";
@@ -113,28 +113,6 @@ function duration(startedAt: string, endedAt: string | null): string {
   return `${mm}:${ss.toString().padStart(2, "0")}`;
 }
 
-/** Masked circular portrait — opaque pngs need the mask + brightness lift. */
-function Portrait({ src, size, alt }: { src: string; size: number; alt: string }) {
-  return (
-    <div
-      style={{
-        width: size,
-        height: size,
-        borderRadius: "50%",
-        overflow: "hidden",
-        flex: "none",
-        border: "3px solid rgba(232,184,75,.55)",
-        boxShadow: "0 6px 18px rgba(0,0,0,.5)",
-      }}
-    >
-      <img
-        src={src}
-        alt={alt}
-        style={{ width: "100%", height: "100%", objectFit: "cover", display: "block", filter: "brightness(1.25)" }}
-      />
-    </div>
-  );
-}
 
 export function ProfilePage() {
   const navigate = useNavigate();
@@ -318,7 +296,7 @@ export function ProfilePage() {
       {/* ── identity header ── */}
       <div className="frame fd-card-m" style={{ padding: 28, display: "flex", alignItems: "center", gap: 22, flexWrap: "wrap" }}>
         <div style={{ position: "relative", flex: "none" }}>
-          <Portrait src={avatar(me.avatarUrl ?? "champion")} size={92} alt={displayName} />
+          <Avatar src={me.avatarUrl ?? "champion"} frame={me.frameId ?? undefined} size={92} alt={displayName} />
           <button
             onClick={() => setAvatarPickerOpen(true)}
             title="Change avatar"

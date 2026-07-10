@@ -100,6 +100,8 @@ type PublicUser = {
    *  SKIN item's assetKey so the opponent's board shows their real skin. null =
    *  default discs. */
   skin: string | null;
+  /** Equipped profile-frame item id, so the opponent's avatar shows their frame. */
+  frameId: string | null;
 };
 
 async function publicUser(userId: string): Promise<PublicUser | null> {
@@ -114,6 +116,7 @@ async function publicUser(userId: string): Promise<PublicUser | null> {
       trophies: true,
       rankTier: true,
       equippedSkin: true,
+      frameId: true,
     },
   });
   if (!u) return null;

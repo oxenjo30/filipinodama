@@ -477,6 +477,7 @@ export function GamePage({ mode = "ai" }: { mode?: "ai" | "local" }) {
             rating={isLocal ? "—" : trophies}
             color={HUMAN_COLOR}
             avatar={isLocal ? "champion" : avatar}
+            frame={isLocal ? undefined : me?.frameId ?? undefined}
             active={redToMove}
             captured={redCaptured}
           />

@@ -7,6 +7,8 @@ export type PlayerPanelProps = {
   color: PieceColor;
   /** avatar key or path */
   avatar: string;
+  /** equipped profile-frame item id, overlaid on the avatar (optional) */
+  frame?: string;
   /** highlight the panel + show "thinking"/turn state when it's this player's turn */
   active: boolean;
   /** number of pieces this player has captured (0–12) */
@@ -92,6 +94,7 @@ export function PlayerPanel({
   rating,
   color,
   avatar,
+  frame,
   active,
   captured,
   thinking = false,
@@ -121,7 +124,7 @@ export function PlayerPanel({
         {/* Header: avatar + name + rating. The name now has the card's full width
             (no inline badge beside it), so long names wrap cleanly. */}
         <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-          <Avatar src={avatar} size={54} className="fd-panel-avatar" />
+          <Avatar src={avatar} frame={frame} size={54} className="fd-panel-avatar" />
           <div style={{ flex: 1, minWidth: 0 }}>
             <div
               style={{

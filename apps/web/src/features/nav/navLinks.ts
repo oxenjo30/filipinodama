@@ -2,12 +2,13 @@
  *  `mobileLabel` matches the prototype's shorter mobile labels (e.g. "Ranks"). */
 export type NavLink = { to: string; label: string; mobileLabel?: string };
 
+// Quests + Learn moved UNDER Play (see AppLayout NAV). On the mobile bar they're
+// no longer top-level tabs; they're reachable via Play → the hamburger drawer
+// nests them under Play.
 export const NAV_LINKS: NavLink[] = [
   { to: "/", label: "Home" },
   { to: "/play", label: "Play" },
-  { to: "/quests", label: "Quests" },
   { to: "/leaderboard", label: "Leaderboard", mobileLabel: "Ranks" },
-  { to: "/learn", label: "Learn" },
   { to: "/store", label: "Store" },
 ];
 
