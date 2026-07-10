@@ -1,17 +1,23 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { publishedArticles, categories, formatDate, type BlogCategory } from "./blog";
+import { publishedArticles, categories, formatDate, type BlogCategory, type Article } from "./blog";
 import { api } from "../../lib/api";
 import { useAuthStore } from "../../stores/authStore";
 
 /**
  * BlogPage — the /blog index.
  *
- * A single column of article cards (paginated, 8/page) beside a sidebar with a
- * Play CTA, Featured store items (real, GET /api/store/items), and — for signed-in
+ * An editorial layout: a masthead, a featured HERO card for the most-recent
+ * article, then the rest in a responsive grid — beside a sidebar with a Play
+ * CTA, Featured store items (real, GET /api/store/items), and — for signed-in
  * players — their most recent ranked match. Category filter + search narrow the
- * list. Only LIVE articles show (publishedArticles() honours the drip schedule).
- * A floating "scroll to top" arrow appears once the reader scrolls down.
+ * list (paginated, 8/page). Only LIVE articles show (publishedArticles() honours
+ * the drip schedule). A floating "scroll to top" arrow appears once the reader
+ * scrolls down.
+ *
+ * The articles carry no image assets, so the CATEGORY is the visual system:
+ * each has an accent colour and a glyph that tint the pill, drive a faint
+ * corner watermark, and give a per-card background wash.
  */
 
 type Filter = "All" | BlogCategory;
@@ -24,23 +30,37 @@ const CAT_ACCENT: Record<BlogCategory, string> = {
   Culture: "#f5a0a0",
 };
 
-function CategoryPill({ category }: { category: BlogCategory }) {
+/** A leading glyph per category — the categories read as a designed system,
+ *  not just coloured pills. Used in the pill and as a faint card watermark. */
+const CAT_GLYPH: Record<BlogCategory, string> = {
+  Guides: "♟",
+  Rules: "⚖",
+  Strategy: "♛",
+  Culture: "❦",
+};
+
+const ALL_GLYPH = "✦";
+
+function CategoryPill({ category, size = "sm" }: { category: BlogCategory; size?: "sm" | "md" }) {
   const accent = CAT_ACCENT[category];
+  const big = size === "md";
   return (
     <span
       style={{
         display: "inline-flex",
         alignItems: "center",
-        padding: "3px 10px",
+        gap: 6,
+        padding: big ? "5px 13px" : "3px 10px",
         borderRadius: 100,
         border: `1px solid ${accent}55`,
         background: `${accent}18`,
         color: accent,
-        font: "700 10px Inter",
+        font: big ? "700 11px Inter" : "700 10px Inter",
         letterSpacing: ".6px",
         textTransform: "uppercase",
       }}
     >
+      <span aria-hidden style={{ fontSize: big ? 13 : 11, lineHeight: 1 }}>{CAT_GLYPH[category]}</span>
       {category}
     </span>
   );
@@ -96,6 +116,44 @@ function featuredThumb(it: FeaturedItem): string {
     default:
       return A(a.endsWith(".png") || a.endsWith(".webp") ? a : "me-banner.png");
   }
+}
+
+/** Card shell shared by the hero and the grid — a full-bordered panel with a
+ *  category-tinted wash and a faint corner watermark glyph. Never a side-stripe. */
+function articleCardStyle(accent: string): React.CSSProperties {
+  return {
+    position: "relative",
+    overflow: "hidden",
+    textDecoration: "none",
+    color: "inherit",
+    borderRadius: 14,
+    border: "1px solid rgba(232,184,75,.16)",
+    background: `linear-gradient(180deg,rgba(38,22,60,.55),rgba(24,13,40,.5)), radial-gradient(120% 90% at 100% 0%, ${accent}14, transparent 55%)`,
+    transition: "border-color .16s ease, transform .16s ease, box-shadow .16s ease",
+    isolation: "isolate",
+  };
+}
+
+function CardWatermark({ glyph, accent }: { glyph: string; accent: string }) {
+  return (
+    <span
+      aria-hidden
+      style={{
+        position: "absolute",
+        top: -18,
+        right: -6,
+        fontSize: 96,
+        lineHeight: 1,
+        color: accent,
+        opacity: 0.1,
+        pointerEvents: "none",
+        userSelect: "none",
+        zIndex: 0,
+      }}
+    >
+      {glyph}
+    </span>
+  );
 }
 
 export function BlogPage() {
@@ -187,6 +245,14 @@ export function BlogPage() {
   const pageCount = Math.max(1, Math.ceil(filtered.length / PER_PAGE));
   const pageItems = filtered.slice((page - 1) * PER_PAGE, page * PER_PAGE);
 
+  // The HERO treatment goes to the newest article — but only on the first page
+  // and only when nothing is filtered/searched, so the hero is always the true
+  // "latest" and never a random mid-list result. Otherwise every card is equal
+  // weight in the grid, which is the honest presentation for a filtered view.
+  const isDefaultView = filter === "All" && query.trim() === "" && page === 1;
+  const heroArticle: Article | null = isDefaultView && pageItems.length > 0 ? pageItems[0] : null;
+  const gridItems = heroArticle ? pageItems.slice(1) : pageItems;
+
   const tabs: Filter[] = ["All", ...categories];
 
   const goPage = (p: number) => {
@@ -194,35 +260,86 @@ export function BlogPage() {
     window.scrollTo({ top: 0, behavior: "smooth" });
   };
 
+  // Staggered entrance runs off inline animationDelay against the .fd-blog-rise
+  // keyframes injected below. Content is ALWAYS rendered (the base state is
+  // visible); the animation only enhances it, and prefers-reduced-motion turns
+  // it off entirely, so nothing is ever gated behind a transition that may not
+  // fire. A key on the wrapper re-triggers the stagger when the view changes.
+  const viewKey = `${filter}|${query}|${page}`;
+
   return (
     <div className="fd-page-pad" style={{ maxWidth: 1200, margin: "0 auto", padding: "26px 26px 60px" }}>
-      {/* HEADER */}
-      <div style={{ textAlign: "center", marginBottom: 26 }}>
-        <div style={{ font: "800 34px Cinzel,serif", color: "var(--gold-lt)" }}>Dama Blog</div>
-        <div style={{ font: "400 14px Inter", color: "var(--ink)", marginTop: 6 }}>Guides, rules &amp; strategy</div>
-      </div>
+      <style>{BLOG_CSS}</style>
 
-      {/* CONTROLS: category filter + search */}
-      <div style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "center", justifyContent: "space-between", marginBottom: 22 }}>
+      {/* MASTHEAD */}
+      <header style={{ textAlign: "center", marginBottom: 30 }}>
+        <div style={{ font: "700 11px Inter", letterSpacing: "3.5px", textTransform: "uppercase", color: "var(--gold)", marginBottom: 12 }}>
+          ✦&nbsp;&nbsp;The Royal Dispatch&nbsp;&nbsp;✦
+        </div>
+        <h1
+          style={{
+            margin: 0,
+            font: "800 clamp(34px,5vw,52px)/1.02 Cinzel,serif",
+            background: "linear-gradient(180deg,#f7e2a0,#d5a63a)",
+            WebkitBackgroundClip: "text",
+            backgroundClip: "text",
+            color: "transparent",
+            letterSpacing: ".5px",
+          }}
+        >
+          Dama Blog
+        </h1>
+        <div className="divider" style={{ maxWidth: 420, margin: "16px auto 0" }}>
+          <i />
+          <span style={{ font: "500 12.5px Inter", letterSpacing: "1.5px", color: "var(--ink)", textTransform: "none" }}>
+            Guides, rules &amp; strategy for the crown
+          </span>
+          <i />
+        </div>
+      </header>
+
+      {/* CONTROL BAR: category filter + search */}
+      <div
+        style={{
+          display: "flex",
+          gap: 14,
+          flexWrap: "wrap",
+          alignItems: "center",
+          justifyContent: "space-between",
+          marginBottom: 26,
+          padding: "12px 14px",
+          borderRadius: 14,
+          border: "1px solid rgba(232,184,75,.14)",
+          background: "linear-gradient(180deg,rgba(30,17,52,.5),rgba(20,11,36,.45))",
+        }}
+      >
         <div className="fd-chip-strip" style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
           {tabs.map((t) => {
             const active = filter === t;
+            const accent = t === "All" ? "var(--gold-lt)" : CAT_ACCENT[t];
+            const glyph = t === "All" ? ALL_GLYPH : CAT_GLYPH[t];
             return (
               <button
                 key={t}
                 onClick={() => setFilter(t)}
+                aria-pressed={active}
                 style={{
-                  padding: "8px 15px",
-                  borderRadius: 8,
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: 7,
+                  padding: "8px 14px",
+                  borderRadius: 100,
                   cursor: "pointer",
                   font: "700 12px Inter",
                   letterSpacing: ".5px",
                   textTransform: "uppercase",
-                  border: active ? "1px solid rgba(232,184,75,.55)" : "1px solid rgba(232,184,75,.2)",
-                  background: active ? "linear-gradient(180deg,#3d2a6b,#241640)" : "rgba(15,8,32,.5)",
+                  border: active ? "1px solid rgba(232,184,75,.55)" : "1px solid rgba(232,184,75,.18)",
+                  background: active ? "linear-gradient(180deg,#3d2a6b,#241640)" : "rgba(15,8,32,.45)",
                   color: active ? "var(--gold-lt)" : "var(--ink)",
+                  transition: "border-color .15s ease, color .15s ease, background .15s ease",
                 }}
               >
+                <span aria-hidden style={{ fontSize: 12, lineHeight: 1, color: active ? accent : "var(--ink2)" }}>{glyph}</span>
                 {t}
               </button>
             );
@@ -235,14 +352,14 @@ export function BlogPage() {
           placeholder="Search articles…"
           aria-label="Search articles"
           className="fd-nozoom"
-          style={{ minWidth: 240, flex: "0 1 320px", padding: "10px 14px", borderRadius: 8, border: "1px solid rgba(232,184,75,.3)", background: "rgba(15,8,32,.6)", color: "var(--ink)", font: "500 13px Inter", outline: "none" }}
+          style={{ minWidth: 220, flex: "0 1 300px", padding: "10px 14px", borderRadius: 10, border: "1px solid rgba(232,184,75,.3)", background: "rgba(15,8,32,.6)", color: "var(--ink)", font: "500 13px Inter", outline: "none" }}
         />
       </div>
 
       {/* MAIN + SIDEBAR */}
       <div className="fd-two-col" style={{ display: "grid", gridTemplateColumns: "minmax(0,1fr) 300px", gap: 26, alignItems: "start" }}>
-        {/* MAIN: single column of article cards */}
-        <div>
+        {/* MAIN: hero + article grid */}
+        <div style={{ minWidth: 0 }}>
           {filtered.length === 0 ? (
             <div style={{ borderRadius: 14, border: "1px solid rgba(232,184,75,.16)", background: "rgba(24,13,40,.5)", padding: "48px 20px", textAlign: "center" }}>
               <div style={{ fontSize: 34, marginBottom: 10 }}>{live.length === 0 ? "📅" : "🔍"}</div>
@@ -255,52 +372,102 @@ export function BlogPage() {
             </div>
           ) : (
             <>
-              <div style={{ font: "500 12px Inter", color: "var(--ink2)", marginBottom: 14 }}>
+              <div style={{ font: "500 12px Inter", color: "var(--ink2)", marginBottom: 18, letterSpacing: ".3px" }}>
                 {filtered.length} article{filtered.length === 1 ? "" : "s"}
                 {pageCount > 1 ? ` · page ${page} of ${pageCount}` : ""}
               </div>
-              <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-                {pageItems.map((a) => {
-                  const date = formatDate(a.datePublished);
+
+              <div key={viewKey} className="fd-blog-list">
+                {/* HERO — the latest article, given real presence */}
+                {heroArticle && (() => {
+                  const accent = CAT_ACCENT[heroArticle.category];
+                  const date = formatDate(heroArticle.datePublished);
                   return (
                     <Link
-                      key={a.slug}
-                      to={`/blog/${a.slug}`}
-                      style={{
-                        display: "flex",
-                        flexDirection: "column",
-                        gap: 10,
-                        padding: "22px 24px",
-                        textDecoration: "none",
-                        color: "inherit",
-                        borderRadius: 14,
-                        border: "1px solid rgba(232,184,75,.16)",
-                        background: "linear-gradient(180deg,rgba(38,22,60,.55),rgba(24,13,40,.5))",
-                        transition: "border-color .15s ease, transform .15s ease",
-                      }}
-                      onMouseEnter={(e) => {
-                        e.currentTarget.style.borderColor = "rgba(232,184,75,.4)";
-                        e.currentTarget.style.transform = "translateY(-2px)";
-                      }}
-                      onMouseLeave={(e) => {
-                        e.currentTarget.style.borderColor = "rgba(232,184,75,.16)";
-                        e.currentTarget.style.transform = "none";
-                      }}
+                      to={`/blog/${heroArticle.slug}`}
+                      className="fd-blog-rise fd-blog-hero"
+                      style={{ ...articleCardStyle(accent), display: "block", marginBottom: 22, animationDelay: "0ms" }}
                     >
-                      <CategoryPill category={a.category} />
-                      <div style={{ font: "700 21px/1.3 Cinzel,serif", color: "var(--gold-lt)" }}>{a.title}</div>
-                      <div style={{ font: "400 14px/1.65 Inter", color: "var(--ink)", display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden" }}>{a.description}</div>
-                      <div style={{ marginTop: 4, font: "500 11px Inter", color: "var(--ink2)" }}>
-                        {date ? `${date} · ` : ""}{a.readMin} min read
+                      <span
+                        aria-hidden
+                        style={{
+                          position: "absolute", top: -34, right: -10, fontSize: 190, lineHeight: 1,
+                          color: accent, opacity: 0.1, pointerEvents: "none", userSelect: "none", zIndex: 0,
+                        }}
+                      >
+                        {CAT_GLYPH[heroArticle.category]}
+                      </span>
+                      <div style={{ position: "relative", zIndex: 1, padding: "clamp(24px,3.5vw,34px)" }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap", marginBottom: 16 }}>
+                          <span style={{ display: "inline-flex", alignItems: "center", gap: 6, font: "800 10px Inter", letterSpacing: "1.5px", textTransform: "uppercase", color: "#2a1a06", background: "linear-gradient(180deg,#f7e2a0,#d5a63a)", padding: "4px 11px", borderRadius: 100 }}>
+                            ★ Latest
+                          </span>
+                          <CategoryPill category={heroArticle.category} size="md" />
+                        </div>
+                        <div style={{ font: "700 clamp(24px,3.2vw,34px)/1.18 Cinzel,serif", color: "var(--gold-lt)", overflowWrap: "anywhere" }}>
+                          {heroArticle.title}
+                        </div>
+                        <div style={{ font: "400 15px/1.7 Inter", color: "var(--ink)", marginTop: 14, maxWidth: "62ch", display: "-webkit-box", WebkitLineClamp: 3, WebkitBoxOrient: "vertical", overflow: "hidden" }}>
+                          {heroArticle.description}
+                        </div>
+                        <div style={{ display: "flex", alignItems: "center", gap: 14, marginTop: 20, flexWrap: "wrap" }}>
+                          <span style={{ font: "700 12px Inter", letterSpacing: ".8px", textTransform: "uppercase", color: accent }}>Read article →</span>
+                          <span style={{ font: "500 11px 'JetBrains Mono',monospace", color: "var(--ink2)" }}>
+                            {date ? `${date} · ` : ""}{heroArticle.readMin} min read
+                          </span>
+                        </div>
                       </div>
                     </Link>
                   );
-                })}
+                })()}
+
+                {/* THE REST — a responsive grid (collapses to one column on mobile
+                    via the global minmax collapser), tighter than the hero. */}
+                {gridItems.length > 0 && (
+                  <div
+                    style={{
+                      display: "grid",
+                      gridTemplateColumns: "repeat(auto-fill, minmax(272px, 1fr))",
+                      gap: 16,
+                    }}
+                  >
+                    {gridItems.map((a, i) => {
+                      const accent = CAT_ACCENT[a.category];
+                      const date = formatDate(a.datePublished);
+                      return (
+                        <Link
+                          key={a.slug}
+                          to={`/blog/${a.slug}`}
+                          className="fd-blog-rise fd-blog-card"
+                          style={{
+                            ...articleCardStyle(accent),
+                            display: "flex",
+                            flexDirection: "column",
+                            gap: 10,
+                            padding: "20px 22px",
+                            // hero occupies index 0's delay slot; grid follows on.
+                            animationDelay: `${Math.min((heroArticle ? i + 1 : i) * 45, 360)}ms`,
+                          }}
+                        >
+                          <CardWatermark glyph={CAT_GLYPH[a.category]} accent={accent} />
+                          <div style={{ position: "relative", zIndex: 1, display: "flex", flexDirection: "column", gap: 10, height: "100%" }}>
+                            <CategoryPill category={a.category} />
+                            <div style={{ font: "700 19px/1.32 Cinzel,serif", color: "var(--gold-lt)", overflowWrap: "anywhere" }}>{a.title}</div>
+                            <div style={{ font: "400 13.5px/1.6 Inter", color: "var(--ink)", display: "-webkit-box", WebkitLineClamp: 3, WebkitBoxOrient: "vertical", overflow: "hidden" }}>{a.description}</div>
+                            <div style={{ marginTop: "auto", paddingTop: 6, font: "500 11px 'JetBrains Mono',monospace", color: "var(--ink2)" }}>
+                              {date ? `${date} · ` : ""}{a.readMin} min read
+                            </div>
+                          </div>
+                        </Link>
+                      );
+                    })}
+                  </div>
+                )}
               </div>
 
               {/* PAGINATION */}
               {pageCount > 1 && (
-                <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 8, marginTop: 28, flexWrap: "wrap" }}>
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 8, marginTop: 32, flexWrap: "wrap" }}>
                   <button onClick={() => goPage(page - 1)} disabled={page === 1} style={pageBtn(false, page === 1)}>‹ Prev</button>
                   {Array.from({ length: pageCount }).map((_, i) => {
                     const p = i + 1;
@@ -427,5 +594,32 @@ function pageBtn(active: boolean, disabled: boolean): React.CSSProperties {
     opacity: disabled ? 0.5 : 1,
   };
 }
+
+/**
+ * Scoped styles for the blog: the staggered card entrance and the hover lift.
+ * Kept inline so the redesign is self-contained (the global stylesheet has no
+ * prefers-reduced-motion block). Content renders regardless of the animation —
+ * .fd-blog-rise sets its final state via `both` fill, and reduced-motion
+ * disables the animation and the transform entirely (instant, fully visible).
+ */
+const BLOG_CSS = `
+@keyframes fdBlogRise { from { opacity: 0; transform: translateY(14px); } to { opacity: 1; transform: none; } }
+.fd-blog-rise { animation: fdBlogRise .5s cubic-bezier(.2,.7,.3,1) both; will-change: transform, opacity; }
+.fd-blog-card:hover, .fd-blog-hero:hover {
+  border-color: rgba(232,184,75,.42) !important;
+  transform: translateY(-3px);
+  box-shadow: 0 14px 34px rgba(0,0,0,.42);
+}
+.fd-blog-card:focus-visible, .fd-blog-hero:focus-visible {
+  outline: none;
+  border-color: rgba(232,184,75,.55) !important;
+  box-shadow: 0 0 0 2px rgba(232,184,75,.35);
+}
+@media (prefers-reduced-motion: reduce) {
+  .fd-blog-rise { animation: fdBlogFade .01s linear both; }
+  @keyframes fdBlogFade { from { opacity: 1; } to { opacity: 1; } }
+  .fd-blog-card:hover, .fd-blog-hero:hover { transform: none; }
+}
+`;
 
 export default BlogPage;

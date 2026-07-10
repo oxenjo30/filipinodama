@@ -51,3 +51,26 @@ no fabricated data (funnel/retention/cohort → real-metric repurpose + honest f
 **Constraints (CLAUDE.md):** minimal impact (only touch what's needed for fidelity — no logic
 changes to the working server), verify each phase (typecheck+build), gold-only + no-fabrication
 preserved, get approval before merge/deploy.
+
+---
+
+# Blog page redesign (Damath session — separate task)
+
+**Goal:** Redesign `apps/web/src/features/blog/BlogPage.tsx` — the /blog index is a flat, uniform
+single-column list of identical text cards. Give it editorial hierarchy (featured hero article,
+category-as-visual-system, elevated masthead, rhythm, tasteful motion) while preserving ALL
+functionality and matching the existing gold/Cinzel/royal design system.
+
+**Preserve exactly (do not break):** category filter tabs, search, pagination (8/page), both empty
+states, scroll-to-top, and the whole sidebar (Play CTA, Featured-in-Store from /api/store/items,
+"Your Last Match" for signed-in players). Visual/layout only — no logic/data changes.
+
+- [x] Read current BlogPage; invoke design skill; dispatch a design subagent with a detailed brief
+- [x] Subagent redesigns BlogPage.tsx (hero + category system + hierarchy + motion + reduced-motion)
+- [x] Review the subagent's diff myself — all functionality markers present; empty states, filter/search/
+      pagination, sidebar, scroll-to-top intact; motion has reduced-motion fallback + no content-gating
+- [x] Verify: web typecheck (exit 0) + eslint (exit 0) + vite build (✓ built) all clean
+- [ ] Commit + deploy (with user approval) + confirm live — USE PATHSPEC COMMIT (shared worktree race, see lessons.md)
+
+**Constraints:** minimal impact (only BlogPage.tsx + its helpers), match existing design tokens (no new
+palette), no functionality regressions, verify before "done", get approval before deploy.
