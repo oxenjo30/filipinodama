@@ -10,6 +10,7 @@ import { Support } from "./pages/Support";
 import { EconomyPage } from "./pages/Economy";
 import { StorePage } from "./pages/Store";
 import { LiveOpsPage } from "./pages/LiveOps";
+import { TournamentsPage } from "./pages/Tournaments";
 import { GuildsPage } from "./pages/Guilds";
 import { MatchesPage } from "./pages/Matches";
 import { AuditPage } from "./pages/Audit";
@@ -41,7 +42,7 @@ const NAV: Nav[] = [
   ["/financials", "Financials", "#4bd6a0", "Economy", "ECONOMY", true],
   ["/fraud", "Fraud & AML", "#ff7a7a", "Economy", "ECONOMY", true],
   ["/liveops", "Live ops", "#4fd0c0", "Engagement", "ECONOMY"],
-  ["/tournaments", "Tournaments", "#e0a24a", "Engagement", "ECONOMY", true],
+  ["/tournaments", "Tournaments", "#e0a24a", "Engagement", "ECONOMY"],
   ["/guilds", "Guilds", "#e39aa8", "Engagement", "MODERATOR"],
   ["/campaigns", "Campaigns", "#ff9ec4", "Engagement", "ECONOMY"],
   ["/settings", "Settings", "#b98cff", "System & access", "SUPERADMIN"],
@@ -180,6 +181,7 @@ export function App() {
             <Route path="/economy" element={<EconomyPage />} />
             <Route path="/store" element={<StorePage />} />
             <Route path="/liveops" element={<LiveOpsPage />} />
+            <Route path="/tournaments" element={<TournamentsPage />} />
             <Route path="/guilds" element={<GuildsPage />} />
             <Route path="/audit" element={<AuditPage />} />
             <Route path="/campaigns" element={<Campaigns />} />
@@ -188,7 +190,6 @@ export function App() {
             {/* Phase-2 stubs */}
             <Route path="/financials" element={<Phase2 title="Financials" note="Blocked — real-money top-up is disabled for legal compliance." />} />
             <Route path="/fraud" element={<Phase2 title="Fraud & AML" note="Payment-driven risk engine (blocked on payments)." />} />
-            <Route path="/tournaments" element={<Phase2 title="Tournaments" note="Needs a Tournament model." />} />
             <Route path="*" element={<Navigate to="/overview" replace />} />
           </Routes>
         </main>
