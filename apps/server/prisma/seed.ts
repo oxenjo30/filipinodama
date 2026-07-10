@@ -129,6 +129,14 @@ function toGoldOnly<T extends { priceGold?: number | null; priceDiamonds?: numbe
   } as T;
 }
 
+// Admin Phase 2 wired flags. `value` is seeded ONLY on create — re-seeding
+// (e.g. on every deploy) must never clobber an admin's live edit to a flag.
+const CONFIG_SEED = [
+  { key: "MAINTENANCE_BANNER", value: "false", type: "bool", category: "flag", label: "Maintenance banner" },
+  { key: "MAINTENANCE_TEXT", value: "", type: "string", category: "flag", label: "Maintenance banner text" },
+  { key: "DAILY_LOGIN_ENABLED", value: "true", type: "bool", category: "flag", label: "Daily login bonus enabled" },
+];
+
 async function main() {
   for (const raw of STORE) {
     const it = toGoldOnly(raw as any);
@@ -136,6 +144,13 @@ async function main() {
   }
   for (const q of QUESTS) {
     await prisma.quest.upsert({ where: { id: q.id }, update: q, create: q });
+  }
+  for (const c of CONFIG_SEED) {
+    await prisma.config.upsert({
+      where: { key: c.key },
+      update: { type: c.type, category: c.category, label: c.label }, // NB: no `value` — don't clobber admin edits
+      create: c,
+    });
   }
   // Season tier reward track. Computed once and applied on BOTH create and update
   // so a re-seed reprices an already-seeded season (e.g. diamonds→trophies) — an
