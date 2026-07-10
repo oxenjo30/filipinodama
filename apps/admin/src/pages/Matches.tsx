@@ -54,28 +54,27 @@ function Delta({ v }: { v: number | null }) {
   return <span style={{ color: v >= 0 ? "var(--green)" : "var(--red)" }}>{v >= 0 ? "+" : ""}{v}</span>;
 }
 
-/** Status pill for the queue table — real outcome only (win/draw/unfinished). */
-function StatusBadge({ winner }: { winner: string | null }) {
-  if (!winner) {
-    return <span className="badge-rect" style={{ color: "var(--dim)", background: "rgba(139,120,173,.14)", borderColor: "rgba(139,120,173,.3)" }}>Unfinished</span>;
-  }
-  if (winner === "draw") {
-    return <span className="badge-rect" style={{ color: "var(--dim-2)", background: "rgba(111,95,146,.16)", borderColor: "rgba(111,95,146,.35)" }}>Draw</span>;
-  }
-  const color = winner === "red" ? "var(--red-lt)" : "var(--blue)";
-  return <span className="badge-rect" style={{ color, background: "rgba(255,255,255,.06)", borderColor: color }}>{winner === "red" ? "Red won" : "Blue won"}</span>;
+/** Real outcome label shown in the Match cell (win/draw/unfinished) — not a mockup column. */
+function outcomeLabel(winner: string | null): string {
+  if (!winner) return "Unfinished";
+  if (winner === "draw") return "Draw";
+  return winner === "red" ? "Red won" : "Blue won";
 }
 
 /**
- * Match review queue — re-skinned to the approved anti-cheat review-queue
- * layout (flag banner, queue table, per-row decision buttons, detail drawer
- * with a decision bar). We have NO anti-cheat detection subsystem, so this
- * stays an honest read-only inspector over the real Match model: the queue
- * shows real matches (id, players, mode, outcome), the flag-reason/confidence
- * columns the approved design calls for are rendered as "—" (no fabricated
- * scores), and every decision button (Review is real; Replay / Clear flag /
- * Void / Ban are Phase-2) is disabled with a tooltip explaining why, per the
- * no-fabrication rule. Settings + raw moves in the drawer are real API data.
+ * Match review queue — matches the approved anti-cheat review-queue mockup's
+ * structure (flag banner, 6-column queue table, per-row decision buttons,
+ * detail drawer with detection tiles/timeline/signals/decision bar). We have
+ * NO anti-cheat detection subsystem, so this stays an honest read-only
+ * inspector over the real Match model: the queue shows real matches (id,
+ * players, mode, outcome — outcome folded into the Match cell since there is
+ * no real case-review Status yet), the Flag reason/Confidence/Status columns
+ * the mockup calls for are rendered as "—" (no fabricated scores), and every
+ * decision button (Review is real; Replay / Clear flag / Void / Ban are
+ * Phase-2) is disabled with a tooltip explaining why, per the no-fabrication
+ * rule. The drawer's 4 mockup detection tiles (Avg accuracy/Move time/Moves/
+ * Priors) are honest "—"; real match data (winner/duration/trophy/gold) is a
+ * separate clearly-labelled block. Settings + raw moves are real API data.
  */
 export function MatchesPage() {
   const [rows, setRows] = useState<MatchRow[]>([]);
@@ -134,30 +133,28 @@ export function MatchesPage() {
                 <th>Mode</th>
                 <th>Flag reason</th>
                 <th className="num">Confidence</th>
-                <th>Status</th>
-                <th className="num">Trophy Δ</th>
-                <th className="num">Gold</th>
+                <th style={{ textAlign: "center" }}>Status</th>
                 <th style={{ textAlign: "center" }}>Action</th>
               </tr>
             </thead>
             <tbody>
               {loading ? (
-                <tr><td colSpan={8} className="dim" style={{ textAlign: "center", padding: 24 }}>Loading…</td></tr>
+                <tr><td colSpan={6} className="dim" style={{ textAlign: "center", padding: 24 }}>Loading…</td></tr>
               ) : rows.length === 0 ? (
-                <tr><td colSpan={8} className="dim" style={{ textAlign: "center", padding: 24 }}>No matches found.</td></tr>
+                <tr><td colSpan={6} className="dim" style={{ textAlign: "center", padding: 24 }}>No matches found.</td></tr>
               ) : (
                 rows.map((m) => (
                   <tr key={m.id} className="arow">
                     <td>
                       <div style={{ fontWeight: 700, color: "var(--ink-2)" }}>{playerLabel(m.red)} <span className="dim" style={{ fontWeight: 500 }}>vs</span> {playerLabel(m.blue)}</div>
-                      <div className="dim mono" style={{ fontSize: 10.5 }}>{m.id} · {new Date(m.startedAt).toLocaleString()}</div>
+                      <div className="dim mono" style={{ fontSize: 10.5 }}>
+                        {m.id} · {new Date(m.startedAt).toLocaleString()} · <span style={{ color: winnerColor(m.winner) }}>{outcomeLabel(m.winner)}</span>
+                      </div>
                     </td>
                     <td className="mono" style={{ color: "var(--ink-3)" }}>{m.mode}</td>
                     <td className="dim" title={PHASE2_NOTE}>—</td>
                     <td className="num dim" title={PHASE2_NOTE}>—</td>
-                    <td><StatusBadge winner={m.winner} /></td>
-                    <td className="num"><Delta v={m.redTrophyDelta} /> / <Delta v={m.blueTrophyDelta} /></td>
-                    <td className="num">{(m.goldReward ?? 0).toLocaleString()}</td>
+                    <td style={{ textAlign: "center" }} className="dim" title={PHASE2_NOTE}>—</td>
                     <td>
                       <div className="row" style={{ gap: 6, justifyContent: "center" }}>
                         <button className="abtn btn-ghost btn-ghost-sm" onClick={() => setSelId(m.id)}>Review</button>
@@ -220,23 +217,61 @@ function MatchDrawer({ id, onClose }: { id: string; onClose: () => void }) {
               </div>
             </div>
 
-            {/* Outcome stat cards — real columns only */}
+            {/* Detection stat tiles — mockup's 4 (Avg accuracy / Move time / Moves / Priors). Honest
+               "—": the anti-cheat detection subsystem does not exist yet, so there is no real data
+               to fill these with. */}
             <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 10 }}>
-              <div className="fd-kpi pad-sm" style={{ ["--tile" as string]: winnerColor(d.winner) }}>
-                <div className="l">Winner</div>
-                <div className="v mono" style={{ fontSize: 15 }}>{d.winner ?? "—"}</div>
+              <div className="fd-kpi pad-sm" title={PHASE2_NOTE}>
+                <div className="l">Avg accuracy</div>
+                <div className="v mono dim" style={{ fontSize: 15 }}>—</div>
               </div>
-              <div className="fd-kpi pad-sm ink">
-                <div className="l">Duration</div>
-                <div className="v mono" style={{ fontSize: 15 }}>{fmtDuration(d.durationSec)}</div>
+              <div className="fd-kpi pad-sm" title={PHASE2_NOTE}>
+                <div className="l">Move time</div>
+                <div className="v mono dim" style={{ fontSize: 15 }}>—</div>
               </div>
-              <div className="fd-kpi pad-sm ink">
-                <div className="l">Trophy Δ</div>
-                <div className="v mono" style={{ fontSize: 15 }}><Delta v={d.redTrophyDelta} /> / <Delta v={d.blueTrophyDelta} /></div>
+              <div className="fd-kpi pad-sm" title={PHASE2_NOTE}>
+                <div className="l">Moves</div>
+                <div className="v mono dim" style={{ fontSize: 15 }}>—</div>
               </div>
-              <div className="fd-kpi pad-sm gold">
-                <div className="l">Gold reward</div>
-                <div className="v mono" style={{ fontSize: 15 }}>{(d.goldReward ?? 0).toLocaleString()}</div>
+              <div className="fd-kpi pad-sm" title={PHASE2_NOTE}>
+                <div className="l">Priors</div>
+                <div className="v mono dim" style={{ fontSize: 15 }}>—</div>
+              </div>
+            </div>
+
+            {/* Move-accuracy timeline — mockup block, honest empty-state (no per-ply accuracy data
+               exists without the detection subsystem). */}
+            <div className="panel panel-pad">
+              <div style={{ fontWeight: 700, fontSize: 11, letterSpacing: .5, color: "var(--ink-2)", marginBottom: 12 }}>MOVE-ACCURACY TIMELINE</div>
+              <div className="dim" style={{ fontSize: 12, textAlign: "center", padding: "18px 0" }}>Detection subsystem not built — no per-move accuracy data available.</div>
+            </div>
+
+            {/* Detection signals — mockup block, honest empty-state. */}
+            <div className="panel panel-pad">
+              <div style={{ fontWeight: 700, fontSize: 11, letterSpacing: .5, color: "var(--ink-2)", marginBottom: 12 }}>DETECTION SIGNALS</div>
+              <div className="dim" style={{ fontSize: 12, textAlign: "center", padding: "18px 0" }}>Detection subsystem not built — no signals available.</div>
+            </div>
+
+            {/* Real match data — separate labelled block, distinct from the detection tiles above. */}
+            <div>
+              <div style={{ fontWeight: 700, marginBottom: 8, fontSize: 12, letterSpacing: .5, color: "var(--ink-2)" }}>MATCH OUTCOME (real data)</div>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 10 }}>
+                <div className="fd-kpi pad-sm" style={{ ["--tile" as string]: winnerColor(d.winner) }}>
+                  <div className="l">Winner</div>
+                  <div className="v mono" style={{ fontSize: 15 }}>{d.winner ?? "—"}</div>
+                </div>
+                <div className="fd-kpi pad-sm ink">
+                  <div className="l">Duration</div>
+                  <div className="v mono" style={{ fontSize: 15 }}>{fmtDuration(d.durationSec)}</div>
+                </div>
+                <div className="fd-kpi pad-sm ink">
+                  <div className="l">Trophy Δ</div>
+                  <div className="v mono" style={{ fontSize: 15 }}><Delta v={d.redTrophyDelta} /> / <Delta v={d.blueTrophyDelta} /></div>
+                </div>
+                <div className="fd-kpi pad-sm gold">
+                  <div className="l">Gold reward</div>
+                  <div className="v mono" style={{ fontSize: 15 }}>{(d.goldReward ?? 0).toLocaleString()}</div>
+                </div>
               </div>
             </div>
 
