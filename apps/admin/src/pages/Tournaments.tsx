@@ -56,7 +56,7 @@ type TournamentDetail = Tournament & {
   bracket: Record<string, TournamentMatch[]>;
 };
 
-const POWERS_OF_TWO = [2, 4, 8, 16, 32] as const;
+const BRACKET_SIZES = [8, 16, 32, 64, 128, 256] as const;
 const FORMATS: { value: TournamentFormat; label: string; v1: boolean }[] = [
   { value: "SINGLE_ELIM", label: "Single elimination", v1: true },
   { value: "DOUBLE_ELIM", label: "Double elimination", v1: false },
@@ -136,16 +136,20 @@ export function TournamentsPage() {
         </div>
       </div>
 
-      <div className="row" style={{ marginBottom: 14, justifyContent: "space-between" }}>
-        <div className="row">
-          <button className={`chip${status === "" ? " on" : ""}`} onClick={() => setStatus("")}>all</button>
-          {(["DRAFT", "OPEN", "RUNNING", "COMPLETED", "CANCELLED"] as TournamentStatus[]).map((s) => (
-            <button key={s} className={`chip${status === s ? " on" : ""}`} onClick={() => setStatus(s)}>
-              {STATUS_LABEL[s].toLowerCase()}
-            </button>
-          ))}
+      <div className="row" style={{ marginBottom: 14, justifyContent: "space-between", flexWrap: "wrap", gap: 12 }}>
+        <div style={{ font: "700 12px var(--sans)", letterSpacing: ".4px", color: "var(--dim)" }}>
+          All tournaments — create, schedule &amp; manage the cups shown on the player Cups screen
         </div>
         <button className="btn gold" onClick={() => { setCreating(true); setEditing(null); }}>+ New tournament</button>
+      </div>
+
+      <div className="row" style={{ marginBottom: 14 }}>
+        <button className={`chip${status === "" ? " on" : ""}`} onClick={() => setStatus("")}>all</button>
+        {(["DRAFT", "OPEN", "RUNNING", "COMPLETED", "CANCELLED"] as TournamentStatus[]).map((s) => (
+          <button key={s} className={`chip${status === s ? " on" : ""}`} onClick={() => setStatus(s)}>
+            {STATUS_LABEL[s].toLowerCase()}
+          </button>
+        ))}
       </div>
 
       {creating && <TournamentForm onClose={() => setCreating(false)} onDone={load} />}
@@ -275,9 +279,9 @@ function TournamentRow({
       <td className="dim" style={{ whiteSpace: "nowrap" }}>{fmtDate(t.startsAt)}</td>
       <td className="num">
         <div className="row" style={{ justifyContent: "flex-end", flexWrap: "nowrap" }}>
+          <button className="btn" onClick={onEdit}>Edit</button>
           {t.status === "DRAFT" && (
             <>
-              <button className="btn" onClick={onEdit}>Edit</button>
               <button className="btn gold" onClick={open}>Open registration</button>
               <button className="btn danger" onClick={cancel}>Cancel</button>
             </>
@@ -357,8 +361,8 @@ function TournamentForm({ tournament, onClose, onDone }: { tournament?: Tourname
       <div style={{ font: "800 16px var(--serif)", color: "var(--ink)", marginBottom: 12 }}>{isEdit ? "Edit tournament" : "New tournament"}</div>
 
       <div className="field">
-        <label>Name</label>
-        <input className="input" placeholder="e.g. Weekend Datu Cup" value={name} onChange={(e) => setName(e.target.value)} />
+        <label>Tournament name</label>
+        <input className="input" placeholder="e.g. Sunday Rapid Cup" value={name} onChange={(e) => setName(e.target.value)} />
       </div>
 
       <div className="row" style={{ alignItems: "flex-start" }}>
@@ -366,17 +370,17 @@ function TournamentForm({ tournament, onClose, onDone }: { tournament?: Tourname
           <label>Format</label>
           <select className="select" value={format} onChange={(e) => setFormat(e.target.value as TournamentFormat)}>
             {FORMATS.map((f) => (
-              <option key={f.value} value={f.value} disabled={!f.v1}>
-                {f.label}{!f.v1 ? " (V2)" : ""}
+              <option key={f.value} value={f.value} disabled={!f.v1} style={!f.v1 ? { color: "var(--dim-2)" } : undefined}>
+                {f.label}
               </option>
             ))}
           </select>
         </div>
         <div className="field" style={{ flex: 1, minWidth: 160 }}>
-          <label>Bracket size (max players)</label>
+          <label>Bracket size (cap)</label>
           <select className="select" value={maxPlayers} onChange={(e) => setMaxPlayers(Number(e.target.value))}>
-            {POWERS_OF_TWO.map((n) => (
-              <option key={n} value={n}>{n} players</option>
+            {BRACKET_SIZES.map((n) => (
+              <option key={n} value={n}>{n}</option>
             ))}
           </select>
         </div>
@@ -434,11 +438,11 @@ function TournamentForm({ tournament, onClose, onDone }: { tournament?: Tourname
 
       <div className="row" style={{ alignItems: "flex-start" }}>
         <div className="field" style={{ flex: 1, minWidth: 160 }}>
-          <label>Min trophies (0 = open to all)</label>
+          <label>Min trophies to join (0 = open)</label>
           <input className="input" type="number" min={0} value={minTrophies || ""} onChange={(e) => setMinTrophies(Number(e.target.value) || 0)} />
         </div>
         <div className="field" style={{ flex: 1, minWidth: 200 }}>
-          <label>Starts (optional, descriptive)</label>
+          <label>Starts</label>
           <input className="input" type="datetime-local" value={startsAt} onChange={(e) => setStartsAt(e.target.value)} />
         </div>
       </div>
