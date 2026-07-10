@@ -53,10 +53,10 @@ export function AuditPage() {
               ) : (
                 rows.map((r) => (
                   <tr key={r.id} className="arow">
-                    <td className="mono dim" style={{ whiteSpace: "nowrap" }}>{new Date(r.createdAt).toLocaleString()}</td>
-                    <td>{r.actor.username} <span className="dim mono">{r.actor.tag}</span></td>
-                    <td className="mono" style={{ color: "var(--gold)" }}>{r.action}</td>
-                    <td className="dim mono">{r.targetType ?? ""} {r.targetId ? r.targetId.slice(0, 8) : ""}</td>
+                    <td className="mono dim" style={{ whiteSpace: "nowrap", fontSize: 11, fontWeight: 500 }}>{new Date(r.createdAt).toLocaleString()}</td>
+                    <td><span style={{ color: "var(--ink-3)" }}>{r.actor.username}</span> <span className="dim mono">{r.actor.tag}</span></td>
+                    <td className="mono" style={{ color: "var(--gold-lt)", fontWeight: 700, fontSize: 11 }}>{r.action}</td>
+                    <td className="mono" style={{ color: "#a996c9" }}>{r.targetType ?? ""} {r.targetId ? r.targetId.slice(0, 8) : ""}</td>
                     <td className="dim">{r.reason ?? "—"}</td>
                   </tr>
                 ))
