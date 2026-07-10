@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { api } from "../lib/api";
 import { useAdminMutation } from "../lib/ui";
+import { PlayerSearch } from "../components/PlayerSearch";
 
 type CurrencyT = "GOLD" | "DIAMONDS" | "TROPHIES";
 
@@ -46,8 +47,10 @@ export function EconomyPage() {
 
         <div className="panel" style={{ padding: 20 }}>
           <div style={{ font: "700 14px var(--sans)", color: "var(--ink-2)" }}>Ledger explorer</div>
-          <div className="row" style={{ marginTop: 14, marginBottom: 12 }}>
-            <input className="input" style={{ maxWidth: 200 }} placeholder="Filter by player id" value={player} onChange={(e) => setPlayer(e.target.value)} />
+          <div className="row" style={{ marginTop: 14, marginBottom: 12, alignItems: "stretch" }}>
+            <div style={{ flex: "1 1 220px", minWidth: 180 }}>
+              <PlayerSearch value={player} onSelect={setPlayer} placeholder="Filter by player (name, tag, email)…" />
+            </div>
             <select className="select" style={{ maxWidth: 140 }} value={currency} onChange={(e) => setCurrency(e.target.value)}>
               <option value="">All currencies</option>
               <option value="GOLD">Gold</option>
@@ -110,8 +113,8 @@ function GrantCard({ onDone }: { onDone: () => void }) {
 
       <div style={{ display: "flex", flexDirection: "column", gap: 12, marginTop: 14 }}>
         <div>
-          <div className="dim" style={{ fontSize: 11, marginBottom: 5, textTransform: "uppercase", letterSpacing: ".4px" }}>Player ID</div>
-          <input className="input" placeholder="Player ID (from Players)" value={userId} onChange={(e) => setUserId(e.target.value)} />
+          <div className="dim" style={{ fontSize: 11, marginBottom: 5, textTransform: "uppercase", letterSpacing: ".4px" }}>Player</div>
+          <PlayerSearch value={userId} onSelect={setUserId} placeholder="Search player by name, tag, or email…" />
         </div>
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
           <select className="select" style={{ maxWidth: 150 }} value={currency} onChange={(e) => setCurrency(e.target.value as any)}>

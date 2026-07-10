@@ -86,3 +86,20 @@ missing sidebar). User wants a sidebar matching the blog index. Add Play CTA + F
 - [x] Keep the ~720px prose measure (.fd-article, left-aligned in the column); collapses on mobile
 - [x] Preserved: not-found / not-published states, link rewriting, SPA-click, SEO meta, CTA (all verified present)
 - [x] Verify: tsc (0) + eslint (0) + build (✓); commit (pathspec) + deploy → confirm live
+
+## Admin: dynamic player search (type-ahead) in Economy grants/ledger
+
+**Goal:** The grant form + ledger filter require pasting a raw player ID. Add a debounced type-ahead
+that searches players by name/tag/email as you type (backend GET /api/admin/users?q= already exists,
+searches username/displayName/tag/email/id) and lets you pick from a dropdown → sets the userId.
+
+**Coordination:** Economy.tsx is on the OTHER session's re-skin todo. User approved: build a NEW
+reusable component (own file, no collision) + make MINIMAL functional edits to Economy.tsx (swap the
+two 'Player ID' text inputs for the type-ahead). No visual re-skin — leave that to the other session.
+
+- [x] Confirm backend search endpoint exists (GET /api/admin/users?q=…) — YES, no server work needed
+- [x] Build apps/admin/src/components/PlayerSearch.tsx — debounced (250ms) query, dropdown of matches
+      (name · tag · short-id), keyboard nav (↑↓/Enter/Esc), onSelect(id), removable chip; admin api + CSS vars
+- [x] Wire into Economy.tsx: grant form Player input + ledger filter (import + 2 input swaps, minimal)
+- [x] Verify: admin tsc (0) + build (✓); pre-existing CurrencyT-unused warning left alone (minimal impact)
+- [ ] Commit (pathspec) + deploy admin service
