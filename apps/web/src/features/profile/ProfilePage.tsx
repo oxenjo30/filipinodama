@@ -613,7 +613,7 @@ export function ProfilePage() {
           </div>
 
           {/* achievements — real, computed client-side from the live account stats */}
-          <AchievementsGrid />
+          <AchievementsGrid stats={{ wins: me.wins, streak: me.streak, trophies: me.trophies }} />
         </div>
       )}
 
