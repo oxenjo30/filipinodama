@@ -26,9 +26,6 @@ export function Settings() {
 
   return (
     <>
-      <div className="crumb">Platform · Settings</div>
-      <h1 className="page">Settings</h1>
-
       <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 16 }}>
         <button
           className={tab === "config" ? "abtn btn-gold-pill sm" : "abtn btn-ghost btn-ghost-sm"}

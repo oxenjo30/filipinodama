@@ -64,19 +64,17 @@ export function Analytics() {
 
   return (
     <>
-      <div className="row" style={{ justifyContent: "space-between", marginBottom: 16 }}>
-        <div className="crumb">Insights · Analytics deep-dive</div>
-        <div className="row" style={{ gap: 8 }}>
-          {WINDOWS.map((opt) => (
-            <button
-              key={opt}
-              className={`abtn ${w === opt ? "btn-gold-pill" : "btn-ghost"}`}
-              onClick={() => setW(opt)}
-            >
-              {opt}
-            </button>
-          ))}
-        </div>
+      {/* Range pills only, right-aligned — mockup secAnalytics has no page-title crumb (title lives in the topbar). */}
+      <div className="row" style={{ justifyContent: "flex-end", gap: 8, marginBottom: 14 }}>
+        {WINDOWS.map((opt) => (
+          <button
+            key={opt}
+            className={`abtn ${w === opt ? "btn-gold-pill" : "btn-ghost"}`}
+            onClick={() => setW(opt)}
+          >
+            {opt}
+          </button>
+        ))}
       </div>
 
       {err ? (

@@ -107,9 +107,6 @@ export function Campaigns() {
 
   return (
     <>
-      <div className="crumb">Growth · Campaign composer</div>
-      <h1 className="page">Campaign composer</h1>
-
       <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
         <div className="fd-2col" style={{ gridTemplateColumns: "1.5fr 1fr", alignItems: "start", gap: 16 }}>
           {/* composer */}

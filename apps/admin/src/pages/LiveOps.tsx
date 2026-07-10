@@ -137,9 +137,6 @@ export function LiveOpsPage() {
 
   return (
     <>
-      <div className="crumb">Live Ops · Seasons & Quests</div>
-      <h1 className="page">Seasons & Quests</h1>
-
       <SeasonBanner seasons={seasons} activeSeason={activeSeason} onDone={loadSeasons} />
 
       <QuestsPanel quests={quests} loading={loadingQ} onDone={loadQuests} />

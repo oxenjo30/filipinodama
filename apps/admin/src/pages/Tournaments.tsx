@@ -132,9 +132,6 @@ export function TournamentsPage() {
 
   return (
     <>
-      <div className="crumb">Live Ops · Tournaments</div>
-      <h1 className="page">Tournaments</h1>
-
       {/* 4-stat header */}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(150px,1fr))", gap: 12, marginBottom: 18 }}>
         <div className="fd-kpi up">

@@ -115,9 +115,6 @@ export function GuildsPage() {
 
   return (
     <>
-      <div className="crumb">Community · Guilds</div>
-      <h1 className="page">Guilds</h1>
-
       <div className="row" style={{ marginBottom: 12 }}>
         <input
           className="input"

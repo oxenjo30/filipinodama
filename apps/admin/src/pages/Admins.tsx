@@ -47,9 +47,6 @@ export function Admins() {
 
   return (
     <>
-      <div className="crumb">Access Control · Admin users</div>
-      <h1 className="page">Admin users</h1>
-
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 12, marginBottom: 16 }}>
         <div className="fd-kpi pad-sm" style={{ ["--tile" as string]: "var(--green-lt)" }}>
           <div className="l">Active admins</div>

@@ -135,9 +135,6 @@ export function Support() {
 
   return (
     <>
-      <div className="crumb">Player Support · Support</div>
-      <h1 className="page">Support tickets</h1>
-
       <div style={{ display: "flex", gap: 8, marginBottom: 16, flexWrap: "wrap" }}>
         {STATUS_FILTERS.map((s) => (
           <button

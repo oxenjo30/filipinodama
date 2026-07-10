@@ -62,9 +62,6 @@ export function PlayersPage() {
 
   return (
     <>
-      <div className="crumb">Player Management · Players</div>
-      <h1 className="page">Players</h1>
-
       <div className="row" style={{ marginBottom: 16, gap: 10, flexWrap: "wrap" }}>
         <input
           className="input" style={{ flex: 1, minWidth: 220 }}
