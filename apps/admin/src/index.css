@@ -148,3 +148,153 @@ h1.page { font: 800 24px var(--serif); color: var(--gold-lt); margin: 4px 0 20px
 .login-card .lm { width: 46px; height: 46px; border-radius: 12px; background: linear-gradient(150deg, #4a2d7a, #2a1848); border: 1px solid var(--edge-strong); display: flex; align-items: center; justify-content: center; color: var(--gold-lt); font: 800 20px var(--serif); margin: 0 auto 14px; }
 .login-card h1 { text-align: center; font: 800 22px var(--serif); color: var(--gold-lt); margin: 0 0 4px; }
 .login-card .sub { text-align: center; color: var(--dim); font-size: 13px; margin: 0 0 22px; }
+
+/* === Approved-mockup design system (handoffv2) — shared classes for page re-skins ===
+   Ported from .design-ref/FULL-Admin-mockup.dc.html + admin-styles.css + style-vars.txt.
+   ADDITIVE ONLY: existing classes (.kpi, .card, .panel, .btn, .chip, .tbl, .acard, .field,
+   .input, .badge-st, etc.) are untouched — pages already using them keep working. These new
+   classes are what page re-skins (Phase 1+) should reach for to match the approved mockup. */
+
+/* ── animations (mockup keeps these global; adfade already exists above, add the rest) ── */
+@keyframes adspin { to { transform: rotate(360deg); } }
+@keyframes adrise { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+@keyframes adslide { from { transform: translateX(20px); opacity: 0; } to { transform: none; opacity: 1; } }
+@keyframes adpulse { 0%, 100% { opacity: .35; } 50% { opacity: 1; } }
+
+/* ── fd-kpi: KPI tile ──
+   Usage: <div class="fd-kpi" style="--tile: var(--green-lt)">
+            <div class="l">LABEL</div><div class="v">1,234</div>
+            <div class="trend"><span class="sub">vs last wk</span><span class="delta up">+4.2%</span></div>
+          </div>
+   - Tile bg/border/radius match the mockup's .acard tiles (#1b1030 == --panel).
+   - The big value (".v") reads --tile as its color; default falls back to --gold-lt so a
+     plain .fd-kpi with no --tile set still renders correctly.
+   - Modifier classes .fd-kpi.up / .fd-kpi.down / .fd-kpi.amber / .fd-kpi.ink are provided as
+     a convenience shorthand that sets --tile for you, so callers can skip the inline style
+     for the common cases and only use the inline `style="--tile:#hex"` for one-off colors. */
+.fd-kpi { --tile: var(--gold-lt); background: var(--panel); border: 1px solid var(--edge); border-radius: 13px; padding: 18px; }
+.fd-kpi.pad-sm { padding: 15px; }
+.fd-kpi .l { font: 700 10px var(--sans); letter-spacing: 1.5px; text-transform: uppercase; color: var(--dim); }
+.fd-kpi .v { font: 700 26px var(--mono); color: var(--tile); margin-top: 8px; line-height: 1; }
+.fd-kpi .trend { margin-top: 8px; display: flex; align-items: center; justify-content: space-between; gap: 8px; font: 600 11px var(--sans); }
+.fd-kpi .trend .sub { color: var(--dim); }
+.fd-kpi .trend .delta { font-weight: 700; }
+.fd-kpi .trend .delta.up, .fd-kpi .trend .delta.pos { color: var(--green-lt); }
+.fd-kpi .trend .delta.down, .fd-kpi .trend .delta.neg { color: var(--red-lt); }
+.fd-kpi.up { --tile: var(--green-lt); }
+.fd-kpi.down { --tile: var(--red-lt); }
+.fd-kpi.amber { --tile: var(--amber); }
+.fd-kpi.ink { --tile: var(--ink); }
+.fd-kpi.gold { --tile: var(--gold-lt); }
+
+/* ── fd-2col: two-column card row ──
+   Usage: <div class="fd-2col"> <div class="acard">…</div> <div class="acard">…</div> </div>
+   .fd-2col.wide → 1.35fr/1fr split (mockup's Financials/Analytics layout).
+   .fd-2col.chart → 1.6fr/1fr split (mockup's Overview "Matches per day" + "System status"). */
+.fd-2col { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+.fd-2col.wide { grid-template-columns: 1.35fr 1fr; }
+.fd-2col.chart { grid-template-columns: 1.6fr 1fr; }
+
+/* ── abtn / btn-gold-pill: gold gradient pill button ──
+   Usage: <button class="abtn btn-gold-pill">Save</button>
+   .btn-gold-pill.full → width:100% (mockup's "Save constants" button). */
+.abtn { transition: filter .12s ease, transform .06s ease, background .12s ease; cursor: pointer; }
+.abtn:hover { filter: brightness(1.12); }
+.abtn:active { transform: translateY(1px); }
+.btn-gold-pill {
+  font: 700 11px var(--sans); letter-spacing: .4px; border-radius: 8px; padding: 9px 14px;
+  border: 1px solid rgba(232, 184, 75, .4); color: #3a2405;
+  background: linear-gradient(180deg, var(--gold-2), #c98a1e);
+}
+.btn-gold-pill.full { width: 100%; }
+.btn-gold-pill.sm, .btn-gold-pill-sm { padding: 6px 10px; font-size: 10px; }
+
+/* ── 3-tier action button hierarchy: ghost / amber / danger ──
+   Usage: <button class="abtn btn-ghost">Dismiss</button>
+          <button class="abtn btn-amber">Mute</button>
+          <button class="abtn btn-danger">Ban</button>
+   Each has a "-sm" variant (mockup's `sm` style-var: padding 6px 10px, font-size 10px). */
+.btn-ghost, .btn-amber, .btn-danger {
+  font: 700 11px var(--sans); letter-spacing: .4px; border-radius: 8px; padding: 9px 14px; cursor: pointer;
+}
+.btn-ghost { border: 1px solid rgba(232, 184, 75, .3); color: var(--ink-2); background: var(--panel-2); }
+.btn-amber { border: 1px solid rgba(217, 145, 31, .5); color: #3a2405; background: linear-gradient(180deg, var(--gold-2), #c98a1e); }
+.btn-danger { border: 1px solid rgba(194, 73, 90, .5); color: #fff; background: linear-gradient(180deg, var(--red), #8a2f3c); }
+.btn-ghost-sm, .btn-amber-sm, .btn-danger-sm { padding: 6px 10px; font-size: 10px; }
+
+/* ── fd-avatar: round avatar chip ──
+   Usage: <div class="fd-avatar" style="background: linear-gradient(150deg,#3a2a5e,#1a0e30)">JD</div>
+   34px circle, gold 1px border, centered bold gold initials; sized to sit inline in a table cell.
+   Default gradient fill provided; override with an inline `style="background:…"` per-row for variety. */
+.fd-avatar {
+  width: 34px; height: 34px; border-radius: 50%; flex: none;
+  background: linear-gradient(150deg, #3a2a5e, #1a0e30);
+  border: 1px solid var(--edge-strong);
+  display: flex; align-items: center; justify-content: center;
+  font: 800 11px var(--sans); color: var(--gold-lt);
+}
+.fd-avatar.sm { width: 28px; height: 28px; font-size: 10px; }
+.fd-avatar.lg { width: 44px; height: 44px; font-size: 15px; }
+
+/* ── arow: table/list row with gold hover wash + gold-tinted top border ── */
+.arow { transition: background .12s ease; border-top: 1px solid rgba(232, 184, 75, .07); }
+.arow:hover { background: rgba(232, 184, 75, .05); }
+
+/* ── fd-switch: sliding toggle ──
+   Usage: <button class="abtn fd-switch on"><span class="knob"></span></button>
+   Track 44x24, knob 18px. "on" = gold gradient track + knob at right;
+   "off" (default, no modifier needed) = dim track (--panel-2) + knob at left. */
+.fd-switch { width: 44px; height: 24px; border-radius: 12px; border: none; position: relative; padding: 0; background: var(--panel-2); }
+.fd-switch.on { background: linear-gradient(90deg, #c99a2e, var(--gold-2)); }
+.fd-switch .knob {
+  position: absolute; top: 3px; left: 3px; width: 18px; height: 18px; border-radius: 50%;
+  background: #fff; transition: left .15s ease; box-shadow: 0 1px 3px rgba(0, 0, 0, .4);
+}
+.fd-switch.on .knob { left: 23px; }
+
+/* ── badge-rect: rounded-rectangle badge (distinct from the full-pill .badge-st) ──
+   Usage: <span class="badge-rect" style="color:#3fb574;background:rgba(47,143,91,.16);border-color:#3fb57444">W</span>
+   Ship with color/bg/border set inline per-row (mockup derives these from data, e.g. rankColor,
+   typeStyle, resStyle) — the class supplies the shared shape/type. */
+.badge-rect {
+  font: 700 10px var(--sans); letter-spacing: .5px; text-transform: uppercase;
+  border-radius: 6px; padding: 3px 9px; border: 1px solid transparent; display: inline-block;
+}
+/* Per-tier rank-chip helper (mockup's rankColor(): Diamond/Platinum/Gold/Silver/Bronze/Wood). */
+.rank-chip { font: 600 11.5px var(--sans); }
+.rank-chip.diamond { color: #b98cff; }
+.rank-chip.platinum { color: #4fd0c0; }
+.rank-chip.gold { color: var(--gold); }
+.rank-chip.silver { color: #c9d2df; }
+.rank-chip.bronze { color: #c67b3e; }
+.rank-chip.wood { color: #8a6a43; }
+
+/* ── card-header: inner card header bar ──
+   Usage: <div class="card-header"><span class="t">Store catalog</span><span class="sub">24 items</span></div>
+   Bold title left (flex:1), dim right-aligned subtitle, bottom divider, overflow hidden —
+   meant to sit as the first child of a .acard/.panel with padding removed/adjusted around it. */
+.card-header {
+  padding: 15px 18px; border-bottom: 1px solid rgba(232, 184, 75, .1);
+  display: flex; align-items: center; gap: 12px; overflow: hidden;
+}
+.card-header .t { font: 700 14px var(--sans); color: var(--ink-2); flex: 1; }
+.card-header .sub { font: 600 11px var(--sans); color: var(--dim); white-space: nowrap; }
+
+/* ── thead-raised: data-table thead background wash (distinct from panel bg) ── */
+.thead-raised { background: #1e1338; }
+
+/* ── flag-banner: pulsing danger alert bar ──
+   Usage: <div class="flag-banner"><span class="dot"></span><span>12 matches flagged for review</span></div> */
+.flag-banner {
+  display: flex; align-items: center; gap: 10px; padding: 13px 16px;
+  background: rgba(194, 73, 90, .1); border: 1px solid rgba(194, 73, 90, .3); border-radius: 12px;
+}
+.flag-banner .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--red); animation: adpulse 1.6s infinite; flex: none; }
+.flag-banner span:last-child { font: 600 12.5px var(--sans); color: #e3b9c1; }
+
+/* ── quote-flagged: red-tinted excerpt/quote box for reported-content excerpts ── */
+.quote-flagged {
+  margin-top: 10px; padding: 11px 14px; background: var(--bg-2);
+  border: 1px solid rgba(194, 73, 90, .25); border-radius: 9px;
+  font: 500 13px var(--sans); color: #e3b9c1; font-style: italic;
+}
