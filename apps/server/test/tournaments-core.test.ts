@@ -680,7 +680,7 @@ describe("top-N prize splits (money-critical) — generalized payout-by-placemen
     expect(champRow.amount).toBe(500);
     expect(runnerRow.amount).toBe(300);
 
-    const thirdRow = prizeRows.find((r) => semiLoserIds.includes(r.refId));
+    const thirdRow = prizeRows.find((r) => r.refId != null && semiLoserIds.includes(r.refId));
     expect(thirdRow).toBeTruthy();
     expect(thirdRow!.amount).toBe(200);
 
@@ -699,7 +699,7 @@ describe("top-N prize splits (money-critical) — generalized payout-by-placemen
 
     const champRow = prizeRows.find((r) => r.refId === championEntryId)!;
     expect(champRow.amount).toBe(700);
-    const thirdRow = prizeRows.find((r) => semiLoserIds.includes(r.refId));
+    const thirdRow = prizeRows.find((r) => r.refId != null && semiLoserIds.includes(r.refId));
     expect(thirdRow!.amount).toBe(300);
 
     const totalPaid = prizeRows.reduce((sum, r) => sum + r.amount, 0);
