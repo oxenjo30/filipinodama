@@ -4,6 +4,125 @@ This file defines the working rules Claude should follow in this repository. Tre
 
 ## Workflow Orchestration
 
+### Fable 5 Orchestrator Flow
+
+Use Fable 5 as the orchestration layer for all meaningful work. The orchestrator owns the task, breaks it down, selects the right execution path, integrates outputs, and produces the final result.
+
+Default flow:
+
+1. The user gives the task to Fable 5.
+2. Fable 5 analyzes the request, plans the work, and decides which model path is appropriate.
+3. Route deep reasoning work to Opus.
+4. Route mechanical execution work to Sonnet.
+5. Fable 5 reviews, integrates, verifies, and returns the final output.
+
+Use Opus for deep reasoning, including:
+
+- Architecture decisions.
+- Product strategy.
+- Complex debugging.
+- Security, privacy, legal, billing, or permission-sensitive logic.
+- Multi-file design decisions.
+- Unclear requirements that need careful interpretation.
+- Refactoring strategy.
+- Root-cause analysis where the failure is not obvious.
+
+Use Sonnet for mechanical work, including:
+
+- Applying an already-approved plan.
+- Straightforward file edits.
+- Boilerplate implementation.
+- Test writing once behavior is defined.
+- Formatting, cleanup, renaming, and copy updates.
+- Repetitive code changes.
+- Documentation updates.
+- Running commands, checking results, and making small fixes.
+
+Cost-control rules:
+
+- Do not use deep reasoning for work that is clearly mechanical.
+- Do not let mechanical execution make architecture decisions silently.
+- Start with the smallest model path that can safely complete the task.
+- Escalate to Opus only when reasoning complexity, risk, ambiguity, or architectural impact justifies it.
+- After Opus creates a plan, move implementation to Sonnet when the remaining work is mostly execution.
+- After Sonnet executes, Fable 5 must review the output before calling the work complete.
+
+Handoff format from Fable 5 to Opus or Sonnet:
+
+```md
+## Task
+What needs to be done.
+
+## Context
+Relevant files, constraints, product rules, and known risks.
+
+## Assignment
+The exact job for this model path.
+
+## Boundaries
+What must not be changed.
+
+## Expected Output
+The specific artifact, code change, decision, or verification result needed.
+```
+
+The final output must be a single integrated result, not separate disconnected responses from multiple model paths. Fable 5 remains accountable for correctness, scope control, and verification.
+
+
+### Strict Browser Safety Rule
+
+No agent, model, script, automation, test runner, browser controller, or command is allowed to close, quit, kill, restart, or interfere with the user's personal Chrome browser, personal Chrome tabs, default Chrome profile, or existing browser session.
+
+This rule is absolute.
+
+Do not run commands such as `pkill chrome`, `killall chrome`, `taskkill /IM chrome.exe`, broad process cleanup, or any equivalent command that could terminate the user's browser.
+
+Only stop or kill a browser instance that the agent itself launched for the current task, and only when it can be positively identified by one or more of the following:
+
+- The exact process ID captured at launch.
+- A dedicated temporary user-data directory created by the agent.
+- A dedicated debugging port created by the agent.
+- A launch command or process tree that clearly belongs to the agent-run browser.
+
+Browser automation must use an isolated agent browser profile whenever possible. Do not attach to or control the user's default Chrome profile unless the user explicitly requests it for that task.
+
+Before closing any browser process, verify that it is the agent-launched browser. If there is any doubt, leave it open and report the uncertainty instead of closing it.
+
+The user's active Chrome browser is out of bounds. Protect it.
+
+### Approved Mockup Handoff File: 1:1 Implementation Rule
+
+There is an approved handoff file that contains the accepted mockups and the complete implementation specification, including assets, elements, features, game modes, layout, spacing, colors, copy, interactions, routes, states, and other UI/UX requirements.
+
+That handoff file is authoritative. Do not reinterpret it, redesign it, simplify it, "use it as inspiration," or treat it as a loose reference. Implement it as a 1:1 source of truth.
+
+Implementation rules:
+
+- Start at row 1 of the handoff file and continue sequentially until the last row.
+- Copy and implement every approved item exactly unless the user explicitly changes the requirement.
+- Preserve approved assets, colors, spacing, sizing, layout structure, labels, modes, and visual hierarchy.
+- Do not invent replacement designs, alternate flows, new styling, or different component behavior.
+- Do not skip rows, collapse sections, merge features, or defer items silently.
+- If a row is unclear, inspect the available project files and handoff context first. Ask the user only when the requirement is genuinely blocked.
+- Track implementation row by row so every handoff item can be verified as done, wired, or intentionally blocked.
+
+Every approved element must be wired.
+
+Wired means:
+
+- Buttons perform their intended action.
+- Links navigate to the correct route.
+- Forms validate and submit correctly.
+- Toggles, tabs, filters, modals, menus, drawers, and selectors change real state.
+- Game modes route to the correct mode and use the correct rules.
+- User-facing data is loaded from real state, API, database, or backend logic where required.
+- Empty states, loading states, error states, and success states are implemented.
+- Admin, user, guild, ranking, leaderboard, store, quest, match, and profile features are connected to the proper data layer when included in the handoff.
+
+If no backend exists for an approved feature, build the backend needed to support it. This includes database tables, API routes, server actions, validation, persistence, authorization checks, and integration with the frontend. Do not leave mock data, placeholder handlers, dead buttons, static labels, or fake-only UI unless the user explicitly asks for a mockup-only implementation.
+
+Before marking the task complete, compare the implementation against the handoff file row by row and verify that each approved asset, element, feature, mode, spacing, color, interaction, and route is present and wired.
+
 ### 1. Plan Mode Default
 
 For any non-trivial task, start in plan mode before editing files or running broad changes.
@@ -280,28 +399,3 @@ Before closing a task:
 ## Core Principle
 
 Plan first. Keep context clean. Learn from corrections. Prove the work. Choose simple, proper fixes. Avoid lazy shortcuts. Minimize unintended impact.
-
-## Agent Browser
-
-**This is the #1 rule when using agent browser: avoid closing the actual Chrome browser of the user.**
-
-The user's personal Chrome (and its open tabs/work) has been closed on them multiple times by browser-driving tools. It is highly disruptive and must never happen again. For ANY task that drives a browser — agentic browser, screenshots, e2e, web-perf, Chrome DevTools MCP, Playwright, Puppeteer, Selenium:
-
-- NEVER close, quit, or kill the user's Chrome. NEVER run a process-name-wide kill like `taskkill //IM chrome.exe //F` or `pkill chrome` — it kills every Chrome on the machine, including the user's real browser and all their tabs (even a headless instance shares the `chrome.exe` image name, so a name-wide kill can't tell them apart).
-- Launch automation ONLY in an ISOLATED instance: a separate temp `--user-data-dir`, a dedicated automation channel (Chrome for Testing / headless / a separate binary), or a different browser — never the user's default profile or running instance.
-- On teardown, close only the automation's OWN pages/child process (capture the spawned child's PID and kill exactly that: `child.kill()` / `taskkill //PID <pid> //F`). Never a global "quit browser". If a tool's only teardown is "quit Chrome", use a tool/mode that doesn't, or leave it running.
-- When spawning a subagent that will use a browser, put this constraint in its prompt explicitly.
-- If isolation cannot be guaranteed, ASK the user before launching anything that drives their browser.
-
-## Design Fidelity — Copy the Handoff Mockup Exactly
-
-When the user says "copy the design fidelity" / "follow the approved handoff design" / "copy the mockup" for the admin console (and web), it means **reproduce the mockup 1:1 — NO reinvention or reinterpretation**, not a loose re-skin or "match the vibe."
-
-Verbatim from the user: *"when I say copy the handoff mockup, all elements, assets, spaces, buttons, colors are to be copied. NO reinvention or reinterpretation of the mockup. You won't create your own design and use the mockup as reference."* The mockup is the SOURCE to reproduce, not a reference to riff on.
-
-- **Ground truth:** `handoffv2/FilipinoDama Admin.dc.html` (approved, gitignored). Extract the exact `secXxx` section for the page AND the shared chrome (sidebar nav sections/labels/badges, top bar "VIEWING AS" role select + account chip, logo lockup). Worktree agents can't see the gitignored mockup — copy the extracted HTML/CSS into the worktree.
-- **Copy as-is, every nesting level:** every element, field, control, label, badge, chip, and its exact placement — including inside panels/drawers/modals (avatar, tiles, styled list rows, button grids, footers). A re-skin that gets columns right but drops the VIEWING-AS dropdown, account chip, nav badge counts, per-tier rank colors, or a drawer's inner components is a FAIL. Audit element-by-element with a checklist, not a screenshot glance.
-- **The ONLY sanctioned deviations:** no fabricated/fake data (use real values or an honest empty/deferred state), and the gold-only economy (no Diamonds top-up). Never ship a fabricated control or secret. Everything else copies exactly.
-- **Verify by MEASURING rendered pixels, not by reading CSS.** Reading source values and asserting "it matches" has failed repeatedly — structural/layout bugs (a duplicated title header, a full-width topbar vs. centered `max-width:1240px` content misaligning on a 1920px screen, flex `margin`+`gap` stacking) are invisible in per-element value diffs and only show in the composed page. Render in a headless ISOLATED browser (Playwright from the pnpm store, imported via absolute `file://`; NEVER the user's Chrome — see Agent Browser) and assert edge/gap deltas with `getBoundingClientRect()`. ALWAYS measure at the user's real ~1920px width, not the mockup's ~1240px design width.
-- **Sweep holistically, don't spot-patch** the one element the user screenshots — they mean every element/asset/space/button/color across all pages must match. Fidelity lives mostly in SHARED classes/layout (`index.css` `.main`/`.topbar`/`.tbl`/`.field`/`.chip`, the app shell) — fix the shared layer first; per-page inline values are the last mile.
-- If the mockup's literal CSS looks wrong at the user's width, that's a DESIGN decision — ask, don't silently change or leave it. After pushing, remind the user to hard-refresh (Ctrl+Shift+R) — a stale cached bundle looks identical to "not fixed."
