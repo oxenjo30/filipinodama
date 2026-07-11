@@ -41,6 +41,7 @@ const NAV: NavItem[] = [
   },
   { label: "Leaderboard", to: "/leaderboard", mobileLabel: "Ranks" },
   { label: "Tournaments", to: "/tournaments", mobileLabel: "Cups" },
+  { label: "Watch", to: "/watch" },
   { label: "Store", to: "/store" },
   { label: "Blog", to: "/blog" },
 ];

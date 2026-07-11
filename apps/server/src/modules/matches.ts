@@ -148,6 +148,33 @@ export async function matchRoutes(app: FastifyInstance) {
     return ok({ match: m ? serializeMatch(m) : null });
   });
 
+  // GET /api/matches/live — currently-live, watchable human-vs-human matches for
+  // the Watch / Spectate page. "Watchable" mirrors /matches/active's own-match
+  // rules (not ended, recent, no bot seat) but is NOT scoped to the caller — it's
+  // every live match anyone could spectate. Ordered newest-first, capped so the
+  // grid stays small. Viewer counts aren't tracked anywhere in the realtime layer
+  // yet, so we never fabricate one — the client omits the 👁 badge instead.
+  app.get("/matches/live", { preHandler: requireAuth }, async (_req) => {
+    const STALE_MS = 6 * 60 * 60 * 1000; // 6h — matches this old are effectively dead/orphaned
+    const rows = await prisma.match.findMany({
+      where: {
+        endedAt: null,
+        startedAt: { gte: new Date(Date.now() - STALE_MS) },
+        redId: { not: null },
+        blueId: { not: null },
+        // Neither side may be a bot — bot games aren't real spectator content.
+        // `isNot` (null passes) rather than `is`, matching /matches/active.
+        red: { isNot: { isBot: true } },
+        blue: { isNot: { isBot: true } },
+      },
+      orderBy: { startedAt: "desc" },
+      take: 30,
+      include: { red: playerSelect, blue: playerSelect },
+    });
+    const items = rows.map(serializeMatch);
+    return ok({ items, liveCount: items.length });
+  });
+
   // GET /api/matches/:id — full match incl. moves[] for replay
   app.get<{ Params: { id: string } }>("/matches/:id", { preHandler: requireAuth }, async (req) => {
     const m = await prisma.match.findUnique({

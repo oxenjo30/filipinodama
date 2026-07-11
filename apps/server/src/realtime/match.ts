@@ -574,6 +574,46 @@ export function registerMatch(io: IOServer, socket: Socket) {
     });
   });
 
+  // ── Spectate-by-id — the Watch / Live Matches page (GET /matches/live) lists
+  // live matches by id; this lets an authenticated viewer join one directly as a
+  // read-only spectator, without going through a private-room code. Mirrors the
+  // exact join-then-matchState pattern rooms.ts already uses for room spectators
+  // (roomSpectate → socket.join(matchId) → matchResync-style read-only state):
+  // any player is refused (they belong in the normal match flow, not this one),
+  // and only a genuinely LIVE match can be joined — no fabricated/replay state.
+  socket.on(EV.spectateJoin, (payload: { matchId?: unknown } = {}) => {
+    const matchId = typeof payload?.matchId === "string" ? payload.matchId : null;
+    if (!matchId) return;
+    const lm = live.get(matchId);
+    if (!lm) {
+      socket.emit(EV.matchIllegal, { matchId, reason: "no-such-match" });
+      return;
+    }
+    if (colorOf(lm, userId)) {
+      // A player in the match tried to "spectate" it — refuse; they should use
+      // the normal resync path instead.
+      socket.emit(EV.matchIllegal, { matchId, reason: "not-a-player" });
+      return;
+    }
+    void socket.join(matchId);
+    socket.emit(EV.matchState, {
+      matchId,
+      state: lm.state,
+      yourColor: null, // spectator → client renders read-only
+      settings: lm.state.settings,
+    });
+  });
+
+  socket.on(EV.spectateLeave, (payload: { matchId?: unknown } = {}) => {
+    const matchId = typeof payload?.matchId === "string" ? payload.matchId : null;
+    if (!matchId) return;
+    // Only a non-player may be removed this way — never accidentally evict a
+    // real player's socket from their own live match room.
+    const lm = live.get(matchId);
+    if (lm && colorOf(lm, userId)) return;
+    void socket.leave(matchId);
+  });
+
   // ── In-match quick chat / emote — relay to the match room (persisted lightly
   // via the match room; no separate channel needed for ephemeral match chat). ──
   socket.on(EV.matchChat, async (payload: { matchId?: unknown; body?: unknown; emote?: unknown } = {}) => {

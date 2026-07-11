@@ -60,12 +60,18 @@ function toRows(history: Move[]): HistoryRow[] {
  * OnlineMatchPage — real-time ranked/casual play against another human.
  * Matchmaking overlay → live board driven entirely by the server-authoritative
  * onlineStore (the client only sends move intents). Route: /play/online?mode=ranked
+ *
+ * Also doubles as the SPECTATE view: ?spectate=<matchId> (from the Watch / Live
+ * Matches page) skips matchmaking entirely and joins that match read-only via
+ * onlineStore.spectate() — myColor stays null, so the board renders whatever the
+ * server broadcasts and every move-sending control is hidden.
  */
 export function OnlineMatchPage() {
   const navigate = useNavigate();
   const [params] = useSearchParams();
   const me = useAuthStore((s) => s.me);
   const mode = (params.get("mode") === "ranked" ? "RANKED" : "CASUAL") as "RANKED" | "CASUAL";
+  const spectateId = params.get("spectate");
 
   // Equipped piece skin for the board. settingsStore.skin is kept in sync with the
   // account's equipped skin by the core-sync agent, so reading it here is all the
@@ -84,9 +90,10 @@ export function OnlineMatchPage() {
     status, matchId, myColor, opponent, state,
     selected, moveTargets, captureTargets, mustCapture, end, error,
     connectionLost, chat, offeredByMe, offeredByOpponent, rematchDeclined,
-    joinQueue, leaveQueue, resync, onSquareClick, resign, reset,
+    joinQueue, leaveQueue, resync, spectate, onSquareClick, resign, reset,
     sendChat: sendMatchChat, sendEmote, offerRematch, acceptRematch, declineRematch,
   } = useOnlineStore();
+  const isSpectating = !!spectateId;
 
   // Board SFX on each state transition (move/capture/king/win/lose/draw). myColor
   // picks win vs lose; a spectator has myColor null → neutral flourish.
@@ -119,14 +126,25 @@ export function OnlineMatchPage() {
   // in first and returned to the match afterwards. This is the authoritative gate
   // on the ranked destination (covers direct URLs, not just nav entry points).
   useEffect(() => {
-    // Logged out → sign in (returned to this match after). But a GUEST who lands
-    // on ranked must NOT be bounced to /login: /login offers "Play as guest",
-    // which would send them right back here → an inescapable redirect loop. A
-    // guest already has a session, so route them somewhere they can act instead.
+    // Logged out → sign in (returned to this match/spectate after).
     if (!me) {
-      navigate(`/login?next=${encodeURIComponent(`/play/online?mode=${mode.toLowerCase()}`)}`);
+      const next = spectateId ? `/play/online?spectate=${spectateId}` : `/play/online?mode=${mode.toLowerCase()}`;
+      navigate(`/login?next=${encodeURIComponent(next)}`);
       return;
     }
+    // SPECTATE: join the given match id read-only — skip matchmaking entirely,
+    // and skip the ranked-guest gate below (watching isn't playing).
+    if (spectateId) {
+      setResuming(true);
+      spectate(spectateId);
+      return () => {
+        reset();
+      };
+    }
+    // But a GUEST who lands on ranked must NOT be bounced to /login: /login offers
+    // "Play as guest", which would send them right back here → an inescapable
+    // redirect loop. A guest already has a session, so route them somewhere they
+    // can act instead.
     if (mode === "RANKED" && me.isGuest) {
       showToast("Ranked needs a free account — create one anytime. Try Casual for now.");
       navigate("/play");
@@ -184,9 +202,10 @@ export function OnlineMatchPage() {
   // Branded pre-match loader, mirroring the prototype's playWithLoader: on a FRESH
   // entry (not a resync into an existing match) show the themed LoadingScreen with
   // the correct context — "ranked" for the ladder, "matchmaking" for casual — then
-  // reveal the matchmaking/search UI. Skipped when resuming a live match so a
-  // resync/rematch is instant.
+  // reveal the matchmaking/search UI. Skipped when resuming a live match OR joining
+  // as a spectator (neither needs the "finding an opponent" framing).
   const [entering, setEntering] = useState(() => {
+    if (spectateId) return false;
     const st = useOnlineStore.getState();
     return !(st.matchId && (st.status === "playing" || st.status === "found"));
   });
@@ -409,8 +428,12 @@ export function OnlineMatchPage() {
 
   if (!state) return null;
 
-  const redName = myColor === "red" ? me?.displayName ?? "You" : opponent?.displayName ?? "Opponent";
-  const blueName = myColor === "blue" ? me?.displayName ?? "You" : opponent?.displayName ?? "Opponent";
+  // Spectating: the store carries no player identity for a match we're not in
+  // (only the board state), so we show the honest generic seat labels rather
+  // than fabricate a display name. Follow-up: have spectateJoin's matchState
+  // carry both players' public profiles so a spectator sees real names.
+  const redName = isSpectating ? "Red" : myColor === "red" ? me?.displayName ?? "You" : opponent?.displayName ?? "Opponent";
+  const blueName = isSpectating ? "Blue" : myColor === "blue" ? me?.displayName ?? "You" : opponent?.displayName ?? "Opponent";
 
   const won = end && myColor && end.result.winner === myColor;
   const draw = end && end.result.winner === "draw";
@@ -436,20 +459,29 @@ export function OnlineMatchPage() {
       <div className="fd-game-left" style={{ display: "flex", flexDirection: "column", gap: 16 }}>
         <div className="frame" style={{ padding: 16, textAlign: "center" }}>
           <div style={{ font: "700 13px Cinzel,serif", color: "#8ce0ad" }}>
-            {mode === "RANKED" ? "Ranked Match" : "Quick Match"}
+            {isSpectating ? "Spectating" : mode === "RANKED" ? "Ranked Match" : "Quick Match"}
           </div>
           <div style={{ font: "500 11px Inter", color: "var(--ink2)" }}>Live · Online</div>
         </div>
 
         {/* Resign / Leave — on mobile these sink below the board (fd-game-left order),
-            and stack as an even 2-up control row via fd-btn-grid-2. */}
+            and stack as an even 2-up control row via fd-btn-grid-2. Spectators have
+            nothing to resign — only a single "Stop Watching" exit. */}
         <div className="fd-btn-grid-2" style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-          <button className="btn btn-red" onClick={resign} disabled={!!state.result}>
-            🏳 Resign
-          </button>
-          <button className="btn btn-purple" onClick={() => navigate("/play")}>
-            ← Leave
-          </button>
+          {isSpectating ? (
+            <button className="btn btn-purple" onClick={() => navigate("/watch")}>
+              ← Stop Watching
+            </button>
+          ) : (
+            <>
+              <button className="btn btn-red" onClick={resign} disabled={!!state.result}>
+                🏳 Resign
+              </button>
+              <button className="btn btn-purple" onClick={() => navigate("/play")}>
+                ← Leave
+              </button>
+            </>
+          )}
         </div>
         {error && <div style={{ font: "600 12px Inter", color: "#ff8fae", textAlign: "center" }}>{error}</div>}
       </div>
@@ -458,16 +490,22 @@ export function OnlineMatchPage() {
           The two player panels bracket the board so on mobile the opponent leads,
           the board sits above the fold, and "you" sits directly under it. */}
       <div className="fd-game-center" style={{ display: "flex", flexDirection: "column", alignItems: "stretch", gap: 14 }}>
-        <OpponentPanel name={blueName === (me?.displayName ?? "You") ? redName : blueName} sub="Opponent"
-          avatar={opponent?.avatarUrl ?? "champion"} frame={opponent?.frameId ?? undefined} active={!!state && state.turn !== myColor && !state.result} />
+        {isSpectating ? (
+          <OpponentPanel name={blueName} sub="Blue" avatar="champion" active={!!state && state.turn === "blue" && !state.result} />
+        ) : (
+          <OpponentPanel name={blueName === (me?.displayName ?? "You") ? redName : blueName} sub="Opponent"
+            avatar={opponent?.avatarUrl ?? "champion"} frame={opponent?.frameId ?? undefined} active={!!state && state.turn !== myColor && !state.result} />
+        )}
 
         <div style={{
           alignSelf: "center",
           padding: "9px 18px", borderRadius: 100, border: "1px solid rgba(232,184,75,.5)",
-          background: myTurn ? "rgba(50,150,100,.18)" : "rgba(15,8,32,.6)",
-          color: myTurn ? "#8ce0ad" : "var(--ink)", font: "700 13px Inter",
+          background: isSpectating ? "rgba(15,8,32,.6)" : myTurn ? "rgba(50,150,100,.18)" : "rgba(15,8,32,.6)",
+          color: isSpectating ? "var(--ink)" : myTurn ? "#8ce0ad" : "var(--ink)", font: "700 13px Inter",
         }}>
-          {myTurn ? (mustCapture ? "⚠ You must capture" : "● Your move") : "Opponent's move…"}
+          {isSpectating
+            ? state.result ? "Match ended" : `${state.turn === "red" ? "Red" : "Blue"} to move`
+            : myTurn ? (mustCapture ? "⚠ You must capture" : "● Your move") : "Opponent's move…"}
         </div>
 
         {/* Connection-lost banner — non-blocking hint that the socket dropped
@@ -503,8 +541,12 @@ export function OnlineMatchPage() {
           />
         </div>
 
-        <OpponentPanel name={me?.displayName ?? "You"} sub={`You · ${myColor}`}
-          avatar={me?.avatarUrl ?? "strategist"} frame={me?.frameId ?? undefined} active={myTurn} you />
+        {isSpectating ? (
+          <OpponentPanel name={redName} sub="Red" avatar="strategist" active={!!state && state.turn === "red" && !state.result} />
+        ) : (
+          <OpponentPanel name={me?.displayName ?? "You"} sub={`You · ${myColor}`}
+            avatar={me?.avatarUrl ?? "strategist"} frame={me?.frameId ?? undefined} active={myTurn} you />
+        )}
       </div>
 
       {/* RIGHT: move history (real) + quick chat (honest) + tip of the day */}
@@ -545,7 +587,11 @@ export function OnlineMatchPage() {
         {/* Quick Chat — REAL in-match chat. Emote buttons emit EV.matchChat
             {emote}; the text box emits EV.matchChat {body}. The server relays
             both back to the room and the store appends them to `chat`, so what
-            renders here is only genuine messages from the two players. */}
+            renders here is only genuine messages from the two players.
+            Spectators have no seat to chat as (the server drops a non-player's
+            matchChat), so the whole panel is hidden rather than offering
+            controls that silently do nothing. */}
+        {!isSpectating && (
         <div className="frame" style={{ padding: 16 }}>
           <div className="ptitle">Quick Chat</div>
 
@@ -628,6 +674,7 @@ export function OnlineMatchPage() {
             <button onClick={sendChat} className="btn btn-gold" style={{ padding: "10px 12px" }}>➤</button>
           </div>
         </div>
+        )}
 
         {/* Tip of the Day — static rotating strategy tip (no backend). */}
         <div className="frame" style={{ padding: 16, display: "flex", gap: 12, alignItems: "flex-start" }}>
@@ -641,75 +688,108 @@ export function OnlineMatchPage() {
         </div>
       </div>
 
-      {/* RESULT MODAL */}
+      {/* RESULT MODAL — spectators get a neutral "who won" summary (mirrors the
+          mockup's Spectate end-card) with no rematch/rating framing, since none
+          of that applies to a viewer. */}
       <Modal open={!!end}>
-        <div style={{ width: 76, height: 76, margin: "0 auto 16px", borderRadius: 20,
-          background: end?.interrupted ? "linear-gradient(180deg,#5a5570,#33304a)" : draw ? "linear-gradient(180deg,#6b6480,#3b3550)" : won ? "linear-gradient(180deg,#f0cf72,#c99a2e)" : "linear-gradient(180deg,#a83744,#6e1b24)",
-          display: "flex", alignItems: "center", justifyContent: "center", fontSize: 34 }}>
-          {end?.interrupted ? "📡" : draw ? "🤝" : won ? "👑" : "⚔"}
-        </div>
-        <div style={{ font: "700 12px Inter", letterSpacing: 2, textTransform: "uppercase", color: "var(--gold)" }}>
-          {end?.interrupted ? "Match Interrupted" : "Match Complete"}
-        </div>
-        <h2 style={{ font: "800 28px Cinzel,serif", color: "var(--gold-lt)", margin: "8px 0 4px" }}>
-          {end?.interrupted ? "Connection Lost" : draw ? "Draw" : won ? "Victory" : "Defeat"}
-        </h2>
-        <p style={{ font: "400 14px Inter", color: "var(--ink)", margin: "0 0 18px" }}>
-          {end?.interrupted ? "The match dropped and couldn't be recovered — no rating was affected. Start a new one below."
-            : end?.result.reason === "resign" ? (won ? "Your opponent resigned." : "You resigned.")
-            : end?.result.reason === "capture-all" ? (won ? "You captured every enemy piece." : "The enemy captured all your pieces.")
-            : draw ? "A hard-fought draw." : won ? "Well played." : "Better luck next time."}
-        </p>
-        {end && !end.interrupted && (mode === "RANKED") && (
-          <div style={{ display: "flex", justifyContent: "center", gap: 16, marginBottom: 20, font: "700 14px 'JetBrains Mono',monospace" }}>
-            <span style={{ color: (myColor === "red" ? end.redTrophyDelta : end.blueTrophyDelta) >= 0 ? "#3fbf6f" : "#ff8fae" }}>
-              🏆 {(myColor === "red" ? end.redTrophyDelta : end.blueTrophyDelta) >= 0 ? "+" : ""}{myColor === "red" ? end.redTrophyDelta : end.blueTrophyDelta}
-            </span>
-            {won && end.goldReward > 0 && <span style={{ color: "#f2d493" }}>🪙 +{end.goldReward}</span>}
-          </div>
-        )}
-
-        {/* Stat grid — Moves + per-side captures derived from the real final history. */}
-        <div className="fd-stat-3" style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 10, marginBottom: 20 }}>
-          <ResultStat value={state.history.length} label="Moves" color="var(--gold-lt)" />
-          <ResultStat value={redCaps} label="Red caps" color="#f27a86" />
-          <ResultStat value={blueCaps} label="Blue caps" color="#6fa8ff" />
-        </div>
-
-        {/* Rematch — REAL same-opponent flow over the match socket. Offering emits
-            EV.matchRematchOffer for the just-ended matchId; when the opponent also
-            offers the server seeds a NEW match and the store resets into it (board
-            reloads). "Find New Match" is the solo re-queue fallback. */}
-        <div style={{ display: "flex", flexDirection: "column", gap: 9 }}>
-          {offeredByOpponent && !offeredByMe ? (
-            <>
-              <div style={{ font: "600 13px Inter", color: "var(--gold-lt)", marginBottom: 2 }}>
-                {opponent?.displayName ?? "Your opponent"} wants a rematch!
+        {isSpectating ? (
+          <>
+            <div style={{ width: 76, height: 76, margin: "0 auto 16px", borderRadius: 20,
+              background: draw ? "linear-gradient(180deg,#6b6480,#3b3550)" : "linear-gradient(180deg,#f0cf72,#c99a2e)",
+              display: "flex", alignItems: "center", justifyContent: "center", fontSize: 34 }}>
+              {end?.interrupted ? "📡" : draw ? "🤝" : "👑"}
+            </div>
+            <div style={{ font: "700 12px Inter", letterSpacing: 2, textTransform: "uppercase", color: "var(--gold)" }}>
+              Match Complete
+            </div>
+            <h2 style={{ font: "800 28px Cinzel,serif", color: "var(--gold-lt)", margin: "8px 0 18px" }}>
+              {end?.interrupted
+                ? "Match Interrupted"
+                : draw
+                  ? "Draw"
+                  : `${end?.result.winner === "red" ? redName : blueName} takes the victory!`}
+            </h2>
+            <div className="fd-stat-3" style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 10, marginBottom: 20 }}>
+              <ResultStat value={state.history.length} label="Moves" color="var(--gold-lt)" />
+              <ResultStat value={redCaps} label="Red caps" color="#f27a86" />
+              <ResultStat value={blueCaps} label="Blue caps" color="#6fa8ff" />
+            </div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 9 }}>
+              <button className="btn btn-red" onClick={() => navigate("/watch")}>↻ Watch Another</button>
+              <button className="btn btn-purple" onClick={() => navigate("/")}>Back to Home</button>
+            </div>
+          </>
+        ) : (
+          <>
+            <div style={{ width: 76, height: 76, margin: "0 auto 16px", borderRadius: 20,
+              background: end?.interrupted ? "linear-gradient(180deg,#5a5570,#33304a)" : draw ? "linear-gradient(180deg,#6b6480,#3b3550)" : won ? "linear-gradient(180deg,#f0cf72,#c99a2e)" : "linear-gradient(180deg,#a83744,#6e1b24)",
+              display: "flex", alignItems: "center", justifyContent: "center", fontSize: 34 }}>
+              {end?.interrupted ? "📡" : draw ? "🤝" : won ? "👑" : "⚔"}
+            </div>
+            <div style={{ font: "700 12px Inter", letterSpacing: 2, textTransform: "uppercase", color: "var(--gold)" }}>
+              {end?.interrupted ? "Match Interrupted" : "Match Complete"}
+            </div>
+            <h2 style={{ font: "800 28px Cinzel,serif", color: "var(--gold-lt)", margin: "8px 0 4px" }}>
+              {end?.interrupted ? "Connection Lost" : draw ? "Draw" : won ? "Victory" : "Defeat"}
+            </h2>
+            <p style={{ font: "400 14px Inter", color: "var(--ink)", margin: "0 0 18px" }}>
+              {end?.interrupted ? "The match dropped and couldn't be recovered — no rating was affected. Start a new one below."
+                : end?.result.reason === "resign" ? (won ? "Your opponent resigned." : "You resigned.")
+                : end?.result.reason === "capture-all" ? (won ? "You captured every enemy piece." : "The enemy captured all your pieces.")
+                : draw ? "A hard-fought draw." : won ? "Well played." : "Better luck next time."}
+            </p>
+            {end && !end.interrupted && (mode === "RANKED") && (
+              <div style={{ display: "flex", justifyContent: "center", gap: 16, marginBottom: 20, font: "700 14px 'JetBrains Mono',monospace" }}>
+                <span style={{ color: (myColor === "red" ? end.redTrophyDelta : end.blueTrophyDelta) >= 0 ? "#3fbf6f" : "#ff8fae" }}>
+                  🏆 {(myColor === "red" ? end.redTrophyDelta : end.blueTrophyDelta) >= 0 ? "+" : ""}{myColor === "red" ? end.redTrophyDelta : end.blueTrophyDelta}
+                </span>
+                {won && end.goldReward > 0 && <span style={{ color: "#f2d493" }}>🪙 +{end.goldReward}</span>}
               </div>
-              <button className="btn btn-gold" onClick={acceptRematch}>✔ Accept Rematch</button>
-              <button className="btn btn-purple" onClick={declineRematch}>Decline</button>
-            </>
-          ) : offeredByMe ? (
-            <>
-              <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 8, font: "600 13px Inter", color: "var(--ink)" }}>
-                <span style={{ width: 14, height: 14, borderRadius: "50%", border: "2px solid rgba(232,184,75,.35)", borderTopColor: "var(--gold)", animation: "fdspin 0.9s linear infinite", display: "inline-block" }} />
-                Waiting for opponent…
-              </div>
-              <button className="btn btn-purple" onClick={declineRematch}>Cancel</button>
-            </>
-          ) : (
-            <>
-              {rematchDeclined && (
-                <div style={{ font: "600 13px Inter", color: "#ff8fae", textAlign: "center", marginBottom: 2 }}>
-                  Opponent declined the rematch.
-                </div>
+            )}
+
+            {/* Stat grid — Moves + per-side captures derived from the real final history. */}
+            <div className="fd-stat-3" style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 10, marginBottom: 20 }}>
+              <ResultStat value={state.history.length} label="Moves" color="var(--gold-lt)" />
+              <ResultStat value={redCaps} label="Red caps" color="#f27a86" />
+              <ResultStat value={blueCaps} label="Blue caps" color="#6fa8ff" />
+            </div>
+
+            {/* Rematch — REAL same-opponent flow over the match socket. Offering emits
+                EV.matchRematchOffer for the just-ended matchId; when the opponent also
+                offers the server seeds a NEW match and the store resets into it (board
+                reloads). "Find New Match" is the solo re-queue fallback. */}
+            <div style={{ display: "flex", flexDirection: "column", gap: 9 }}>
+              {offeredByOpponent && !offeredByMe ? (
+                <>
+                  <div style={{ font: "600 13px Inter", color: "var(--gold-lt)", marginBottom: 2 }}>
+                    {opponent?.displayName ?? "Your opponent"} wants a rematch!
+                  </div>
+                  <button className="btn btn-gold" onClick={acceptRematch}>✔ Accept Rematch</button>
+                  <button className="btn btn-purple" onClick={declineRematch}>Decline</button>
+                </>
+              ) : offeredByMe ? (
+                <>
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 8, font: "600 13px Inter", color: "var(--ink)" }}>
+                    <span style={{ width: 14, height: 14, borderRadius: "50%", border: "2px solid rgba(232,184,75,.35)", borderTopColor: "var(--gold)", animation: "fdspin 0.9s linear infinite", display: "inline-block" }} />
+                    Waiting for opponent…
+                  </div>
+                  <button className="btn btn-purple" onClick={declineRematch}>Cancel</button>
+                </>
+              ) : (
+                <>
+                  {rematchDeclined && (
+                    <div style={{ font: "600 13px Inter", color: "#ff8fae", textAlign: "center", marginBottom: 2 }}>
+                      Opponent declined the rematch.
+                    </div>
+                  )}
+                  <button className="btn btn-gold" onClick={offerRematch}>↻ Request Rematch</button>
+                  <button className="btn btn-purple" onClick={() => { reset(); joinQueue(mode); }}>Find New Match</button>
+                </>
               )}
-              <button className="btn btn-gold" onClick={offerRematch}>↻ Request Rematch</button>
-              <button className="btn btn-purple" onClick={() => { reset(); joinQueue(mode); }}>Find New Match</button>
-            </>
-          )}
-          <button className="btn btn-purple" onClick={() => navigate("/")}>Home</button>
-        </div>
+              <button className="btn btn-purple" onClick={() => navigate("/")}>Home</button>
+            </div>
+          </>
+        )}
       </Modal>
     </div>
   );

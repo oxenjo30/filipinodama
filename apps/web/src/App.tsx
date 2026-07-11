@@ -26,6 +26,7 @@ import { LessonPage } from "./features/learn/LessonPage";
 import { SeasonPage } from "./features/season/SeasonPage";
 import { TournamentsPage } from "./features/tournaments/TournamentsPage";
 import { TournamentDetailPage } from "./features/tournaments/TournamentDetailPage";
+import { WatchPage } from "./features/watch/WatchPage";
 import { LeaderboardPage } from "./features/leaderboard/LeaderboardPage";
 import { AuthPage } from "./features/auth/AuthPage";
 import { ResetPasswordPage } from "./features/auth/ResetPasswordPage";
@@ -132,6 +133,7 @@ export function App() {
           <Route path="/season" element={<SeasonPage />} />
           <Route path="/tournaments" element={<TournamentsPage />} />
           <Route path="/tournaments/:id" element={<TournamentDetailPage />} />
+          <Route path="/watch" element={<WatchPage />} />
           <Route path="/settings" element={<SettingsPage />} />
           <Route path="/legal" element={<Navigate to="/privacy" replace />} />
           <Route path="/privacy" element={<PrivacyPage />} />

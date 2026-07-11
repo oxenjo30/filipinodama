@@ -89,6 +89,10 @@ export type OnlineStore = {
   /** Re-attach to the current matchId (used when arriving already in a match:
    *  a private-room start or a Continue-Playing resume) instead of re-queuing. */
   resync: () => Promise<void>;
+  /** Join a live match BY ID as a read-only spectator (Watch / Live Matches page).
+   *  Not a player action — never emits moves; the board just renders whatever the
+   *  server broadcasts. */
+  spectate: (matchId: string) => Promise<void>;
   onSquareClick: (sq: Square) => void;
   resign: () => void;
   reset: () => void;
@@ -357,6 +361,34 @@ export const useOnlineStore = create<OnlineStore>((set, get) => {
       }
     },
 
+    spectate: async (matchId) => {
+      set({
+        status: "playing",
+        matchId,
+        myColor: null,
+        opponent: null,
+        state: null,
+        selected: null,
+        moveTargets: [],
+        captureTargets: [],
+        mustCapture: false,
+        end: null,
+        error: null,
+        connectionLost: false,
+        chat: [],
+        offeredByMe: false,
+        offeredByOpponent: false,
+        rematchDeclined: false,
+      });
+      try {
+        await connectSocket();
+        wire();
+        getSocket().emit(EV.spectateJoin, { matchId });
+      } catch {
+        set({ error: "Could not connect. Are you logged in?" });
+      }
+    },
+
     onSquareClick: (sq) => {
       const { state, selected, myColor, matchId } = get();
       if (!state || !myColor || state.result) return;
@@ -385,7 +417,17 @@ export const useOnlineStore = create<OnlineStore>((set, get) => {
       if (matchId) getSocket().emit(EV.matchResign, { matchId });
     },
 
-    reset: () =>
+    reset: () => {
+      // Leaving a spectated match — tell the server to drop us from its room
+      // (never sent for a real player: their match room membership is theirs).
+      const cur = get();
+      if (cur.matchId && cur.myColor === null) {
+        try {
+          getSocket().emit(EV.spectateLeave, { matchId: cur.matchId });
+        } catch {
+          /* ignore */
+        }
+      }
       set({
         status: "idle",
         matchId: null,
@@ -403,7 +445,8 @@ export const useOnlineStore = create<OnlineStore>((set, get) => {
         offeredByMe: false,
         offeredByOpponent: false,
         rematchDeclined: false,
-      }),
+      });
+    },
 
     sendChat: (body) => {
       const text = body.trim();
