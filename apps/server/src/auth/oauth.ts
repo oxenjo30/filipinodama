@@ -4,6 +4,7 @@ import { prisma } from "../db/client.js";
 import { env, features } from "../config/env.js";
 import { randomTag } from "./tokens.js";
 import { err } from "../lib/errors.js";
+import { grantDefaults } from "./service.js";
 
 /**
  * OAuth 2.0 (Google / Facebook) — authorization-code flow.
@@ -159,5 +160,8 @@ export async function findOrCreateOAuthUser(p: OAuthProvider, profile: Profile):
       oauthAccounts: { create: { provider: p, providerId: profile.providerId } },
     },
   });
+  // Grant free starter cosmetics (board/skin/avatars/emotes) — email signup does
+  // this via register(); OAuth fresh signups must too, or they get nothing.
+  await grantDefaults(prisma, user.id);
   return user;
 }

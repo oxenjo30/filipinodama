@@ -26,6 +26,7 @@ export function publicUser(u: User) {
     rankTier: u.rankTier,
     equippedBoard: u.equippedBoard,
     equippedSkin: u.equippedSkin,
+    equippedEmotes: u.equippedEmotes,
     frameId: u.frameId,
     wins: u.wins,
     losses: u.losses,
@@ -52,13 +53,15 @@ async function uniqueTag(prisma: PrismaClient): Promise<string> {
 /** The avatar every new player starts equipped with (one of the free starters). */
 const DEFAULT_AVATAR_KEY = "katipunero";
 
-async function grantDefaults(prisma: PrismaClient, userId: string) {
+export async function grantDefaults(prisma: PrismaClient, userId: string) {
   const defaults = await prisma.storeItem.findMany({
     where: { active: true, priceGold: 0, priceDiamonds: null },
+    orderBy: { sortOrder: "asc" },
   });
   let equippedBoard: string | undefined;
   let equippedSkin: string | undefined;
   let equippedAvatar: string | undefined;
+  const freeEmoteIds: string[] = [];
   for (const item of defaults) {
     // Grant every free item to the inventory. For BOARD/SKIN the single default
     // is auto-equipped. For AVATAR there are several free starters, so we only
@@ -75,8 +78,10 @@ async function grantDefaults(prisma: PrismaClient, userId: string) {
     if (item.type === "BOARD" && !equippedBoard) equippedBoard = item.id;
     if (item.type === "SKIN" && !equippedSkin) equippedSkin = item.id;
     if (isDefaultAvatar) equippedAvatar = item.id;
+    if (item.type === "EMOTE") freeEmoteIds.push(item.id);
   }
-  if (equippedBoard || equippedSkin || equippedAvatar) {
+  const equippedEmotes = freeEmoteIds.slice(0, 6); // default loadout, respects the 6-slot cap
+  if (equippedBoard || equippedSkin || equippedAvatar || equippedEmotes.length) {
     await prisma.user.update({
       where: { id: userId },
       data: {
@@ -84,6 +89,7 @@ async function grantDefaults(prisma: PrismaClient, userId: string) {
         ...(equippedSkin ? { equippedSkin } : {}),
         // avatarUrl stores the bare avatar key (see AvatarPickerModal.avatarValue).
         ...(equippedAvatar ? { avatarUrl: equippedAvatar } : {}),
+        ...(equippedEmotes.length ? { equippedEmotes } : {}),
       },
     });
   }
