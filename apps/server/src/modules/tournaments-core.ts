@@ -40,7 +40,15 @@ import {
   swissPairRound1,
   swissPairNextRound,
   computeSwissStandings,
+  losersBracketStructure,
+  losersDropSlot,
+  lWinnerAdvance,
+  computeDoubleElimPlacements,
+  L_ROUND_OFFSET,
+  GF_ROUND,
+  GF_RESET_ROUND,
   type SwissStanding,
+  type DoubleElimMatchLike,
 } from "../lib/tournament-bracket.js";
 
 type Tx = Prisma.TransactionClient;
@@ -185,6 +193,9 @@ export async function startTournament(db: Db, tournamentId: string, actorId: str
     }
     if (tournament.format === "SWISS") {
       return await startSwiss(db, tournamentId, tournament.rounds, clamped, actorId);
+    }
+    if (tournament.format === "DOUBLE_ELIM") {
+      return await startDoubleElim(db, tournamentId, n, clamped, actorId);
     }
     return await startSingleElim(db, tournamentId, n, clamped, actorId);
   } catch (e) {
@@ -403,17 +414,335 @@ async function startSwiss(
   });
 }
 
+/**
+ * DOUBLE_ELIM start branch — seeds the WINNERS bracket exactly like
+ * startSingleElim (same `seedPairings` call, same byes-auto-resolve
+ * behavior, `bracket:"W"` on every W slot), then PRE-CREATES the entire
+ * losers-bracket skeleton (`losersBracketStructure(B)`, `bracket:"L"`,
+ * `status:"pending"`, empty entries) and the Grand Final's game-1 slot
+ * (`bracket:"GF"`, `status:"pending"` — GF game 2, the bracket-reset game,
+ * is created LAZILY by resolveDoubleElimSlot only if it's ever needed, not
+ * here, since most tournaments never trigger a reset).
+ *
+ * Round-offset scheme (see tournament-bracket.ts's `L_ROUND_OFFSET`/`GF_ROUND`
+ * doc comment): W rounds stay 1..log2(B); L rounds are stored as
+ * 101,102,... (local L-round + L_ROUND_OFFSET); GF game 1 is round 201.
+ *
+ * W round-1 byes: a bye produces a `done` W-R1 slot with only one side
+ * filled and no real loser — nothing drops to L for that slot (handled by
+ * the bye-advance loop below skipping the drop step whenever the round-1
+ * slot has no `blueEntryId`/`redEntryId` pair, i.e. `isBye`).
+ */
+async function startDoubleElim(
+  db: Db,
+  tournamentId: string,
+  n: number,
+  clamped: Array<{ id: string }>,
+  actorId: string,
+) {
+  const B = nextPow2(n);
+  const rounds = Math.log2(B);
+  const lStructure = losersBracketStructure(B);
+
+  return db.$transaction(async (tx) => {
+    const flip = await tx.tournament.updateMany({ where: { id: tournamentId, status: "OPEN" }, data: { status: "RUNNING", startedAt: new Date() } });
+    if (flip.count === 0) throw new Error("ALREADY_STARTED");
+
+    for (let i = 0; i < clamped.length; i++) {
+      await tx.tournamentEntry.update({ where: { id: clamped[i]!.id }, data: { seed: i + 1 } });
+    }
+    const bySeed = new Map<number, (typeof clamped)[number]>();
+    clamped.forEach((e, i) => bySeed.set(i + 1, e));
+
+    // ── W bracket: round 1 seeded pairings (byes auto-resolve), rounds 2..k empty. ──
+    const pairs = seedPairings(n, B);
+    const round1Ids: string[] = [];
+    for (const p of pairs) {
+      const topEntry = bySeed.get(p.top) ?? null;
+      const bottomEntry = bySeed.get(p.bottom) ?? null;
+      const isBye = !topEntry || !bottomEntry;
+      const presentEntry = topEntry ?? bottomEntry;
+      const created = await tx.tournamentMatch.create({
+        data: {
+          tournamentId,
+          bracket: "W",
+          round: 1,
+          slot: p.slot,
+          redEntryId: topEntry?.id ?? null,
+          blueEntryId: bottomEntry?.id ?? null,
+          status: isBye ? "done" : topEntry && bottomEntry ? "ready" : "pending",
+          winnerEntryId: isBye ? presentEntry?.id ?? null : null,
+          resolvedAt: isBye ? new Date() : null,
+        },
+      });
+      round1Ids.push(created.id);
+    }
+
+    const wSlotsByRoundSlot = new Map<string, string>(); // `${round}:${slot}` -> tmId (W bracket only)
+    for (let r = 1; r <= rounds; r++) {
+      const count = B / Math.pow(2, r);
+      for (let s = 0; s < count; s++) {
+        if (r === 1) continue; // already created above
+        const created = await tx.tournamentMatch.create({
+          data: { tournamentId, bracket: "W", round: r, slot: s, status: "pending" },
+        });
+        wSlotsByRoundSlot.set(`${r}:${s}`, created.id);
+      }
+    }
+    const round1Rows = await tx.tournamentMatch.findMany({ where: { id: { in: round1Ids } } });
+    for (const row of round1Rows) wSlotsByRoundSlot.set(`1:${row.slot}`, row.id);
+
+    // ── L bracket skeleton: every slot pre-created pending/empty. ──
+    const lSlotsByRoundSlot = new Map<string, string>(); // `${localRound}:${slot}` -> tmId
+    for (const lr of lStructure) {
+      for (let s = 0; s < lr.matches; s++) {
+        const created = await tx.tournamentMatch.create({
+          data: { tournamentId, bracket: "L", round: L_ROUND_OFFSET + lr.localRound, slot: s, status: "pending" },
+        });
+        lSlotsByRoundSlot.set(`${lr.localRound}:${s}`, created.id);
+      }
+    }
+
+    // ── Grand Final game 1 skeleton (game 2 created lazily on reset). ──
+    await tx.tournamentMatch.create({
+      data: { tournamentId, bracket: "GF", round: GF_ROUND, slot: 0, status: "pending" },
+    });
+
+    // Advance W-R1 byes into W-round 2 immediately (mirrors startSingleElim).
+    // A bye never produces a loser, so nothing drops to L for these slots.
+    for (const row of round1Rows) {
+      if (row.status !== "done" || !row.winnerEntryId) continue;
+      if (rounds < 2) continue; // n==2 case: W-R1 IS the W-final, no W parent (still drops to L below via resolveDoubleElimSlot's own path — n==2 has no bye since both slots are always filled at B=2)
+      const parent = parentSlot(row.round, row.slot);
+      const parentId = wSlotsByRoundSlot.get(`${parent.round}:${parent.slot}`);
+      if (!parentId) continue;
+      const isEven = row.slot % 2 === 0;
+      const parentRow = await tx.tournamentMatch.findUniqueOrThrow({ where: { id: parentId } });
+      const data = isEven ? { redEntryId: row.winnerEntryId } : { blueEntryId: row.winnerEntryId };
+      const otherSide = isEven ? parentRow.blueEntryId : parentRow.redEntryId;
+      await tx.tournamentMatch.update({
+        where: { id: parentId },
+        data: { ...data, ...(otherSide != null ? { status: "ready" } : {}) },
+      });
+    }
+
+    await audit(tx, {
+      actorId,
+      action: "tournament.start",
+      targetType: "tournament",
+      targetId: tournamentId,
+      before: { status: "OPEN" },
+      after: { status: "RUNNING", n, bracketSize: B, rounds, format: "DOUBLE_ELIM", lMatchCount: lStructure.reduce((s, r) => s + r.matches, 0) },
+      reason: "admin start",
+    });
+
+    return { bracketSize: B, rounds, seededCount: n };
+  });
+}
+
+// ─────────────────────────── Double-elim advance (report) ───────────────────────────
+
+/**
+ * Resolve a `ready` DOUBLE_ELIM slot with the reported winner. Branches on
+ * `slotRow.bracket`:
+ *  - "W": winner advances to the W parent slot (identical mechanics to
+ *    `resolveTournamentSlot`, scoped to `bracket:"W"`); the LOSER DROPS to
+ *    the losers bracket via `losersDropSlot` instead of being eliminated
+ *    (byes never reach here — a bye slot is created already `done`, so it
+ *    can never be claimed `ready`).
+ *  - "L": winner advances via `lWinnerAdvance` (or, if this was the
+ *    L-bracket final, becomes the L-CHAMPION and is written straight into
+ *    the Grand Final's L-side); the loser is `eliminated:true` — their
+ *    SECOND loss.
+ *  - "GF" (round GF_ROUND, game 1): if the W-side (0 prior losses) wins,
+ *    they're the outright tournament champion — done, no reset. If the
+ *    L-side (1 prior loss) wins, both competitors now have exactly one
+ *    loss each — a BRACKET RESET: game 2 (round GF_RESET_ROUND) is
+ *    created/filled here, `status:"ready"`, same two entries.
+ *  - "GF" (round GF_RESET_ROUND, game 2): winner is the final champion —
+ *    done, no further slot to fill.
+ *
+ * Whenever a W-final or L-final resolves, this also checks whether the
+ * OTHER side of the Grand Final is already resolved — if so, fills the GF
+ * slot (`status:"ready"`) right here (the second of the two to resolve is
+ * the one that actually flips GF ready, mirroring the parent-slot
+ * "otherSide != null" idempotent-fill pattern `resolveTournamentSlot` uses).
+ *
+ * Runs entirely inside the caller's transaction. `B` (bracket size) is
+ * needed for `losersDropSlot`'s W-round validation — the caller
+ * (`reportResult`) does NOT trust `nextPow2(tournament.maxPlayers)` for
+ * this (maxPlayers is only an UPPER bound on registered entries; if fewer
+ * than maxPlayers actually registered, the seeded bracket size can be
+ * SMALLER than maxPlayers — e.g. maxPlayers=8 but n=3 seeds a B=4 bracket).
+ * Instead `B` is derived from the ACTUAL number of W-round-1 slots that
+ * were created at seed time (`2 * count of bracket:"W" round:1 matches`),
+ * which is always exactly right regardless of how many players registered.
+ */
+async function resolveDoubleElimSlot(
+  tx: Tx,
+  tournamentId: string,
+  B: number,
+  tmId: string,
+  winnerEntryId: string,
+  matchId?: string | null,
+): Promise<{ tournamentId: string; round: number; slot: number; bracket: string }> {
+  const slotRow = await tx.tournamentMatch.findUnique({ where: { id: tmId } });
+  if (!slotRow) throw err.notFound("NO_TOURNAMENT_MATCH", "Tournament match slot not found");
+
+  if (slotRow.status !== "ready") {
+    if (slotRow.status === "done") throw err.conflict("SLOT_DONE", "This slot was already resolved");
+    throw err.conflict("SLOT_NOT_READY", "This slot's competitors aren't both filled in yet");
+  }
+  if (winnerEntryId !== slotRow.redEntryId && winnerEntryId !== slotRow.blueEntryId) {
+    throw err.badRequest("NOT_A_PARTICIPANT", "Winner is not a competitor in this slot");
+  }
+
+  // Atomic claim — the real concurrency guard (mirrors resolveTournamentSlot).
+  const claim = await tx.tournamentMatch.updateMany({
+    where: { id: tmId, status: "ready" },
+    data: { winnerEntryId, matchId: matchId ?? undefined, status: "done", resolvedAt: new Date() },
+  });
+  if (claim.count === 0) throw err.conflict("SLOT_DONE", "This slot was already resolved");
+
+  const loserEntryId = winnerEntryId === slotRow.redEntryId ? slotRow.blueEntryId : slotRow.redEntryId;
+
+  if (slotRow.bracket === "W") {
+    // Winner advances within W (unchanged single-elim mechanics).
+    const parent = parentSlot(slotRow.round, slotRow.slot);
+    const parentRow = await tx.tournamentMatch.findUnique({
+      where: { tournamentId_round_slot: { tournamentId, round: parent.round, slot: parent.slot } },
+    });
+    if (parentRow && parentRow.bracket === "W") {
+      const isEven = slotRow.slot % 2 === 0;
+      const data = isEven ? { redEntryId: winnerEntryId } : { blueEntryId: winnerEntryId };
+      const otherSide = isEven ? parentRow.blueEntryId : parentRow.redEntryId;
+      await tx.tournamentMatch.update({
+        where: { id: parentRow.id },
+        data: { ...data, ...(otherSide != null ? { status: "ready" } : {}) },
+      });
+    } else if (!parentRow) {
+      // slotRow.round === rounds (the W-final) — no W parent; winner is the
+      // W-CHAMPION, headed straight to the Grand Final (handled below).
+      await fillGrandFinalSide(tx, tournamentId, "W", winnerEntryId);
+    }
+
+    // Loser DROPS to L instead of being eliminated. SPECIAL CASE B=2: there
+    // is no losers bracket at all (losersBracketStructure(2) === []) — the
+    // single W-R1/W-final loser is trivially already the L-champion (zero L
+    // matches needed) and goes straight into the Grand Final's L-side.
+    if (loserEntryId && B === 2) {
+      await fillGrandFinalSide(tx, tournamentId, "L", loserEntryId);
+    } else if (loserEntryId) {
+      const drop = losersDropSlot(slotRow.round, slotRow.slot, B);
+      const lRound = L_ROUND_OFFSET + drop.localRound;
+      const lRow = await tx.tournamentMatch.findUniqueOrThrow({
+        where: { tournamentId_round_slot: { tournamentId, round: lRound, slot: drop.slot } },
+      });
+      // Index-aligned mapping (see losersDropSlot's doc comment): the FIRST
+      // W-loser to land on a given L slot fills `redEntryId`, the second
+      // (only possible for W-round-1's 2-losers-per-slot pairing) fills
+      // `blueEntryId`. Whichever side is still empty gets this loser —
+      // race-safe because this whole function runs inside the caller's tx
+      // and the W-slot's own atomic claim above already serializes the two
+      // sibling W-R1 matches' drops relative to each other in practice, but
+      // the "fill whichever side is empty" logic is itself idempotent/order-
+      // independent regardless.
+      const data = lRow.redEntryId == null ? { redEntryId: loserEntryId } : { blueEntryId: loserEntryId };
+      const otherSideFilled = lRow.redEntryId != null || lRow.blueEntryId != null;
+      await tx.tournamentMatch.update({
+        where: { id: lRow.id },
+        data: { ...data, ...(otherSideFilled ? { status: "ready" } : {}) },
+      });
+    }
+  } else if (slotRow.bracket === "L") {
+    // Second loss — eliminated.
+    if (loserEntryId) {
+      await tx.tournamentEntry.update({ where: { id: loserEntryId }, data: { eliminated: true } });
+    }
+    const structure = losersBracketStructure(B);
+    const localRound = slotRow.round - L_ROUND_OFFSET;
+    const advance = lWinnerAdvance(localRound, slotRow.slot, structure);
+    if (advance) {
+      const nextRound = L_ROUND_OFFSET + advance.localRound;
+      const nextRow = await tx.tournamentMatch.findUniqueOrThrow({
+        where: { tournamentId_round_slot: { tournamentId, round: nextRound, slot: advance.slot } },
+      });
+      const data = nextRow.redEntryId == null ? { redEntryId: winnerEntryId } : { blueEntryId: winnerEntryId };
+      const otherSideFilled = nextRow.redEntryId != null || nextRow.blueEntryId != null;
+      await tx.tournamentMatch.update({
+        where: { id: nextRow.id },
+        data: { ...data, ...(otherSideFilled ? { status: "ready" } : {}) },
+      });
+    } else {
+      // This WAS the L-bracket final — winner is the L-CHAMPION.
+      await fillGrandFinalSide(tx, tournamentId, "L", winnerEntryId);
+    }
+  } else {
+    // GF game 1 or game 2.
+    if (slotRow.round === GF_ROUND) {
+      // W-side is whichever competitor has zero prior L-bracket losses —
+      // by construction the W-champion was written into `redEntryId` and
+      // the L-champion into `blueEntryId` by fillGrandFinalSide (W always
+      // resolves and fills first in every real bracket, since the L final
+      // itself depends on the W-final loser dropping in — but to stay
+      // correct even if a caller reported L's fill first, fillGrandFinalSide
+      // pins W to red / L to blue explicitly rather than "whoever filled
+      // first", so this check is unambiguous).
+      const wSide = slotRow.redEntryId;
+      if (winnerEntryId === wSide) {
+        // W-champion won outright — tournament champion decided, no reset.
+      } else {
+        // L-champion won game 1 — BRACKET RESET: create/ready game 2.
+        await tx.tournamentMatch.create({
+          data: {
+            tournamentId,
+            bracket: "GF",
+            round: GF_RESET_ROUND,
+            slot: 0,
+            redEntryId: slotRow.redEntryId,
+            blueEntryId: slotRow.blueEntryId,
+            status: "ready",
+          },
+        });
+      }
+    }
+    // GF_RESET_ROUND: winner is the champion, nothing further to fill.
+  }
+
+  const after = await tx.tournamentMatch.findUniqueOrThrow({ where: { id: tmId } });
+  return { tournamentId, round: after.round, slot: after.slot, bracket: after.bracket };
+}
+
+/**
+ * Fill the Grand Final's W-side (`redEntryId`) or L-side (`blueEntryId`)
+ * with a just-decided W-champion or L-champion. Idempotent/order-independent
+ * — whichever of the two (W-final, L-final) resolves SECOND is the one that
+ * actually observes the other side already filled and flips GF to `ready`.
+ */
+async function fillGrandFinalSide(tx: Tx, tournamentId: string, side: "W" | "L", entryId: string) {
+  const gf = await tx.tournamentMatch.findUniqueOrThrow({
+    where: { tournamentId_round_slot: { tournamentId, round: GF_ROUND, slot: 0 } },
+  });
+  const data = side === "W" ? { redEntryId: entryId } : { blueEntryId: entryId };
+  const otherSide = side === "W" ? gf.blueEntryId : gf.redEntryId;
+  await tx.tournamentMatch.update({
+    where: { id: gf.id },
+    data: { ...data, ...(otherSide != null ? { status: "ready" } : {}) },
+  });
+}
+
 // ─────────────────────────── Report result (advance) ───────────────────────────
 
 /**
  * The only V1 bracket-advance path: admin reports the winner of a `ready`
- * slot. Delegates to resolveTournamentSlot (elimination formats — advances
- * the winner into a parent slot + eliminates the loser) or
- * resolveRoundRobinSlot (ROUND_ROBIN and SWISS — just marks the slot done,
- * no advance, no elimination; SWISS reuses the exact same resolve semantics
- * as RR since neither format has a bracket tree to advance into) depending
- * on the tournament's format; this wrapper adds the tournament-scope lookup
- * + audit row shared by all three.
+ * slot. Delegates to resolveTournamentSlot (SINGLE_ELIM — advances the
+ * winner into a parent slot + eliminates the loser), resolveRoundRobinSlot
+ * (ROUND_ROBIN and SWISS — just marks the slot done, no advance, no
+ * elimination; SWISS reuses the exact same resolve semantics as RR since
+ * neither format has a bracket tree to advance into), or
+ * resolveDoubleElimSlot (DOUBLE_ELIM — see its own doc comment) depending on
+ * the tournament's format; this wrapper adds the tournament-scope lookup +
+ * audit row shared by all four.
  *
  * SWISS-only: after resolving, if that slot's round is now fully reported
  * AND it isn't the tournament's final configured round, the next round's
@@ -439,6 +768,13 @@ export async function reportResult(
   return db.$transaction(async (tx) => {
     if (tournament.format === "ROUND_ROBIN" || tournament.format === "SWISS") {
       await resolveRoundRobinSlot(tx, tmId, winnerEntryId, opts.matchId ?? null);
+    } else if (tournament.format === "DOUBLE_ELIM") {
+      // B = the ACTUAL seeded bracket size, derived from the real W-round-1
+      // slot count — NOT nextPow2(maxPlayers), which only bounds the seeded
+      // size from above (see resolveDoubleElimSlot's doc comment).
+      const wRound1Count = await tx.tournamentMatch.count({ where: { tournamentId, bracket: "W", round: 1 } });
+      const B = wRound1Count * 2;
+      await resolveDoubleElimSlot(tx, tournamentId, B, tmId, winnerEntryId, opts.matchId ?? null);
     } else {
       await resolveTournamentSlot(tx, tmId, winnerEntryId, opts.matchId ?? null);
     }
@@ -602,6 +938,23 @@ export async function completeTournament(db: Db, tournamentId: string, actorId: 
     if (finalRoundMatches.length === 0 || finalRoundMatches.some((m) => m.status !== "done")) {
       throw err.conflict("NOT_FINISHED", "Not every Swiss round has been reported yet");
     }
+  } else if (tournament.format === "DOUBLE_ELIM") {
+    // Ready only once the Grand Final is fully decided: game 1 (round
+    // GF_ROUND) done AND either (a) the W-side won it outright (no reset,
+    // champion decided) or (b) a reset happened and game 2 (GF_RESET_ROUND)
+    // is ALSO done. Checking "game 1 done" alone would incorrectly allow
+    // Complete right after a reset-triggering game 1, before game 2 exists.
+    const gf1 = await db.tournamentMatch.findFirst({ where: { tournamentId, bracket: "GF", round: GF_ROUND } });
+    if (!gf1 || gf1.status !== "done" || !gf1.winnerEntryId) {
+      throw err.conflict("NOT_FINISHED", "The double-elim grand final hasn't been decided yet");
+    }
+    const wasReset = gf1.winnerEntryId === gf1.blueEntryId; // L-side (blue) won game 1 → reset happened
+    if (wasReset) {
+      const gf2 = await db.tournamentMatch.findFirst({ where: { tournamentId, bracket: "GF", round: GF_RESET_ROUND } });
+      if (!gf2 || gf2.status !== "done" || !gf2.winnerEntryId) {
+        throw err.conflict("NOT_FINISHED", "The grand-final bracket reset hasn't been decided yet");
+      }
+    }
   } else {
     // Elimination formats: find the final round's done slot (the champion).
     const maxRoundRow = await db.tournamentMatch.findFirst({ where: { tournamentId }, orderBy: { round: "desc" } });
@@ -623,7 +976,9 @@ export async function completeTournament(db: Db, tournamentId: string, actorId: 
           ? await computeRoundRobinPlacements(tx, tournamentId)
           : tournament.format === "SWISS"
             ? await computeSwissPlacements(tx, tournamentId)
-            : await computeSingleElimPlacements(tx, tournamentId);
+            : tournament.format === "DOUBLE_ELIM"
+              ? await computeDoubleElimPlacementsTx(tx, tournamentId)
+              : await computeSingleElimPlacements(tx, tournamentId);
 
       for (const p of placements) {
         await tx.tournamentEntry.update({ where: { id: p.entryId }, data: { placement: p.placement } }).catch(() => {});
@@ -690,6 +1045,30 @@ async function computeSingleElimPlacements(tx: Tx, tournamentId: string): Promis
   }
 
   return placements;
+}
+
+/**
+ * DOUBLE_ELIM placement branch — thin DB wrapper around the pure
+ * `computeDoubleElimPlacements(matches)`: champion = Grand Final's ultimate
+ * winner (1), runner-up = the L-bracket champion (2, whether they lost GF
+ * game 1 outright or lost the reset game 2), everyone else ranked by
+ * L-bracket elimination round (later = higher placement).
+ */
+async function computeDoubleElimPlacementsTx(tx: Tx, tournamentId: string): Promise<PlacementRow[]> {
+  const matches = await tx.tournamentMatch.findMany({
+    where: { tournamentId },
+    select: { bracket: true, round: true, slot: true, redEntryId: true, blueEntryId: true, winnerEntryId: true, status: true },
+  });
+  const asLike: DoubleElimMatchLike[] = matches.map((m) => ({
+    bracket: m.bracket,
+    round: m.round,
+    slot: m.slot,
+    redEntryId: m.redEntryId,
+    blueEntryId: m.blueEntryId,
+    winnerEntryId: m.winnerEntryId,
+    status: m.status,
+  }));
+  return computeDoubleElimPlacements(asLike);
 }
 
 /**

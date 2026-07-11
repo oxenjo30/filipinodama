@@ -21,9 +21,9 @@ import { startTournament, reportResult, completeTournament, cancelTournament } f
 
 const POWERS_OF_TWO = [2, 4, 8, 16, 32, 64, 128, 256] as const;
 const ELIMINATION_FORMATS = new Set(["SINGLE_ELIM", "DOUBLE_ELIM"]);
-/** Formats supported end-to-end THIS stage. DOUBLE_ELIM stays rejected until
- * its own stage ships (see docs/superpowers/specs/2026-07-11-tournament-formats-v2.md). */
-const SUPPORTED_FORMATS = new Set(["SINGLE_ELIM", "ROUND_ROBIN", "SWISS"]);
+/** All four tournament formats V2 planned (see
+ * docs/superpowers/specs/2026-07-11-tournament-formats-v2.md) are now supported. */
+const SUPPORTED_FORMATS = new Set(["SINGLE_ELIM", "ROUND_ROBIN", "SWISS", "DOUBLE_ELIM"]);
 const ROUND_ROBIN_MAX_PLAYERS = 16; // match count = n(n-1)/2 grows fast — cap RR at 16
 const SWISS_MAX_PLAYERS = 32; // Swiss scales far better than RR (rounds, not n(n-1)/2 matches) — cap at 32
 
@@ -80,6 +80,17 @@ const reportBody = z.object({
   reason: z.string().trim().min(1).max(500).optional(),
 });
 
+/**
+ * Group matches for the admin bracket view, keyed by round number — UNCHANGED
+ * shape from before DOUBLE_ELIM (`{round: match[]}`), so SINGLE_ELIM/
+ * ROUND_ROBIN/SWISS clients need no change. Each match row still carries its
+ * own `bracket` field ("W"/"L"/"GF") — DOUBLE_ELIM's round-offset scheme (W
+ * rounds 1..k, L rounds 101+, GF 201+; see tournament-bracket.ts's
+ * ROUND-OFFSET doc comment) means round numbers never collide ACROSS
+ * brackets, so a flat round-keyed map already segregates W/L/GF into
+ * distinct round buckets — the client groups by `bracket` client-side when
+ * rendering a three-column DE view (see BracketDrawer's `roundsByBracket`).
+ */
 function bracketByRound(matches: { round: number }[]) {
   const grouped: Record<string, unknown[]> = {};
   for (const m of matches) {
@@ -151,7 +162,7 @@ export async function adminTournamentsRoutes(app: FastifyInstance) {
     const parsed = createBody.safeParse(req.body);
     if (!parsed.success) {
       const formatIssue = parsed.error.issues.find((i) => i.path[0] === "format");
-      if (formatIssue) throw err.badRequest("FORMAT_UNSUPPORTED", "Only SINGLE_ELIM, ROUND_ROBIN, and SWISS are supported right now");
+      if (formatIssue) throw err.badRequest("FORMAT_UNSUPPORTED", "This tournament format is not supported");
       throw err.badRequest("VALIDATION_ERROR", parsed.error.issues[0]?.message ?? "Invalid request");
     }
     const b = parsed.data;
@@ -194,7 +205,7 @@ export async function adminTournamentsRoutes(app: FastifyInstance) {
     const parsed = createBody.safeParse(req.body);
     if (!parsed.success) {
       const formatIssue = parsed.error.issues.find((i) => i.path[0] === "format");
-      if (formatIssue) throw err.badRequest("FORMAT_UNSUPPORTED", "Only SINGLE_ELIM, ROUND_ROBIN, and SWISS are supported right now");
+      if (formatIssue) throw err.badRequest("FORMAT_UNSUPPORTED", "This tournament format is not supported");
       throw err.badRequest("VALIDATION_ERROR", parsed.error.issues[0]?.message ?? "Invalid request");
     }
     const b = parsed.data;

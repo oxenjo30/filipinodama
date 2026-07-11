@@ -195,17 +195,16 @@ describe("admin tournaments — create validation", () => {
     await app.close();
   });
 
-  it("format !== SINGLE_ELIM → 400 FORMAT_UNSUPPORTED", async () => {
+  it("an invalid format string fails schema validation (all 4 real formats are now supported — see the DOUBLE_ELIM describe block below)", async () => {
     const app = await buildTestApp();
     const econ = await seedUser({ adminRole: "ECONOMY" });
     const res = await app.inject({
       method: "POST",
       url: "/api/admin/tournaments",
       headers: { cookie: authFor({ sub: econ.id, adminRole: "ECONOMY" }) },
-      payload: { ...validCreateBody, format: "DOUBLE_ELIM" },
+      payload: { ...validCreateBody, format: "ROUND_ROBIN_XL_NOT_REAL" },
     });
     expect(res.statusCode).toBe(400);
-    expect(res.json().error.code).toBe("FORMAT_UNSUPPORTED");
     await app.close();
   });
 
@@ -281,17 +280,16 @@ describe("admin tournaments — ROUND_ROBIN validation (format-specific bracket-
     await app.close();
   });
 
-  it("DOUBLE_ELIM still rejected this stage → 400 FORMAT_UNSUPPORTED (SWISS ships this stage — see the dedicated SWISS validation describe block below)", async () => {
+  it("DOUBLE_ELIM is supported and, like SINGLE_ELIM, still requires a power-of-two maxPlayers → 400 for maxPlayers=5", async () => {
     const app = await buildTestApp();
     const econ = await seedUser({ adminRole: "ECONOMY" });
     const res = await app.inject({
       method: "POST",
       url: "/api/admin/tournaments",
       headers: { cookie: authFor({ sub: econ.id, adminRole: "ECONOMY" }) },
-      payload: { ...validCreateBody, format: "DOUBLE_ELIM" },
+      payload: { ...validCreateBody, format: "DOUBLE_ELIM", maxPlayers: 5 },
     });
     expect(res.statusCode).toBe(400);
-    expect(res.json().error.code).toBe("FORMAT_UNSUPPORTED");
     await app.close();
   });
 
@@ -743,6 +741,183 @@ describe("admin tournaments — SWISS full lifecycle happy path (via HTTP routes
     const champEntry = await prisma.tournamentEntry.findFirstOrThrow({ where: { tournamentId: tId, placement: 1 } });
     const champUser = await prisma.user.findUniqueOrThrow({ where: { id: champEntry.userId } });
     expect(champUser.gold).toBe(600);
+    await app.close();
+  });
+});
+
+describe("admin tournaments — DOUBLE_ELIM full lifecycle happy path (via HTTP routes)", () => {
+  it("create → open → join/leave (format-agnostic invariant) → join 4 players → start (seeds W+L+GF) → report W+L through to grand final → complete pays top-N", async () => {
+    const app = await buildTestApp();
+    const econ = await seedUser({ adminRole: "ECONOMY" });
+    const econCookie = authFor({ sub: econ.id, adminRole: "ECONOMY" });
+
+    const createRes = await app.inject({
+      method: "POST",
+      url: "/api/admin/tournaments",
+      headers: { cookie: econCookie },
+      payload: { ...validCreateBody, format: "DOUBLE_ELIM", maxPlayers: 4, entryFeeGold: 50, prizePoolGold: 1000, prizeSplitGold: [700, 300] },
+    });
+    expect(createRes.statusCode).toBe(201);
+    expect(createRes.json().data.format).toBe("DOUBLE_ELIM");
+    const tId = createRes.json().data.id;
+
+    const openRes = await app.inject({ method: "POST", url: `/api/admin/tournaments/${tId}/open`, headers: { cookie: econCookie }, payload: { reason: "go" } });
+    expect(openRes.statusCode).toBe(200);
+
+    // join/leave still work for DOUBLE_ELIM (format-agnostic invariant).
+    const leaver = await seedUser({ gold: 500 });
+    const leaverJoin = await app.inject({ method: "POST", url: `/api/tournaments/${tId}/join`, headers: { cookie: authFor({ sub: leaver.id }) } });
+    expect(leaverJoin.statusCode).toBe(201);
+    const leaveRes = await app.inject({ method: "POST", url: `/api/tournaments/${tId}/leave`, headers: { cookie: authFor({ sub: leaver.id }) } });
+    expect(leaveRes.statusCode).toBe(200);
+
+    for (let i = 0; i < 4; i++) {
+      const p = await seedUser({ gold: 500 });
+      const joinRes = await app.inject({ method: "POST", url: `/api/tournaments/${tId}/join`, headers: { cookie: authFor({ sub: p.id }) } });
+      expect(joinRes.statusCode).toBe(201);
+      await new Promise((r) => setTimeout(r, 2));
+    }
+
+    const startRes = await app.inject({ method: "POST", url: `/api/admin/tournaments/${tId}/start`, headers: { cookie: econCookie }, payload: { reason: "start" } });
+    expect(startRes.statusCode).toBe(200);
+    expect(startRes.json().data.bracketSize).toBe(4);
+
+    const wMatches = await prisma.tournamentMatch.findMany({ where: { tournamentId: tId, bracket: "W" } });
+    expect(wMatches.length).toBe(3); // 2 R1 + 1 final
+    const lMatches = await prisma.tournamentMatch.findMany({ where: { tournamentId: tId, bracket: "L" } });
+    expect(lMatches.length).toBe(2); // pre-created L skeleton
+    const gfMatches = await prisma.tournamentMatch.findMany({ where: { tournamentId: tId, bracket: "GF" } });
+    expect(gfMatches.length).toBe(1); // pre-created GF game-1 slot
+
+    // report W round 1.
+    const wRound1 = await prisma.tournamentMatch.findMany({ where: { tournamentId: tId, bracket: "W", round: 1 }, orderBy: { slot: "asc" } });
+    for (const m of wRound1) {
+      const res = await app.inject({
+        method: "POST",
+        url: `/api/admin/tournaments/${tId}/matches/${m.id}/report`,
+        headers: { cookie: econCookie },
+        payload: { winnerEntryId: m.redEntryId, reason: "w1" },
+      });
+      expect(res.statusCode).toBe(200);
+    }
+
+    // complete too early (W-final not even reported) → 409 NOT_FINISHED.
+    const tooEarly = await app.inject({ method: "POST", url: `/api/admin/tournaments/${tId}/complete`, headers: { cookie: econCookie }, payload: { reason: "too early" } });
+    expect(tooEarly.statusCode).toBe(409);
+    expect(tooEarly.json().error.code).toBe("NOT_FINISHED");
+
+    // report W final.
+    const wFinal = await prisma.tournamentMatch.findFirstOrThrow({ where: { tournamentId: tId, bracket: "W", round: 2, slot: 0 } });
+    const wChampionId = wFinal.redEntryId!;
+    const wFinalReport = await app.inject({
+      method: "POST",
+      url: `/api/admin/tournaments/${tId}/matches/${wFinal.id}/report`,
+      headers: { cookie: econCookie },
+      payload: { winnerEntryId: wChampionId, reason: "wfinal" },
+    });
+    expect(wFinalReport.statusCode).toBe(200);
+
+    // report L round 1 (round 101).
+    const l1 = await prisma.tournamentMatch.findFirstOrThrow({ where: { tournamentId: tId, bracket: "L", round: 101, slot: 0 } });
+    const l1Report = await app.inject({
+      method: "POST",
+      url: `/api/admin/tournaments/${tId}/matches/${l1.id}/report`,
+      headers: { cookie: econCookie },
+      payload: { winnerEntryId: l1.redEntryId, reason: "l1" },
+    });
+    expect(l1Report.statusCode).toBe(200);
+
+    // report L final (round 102) — winner is the L-champion.
+    const l2 = await prisma.tournamentMatch.findFirstOrThrow({ where: { tournamentId: tId, bracket: "L", round: 102, slot: 0 } });
+    expect(l2.status).toBe("ready");
+    const lChampionId = l2.redEntryId!;
+    const l2Report = await app.inject({
+      method: "POST",
+      url: `/api/admin/tournaments/${tId}/matches/${l2.id}/report`,
+      headers: { cookie: econCookie },
+      payload: { winnerEntryId: lChampionId, reason: "l2" },
+    });
+    expect(l2Report.statusCode).toBe(200);
+
+    // Grand Final should now be ready: W-champ vs L-champ.
+    const gf = await prisma.tournamentMatch.findFirstOrThrow({ where: { tournamentId: tId, bracket: "GF", round: 201 } });
+    expect(gf.status).toBe("ready");
+    expect(gf.redEntryId).toBe(wChampionId);
+    expect(gf.blueEntryId).toBe(lChampionId);
+
+    // L-champion wins game 1 → BRACKET RESET via the route layer.
+    const gf1Report = await app.inject({
+      method: "POST",
+      url: `/api/admin/tournaments/${tId}/matches/${gf.id}/report`,
+      headers: { cookie: econCookie },
+      payload: { winnerEntryId: lChampionId, reason: "gf1" },
+    });
+    expect(gf1Report.statusCode).toBe(200);
+
+    const gf2 = await prisma.tournamentMatch.findFirstOrThrow({ where: { tournamentId: tId, bracket: "GF", round: 202 } });
+    expect(gf2.status).toBe("ready");
+
+    // complete still too early (reset game 2 not yet decided) → 409.
+    const stillEarly = await app.inject({ method: "POST", url: `/api/admin/tournaments/${tId}/complete`, headers: { cookie: econCookie }, payload: { reason: "too early 2" } });
+    expect(stillEarly.statusCode).toBe(409);
+    expect(stillEarly.json().error.code).toBe("NOT_FINISHED");
+
+    // W-champion wins the reset — they're the final champion.
+    const gf2Report = await app.inject({
+      method: "POST",
+      url: `/api/admin/tournaments/${tId}/matches/${gf2.id}/report`,
+      headers: { cookie: econCookie },
+      payload: { winnerEntryId: wChampionId, reason: "gf2 reset" },
+    });
+    expect(gf2Report.statusCode).toBe(200);
+
+    const completeRes = await app.inject({ method: "POST", url: `/api/admin/tournaments/${tId}/complete`, headers: { cookie: econCookie }, payload: { reason: "payout" } });
+    expect(completeRes.statusCode).toBe(200);
+    expect(completeRes.json().data.championEntryId).toBe(wChampionId);
+    expect(completeRes.json().data.runnerUpEntryId).toBe(lChampionId);
+
+    const after = await prisma.tournament.findUniqueOrThrow({ where: { id: tId } });
+    expect(after.status).toBe("COMPLETED");
+    const champUser = await prisma.user.findUniqueOrThrow({ where: { id: (await prisma.tournamentEntry.findUniqueOrThrow({ where: { id: wChampionId } })).userId } });
+    expect(champUser.gold).toBe(450 + 700); // joined with 500, paid 50 entry fee, won 700 prize
+
+    // re-complete → 409, no double-pay.
+    const reComplete = await app.inject({ method: "POST", url: `/api/admin/tournaments/${tId}/complete`, headers: { cookie: econCookie }, payload: { reason: "again" } });
+    expect(reComplete.statusCode).toBe(409);
+    expect(await prisma.ledgerEntry.count({ where: { reason: "tournament-prize" } })).toBe(2);
+
+    await app.close();
+  });
+
+  it("the admin detail route's bracket grouping carries each match's own `bracket` field (W/L/GF) so the client can render three columns", async () => {
+    const app = await buildTestApp();
+    const econ = await seedUser({ adminRole: "ECONOMY" });
+    const econCookie = authFor({ sub: econ.id, adminRole: "ECONOMY" });
+
+    const createRes = await app.inject({
+      method: "POST",
+      url: "/api/admin/tournaments",
+      headers: { cookie: econCookie },
+      payload: { ...validCreateBody, format: "DOUBLE_ELIM", maxPlayers: 4, entryFeeGold: 0, prizeSplitGold: [700, 300] },
+    });
+    const tId = createRes.json().data.id;
+    await app.inject({ method: "POST", url: `/api/admin/tournaments/${tId}/open`, headers: { cookie: econCookie }, payload: { reason: "go" } });
+    for (let i = 0; i < 4; i++) {
+      const p = await seedUser({ gold: 0 });
+      await app.inject({ method: "POST", url: `/api/tournaments/${tId}/join`, headers: { cookie: authFor({ sub: p.id }) } });
+      await new Promise((r) => setTimeout(r, 2));
+    }
+    await app.inject({ method: "POST", url: `/api/admin/tournaments/${tId}/start`, headers: { cookie: econCookie }, payload: { reason: "start" } });
+
+    const detailRes = await app.inject({ method: "GET", url: `/api/admin/tournaments/${tId}`, headers: { cookie: econCookie } });
+    expect(detailRes.statusCode).toBe(200);
+    const detail = detailRes.json().data;
+    const allMatches = Object.values(detail.bracket as Record<string, Array<{ bracket: string }>>).flat();
+    const brackets = new Set(allMatches.map((m) => m.bracket));
+    expect(brackets.has("W")).toBe(true);
+    expect(brackets.has("L")).toBe(true);
+    expect(brackets.has("GF")).toBe(true);
+
     await app.close();
   });
 });
