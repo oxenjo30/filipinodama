@@ -40,7 +40,7 @@ const NAV: NavItem[] = [
     ],
   },
   { label: "Leaderboard", to: "/leaderboard", mobileLabel: "Ranks" },
-  { label: "Cups", to: "/cups" },
+  { label: "Tournaments", to: "/tournaments", mobileLabel: "Cups" },
   { label: "Store", to: "/store" },
   { label: "Blog", to: "/blog" },
 ];

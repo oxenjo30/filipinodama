@@ -8,7 +8,7 @@ import { ICONS } from "../../lib/assets";
 import { FORMAT_LABEL, STATUS_META, formatStartsAt, type TournamentDetail, type TournamentEntry } from "./types";
 
 /**
- * TournamentDetailPage (/cups/:id) — one Cup's entry list + bracket.
+ * TournamentDetailPage (/tournaments/:id) — one Cup's entry list + bracket.
  *
  * DATA: GET /api/tournaments/:id → the tournament row + entries[] (with real
  * user avatar/username/tag) + bracket grouped by round (1..N) + myEntry (the
@@ -147,7 +147,7 @@ export function TournamentDetailPage() {
     if (!id) return;
     if (isGuest) {
       showToast("Sign in to join a Cup.");
-      navigate(`/login?next=/cups/${id}`);
+      navigate(`/login?next=/tournaments/${id}`);
       return;
     }
     setBusy(true);
@@ -191,7 +191,7 @@ export function TournamentDetailPage() {
       <div className="fd-page-pad" style={{ maxWidth: 980, margin: "0 auto", padding: 26 }}>
         <div className="frame" style={{ padding: 34, textAlign: "center", display: "flex", flexDirection: "column", alignItems: "center", gap: 12 }}>
           <div style={{ font: "500 13px Inter", color: "var(--ink2)" }}>This Cup couldn&rsquo;t be found.</div>
-          <button type="button" className="btn btn-gold" onClick={() => navigate("/cups")} style={{ padding: "9px 20px" }}>
+          <button type="button" className="btn btn-gold" onClick={() => navigate("/tournaments")} style={{ padding: "9px 20px" }}>
             Back to Cups
           </button>
         </div>
@@ -210,7 +210,7 @@ export function TournamentDetailPage() {
       <button
         type="button"
         className="fd-tap"
-        onClick={() => navigate("/cups")}
+        onClick={() => navigate("/tournaments")}
         style={{ alignSelf: "flex-start", background: "none", border: "none", padding: 0, color: "var(--gold)", font: "700 12px Inter", cursor: "pointer" }}
       >
         ← Back to Cups

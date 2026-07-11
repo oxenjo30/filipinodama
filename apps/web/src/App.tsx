@@ -130,8 +130,8 @@ export function App() {
           <Route path="/guilds/:id" element={<GuildProfilePage />} />
           <Route path="/quests" element={<QuestsPage />} />
           <Route path="/season" element={<SeasonPage />} />
-          <Route path="/cups" element={<TournamentsPage />} />
-          <Route path="/cups/:id" element={<TournamentDetailPage />} />
+          <Route path="/tournaments" element={<TournamentsPage />} />
+          <Route path="/tournaments/:id" element={<TournamentDetailPage />} />
           <Route path="/settings" element={<SettingsPage />} />
           <Route path="/legal" element={<Navigate to="/privacy" replace />} />
           <Route path="/privacy" element={<PrivacyPage />} />

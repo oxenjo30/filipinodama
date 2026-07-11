@@ -8,7 +8,7 @@ import { ICONS } from "../../lib/assets";
 import { FORMAT_LABEL, STATUS_META, formatStartsAt, type TournamentListItem } from "./types";
 
 /**
- * TournamentsPage (/cups) — the player-facing list of Cups (tournaments).
+ * TournamentsPage (/tournaments) — the player-facing list of Tournaments (Cups).
  *
  * DATA: GET /api/tournaments (default OPEN+RUNNING) → { items }. Each item
  * already carries `joined` (whether the signed-in user has an entry) and
@@ -204,7 +204,7 @@ export function TournamentsPage() {
     async (id: string) => {
       if (isGuest) {
         showToast("Sign in to join a Cup.");
-        navigate(`/login?next=/cups`);
+        navigate(`/login?next=/tournaments`);
         return;
       }
       setBusyId(id);
@@ -237,7 +237,7 @@ export function TournamentsPage() {
     [showToast, load],
   );
 
-  const onOpen = useCallback((id: string) => navigate(`/cups/${id}`), [navigate]);
+  const onOpen = useCallback((id: string) => navigate(`/tournaments/${id}`), [navigate]);
 
   const loading = items === null;
   const openCups = items?.filter((t) => t.status === "OPEN") ?? [];
@@ -251,7 +251,7 @@ export function TournamentsPage() {
     >
       <div>
         <div style={{ font: "700 12px Inter", letterSpacing: 3, color: "var(--gold)" }}>✦ COMPETE ✦</div>
-        <h1 style={{ margin: "9px 0 5px", font: "800 clamp(26px,3.4vw,36px) Cinzel,serif", color: "var(--gold-lt)" }}>Cups</h1>
+        <h1 style={{ margin: "9px 0 5px", font: "800 clamp(26px,3.4vw,36px) Cinzel,serif", color: "var(--gold-lt)" }}>Tournaments</h1>
         <p style={{ margin: 0, maxWidth: 560, font: "400 14px Inter", color: "var(--ink)", lineHeight: 1.5 }}>
           {isGuest
             ? "Sign in to enter Cups — bracket tournaments with a Gold entry fee and a Gold prize pool."
