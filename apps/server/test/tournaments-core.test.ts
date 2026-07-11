@@ -20,6 +20,8 @@ afterAll(async () => {
 
 async function seedTournament(overrides: Partial<{
   status: "DRAFT" | "OPEN" | "RUNNING" | "COMPLETED" | "CANCELLED";
+  format: "SINGLE_ELIM" | "ROUND_ROBIN" | "SWISS";
+  rounds: number | null;
   entryFeeGold: number;
   prizePoolGold: number;
   prizeSplitGold: number[];
@@ -33,6 +35,8 @@ async function seedTournament(overrides: Partial<{
     data: {
       name: "Test Cup",
       status: overrides.status ?? "OPEN",
+      format: overrides.format ?? "SINGLE_ELIM",
+      rounds: overrides.rounds ?? null,
       entryFeeGold: overrides.entryFeeGold ?? 0,
       prizePoolGold: overrides.prizePoolGold ?? 0,
       prizeSplitGold: overrides.prizeSplitGold ?? [],
@@ -844,6 +848,232 @@ describe("cancelTournament — refund all entrants exactly once", () => {
   it("cancel on COMPLETED tournament → 409 ALREADY_TERMINAL", async () => {
     const t = await seedTournament({ status: "COMPLETED" });
     await expect(cancelTournament(prisma, t.id, await actingAdmin(), "too late")).rejects.toMatchObject({ status: 409, code: "ALREADY_TERMINAL" });
+  });
+});
+
+describe("SWISS — progressive round generation (money-critical)", () => {
+  async function openSwiss(n: number, overrides: Partial<{ prizePoolGold: number; prizeSplitGold: number[]; rounds: number | null; entryFeeGold: number }> = {}) {
+    const t = await seedTournament({
+      status: "OPEN",
+      format: "SWISS",
+      maxPlayers: n,
+      rounds: overrides.rounds ?? null,
+      entryFeeGold: overrides.entryFeeGold ?? 0,
+      prizePoolGold: overrides.prizePoolGold ?? 0,
+      prizeSplitGold: overrides.prizeSplitGold ?? [],
+    });
+    const players = [];
+    for (let i = 0; i < n; i++) {
+      const u = await seedUser({ gold: overrides.entryFeeGold ? 1000 : 0 });
+      const entry = await joinTournament(prisma, t.id, u.id);
+      players.push({ user: u, entry });
+      await new Promise((r) => setTimeout(r, 2));
+    }
+    return { tournament: t, players };
+  }
+
+  it("start (n=4, rounds auto=2) → only round-1 matches created, tournament.rounds persisted", async () => {
+    const { tournament } = await openSwiss(4);
+    await startTournament(prisma, tournament.id, await actingAdmin());
+
+    const after = await prisma.tournament.findUniqueOrThrow({ where: { id: tournament.id } });
+    expect(after.status).toBe("RUNNING");
+    expect(after.rounds).toBe(2); // defaultSwissRounds(4) = ceil(log2(4)) = 2, persisted
+
+    const round1 = await prisma.tournamentMatch.findMany({ where: { tournamentId: tournament.id, round: 1 } });
+    expect(round1.length).toBe(2); // 4 players, no byes
+    expect(round1.every((m) => m.status === "ready")).toBe(true);
+    const round2 = await prisma.tournamentMatch.findMany({ where: { tournamentId: tournament.id, round: 2 } });
+    expect(round2.length).toBe(0); // round 2 NOT created yet — progressive generation
+  });
+
+  it("admin-provided rounds is honored (not overwritten by the auto default)", async () => {
+    const { tournament } = await openSwiss(4, { rounds: 5 });
+    await startTournament(prisma, tournament.id, await actingAdmin());
+    const after = await prisma.tournament.findUniqueOrThrow({ where: { id: tournament.id } });
+    expect(after.rounds).toBe(5);
+  });
+
+  it("report round-1 all done → round-2 auto-generated with correct (rematch-avoiding) pairings", async () => {
+    const { tournament } = await openSwiss(4);
+    await startTournament(prisma, tournament.id, await actingAdmin());
+
+    const round1 = await prisma.tournamentMatch.findMany({ where: { tournamentId: tournament.id, round: 1 }, orderBy: { slot: "asc" } });
+    expect(round1.length).toBe(2);
+
+    // report only ONE of the two round-1 matches — round 2 must NOT appear yet.
+    await reportResult(prisma, tournament.id, round1[0]!.id, round1[0]!.redEntryId!);
+    let round2 = await prisma.tournamentMatch.findMany({ where: { tournamentId: tournament.id, round: 2 } });
+    expect(round2.length).toBe(0);
+
+    // report the second → round 2 generates now.
+    await reportResult(prisma, tournament.id, round1[1]!.id, round1[1]!.redEntryId!);
+    round2 = await prisma.tournamentMatch.findMany({ where: { tournamentId: tournament.id, round: 2 } });
+    expect(round2.length).toBe(2);
+    expect(round2.every((m) => m.status === "ready" || m.status === "done")).toBe(true);
+
+    // rematch avoidance: round-1 winners (1-0) must be paired together, and
+    // round-1 losers (0-0) must be paired together — never a repeat of round 1.
+    const r1Winners = [round1[0]!.redEntryId!, round1[1]!.redEntryId!].sort();
+    const r1Losers = [round1[0]!.blueEntryId!, round1[1]!.blueEntryId!].sort();
+    const round2Pairs = round2.map((m) => [m.redEntryId, m.blueEntryId].sort());
+    expect(round2Pairs).toContainEqual(r1Winners);
+    expect(round2Pairs).toContainEqual(r1Losers);
+  });
+
+  it("report round-2 (the final configured round) → NOT_FINISHED lifts once all round-2 matches are done; complete succeeds", async () => {
+    const { tournament } = await openSwiss(4, { prizePoolGold: 1000, prizeSplitGold: [700, 300] });
+    await startTournament(prisma, tournament.id, await actingAdmin());
+    const round1 = await prisma.tournamentMatch.findMany({ where: { tournamentId: tournament.id, round: 1 }, orderBy: { slot: "asc" } });
+    await reportResult(prisma, tournament.id, round1[0]!.id, round1[0]!.redEntryId!);
+    await reportResult(prisma, tournament.id, round1[1]!.id, round1[1]!.redEntryId!);
+
+    const round2 = await prisma.tournamentMatch.findMany({ where: { tournamentId: tournament.id, round: 2 }, orderBy: { slot: "asc" } });
+    expect(round2.length).toBe(2);
+
+    // before round 2 is fully reported → complete is rejected
+    await expect(completeTournament(prisma, tournament.id, await actingAdmin(), "too early")).rejects.toMatchObject({ status: 409, code: "NOT_FINISHED" });
+
+    // report round 2 fully
+    for (const m of round2) {
+      await reportResult(prisma, tournament.id, m.id, m.redEntryId!);
+    }
+
+    // round 2 IS the final round (rounds=2) — no round 3 should ever be created.
+    const round3 = await prisma.tournamentMatch.findMany({ where: { tournamentId: tournament.id, round: 3 } });
+    expect(round3.length).toBe(0);
+
+    // now complete succeeds
+    const result = await completeTournament(prisma, tournament.id, await actingAdmin(), "payout");
+    expect(result.payout).toEqual([700, 300]);
+    const after = await prisma.tournament.findUniqueOrThrow({ where: { id: tournament.id } });
+    expect(after.status).toBe("COMPLETED");
+  });
+
+  it("standings correct on a constructed 4-player 2-round Swiss with known results → known placements → top-N paid to the right entries (ledger asserted), no double-pay on re-complete", async () => {
+    const { tournament, players } = await openSwiss(4, { prizePoolGold: 1000, prizeSplitGold: [600, 400] });
+    await startTournament(prisma, tournament.id, await actingAdmin());
+
+    // Round 1: seed1 vs seed3 (seed1 wins), seed2 vs seed4 (seed2 wins).
+    const round1 = await prisma.tournamentMatch.findMany({ where: { tournamentId: tournament.id, round: 1 }, orderBy: { slot: "asc" } });
+    for (const m of round1) {
+      await reportResult(prisma, tournament.id, m.id, m.redEntryId!); // red is always the top seed (i vs i+half)
+    }
+
+    // Round 2: winners (1-0) play each other, losers (0-0) play each other.
+    // Report round 2: the higher-seeded red side wins both games again.
+    const round2 = await prisma.tournamentMatch.findMany({ where: { tournamentId: tournament.id, round: 2 }, orderBy: { slot: "asc" } });
+    expect(round2.length).toBe(2);
+    for (const m of round2) {
+      await reportResult(prisma, tournament.id, m.id, m.redEntryId!);
+    }
+
+    const completingAdmin = await actingAdmin();
+    await completeTournament(prisma, tournament.id, completingAdmin, "payout");
+
+    const entries = await prisma.tournamentEntry.findMany({ where: { tournamentId: tournament.id } });
+    // The player with 2 wins (won round-1 AND round-2) is placement 1.
+    const champ = entries.find((e) => e.placement === 1)!;
+    const runnerUp = entries.find((e) => e.placement === 2)!;
+    expect(champ).toBeTruthy();
+    expect(runnerUp).toBeTruthy();
+    expect(champ.id).not.toBe(runnerUp.id);
+
+    const champUser = await prisma.user.findUniqueOrThrow({ where: { id: champ.userId } });
+    const runnerUser = await prisma.user.findUniqueOrThrow({ where: { id: runnerUp.userId } });
+    expect(champUser.gold).toBe(600);
+    expect(runnerUser.gold).toBe(400);
+
+    const prizeRows = await prisma.ledgerEntry.findMany({ where: { reason: "tournament-prize" } });
+    expect(prizeRows.length).toBe(2);
+    expect(prizeRows.reduce((s, r) => s + r.amount, 0)).toBe(1000);
+
+    // re-complete → 409, no double-pay
+    await expect(completeTournament(prisma, tournament.id, completingAdmin, "again")).rejects.toMatchObject({ status: 409, code: "ALREADY_TERMINAL" });
+    expect(await prisma.ledgerEntry.count({ where: { reason: "tournament-prize" } })).toBe(2);
+    void players;
+  });
+
+  it("odd-n Swiss (n=5): the bye player gets a point, no crash, standings include them, byes never repeat", async () => {
+    const { tournament } = await openSwiss(5, { prizePoolGold: 100, prizeSplitGold: [100] });
+    await startTournament(prisma, tournament.id, await actingAdmin());
+
+    const after = await prisma.tournament.findUniqueOrThrow({ where: { id: tournament.id } });
+    expect(after.rounds).toBe(3); // defaultSwissRounds(5) = ceil(log2(5)) = 3
+
+    let round1 = await prisma.tournamentMatch.findMany({ where: { tournamentId: tournament.id, round: 1 } });
+    expect(round1.length).toBe(3); // 2 games + 1 bye slot
+    const byeSlot1 = round1.find((m) => m.status === "done" && m.blueEntryId === null);
+    expect(byeSlot1).toBeTruthy();
+    expect(byeSlot1!.winnerEntryId).toBe(byeSlot1!.redEntryId);
+    const byeEntry1 = byeSlot1!.redEntryId!;
+
+    // report the two real round-1 games
+    for (const m of round1.filter((m) => m.blueEntryId !== null)) {
+      await reportResult(prisma, tournament.id, m.id, m.redEntryId!);
+    }
+
+    const round2 = await prisma.tournamentMatch.findMany({ where: { tournamentId: tournament.id, round: 2 } });
+    expect(round2.length).toBe(3); // 5 players odd → 2 games + 1 bye again
+    const byeSlot2 = round2.find((m) => m.status === "done" && m.blueEntryId === null);
+    expect(byeSlot2).toBeTruthy();
+    // the round-1 bye recipient must NOT receive the round-2 bye too (no repeat byes)
+    expect(byeSlot2!.redEntryId).not.toBe(byeEntry1);
+
+    // finish out the whole tournament without crashing
+    for (const m of round2.filter((m) => m.blueEntryId !== null)) {
+      await reportResult(prisma, tournament.id, m.id, m.redEntryId!);
+    }
+    const round3 = await prisma.tournamentMatch.findMany({ where: { tournamentId: tournament.id, round: 3 } });
+    expect(round3.length).toBeGreaterThan(0);
+    for (const m of round3.filter((m) => m.blueEntryId !== null && m.status === "ready")) {
+      await reportResult(prisma, tournament.id, m.id, m.redEntryId!);
+    }
+
+    const result = await completeTournament(prisma, tournament.id, await actingAdmin(), "payout");
+    expect(result.placements.length).toBe(5); // all 5 entries (incl. both bye recipients) show up in standings
+  });
+
+  it("CONCURRENT REPORT RACE at the last match of a round: only ONE of the two concurrent reports generates the next round (no duplicate round created)", async () => {
+    const { tournament } = await openSwiss(4);
+    await startTournament(prisma, tournament.id, await actingAdmin());
+    const round1 = await prisma.tournamentMatch.findMany({ where: { tournamentId: tournament.id, round: 1 }, orderBy: { slot: "asc" } });
+
+    // resolve the first match up front so only the SECOND (last) match's
+    // report is the one that triggers round-2 generation — fire that report
+    // twice concurrently to race the generation guard.
+    await reportResult(prisma, tournament.id, round1[0]!.id, round1[0]!.redEntryId!);
+
+    const lastSlot = round1[1]!;
+    const results = await Promise.allSettled([
+      reportResult(prisma, tournament.id, lastSlot.id, lastSlot.redEntryId!),
+      reportResult(prisma, tournament.id, lastSlot.id, lastSlot.redEntryId!),
+    ]);
+    const fulfilled = results.filter((r) => r.status === "fulfilled");
+    expect(fulfilled.length).toBe(1); // the slot itself can only resolve once (SLOT_DONE guard)
+
+    const round2 = await prisma.tournamentMatch.findMany({ where: { tournamentId: tournament.id, round: 2 } });
+    expect(round2.length).toBe(2); // generated exactly once, never doubled
+  });
+
+  it("entry fee + prize payout still money-safe end-to-end for SWISS (join charges, complete pays exactly prizePoolGold)", async () => {
+    const { tournament, players } = await openSwiss(4, { entryFeeGold: 50, prizePoolGold: 200, prizeSplitGold: [200] });
+    for (const p of players) {
+      expect(await goldOf(p.user.id)).toBe(950); // 1000 - 50 entry fee
+    }
+    await startTournament(prisma, tournament.id, await actingAdmin());
+    const round1 = await prisma.tournamentMatch.findMany({ where: { tournamentId: tournament.id, round: 1 }, orderBy: { slot: "asc" } });
+    for (const m of round1) await reportResult(prisma, tournament.id, m.id, m.redEntryId!);
+    const round2 = await prisma.tournamentMatch.findMany({ where: { tournamentId: tournament.id, round: 2 } });
+    for (const m of round2) await reportResult(prisma, tournament.id, m.id, m.redEntryId!);
+
+    await completeTournament(prisma, tournament.id, await actingAdmin(), "payout");
+    const prizeRows = await prisma.ledgerEntry.findMany({ where: { reason: "tournament-prize" } });
+    expect(prizeRows.length).toBe(1);
+    expect(prizeRows[0]!.amount).toBe(200);
+    const entryRows = await prisma.ledgerEntry.findMany({ where: { reason: "tournament-entry" } });
+    expect(entryRows.length).toBe(4);
+    expect(entryRows.every((r) => r.amount === -50)).toBe(true);
   });
 });
 

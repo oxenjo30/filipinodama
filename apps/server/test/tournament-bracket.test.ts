@@ -5,6 +5,10 @@ import {
   computePlacements,
   roundRobinSchedule,
   computeRoundRobinStandings,
+  defaultSwissRounds,
+  swissPairRound1,
+  swissPairNextRound,
+  computeSwissStandings,
 } from "../src/lib/tournament-bracket.js";
 
 describe("seedPairings (pure, no DB)", () => {
@@ -270,5 +274,310 @@ describe("computeRoundRobinStandings (pure, no DB)", () => {
     const standings = computeRoundRobinStandings(entries, matches);
     // no wins recorded — tie broken by seed
     expect(standings.map((s) => s.entryId)).toEqual(["A", "B"]);
+  });
+});
+
+// ─────────────────────────────── Swiss (pure) ──────────────────────────────
+
+describe("defaultSwissRounds (pure, no DB)", () => {
+  it("n=4 → 2 (ceil(log2(4)))", () => {
+    expect(defaultSwissRounds(4)).toBe(2);
+  });
+  it("n=8 → 3 (ceil(log2(8)))", () => {
+    expect(defaultSwissRounds(8)).toBe(3);
+  });
+  it("n=5 → 3 (ceil(log2(5)) = ceil(2.32))", () => {
+    expect(defaultSwissRounds(5)).toBe(3);
+  });
+  it("n=2 → 1 (min 1, ceil(log2(2))=1)", () => {
+    expect(defaultSwissRounds(2)).toBe(1);
+  });
+  it("n=1 → 1 (floor case, min clamps ceil(log2(1))=0 up to 1)", () => {
+    expect(defaultSwissRounds(1)).toBe(1);
+  });
+  it("n=16 → 4", () => {
+    expect(defaultSwissRounds(16)).toBe(4);
+  });
+});
+
+describe("swissPairRound1 (pure, no DB) — top-half vs bottom-half seeding", () => {
+  it("n=4 → seed1 vs seed3, seed2 vs seed4, no byes", () => {
+    const pairs = swissPairRound1([1, 2, 3, 4]);
+    expect(pairs.length).toBe(2);
+    expect(pairs.every((p) => !p.bye)).toBe(true);
+    const asSets = pairs.map((p) => [p.a, p.b].sort((x, y) => x! - y!));
+    expect(asSets).toContainEqual([1, 3]);
+    expect(asSets).toContainEqual([2, 4]);
+    // contiguous slot indices
+    expect(pairs.map((p) => p.slot).sort()).toEqual([0, 1]);
+  });
+
+  it("n=5 (odd) → 2 matches + 1 bye; the bye seat has no `b`", () => {
+    const pairs = swissPairRound1([1, 2, 3, 4, 5]);
+    expect(pairs.length).toBe(3);
+    const byes = pairs.filter((p) => p.bye);
+    const games = pairs.filter((p) => !p.bye);
+    expect(byes.length).toBe(1);
+    expect(games.length).toBe(2);
+    expect(byes[0]!.b).toBeUndefined();
+    // every seed 1..5 appears exactly once across all pairs/byes
+    const allSeeds = pairs.flatMap((p) => (p.bye ? [p.a] : [p.a, p.b])) as number[];
+    expect(allSeeds.sort((x, y) => x - y)).toEqual([1, 2, 3, 4, 5]);
+  });
+
+  it("n=8 → 4 pairings, top half (1-4) vs bottom half (5-8), no byes", () => {
+    const pairs = swissPairRound1([1, 2, 3, 4, 5, 6, 7, 8]);
+    expect(pairs.length).toBe(4);
+    expect(pairs.every((p) => !p.bye)).toBe(true);
+    const asSets = pairs.map((p) => [p.a, p.b].sort((x, y) => x! - y!));
+    expect(asSets).toContainEqual([1, 5]);
+    expect(asSets).toContainEqual([2, 6]);
+    expect(asSets).toContainEqual([3, 7]);
+    expect(asSets).toContainEqual([4, 8]);
+  });
+
+  it("n=2 → single pairing, no bye", () => {
+    const pairs = swissPairRound1([1, 2]);
+    expect(pairs).toEqual([{ slot: 0, a: 1, b: 2 }]);
+  });
+});
+
+describe("swissPairNextRound (pure, no DB) — score-group pairing with rematch avoidance", () => {
+  type Standing = { entryId: string; seed: number; score: number };
+
+  it("groups strictly by score: two 1-0 players paired together, two 0-0 players paired together", () => {
+    const standings: Standing[] = [
+      { entryId: "A", seed: 1, score: 1 },
+      { entryId: "B", seed: 2, score: 1 },
+      { entryId: "C", seed: 3, score: 0 },
+      { entryId: "D", seed: 4, score: 0 },
+    ];
+    const playedPairs = new Set<string>(["A|C", "B|D"]); // round-1 pairs already played
+    const pairs = swissPairNextRound(standings, playedPairs);
+    expect(pairs.length).toBe(2);
+    // no byes among the pairs (even count)
+    expect(pairs.every((p) => "bEntryId" in p)).toBe(true);
+    const asSets = pairs.map((p) => [p.aEntryId, (p as { bEntryId: string }).bEntryId].sort());
+    expect(asSets).toContainEqual(["A", "B"]);
+    expect(asSets).toContainEqual(["C", "D"]);
+  });
+
+  it("avoids a rematch when an alternative opponent in the same score group exists", () => {
+    // 4 players all tied at score 1; A already played B. Greedy pairing must
+    // NOT re-pair A with B when C or D is available.
+    const standings: Standing[] = [
+      { entryId: "A", seed: 1, score: 1 },
+      { entryId: "B", seed: 2, score: 1 },
+      { entryId: "C", seed: 3, score: 1 },
+      { entryId: "D", seed: 4, score: 1 },
+    ];
+    const playedPairs = new Set<string>(["A|B"]);
+    const pairs = swissPairNextRound(standings, playedPairs);
+    expect(pairs.length).toBe(2);
+    const aPair = pairs.find((p) => p.aEntryId === "A" || (p as { bEntryId?: string }).bEntryId === "A")!;
+    const aOpponent = aPair.aEntryId === "A" ? (aPair as { bEntryId: string }).bEntryId : aPair.aEntryId;
+    expect(aOpponent).not.toBe("B"); // rematch avoided
+  });
+
+  it("falls back to a rematch ONLY when it's the last resort (no other unplayed opponent left)", () => {
+    // Only 2 players left in this score group: A and B, and they've already
+    // played each other. There is no other option — the fallback must pair
+    // them anyway rather than leaving someone unpaired within their group.
+    const standings: Standing[] = [
+      { entryId: "A", seed: 1, score: 2 },
+      { entryId: "B", seed: 2, score: 2 },
+    ];
+    const playedPairs = new Set<string>(["A|B"]);
+    const pairs = swissPairNextRound(standings, playedPairs);
+    expect(pairs.length).toBe(1);
+    expect(pairs[0]).toMatchObject({ aEntryId: "A", bEntryId: "B" });
+  });
+
+  it("odd number of players → exactly one bye, given to the LOWEST-scored player without a prior bye", () => {
+    const standings: Standing[] = [
+      { entryId: "A", seed: 1, score: 2 },
+      { entryId: "B", seed: 2, score: 1 },
+      { entryId: "C", seed: 3, score: 1 },
+      { entryId: "D", seed: 4, score: 0 },
+      { entryId: "E", seed: 5, score: 0 },
+    ];
+    const playedPairs = new Set<string>();
+    const pairs = swissPairNextRound(standings, playedPairs, new Set());
+    const byes = pairs.filter((p) => "bye" in p && p.bye);
+    expect(byes.length).toBe(1);
+    // lowest score among D,E (tied at 0) — seed asc tiebreak picks D
+    expect(byes[0]!.aEntryId).toBe("D");
+    // remaining 4 players are fully paired (2 games)
+    const games = pairs.filter((p) => !("bye" in p && p.bye));
+    expect(games.length).toBe(2);
+  });
+
+  it("odd number of players → a player who already had a bye is never given a second one", () => {
+    const standings: Standing[] = [
+      { entryId: "A", seed: 1, score: 2 },
+      { entryId: "B", seed: 2, score: 1 },
+      { entryId: "C", seed: 3, score: 1 },
+      { entryId: "D", seed: 4, score: 0 }, // already had a bye
+      { entryId: "E", seed: 5, score: 0 },
+    ];
+    const playedPairs = new Set<string>();
+    const alreadyByed = new Set<string>(["D"]);
+    const pairs = swissPairNextRound(standings, playedPairs, alreadyByed);
+    const byes = pairs.filter((p) => "bye" in p && p.bye);
+    expect(byes.length).toBe(1);
+    expect(byes[0]!.aEntryId).toBe("E"); // D is skipped for the bye — E gets it instead
+  });
+
+  it("full 4-player, 2-round Swiss: round-2 pairing is correct and rematch-free", () => {
+    // Round 1: seed1 vs seed3 (seed1 wins), seed2 vs seed4 (seed2 wins).
+    // Standings after R1: seed1=1, seed2=1, seed3=0, seed4=0.
+    const standings: Standing[] = [
+      { entryId: "s1", seed: 1, score: 1 },
+      { entryId: "s2", seed: 2, score: 1 },
+      { entryId: "s3", seed: 3, score: 0 },
+      { entryId: "s4", seed: 4, score: 0 },
+    ];
+    const playedPairs = new Set<string>(["s1|s3", "s2|s4"]);
+    const pairs = swissPairNextRound(standings, playedPairs);
+    expect(pairs.length).toBe(2);
+    const asSets = pairs.map((p) => [p.aEntryId, (p as { bEntryId: string }).bEntryId].sort());
+    // score-group pairing: {s1,s2} (both 1-0) and {s3,s4} (both 0-0); neither
+    // pair is a repeat of round 1's {s1,s3}/{s2,s4}.
+    expect(asSets).toContainEqual(["s1", "s2"]);
+    expect(asSets).toContainEqual(["s3", "s4"]);
+  });
+
+  it("8-player, 3-round Swiss scenario: round-3 pairing groups by score and avoids all prior rematches", () => {
+    // After 2 rounds: two players at 2-0, four at 1-1, two at 0-2.
+    const standings: Standing[] = [
+      { entryId: "p1", seed: 1, score: 2 },
+      { entryId: "p2", seed: 2, score: 2 },
+      { entryId: "p3", seed: 3, score: 1 },
+      { entryId: "p4", seed: 4, score: 1 },
+      { entryId: "p5", seed: 5, score: 1 },
+      { entryId: "p6", seed: 6, score: 1 },
+      { entryId: "p7", seed: 7, score: 0 },
+      { entryId: "p8", seed: 8, score: 0 },
+    ];
+    const playedPairs = new Set<string>([
+      "p1|p5", "p2|p6", "p3|p7", "p4|p8", // round 1
+      "p1|p3", "p2|p4", "p5|p7", "p6|p8", // round 2
+    ]);
+    const pairs = swissPairNextRound(standings, playedPairs);
+    expect(pairs.length).toBe(4);
+    // no pair in round 3 repeats a played pair
+    for (const p of pairs) {
+      const b = (p as { bEntryId?: string }).bEntryId;
+      if (!b) continue;
+      const key = [p.aEntryId, b].sort().join("|");
+      expect(playedPairs.has(key)).toBe(false);
+    }
+    // the top score group (p1,p2 at 2-0) must play each other (only 2 in the group)
+    const topPair = pairs.find((p) => p.aEntryId === "p1" || (p as { bEntryId?: string }).bEntryId === "p1")!;
+    const topOpponent = topPair.aEntryId === "p1" ? (topPair as { bEntryId: string }).bEntryId : topPair.aEntryId;
+    expect(topOpponent).toBe("p2");
+  });
+
+  it("playedPairs uses a canonical unordered key — order of a/b in the pair doesn't matter for rematch detection", () => {
+    const standings: Standing[] = [
+      { entryId: "A", seed: 1, score: 1 },
+      { entryId: "B", seed: 2, score: 1 },
+      { entryId: "C", seed: 3, score: 1 },
+      { entryId: "D", seed: 4, score: 1 },
+    ];
+    // stored with B before A (reverse of alphabetical) — canonical key must still match
+    const playedPairs = new Set<string>([[...["B", "A"]].sort().join("|")]);
+    const pairs = swissPairNextRound(standings, playedPairs);
+    const aPair = pairs.find((p) => p.aEntryId === "A" || (p as { bEntryId?: string }).bEntryId === "A")!;
+    const aOpponent = aPair.aEntryId === "A" ? (aPair as { bEntryId: string }).bEntryId : aPair.aEntryId;
+    expect(aOpponent).not.toBe("B");
+  });
+});
+
+describe("computeSwissStandings (pure, no DB) — score, Buchholz tiebreak, seed tiebreak", () => {
+  type Entry = { id: string; seed: number };
+  type Match = { redEntryId: string; blueEntryId: string; winnerEntryId: string | null; status: string };
+
+  it("ranks by score (wins + byes) desc, no ties", () => {
+    const entries: Entry[] = [
+      { id: "A", seed: 1 },
+      { id: "B", seed: 2 },
+      { id: "C", seed: 3 },
+      { id: "D", seed: 4 },
+    ];
+    const matches: Match[] = [
+      { redEntryId: "A", blueEntryId: "B", winnerEntryId: "A", status: "done" },
+      { redEntryId: "C", blueEntryId: "D", winnerEntryId: "C", status: "done" },
+      { redEntryId: "A", blueEntryId: "C", winnerEntryId: "A", status: "done" },
+      { redEntryId: "B", blueEntryId: "D", winnerEntryId: "B", status: "done" },
+    ];
+    const standings = computeSwissStandings(entries, matches, new Set());
+    // A: 2 wins, B: 1, C: 1, D: 0
+    expect(standings.find((s) => s.entryId === "A")!.placement).toBe(1);
+    expect(standings.find((s) => s.entryId === "D")!.placement).toBe(4);
+  });
+
+  it("a bye counts as a win (1 point) for standings purposes", () => {
+    const entries: Entry[] = [
+      { id: "A", seed: 1 },
+      { id: "B", seed: 2 },
+      { id: "C", seed: 3 },
+    ];
+    // A beats B; C sits out with a bye (also 1 point, undefeated).
+    const matches: Match[] = [{ redEntryId: "A", blueEntryId: "B", winnerEntryId: "A", status: "done" }];
+    const standings = computeSwissStandings(entries, matches, new Set(["C"]));
+    const aScore = standings.find((s) => s.entryId === "A")!;
+    const cScore = standings.find((s) => s.entryId === "C")!;
+    // both A and C have 1 point; without further match data to compute a
+    // decisive Buchholz gap here, just confirm both outrank B (0 points).
+    const bPlacement = standings.find((s) => s.entryId === "B")!.placement;
+    expect(aScore.placement).toBeLessThan(bPlacement);
+    expect(cScore.placement).toBeLessThan(bPlacement);
+  });
+
+  it("a tie in score is broken by Buchholz (sum of opponents' final scores) — higher Buchholz ranks better", () => {
+    // A and B both finish with 1 win. A's one win was against a strong
+    // opponent (2 wins); B's one win was against a weak opponent (0 wins).
+    // A's Buchholz (2) > B's Buchholz (0) → A ranks above B.
+    const entries: Entry[] = [
+      { id: "A", seed: 2 }, // deliberately worse seed than B, to prove Buchholz wins over seed
+      { id: "B", seed: 1 },
+      { id: "Strong", seed: 3 },
+      { id: "Weak", seed: 4 },
+    ];
+    const matches: Match[] = [
+      { redEntryId: "Strong", blueEntryId: "X", winnerEntryId: "Strong", status: "done" }, // Strong's 2nd win (below)
+      { redEntryId: "A", blueEntryId: "Strong", winnerEntryId: "A", status: "done" }, // A beats Strong
+      { redEntryId: "B", blueEntryId: "Weak", winnerEntryId: "B", status: "done" }, // B beats Weak
+      { redEntryId: "Strong", blueEntryId: "Y", winnerEntryId: "Strong", status: "done" }, // Strong's other win
+    ];
+    // Note: "X" and "Y" are opponents not in `entries` (irrelevant filler
+    // matches) — Strong ends with 2 wins from matches vs X and Y (plus the
+    // loss to A). Weak ends with 0 wins.
+    const standings = computeSwissStandings(entries, matches, new Set());
+    const aPlace = standings.find((s) => s.entryId === "A")!.placement;
+    const bPlace = standings.find((s) => s.entryId === "B")!.placement;
+    expect(aPlace).toBeLessThan(bPlace); // A (beat a 2-win opponent) ranks above B (beat a 0-win opponent)
+  });
+
+  it("a 3-way tie in both score AND Buchholz falls back to seed asc as the final, stable tiebreak", () => {
+    const entries: Entry[] = [
+      { id: "X", seed: 7 },
+      { id: "Y", seed: 3 },
+      { id: "Z", seed: 9 },
+    ];
+    // No matches at all → everyone is tied at score 0 and Buchholz 0.
+    const standings = computeSwissStandings(entries, [], new Set());
+    expect(standings.map((s) => s.entryId)).toEqual(["Y", "X", "Z"]); // seed asc: 3,7,9
+  });
+
+  it("ignores not-done matches when tallying score", () => {
+    const entries: Entry[] = [
+      { id: "A", seed: 1 },
+      { id: "B", seed: 2 },
+    ];
+    const matches: Match[] = [{ redEntryId: "A", blueEntryId: "B", winnerEntryId: null, status: "ready" }];
+    const standings = computeSwissStandings(entries, matches, new Set());
+    expect(standings.map((s) => s.entryId)).toEqual(["A", "B"]); // both 0 pts — seed asc
   });
 });

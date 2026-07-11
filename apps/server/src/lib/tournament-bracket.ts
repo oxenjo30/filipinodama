@@ -334,3 +334,175 @@ export async function resolveRoundRobinSlot(
 
   return { tournamentId: slotRow.tournamentId, round: slotRow.round, slot: slotRow.slot };
 }
+
+// ─────────────────────────────── Swiss (pure) ──────────────────────────────
+
+/**
+ * Default number of Swiss rounds for `n` entries: ceil(log2(n)), min 1 — the
+ * fewest rounds needed for the field to (in principle) separate into a
+ * unique undefeated leader. Admin-settable at create/start; this is only the
+ * fallback used when `Tournament.rounds` is left null.
+ */
+export function defaultSwissRounds(n: number): number {
+  return Math.max(1, Math.ceil(Math.log2(Math.max(n, 1))));
+}
+
+/**
+ * Round-1 Swiss pairing: standard "top half vs bottom half" — seed `i`
+ * (1-indexed, i=1..floor(n/2)) plays seed `i + ceil(n/2)`. This spreads the
+ * strongest seeds across the field's two halves instead of clustering them
+ * (contrast with single-elim's 1-vs-n seeding, which is deliberately
+ * top-heavy for a knockout bracket — Swiss round 1 has no elimination
+ * stakes, so an even split is the standard convention).
+ *
+ * Odd n: the last seed (seed n, the one left over once the top/bottom split
+ * is taken) sits out with a bye — represented as `{ slot, a: seed, bye: true }`
+ * with no `b`. Pure — no I/O.
+ */
+export function swissPairRound1(seeds: number[]): Array<{ slot: number; a: number; b?: number; bye?: true }> {
+  const n = seeds.length;
+  const half = Math.ceil(n / 2);
+  const out: Array<{ slot: number; a: number; b?: number; bye?: true }> = [];
+  let slot = 0;
+  for (let i = 0; i < Math.floor(n / 2); i++) {
+    out.push({ slot: slot++, a: seeds[i]!, b: seeds[i + half]! });
+  }
+  if (n % 2 === 1) {
+    // The unpaired seed is the one at index `half - 1` (0-indexed) — i.e.
+    // the last seed of the top half, which has no bottom-half partner when
+    // n is odd (e.g. n=5, half=3: seeds[0..1] pair with seeds[3..4]; seeds[2]
+    // is left over).
+    out.push({ slot: slot++, a: seeds[half - 1]!, bye: true });
+  }
+  return out;
+}
+
+/** One player's running Swiss score, for `swissPairNextRound`. */
+export type SwissStanding = { entryId: string; seed: number; score: number };
+export type SwissNextRoundPairing =
+  | { aEntryId: string; bEntryId: string }
+  | { aEntryId: string; bye: true };
+
+/** Canonical unordered key for a pair of entry ids — order-independent. */
+function pairKey(a: string, b: string): string {
+  return a < b ? `${a}|${b}` : `${b}|${a}`;
+}
+
+/**
+ * Generate the NEXT Swiss round's pairings from the standings-so-far. Core
+ * algorithm (standard Swiss pairing):
+ *  1. Sort all players by score desc, then seed asc (stable ordering within
+ *     a score group — the highest seed in a tied group pairs first).
+ *  2. Odd count → pull out ONE bye first: the LOWEST-scored player who has
+ *     not already had a bye (scanning from the bottom of the sorted order;
+ *     `alreadyByed` tracks who's had one). This keeps byes going to
+ *     lower-ranked players and never repeats one.
+ *  3. Walk the remaining (even-length) sorted list top to bottom. For each
+ *     still-unpaired player, greedily pick the NEAREST still-unpaired
+ *     opponent (in sorted order) they have NOT already played
+ *     (`playedPairs`, canonical `min|max`-of-ids key). This naturally keeps
+ *     pairings within (or as close as possible to) the same score group.
+ *  4. Fallback: if a player's only remaining unpaired opponents are all
+ *     rematches (can happen late in a group when few players remain), pair
+ *     with the nearest one anyway — a forced rematch beats leaving someone
+ *     unpaired. (Documented last-resort per the spec.)
+ *
+ * Pure — no I/O. `alreadyByed` is optional (defaults to empty) so single-bye
+ * scenarios don't need to pass it explicitly.
+ */
+export function swissPairNextRound(
+  standings: SwissStanding[],
+  playedPairs: Set<string>,
+  alreadyByed: Set<string> = new Set(),
+): SwissNextRoundPairing[] {
+  const sorted = [...standings].sort((a, b) => b.score - a.score || a.seed - b.seed);
+  const out: SwissNextRoundPairing[] = [];
+
+  let pool = sorted;
+  if (pool.length % 2 === 1) {
+    // Lowest-scored player without a prior bye — `sorted` is already score
+    // desc/seed asc, so scanning from the bottom and taking the FIRST
+    // bye-eligible candidate we meet naturally yields "lowest score, and
+    // among ties the lowest seed" (since seed-asc ties sort earlier, i.e.
+    // are encountered LATER when scanning from the bottom... so within a
+    // tied-score group we must scan that group in seed-ascending order, not
+    // take whichever is nearest the very end). Find the minimum score among
+    // bye-eligible candidates, then the lowest-seed entry at that score.
+    const eligible = pool.filter((p) => !alreadyByed.has(p.entryId));
+    const candidates = eligible.length > 0 ? eligible : pool; // fallback: everyone's had a bye already
+    const minScore = Math.min(...candidates.map((p) => p.score));
+    const lowestGroup = candidates.filter((p) => p.score === minScore);
+    const byePlayer = lowestGroup.sort((a, b) => a.seed - b.seed)[0]!;
+    out.push({ aEntryId: byePlayer.entryId, bye: true });
+    pool = pool.filter((p) => p.entryId !== byePlayer.entryId);
+  }
+
+  const unpaired = [...pool];
+  while (unpaired.length > 0) {
+    const player = unpaired.shift()!;
+    // Prefer a non-rematch opponent, nearest in sorted (score/seed) order.
+    let opponentIdx = unpaired.findIndex((o) => !playedPairs.has(pairKey(player.entryId, o.entryId)));
+    if (opponentIdx === -1) {
+      // Last resort: every remaining candidate is a rematch — take the nearest.
+      opponentIdx = 0;
+    }
+    const opponent = unpaired.splice(opponentIdx, 1)[0]!;
+    out.push({ aEntryId: player.entryId, bEntryId: opponent.entryId });
+  }
+
+  return out;
+}
+
+export type SwissEntryLike = { id: string; seed: number | null };
+export type SwissMatchLike = {
+  redEntryId: string;
+  blueEntryId: string;
+  winnerEntryId: string | null;
+  status: string;
+};
+
+/**
+ * Final Swiss standings: score = wins + byes (1 point each, from `matches`
+ * plus `byeEntryIds` — the set of entries that received a bye at ANY point,
+ * one point each since a Swiss run never grants the same entry two byes).
+ * Tiebreak: (1) score desc, (2) Buchholz (sum of each opponent's OWN final
+ * score, over every opponent this entry actually played — byes contribute no
+ * opponent) desc, (3) seed asc as the final, always-stable tiebreak.
+ * Pure — no I/O.
+ */
+export function computeSwissStandings(
+  entries: SwissEntryLike[],
+  matches: SwissMatchLike[],
+  byeEntryIds: Set<string>,
+): Array<{ entryId: string; placement: number }> {
+  const score = new Map<string, number>();
+  for (const e of entries) score.set(e.id, byeEntryIds.has(e.id) ? 1 : 0);
+
+  const opponents = new Map<string, string[]>();
+  const addOpponent = (a: string, b: string) => {
+    if (!opponents.has(a)) opponents.set(a, []);
+    opponents.get(a)!.push(b);
+  };
+
+  for (const m of matches) {
+    if (m.status !== "done" || !m.winnerEntryId) continue;
+    score.set(m.winnerEntryId, (score.get(m.winnerEntryId) ?? 0) + 1);
+    addOpponent(m.redEntryId, m.blueEntryId);
+    addOpponent(m.blueEntryId, m.redEntryId);
+  }
+
+  const seedOf = (id: string) => entries.find((e) => e.id === id)?.seed ?? Number.MAX_SAFE_INTEGER;
+  const buchholzOf = (id: string) => (opponents.get(id) ?? []).reduce((sum, oppId) => sum + (score.get(oppId) ?? 0), 0);
+
+  const ranked = [...entries].sort((a, b) => {
+    const sa = score.get(a.id) ?? 0;
+    const sb = score.get(b.id) ?? 0;
+    if (sa !== sb) return sb - sa;
+    const ba = buchholzOf(a.id);
+    const bb = buchholzOf(b.id);
+    if (ba !== bb) return bb - ba;
+    return seedOf(a.id) - seedOf(b.id);
+  });
+
+  return ranked.map((e, i) => ({ entryId: e.id, placement: i + 1 }));
+}

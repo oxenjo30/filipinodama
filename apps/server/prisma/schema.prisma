@@ -639,6 +639,12 @@ model Tournament {
   minTrophies     Int              @default(0)    // trophy gate to join (0 = open to all)
   matchMode       MatchMode        @default(CASUAL) // the MatchMode tournament games run as (see below)
 
+  // SWISS ONLY: the configured number of Swiss rounds. Admin-settable at
+  // create (optional); if left null, Start computes+persists
+  // defaultSwissRounds(n) = ceil(log2(n)) the first time the tournament
+  // starts. Unused (stays null) for every other format.
+  rounds        Int?
+
   startsAt      DateTime?        // descriptive in V1 (admin-triggered start); scheduler is V2
 
   // Prize distribution — V1 pays ONLY the champion and runner-up (see "Prize payout

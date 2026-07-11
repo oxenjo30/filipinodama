@@ -36,6 +36,11 @@ import {
   resolveRoundRobinSlot,
   roundRobinSchedule,
   computeRoundRobinStandings,
+  defaultSwissRounds,
+  swissPairRound1,
+  swissPairNextRound,
+  computeSwissStandings,
+  type SwissStanding,
 } from "../lib/tournament-bracket.js";
 
 type Tx = Prisma.TransactionClient;
@@ -177,6 +182,9 @@ export async function startTournament(db: Db, tournamentId: string, actorId: str
   try {
     if (tournament.format === "ROUND_ROBIN") {
       return await startRoundRobin(db, tournamentId, clamped, actorId);
+    }
+    if (tournament.format === "SWISS") {
+      return await startSwiss(db, tournamentId, tournament.rounds, clamped, actorId);
     }
     return await startSingleElim(db, tournamentId, n, clamped, actorId);
   } catch (e) {
@@ -329,15 +337,88 @@ async function startRoundRobin(db: Db, tournamentId: string, clamped: Array<{ id
   });
 }
 
+/**
+ * SWISS start branch — assign seeds by joinedAt order (same as the other
+ * formats), resolve `rounds` (the admin-set value if present, else
+ * `defaultSwissRounds(n)` — PERSISTED onto the tournament row the first time
+ * it starts, since every later progressive-generation step needs a stable
+ * final-round number to stop at), then create ONLY round 1 via
+ * `swissPairRound1`. Unlike RR, later rounds are NOT created here — they're
+ * generated progressively by `reportResult` as each round completes (see
+ * `maybeGenerateNextSwissRound` below). A bye slot is represented exactly
+ * like single-elim's bye: `status:"done"`, `winnerEntryId` = the present
+ * entry, `blueEntryId` stays null — so `computeSwissStandings`'s
+ * `byeEntryIds` set and the "no repeat byes" rule can both be derived
+ * straight from TournamentMatch rows with no separate bookkeeping table.
+ */
+async function startSwiss(
+  db: Db,
+  tournamentId: string,
+  configuredRounds: number | null,
+  clamped: Array<{ id: string }>,
+  actorId: string,
+) {
+  const n = clamped.length;
+  const rounds = configuredRounds ?? defaultSwissRounds(n);
+
+  return db.$transaction(async (tx) => {
+    const flip = await tx.tournament.updateMany({ where: { id: tournamentId, status: "OPEN" }, data: { status: "RUNNING", startedAt: new Date(), rounds } });
+    if (flip.count === 0) throw new Error("ALREADY_STARTED");
+
+    for (let i = 0; i < clamped.length; i++) {
+      await tx.tournamentEntry.update({ where: { id: clamped[i]!.id }, data: { seed: i + 1 } });
+    }
+    const bySeed = new Map<number, (typeof clamped)[number]>();
+    clamped.forEach((e, i) => bySeed.set(i + 1, e));
+
+    const pairs = swissPairRound1(clamped.map((_, i) => i + 1));
+    for (const p of pairs) {
+      const aEntry = bySeed.get(p.a)!;
+      const bEntry = p.bye ? null : bySeed.get(p.b!)!;
+      await tx.tournamentMatch.create({
+        data: {
+          tournamentId,
+          round: 1,
+          slot: p.slot,
+          redEntryId: aEntry.id,
+          blueEntryId: bEntry?.id ?? null,
+          status: p.bye ? "done" : "ready",
+          winnerEntryId: p.bye ? aEntry.id : null,
+          resolvedAt: p.bye ? new Date() : null,
+        },
+      });
+    }
+
+    await audit(tx, {
+      actorId,
+      action: "tournament.start",
+      targetType: "tournament",
+      targetId: tournamentId,
+      before: { status: "OPEN" },
+      after: { status: "RUNNING", n, rounds, format: "SWISS" },
+      reason: "admin start",
+    });
+
+    return { bracketSize: n, rounds, seededCount: n };
+  });
+}
+
 // ─────────────────────────── Report result (advance) ───────────────────────────
 
 /**
  * The only V1 bracket-advance path: admin reports the winner of a `ready`
  * slot. Delegates to resolveTournamentSlot (elimination formats — advances
  * the winner into a parent slot + eliminates the loser) or
- * resolveRoundRobinSlot (ROUND_ROBIN — just marks the slot done, no advance,
- * no elimination) depending on the tournament's format; this wrapper adds
- * the tournament-scope lookup + audit row shared by both.
+ * resolveRoundRobinSlot (ROUND_ROBIN and SWISS — just marks the slot done,
+ * no advance, no elimination; SWISS reuses the exact same resolve semantics
+ * as RR since neither format has a bracket tree to advance into) depending
+ * on the tournament's format; this wrapper adds the tournament-scope lookup
+ * + audit row shared by all three.
+ *
+ * SWISS-only: after resolving, if that slot's round is now fully reported
+ * AND it isn't the tournament's final configured round, the next round's
+ * pairings are generated right here (same transaction) — see
+ * `maybeGenerateNextSwissRound`.
  *
  * `actorId` is optional so this function is directly testable without a
  * caller identity; the route task must always pass `req.userId!` in
@@ -356,12 +437,16 @@ export async function reportResult(
   if (!slot || slot.tournamentId !== tournamentId) throw err.notFound("NO_TOURNAMENT_MATCH", "Tournament match slot not found");
 
   return db.$transaction(async (tx) => {
-    if (tournament.format === "ROUND_ROBIN") {
+    if (tournament.format === "ROUND_ROBIN" || tournament.format === "SWISS") {
       await resolveRoundRobinSlot(tx, tmId, winnerEntryId, opts.matchId ?? null);
     } else {
       await resolveTournamentSlot(tx, tmId, winnerEntryId, opts.matchId ?? null);
     }
     const after = await tx.tournamentMatch.findUniqueOrThrow({ where: { id: tmId } });
+
+    if (tournament.format === "SWISS") {
+      await maybeGenerateNextSwissRound(tx, tournament.id, tournament.rounds!, after.round);
+    }
 
     if (opts.actorId) {
       await audit(tx, {
@@ -377,6 +462,85 @@ export async function reportResult(
 
     return after;
   });
+}
+
+/**
+ * SWISS progressive round generation. Checks whether `justResolvedRound` is
+ * now fully done (every match in that round has status "done"); if so AND
+ * it's not yet the final configured round, computes standings-so-far +
+ * the set of already-played pairs from every existing TournamentMatch row,
+ * pairs the next round via `swissPairNextRound`, and creates those matches.
+ *
+ * CONCURRENCY GUARD: two reports racing to complete the same round's last
+ * two matches could both observe "round fully done" and both try to
+ * generate round+1. The guard is the same shape as every other atomic claim
+ * in this module — but here it's a UNIQUE-CONSTRAINT race, not an
+ * updateMany claim: `TournamentMatch.@@unique([tournamentId,round,slot])`
+ * means the SECOND transaction's createMany for round+1 collides on
+ * (tournamentId, round+1, slot=0) and throws P2002, which is caught and
+ * treated as "already generated by the other transaction" (a no-op, not an
+ * error) — so exactly one generation ever survives, never zero, never two.
+ */
+async function maybeGenerateNextSwissRound(tx: Tx, tournamentId: string, finalRound: number, justResolvedRound: number) {
+  if (justResolvedRound >= finalRound) return; // final round done — nothing more to generate, Complete takes over
+
+  const roundMatches = await tx.tournamentMatch.findMany({ where: { tournamentId, round: justResolvedRound } });
+  if (roundMatches.length === 0 || roundMatches.some((m) => m.status !== "done")) return; // round not fully done yet
+
+  const nextRound = justResolvedRound + 1;
+  const existingNext = await tx.tournamentMatch.count({ where: { tournamentId, round: nextRound } });
+  if (existingNext > 0) return; // already generated (by this call or a race winner)
+
+  const entries = await tx.tournamentEntry.findMany({ where: { tournamentId }, select: { id: true, seed: true } });
+  const allMatches = await tx.tournamentMatch.findMany({
+    where: { tournamentId },
+    select: { redEntryId: true, blueEntryId: true, winnerEntryId: true, status: true },
+  });
+
+  const standings: SwissStanding[] = entries.map((e) => {
+    let score = 0;
+    for (const m of allMatches) {
+      if (m.status !== "done" || !m.winnerEntryId) continue;
+      if (m.winnerEntryId !== e.id) continue;
+      score += 1; // a bye's "match" also sets winnerEntryId=the bye recipient, so this counts byes too
+    }
+    return { entryId: e.id, seed: e.seed ?? Number.MAX_SAFE_INTEGER, score };
+  });
+
+  const playedPairs = new Set<string>();
+  const byeEntryIds = new Set<string>();
+  for (const m of allMatches) {
+    if (m.redEntryId && m.blueEntryId) {
+      const key = m.redEntryId < m.blueEntryId ? `${m.redEntryId}|${m.blueEntryId}` : `${m.blueEntryId}|${m.redEntryId}`;
+      playedPairs.add(key);
+    } else if (m.redEntryId && !m.blueEntryId && m.status === "done") {
+      byeEntryIds.add(m.redEntryId); // this entry already had a bye — never give it a second one
+    }
+  }
+
+  const pairings = swissPairNextRound(standings, playedPairs, byeEntryIds);
+
+  try {
+    let slot = 0;
+    for (const p of pairings) {
+      const isBye = "bye" in p && p.bye;
+      await tx.tournamentMatch.create({
+        data: {
+          tournamentId,
+          round: nextRound,
+          slot: slot++,
+          redEntryId: p.aEntryId,
+          blueEntryId: isBye ? null : (p as { bEntryId: string }).bEntryId,
+          status: isBye ? "done" : "ready",
+          winnerEntryId: isBye ? p.aEntryId : null,
+          resolvedAt: isBye ? new Date() : null,
+        },
+      });
+    }
+  } catch (e) {
+    if (isP2002(e)) return; // lost the generation race — the other transaction already created this round
+    throw e;
+  }
 }
 
 // ─────────────────────────── Complete (pay prizes) ───────────────────────────
@@ -428,6 +592,16 @@ export async function completeTournament(db: Db, tournamentId: string, actorId: 
     const unfinished = await db.tournamentMatch.count({ where: { tournamentId, status: { not: "done" } } });
     const total = await db.tournamentMatch.count({ where: { tournamentId } });
     if (total === 0 || unfinished > 0) throw err.conflict("NOT_FINISHED", "Not every round-robin match has been reported yet");
+  } else if (tournament.format === "SWISS") {
+    // Ready only once the FINAL configured round exists and every match in
+    // it is done — earlier rounds being incomplete is impossible to reach
+    // here (progressive generation only creates round+1 once round is fully
+    // done), but an in-progress final round (or the final round not yet
+    // generated because an earlier round is still open) must still 409.
+    const finalRoundMatches = await db.tournamentMatch.findMany({ where: { tournamentId, round: tournament.rounds ?? -1 } });
+    if (finalRoundMatches.length === 0 || finalRoundMatches.some((m) => m.status !== "done")) {
+      throw err.conflict("NOT_FINISHED", "Not every Swiss round has been reported yet");
+    }
   } else {
     // Elimination formats: find the final round's done slot (the champion).
     const maxRoundRow = await db.tournamentMatch.findFirst({ where: { tournamentId }, orderBy: { round: "desc" } });
@@ -445,7 +619,11 @@ export async function completeTournament(db: Db, tournamentId: string, actorId: 
       if (flip.count === 0) throw new Error("ALREADY_TERMINAL");
 
       const placements: PlacementRow[] =
-        tournament.format === "ROUND_ROBIN" ? await computeRoundRobinPlacements(tx, tournamentId) : await computeSingleElimPlacements(tx, tournamentId);
+        tournament.format === "ROUND_ROBIN"
+          ? await computeRoundRobinPlacements(tx, tournamentId)
+          : tournament.format === "SWISS"
+            ? await computeSwissPlacements(tx, tournamentId)
+            : await computeSingleElimPlacements(tx, tournamentId);
 
       for (const p of placements) {
         await tx.tournamentEntry.update({ where: { id: p.entryId }, data: { placement: p.placement } }).catch(() => {});
@@ -531,6 +709,38 @@ async function computeRoundRobinPlacements(tx: Tx, tournamentId: string): Promis
       .map((m) => ({ redEntryId: m.redEntryId, blueEntryId: m.blueEntryId, winnerEntryId: m.winnerEntryId, status: m.status })),
   );
   return standings;
+}
+
+/**
+ * SWISS placement branch — ranks by computeSwissStandings (score = wins +
+ * byes desc, Buchholz desc, seed asc), placements 1..n. `byeEntryIds` is
+ * every entry that has a `done` bye slot (blueEntryId null) anywhere in the
+ * match history — same derivation `maybeGenerateNextSwissRound` uses to
+ * avoid repeat byes, reused here so a bye's point is counted at Complete
+ * exactly the same way it was counted while pairing rounds.
+ */
+async function computeSwissPlacements(tx: Tx, tournamentId: string): Promise<PlacementRow[]> {
+  const entries = await tx.tournamentEntry.findMany({ where: { tournamentId }, select: { id: true, seed: true } });
+  const matches = await tx.tournamentMatch.findMany({
+    where: { tournamentId },
+    select: { redEntryId: true, blueEntryId: true, winnerEntryId: true, status: true },
+  });
+
+  const byeEntryIds = new Set<string>();
+  const realMatches: Array<{ redEntryId: string; blueEntryId: string; winnerEntryId: string | null; status: string }> = [];
+  for (const m of matches) {
+    if (m.redEntryId && m.blueEntryId) {
+      realMatches.push({ redEntryId: m.redEntryId, blueEntryId: m.blueEntryId, winnerEntryId: m.winnerEntryId, status: m.status });
+    } else if (m.redEntryId && !m.blueEntryId && m.status === "done") {
+      byeEntryIds.add(m.redEntryId);
+    }
+  }
+
+  return computeSwissStandings(
+    entries.map((e) => ({ id: e.id, seed: e.seed })),
+    realMatches,
+    byeEntryIds,
+  );
 }
 
 // ─────────────────────────── Cancel (refund all) ───────────────────────────
