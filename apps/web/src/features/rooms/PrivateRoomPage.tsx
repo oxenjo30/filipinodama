@@ -11,6 +11,7 @@ import { useSettingsStore } from "../../stores/settingsStore";
 import { useGameSounds } from "../../lib/useGameSounds";
 import { Board } from "../../components";
 import { ShareInviteModal } from "./ShareInviteModal";
+import { MatchChat, type MatchChatMsg } from "../play/MatchChat";
 
 /**
  * PrivateRoomPage — Private Match / Invite lobby, ported from the approved
@@ -69,8 +70,6 @@ const MOVE_TIMERS: { key: MoveKey; label: string }[] = [
   { key: "30", label: "30s" },
   { key: "off", label: "Off" },
 ];
-const EMOTES = ["👋 Hi!", "😄 GG", "🔥 Let's go", "🤝 Good luck"];
-
 /** Map the room's authoritative moveTimerSec → the segmented Move Timer key. */
 function moveKeyFromSettings(s: GameSettings): MoveKey {
   const v = s.moveTimerSec;
@@ -152,7 +151,6 @@ export function PrivateRoomPage() {
   const [mode, setMode] = useState<ModeKey>("classic");
   const [time, setTime] = useState<TimeKey>("10");
   const [allowSpec, setAllowSpec] = useState(true);
-  const [chatInput, setChatInput] = useState("");
   const [shareOpen, setShareOpen] = useState(false);
 
   // The Move Timer reflects the AUTHORITATIVE room settings (server broadcast).
@@ -307,14 +305,6 @@ export function PrivateRoomPage() {
     }
     start();
   }
-  function submitChat(e: React.FormEvent) {
-    e.preventDefault();
-    const text = chatInput.trim();
-    if (!text) return;
-    sendChat(text);
-    setChatInput("");
-  }
-
   // ---- Logged-out prompt (never crash) ----
   if (!me) {
     return (
@@ -946,15 +936,7 @@ export function PrivateRoomPage() {
           </div>
 
           {/* room chat — live over "room:chat" */}
-          <RoomChat
-            className="fd-card-m fd-order-1"
-            me={me.id}
-            chat={chat}
-            input={chatInput}
-            onInput={setChatInput}
-            onSubmit={submitChat}
-            onEmote={(em) => sendChat(em)}
-          />
+          <RoomChat className="fd-card-m fd-order-1" me={me.id} chat={chat} sendChat={sendChat} />
         </div>
       </div>
 
@@ -1018,25 +1000,13 @@ function RoomChat({
   className,
   me,
   chat,
-  input,
-  onInput,
-  onSubmit,
-  onEmote,
+  sendChat,
 }: {
   className?: string;
   me: string;
   chat: { id: string; from: RoomMember; body: string; at: number }[];
-  input: string;
-  onInput: (v: string) => void;
-  onSubmit: (e: React.FormEvent) => void;
-  onEmote: (em: string) => void;
+  sendChat: (text: string) => void;
 }) {
-  const scrollRef = useRef<HTMLDivElement | null>(null);
-  useEffect(() => {
-    const el = scrollRef.current;
-    if (el) el.scrollTop = el.scrollHeight;
-  }, [chat.length]);
-
   return (
     <div
       className={`frame${className ? ` ${className}` : ""}`}
@@ -1055,103 +1025,13 @@ function RoomChat({
         </div>
         <span style={{ font: "600 11px Inter", color: "#5fd39a" }}>● Live</span>
       </div>
-      <div
-        ref={scrollRef}
-        style={{
-          height: 230,
-          overflowY: "auto",
-          display: "flex",
-          flexDirection: "column",
-          gap: 10,
-          paddingRight: 4,
-          ...(chat.length === 0
-            ? { alignItems: "center", justifyContent: "center", textAlign: "center" }
-            : {}),
-        }}
-      >
-        {chat.length === 0 ? (
-          <div style={{ font: "500 13px Inter", color: "var(--ink2)", padding: "0 12px" }}>
-            No messages yet — say hi to your opponent.
-          </div>
-        ) : (
-          chat.map((m) => {
-            const mine = m.from.userId === me;
-            return (
-              <div
-                key={m.id}
-                style={{
-                  display: "flex",
-                  flexDirection: "column",
-                  alignItems: mine ? "flex-end" : "flex-start",
-                }}
-              >
-                {!mine && (
-                  <span style={{ font: "700 11px Inter", color: "var(--gold-lt)", marginBottom: 2 }}>
-                    {m.from.name}
-                  </span>
-                )}
-                <span
-                  style={{
-                    maxWidth: "85%",
-                    padding: "8px 12px",
-                    borderRadius: 12,
-                    font: "500 13px Inter",
-                    color: "#fff",
-                    background: mine ? "rgba(232,184,75,.18)" : "rgba(15,8,32,.7)",
-                    border: mine
-                      ? "1px solid rgba(232,184,75,.35)"
-                      : "1px solid rgba(232,184,75,.14)",
-                  }}
-                >
-                  {m.body}
-                </span>
-              </div>
-            );
-          })
+      <MatchChat
+        showTextInput
+        messages={chat.map(
+          (m): MatchChatMsg => ({ id: m.id, mine: m.from.userId === me, emote: null, body: m.body, at: m.at }),
         )}
-      </div>
-      {/* quick emotes — real sends over room:chat */}
-      <div style={{ display: "flex", gap: 6, flexWrap: "wrap", margin: "12px 0 10px" }}>
-        {EMOTES.map((em) => (
-          <button
-            key={em}
-            onClick={() => onEmote(em)}
-            style={{
-              padding: "6px 11px",
-              borderRadius: 100,
-              border: "1px solid rgba(232,184,75,.2)",
-              background: "rgba(15,8,32,.5)",
-              color: "var(--ink)",
-              font: "600 11px Inter",
-              cursor: "pointer",
-            }}
-          >
-            {em}
-          </button>
-        ))}
-      </div>
-      <form onSubmit={onSubmit} style={{ display: "flex", gap: 8 }}>
-        <input
-          value={input}
-          onChange={(e) => onInput(e.target.value)}
-          placeholder="Message…"
-          className="fd-nozoom"
-          style={{
-            flex: 1,
-            minWidth: 0,
-            padding: "11px 13px",
-            borderRadius: 8,
-            border: "1px solid rgba(232,184,75,.25)",
-            background: "rgba(15,8,32,.6)",
-            color: "#fff",
-            font: "500 13px Inter",
-            outline: "none",
-          }}
-        />
-        <button type="submit" className="btn btn-purple" style={{ padding: "11px 16px", fontSize: 13 }}>
-          Send
-        </button>
-      </form>
+        send={(p) => sendChat(p.emote ?? p.body ?? "")}
+      />
     </div>
   );
 }
