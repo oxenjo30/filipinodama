@@ -1,3 +1,4 @@
+import type { CSSProperties } from "react";
 import { useEffect, useState } from "react";
 import { RANK_TIERS } from "@dama/shared";
 import { api } from "../lib/api";
@@ -31,6 +32,14 @@ function initials(name: string): string {
   if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
   return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
 }
+
+// Drawer action-button styles — copied verbatim from the mockup (actDefs).
+const BTN_FONT: CSSProperties = { font: "700 11px Inter", letterSpacing: ".4px", borderRadius: 8, padding: "9px 14px", cursor: "pointer" };
+const BTN_BASE: CSSProperties = { ...BTN_FONT, border: "1px solid rgba(232,184,75,.4)", color: "#3a2405", background: "linear-gradient(180deg,#f0cf72,#c99a2e)" };
+const BTN_GHOST: CSSProperties = { ...BTN_FONT, border: "1px solid rgba(232,184,75,.3)", color: "#e9e0f7", background: "#221534" };
+const BTN_DANGER: CSSProperties = { ...BTN_FONT, border: "1px solid rgba(194,73,90,.5)", color: "#fff", background: "linear-gradient(180deg,#c2495a,#8a2f3c)" };
+const BTN_AMBER: CSSProperties = { ...BTN_FONT, border: "1px solid rgba(217,145,31,.5)", color: "#3a2405", background: "linear-gradient(180deg,#e8b04a,#c98a1e)" };
+const BTN_RESTORE: CSSProperties = { ...BTN_FONT, border: "1px solid rgba(47,143,91,.5)", color: "#fff", background: "linear-gradient(180deg,#2f8f5b,#1c6e42)" };
 
 /** 1.3/1.4 Players — search, list, detail drawer, sanctions. */
 export function PlayersPage() {
@@ -182,90 +191,95 @@ function PlayerDrawer({ id, onClose, onChanged }: { id: string; onClose: () => v
       ),
     });
 
+  // Build the role-gated ACTIONS list, mirroring the mockup's actDefs order
+  // (Notify · Restore · Mute · Grant · Ban). Suspend is intentionally omitted:
+  // the backend has no suspend endpoint, and a dead button would be a fake control.
+  const actions: { label: string; go: () => void; style: CSSProperties }[] = d
+    ? [
+        can("SUPPORT") && { label: "Notify", go: notify, style: BTN_GHOST },
+        can("SUPPORT") && d.status === "muted" && { label: "Unmute", go: unlock, style: BTN_RESTORE },
+        can("MODERATOR") && d.status === "banned" && { label: "Unban", go: unban, style: BTN_RESTORE },
+        can("MODERATOR") && d.status !== "muted" && { label: "Mute", go: mute, style: BTN_AMBER },
+        can("ECONOMY") && { label: "Grant", go: grant, style: BTN_BASE },
+        can("MODERATOR") && d.status !== "banned" && { label: "Ban", go: ban, style: BTN_DANGER },
+      ].filter(Boolean) as { label: string; go: () => void; style: CSSProperties }[]
+    : [];
+
+  // "vs {opponent}" + W/L/D chip, computed from the player's perspective.
+  // Match.winner is a side ("red"|"blue"|"draw"), so resolve the player's side first.
+  const matchView = matches.map((m) => {
+    const me = d?.username;
+    const isRed = m.red?.username === me;
+    const opp = (isRed ? m.blue?.username : m.red?.username) ?? "—";
+    const mySide = isRed ? "red" : "blue";
+    let res: "W" | "L" | "D" = "D";
+    if (m.winner === "red" || m.winner === "blue") res = m.winner === mySide ? "W" : "L";
+    return { id: m.id, res, opp, mode: m.mode };
+  });
+
   return (
     <div className="drawer-wrap">
       <div className="drawer-bd" onClick={onClose} />
-      <div className="drawer">
+      <div className="player-drawer">
         {!d ? (
-          <div className="dim">Loading…</div>
+          <div style={{ padding: 24 }} className="dim">Loading…</div>
         ) : (
           <>
-            <div className="row" style={{ justifyContent: "space-between" }}>
-              <div>
-                <div style={{ font: "800 20px var(--sans)" }}>{d.displayName} <StatusBadge s={d.status} /></div>
-                <div className="dim mono">{d.username} {d.tag}{d.email ? ` · ${d.email}` : ""}</div>
+            {/* Header: avatar · name · tag·email · close */}
+            <div className="pd-head">
+              <div className="pd-av">{initials(d.displayName || d.username)}</div>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div className="pd-name">{d.displayName}</div>
+                <div className="pd-sub">{d.tag}{d.email ? ` · ${d.email}` : ""}</div>
               </div>
-              <button className="btn" onClick={onClose}>Close</button>
+              <button className="pd-close" onClick={onClose} aria-label="Close">✕</button>
             </div>
 
-            <div className="kpi" style={{ margin: "18px 0" }}>
-              <div className="card"><div className="v mono">{d.trophies.toLocaleString()}</div><div className="l">Trophies · {d.rankTier}</div></div>
-              <div className="card"><div className="v mono">{d.gold.toLocaleString()}</div><div className="l">Gold</div></div>
-              <div className="card"><div className="v mono">{d.diamonds.toLocaleString()}</div><div className="l">Diamonds</div></div>
-              <div className="card"><div className="v mono">{d.wins}/{d.losses}/{d.draws}</div><div className="l">W / L / D · streak {d.streak}</div></div>
-            </div>
+            <div className="pd-body">
+              {/* 3 KPI tiles */}
+              <div className="pd-tiles">
+                <div className="pd-tile"><div className="pd-tile-l">TROPHIES</div><div className="pd-tile-v" style={{ color: "#f5d783" }}>{d.trophies.toLocaleString()}</div></div>
+                <div className="pd-tile"><div className="pd-tile-l">GOLD</div><div className="pd-tile-v" style={{ color: "#f2d493" }}>{d.gold.toLocaleString()}</div></div>
+                <div className="pd-tile"><div className="pd-tile-l">DIAMONDS</div><div className="pd-tile-v" style={{ color: "#ff9aa8" }}>{d.diamonds.toLocaleString()}</div></div>
+              </div>
 
-            <div className="dim" style={{ fontSize: 12, marginBottom: 16 }}>
-              Joined {new Date(d.createdAt).toLocaleDateString()} · last seen {new Date(d.lastSeenAt).toLocaleString()}
-              {d.guildMember ? ` · Guild: ${d.guildMember.guild.name} (${d.guildMember.role})` : ""}
-              {d.adminRole ? ` · ADMIN: ${d.adminRole}` : ""}
-            </div>
+              {/* Status row */}
+              <div className="pd-status-row">
+                <span className="pd-status-l">Status</span>
+                <StatusBadge s={d.status} />
+              </div>
 
-            {d.openReportsAgainst > 0 && <div className="dim">⚠ Reports against: {d.openReportsAgainst}</div>}
+              {/* Recent matches */}
+              <div className="pd-section-l">RECENT MATCHES</div>
+              <div className="pd-matches">
+                {matchView.length === 0 ? (
+                  <div className="pd-empty">No matches yet.</div>
+                ) : (
+                  matchView.map((m) => (
+                    <div key={m.id} className="pd-match">
+                      <span className={`pd-res ${m.res === "W" ? "win" : m.res === "L" ? "loss" : "draw"}`}>{m.res}</span>
+                      <span className="pd-opp">vs {m.opp}</span>
+                      <span className="pd-mode">{m.mode}</span>
+                    </div>
+                  ))
+                )}
+              </div>
 
-            {/* Actions — role-gated (server enforces too) */}
-            <div style={{ fontWeight: 700, margin: "10px 0 8px" }}>Actions</div>
-            <div className="row">
-              {can("SUPPORT") && <button className="btn" onClick={notify}>Notify</button>}
-              {can("SUPPORT") && d.status === "muted" && <button className="btn" onClick={unlock}>Unmute</button>}
-              {can("MODERATOR") && d.status !== "muted" && <button className="btn" onClick={mute}>Mute</button>}
-              {can("MODERATOR") && d.status !== "banned" && <button className="btn danger" onClick={ban}>Ban</button>}
-              {can("MODERATOR") && d.status === "banned" && <button className="btn" onClick={unban}>Unban</button>}
-              {can("ECONOMY") && <button className="btn" onClick={grant}>Grant currency</button>}
-              {!can("SUPPORT") && <span className="dim">No actions available for your role.</span>}
-            </div>
+              {/* Actions — 2-col grid, role-gated (server enforces too) */}
+              <div className="pd-section-l">ACTIONS</div>
+              {actions.length === 0 ? (
+                <div className="pd-empty">No actions available for your role.</div>
+              ) : (
+                <div className="pd-actions">
+                  {actions.map((a) => (
+                    <button key={a.label} className="pd-abtn" style={a.style} onClick={a.go}>{a.label}</button>
+                  ))}
+                </div>
+              )}
 
-            {/* Recent matches */}
-            <div style={{ fontWeight: 700, margin: "22px 0 8px" }}>Recent matches</div>
-            <div className="panel">
-              <table className="tbl">
-                <thead><tr><th>Mode</th><th>Result</th><th>When</th></tr></thead>
-                <tbody>
-                  {matches.length === 0 ? (
-                    <tr><td colSpan={3} className="dim" style={{ textAlign: "center", padding: 16 }}>No matches.</td></tr>
-                  ) : (
-                    matches.map((m) => (
-                      <tr key={m.id}>
-                        <td className="mono">{m.mode}</td>
-                        <td className="dim">{m.winner ? `winner: ${m.winner}` : "unfinished"}</td>
-                        <td className="mono dim">{new Date(m.startedAt).toLocaleString()}</td>
-                      </tr>
-                    ))
-                  )}
-                </tbody>
-              </table>
-            </div>
-
-            {/* Ledger */}
-            <div style={{ fontWeight: 700, margin: "22px 0 8px" }}>Recent ledger</div>
-            <div className="panel">
-              <table className="tbl">
-                <thead><tr><th>Currency</th><th className="num">Amount</th><th>Reason</th><th>When</th></tr></thead>
-                <tbody>
-                  {d.ledger.length === 0 ? (
-                    <tr><td colSpan={4} className="dim" style={{ textAlign: "center", padding: 16 }}>No ledger entries.</td></tr>
-                  ) : (
-                    d.ledger.map((l) => (
-                      <tr key={l.id}>
-                        <td className="mono">{l.currency}</td>
-                        <td className="num" style={{ color: l.amount >= 0 ? "var(--green)" : "var(--red)" }}>{l.amount >= 0 ? "+" : ""}{l.amount.toLocaleString()}</td>
-                        <td className="dim">{l.reason}</td>
-                        <td className="mono dim">{new Date(l.createdAt).toLocaleDateString()}</td>
-                      </tr>
-                    ))
-                  )}
-                </tbody>
-              </table>
+              <div className="pd-note">
+                Actions available to your role are shown. Destructive and economy actions require a reason and are written to the audit log.
+              </div>
             </div>
           </>
         )}
