@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { api } from "../lib/api";
 import { useAdminMutation } from "../lib/ui";
 
@@ -79,6 +79,18 @@ export function StoreCatalog() {
   const [form, setForm] = useState<Form | null>(null);
   const [editId, setEditId] = useState<string | null>(null);
   const mutate = useAdminMutation();
+  const formRef = useRef<HTMLDivElement>(null);
+
+  // Scroll the inline create/edit form into view whenever it opens — the
+  // catalog table can be long, and the form renders above it, so clicking
+  // Edit on a bottom row would otherwise open the form off-screen above the
+  // fold. Re-fires on editId too, so re-clicking Edit on a different row
+  // (while the form panel stays mounted) re-scrolls as well.
+  useEffect(() => {
+    if (!form) return;
+    formRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+    formRef.current?.querySelector<HTMLElement>("input,select,textarea")?.focus();
+  }, [!!form, editId]);
 
   const load = () => {
     setLoading(true);
@@ -257,7 +269,7 @@ export function StoreCatalog() {
 
         {/* inline create / edit form */}
         {form && (
-          <div style={{ padding: 18, borderBottom: "1px solid rgba(232,184,75,.1)", background: "var(--panel-2)", display: "flex", flexDirection: "column", gap: 12 }}>
+          <div ref={formRef} style={{ padding: 18, borderBottom: "1px solid rgba(232,184,75,.1)", background: "var(--panel-2)", display: "flex", flexDirection: "column", gap: 12 }}>
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(180px,1fr))", gap: 12 }}>
               <div className="field" style={{ gridColumn: "1/-1", marginBottom: 0 }}>
                 <label>Item name</label>

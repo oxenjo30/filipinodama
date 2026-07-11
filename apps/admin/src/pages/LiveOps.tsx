@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { api } from "../lib/api";
 import { useAdminMutation } from "../lib/ui";
 
@@ -298,6 +298,15 @@ function SeasonForm({ season, onClose, onDone }: { season?: Season; onClose: () 
     season && Array.isArray(season.tiers) ? JSON.stringify(season.tiers, null, 2) : "[]",
   );
   const [tiersErr, setTiersErr] = useState("");
+  const formRef = useRef<HTMLDivElement>(null);
+
+  // Scroll the form into view when it opens (mount) — on a long season list
+  // this form can open far below the fold otherwise. block:"center" clears
+  // the sticky topbar without needing scroll-margin-top.
+  useEffect(() => {
+    formRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+    formRef.current?.querySelector<HTMLElement>("input,select,textarea")?.focus();
+  }, []);
 
   const submit = () => {
     let tiers: unknown;
@@ -333,7 +342,7 @@ function SeasonForm({ season, onClose, onDone }: { season?: Season; onClose: () 
   const valid = name.trim() && startsAt && endsAt;
 
   return (
-    <div style={{ marginTop: 16, paddingTop: 16, borderTop: "1px solid rgba(232,184,75,.15)" }}>
+    <div ref={formRef} style={{ marginTop: 16, paddingTop: 16, borderTop: "1px solid rgba(232,184,75,.15)" }}>
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(160px,1fr))", gap: 12, alignItems: "end" }}>
         <div className="field" style={{ gridColumn: "1/-1", marginBottom: 0 }}>
           <label>Season name</label>
@@ -511,6 +520,15 @@ function QuestForm({ quest, onClose, onDone }: { quest?: Quest; onClose: () => v
   const [goal, setGoal] = useState<number>(quest?.goal ?? 1);
   const [rewardGold, setRewardGold] = useState<number>(quest?.rewardGold ?? 0);
   const [triggerEvent, setTriggerEvent] = useState(quest?.trigger?.event ?? "");
+  const formRef = useRef<HTMLDivElement>(null);
+
+  // Scroll the form into view when it opens (mount) — the quest list can be
+  // long, and this form renders above the table, so a bottom-row Edit click
+  // would otherwise open it off-screen above the fold.
+  useEffect(() => {
+    formRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+    formRef.current?.querySelector<HTMLElement>("input,select,textarea")?.focus();
+  }, []);
 
   const submit = () => {
     const trigger = triggerEvent ? { event: triggerEvent } : isEdit ? null : undefined;
@@ -532,7 +550,7 @@ function QuestForm({ quest, onClose, onDone }: { quest?: Quest; onClose: () => v
   const valid = title.trim() && goal >= 1 && (isEdit || (id.trim() && scope.trim()));
 
   return (
-    <div className="panel panel-pad" style={{ margin: "14px 0" }}>
+    <div ref={formRef} className="panel panel-pad" style={{ margin: "14px 0" }}>
       <div style={{ fontWeight: 700, marginBottom: 12 }}>{isEdit ? "Edit quest" : "New quest"}</div>
       {!isEdit && (
         <div className="row" style={{ alignItems: "flex-start" }}>
@@ -676,6 +694,15 @@ function EventForm({ event, onClose, onDone }: { event?: LiveEvent; onClose: () 
   const [reward, setReward] = useState(event?.reward ?? "");
   const [startsLabel, setStartsLabel] = useState(event?.startsLabel ?? "");
   const [endsLabel, setEndsLabel] = useState(event?.endsLabel ?? "");
+  const formRef = useRef<HTMLDivElement>(null);
+
+  // Scroll the form into view when it opens (mount) — the events list can be
+  // long, and this form renders above it, so a bottom-row Edit click would
+  // otherwise open it off-screen above the fold.
+  useEffect(() => {
+    formRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+    formRef.current?.querySelector<HTMLElement>("input,select,textarea")?.focus();
+  }, []);
 
   const submit = () =>
     mutate({
@@ -701,7 +728,7 @@ function EventForm({ event, onClose, onDone }: { event?: LiveEvent; onClose: () 
   const valid = name.trim() && type.trim() && scope.trim() && reward.trim();
 
   return (
-    <div style={{ marginTop: 14, paddingTop: 14, borderTop: "1px solid rgba(232,184,75,.12)", display: "flex", flexDirection: "column", gap: 12 }}>
+    <div ref={formRef} style={{ marginTop: 14, paddingTop: 14, borderTop: "1px solid rgba(232,184,75,.12)", display: "flex", flexDirection: "column", gap: 12 }}>
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(170px,1fr))", gap: 12 }}>
         <div className="field" style={{ gridColumn: "1/-1", marginBottom: 0 }}>
           <label>Event name</label>

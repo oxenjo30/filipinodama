@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { api } from "../lib/api";
 import { useAdminMutation } from "../lib/ui";
 
@@ -383,6 +383,15 @@ function TournamentForm({ tournament, onClose, onDone }: { tournament?: Tourname
   const [startsAt, setStartsAt] = useState(tournament?.startsAt ? toLocalInput(tournament.startsAt) : "");
   // SWISS ONLY: rounds — blank/null = auto (ceil(log2(n)), computed at Start).
   const [rounds, setRounds] = useState<string>(tournament?.rounds != null ? String(tournament.rounds) : "");
+  const formRef = useRef<HTMLDivElement>(null);
+
+  // Scroll the form into view when it opens (mount) — the tournament list
+  // can be long, and this form renders above the table, so a bottom-row Edit
+  // click would otherwise open it off-screen above the fold.
+  useEffect(() => {
+    formRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+    formRef.current?.querySelector<HTMLElement>("input,select,textarea")?.focus();
+  }, []);
 
   const isRoundRobin = format === "ROUND_ROBIN";
   const isSwiss = format === "SWISS";
@@ -438,7 +447,7 @@ function TournamentForm({ tournament, onClose, onDone }: { tournament?: Tourname
   };
 
   return (
-    <div className="panel panel-pad">
+    <div ref={formRef} className="panel panel-pad">
       <div style={{ font: "800 16px var(--serif)", color: "var(--ink)", marginBottom: 12 }}>{isEdit ? "Edit tournament" : "New tournament"}</div>
 
       <div className="field">
