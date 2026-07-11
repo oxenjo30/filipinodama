@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
-import { api } from "../../lib/api";
+import { api, ApiError } from "../../lib/api";
+import { useAppStore } from "../../stores/appStore";
 
 export type Relationship = "self" | "friends" | "request-sent" | "request-received" | "none";
 
@@ -29,6 +30,7 @@ export function FriendButton({
 }) {
   const navigate = useNavigate();
   const location = useLocation();
+  const showToast = useAppStore((s) => s.showToast);
   const [rel, setRel] = useState<Relationship>(relationship);
   const [busy, setBusy] = useState(false);
 
@@ -72,8 +74,11 @@ export function FriendButton({
         const res = await api.post<{ status: string }>("/api/friends/request", { toUserId: userId });
         setRel(res.status === "accepted" ? "friends" : "request-sent");
       }
-    } catch {
-      // leave state unchanged; the server enforces the real guards
+    } catch (e) {
+      // Surface the failure instead of a silent dead-end; state is left
+      // unchanged so the button stays actionable. The server enforces the
+      // real guards (e.g. can't friend a bot, already friends).
+      showToast(e instanceof ApiError ? e.message : "Couldn't send friend request.");
     } finally {
       setBusy(false);
     }
