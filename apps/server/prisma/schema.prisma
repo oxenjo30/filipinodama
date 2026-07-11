@@ -432,6 +432,9 @@ model Quest {
   goal        Int
   rewardGold  Int             @default(0)
   active      Boolean         @default(true)
+  /// { event: QuestEvent } — validated by questTriggerSchema (lib/quest-trigger.ts).
+  /// Null = doesn't track (pre-trigger custom quest); see docs spec 2026-07-11.
+  trigger     Json?
   progress    QuestProgress[]
 }
 

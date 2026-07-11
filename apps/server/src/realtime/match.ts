@@ -14,6 +14,7 @@ import { prisma } from "../db/client.js";
 import { isMuted } from "../lib/mute.js";
 import { applyLedger } from "../economy/ledger.js";
 import { allow } from "./rate-limit.js";
+import { questAdvanceFor, type MatchQuestContext } from "../lib/quest-trigger.js";
 
 /**
  * SERVER-AUTHORITATIVE match loop.
@@ -245,6 +246,32 @@ async function advanceQuest(userId: string, questId: string, scope: "daily" | "s
 }
 
 /**
+ * Advance every ACTIVE quest whose `trigger` matches this match outcome. Pure
+ * evaluation lives in questAdvanceFor (lib/quest-trigger.ts) so this loop is a
+ * thin DB-driving shell: load active quests once, ask the pure fn whether/how
+ * much each one advances, then call the existing advanceQuest (unchanged —
+ * still atomic, per-period, capped at goal). A quest with no/invalid trigger
+ * evaluates to null and is skipped, so a bad admin-authored row can never
+ * break settlement. Exported so both recordPlayerOutcome and tests (which
+ * seed a custom quest + trigger and assert progress) can drive it directly
+ * without needing a live socket match.
+ */
+export async function advanceQuestsFor(userId: string, ctx: MatchQuestContext): Promise<void> {
+  const activeQuests = await prisma.quest.findMany({
+    where: { active: true },
+    select: { id: true, scope: true, trigger: true },
+  });
+  await Promise.allSettled(
+    activeQuests.map((q) => {
+      const adv = questAdvanceFor(q.trigger, ctx);
+      if (!adv) return Promise.resolve();
+      const scope: "daily" | "seasonal" = q.scope === "daily" ? "daily" : "seasonal";
+      return advanceQuest(userId, q.id, scope, adv.by, adv.setTo);
+    }),
+  );
+}
+
+/**
  * Post-settlement side effects for a real (non-bot) player: win/loss/draw
  * record, win streak, and quest progress. Best-effort — a failure here must not
  * break match settlement, so each player is wrapped independently by the caller.
@@ -271,25 +298,10 @@ async function recordPlayerOutcome(
   const fresh = await prisma.user.findUnique({ where: { id: userId }, select: { streak: true } });
   const streak = fresh?.streak ?? 0;
 
-  // Quests: every id here has a matching def in seed.ts QUESTS. Progress is only
-  // ever advanced by real match outcomes — played / won / captured / ranked / streak.
-  await Promise.allSettled([
-    // Daily
-    advanceQuest(userId, "daily-play5", "daily", 1),
-    won ? advanceQuest(userId, "daily-win1", "daily", 1) : Promise.resolve(),
-    won ? advanceQuest(userId, "daily-win3", "daily", 1) : Promise.resolve(),
-    captures > 0 ? advanceQuest(userId, "daily-capture10", "daily", captures) : Promise.resolve(),
-    captures > 0 ? advanceQuest(userId, "daily-capture20", "daily", captures) : Promise.resolve(),
-    isRanked ? advanceQuest(userId, "daily-ranked3", "daily", 1) : Promise.resolve(),
-    // Seasonal
-    won && isRanked ? advanceQuest(userId, "season-win50", "seasonal", 1) : Promise.resolve(),
-    advanceQuest(userId, "season-play100", "seasonal", 1),
-    captures > 0 ? advanceQuest(userId, "season-capture500", "seasonal", captures) : Promise.resolve(),
-    // Streak quest tracks the PEAK reached: advance to the current streak if higher
-    // (advanceQuest caps at goal and never decreases, so passing `streak` sets the
-    // best-so-far without a losing streak resetting it).
-    won && streak > 0 ? advanceQuest(userId, "season-streak5", "seasonal", streak, /*setTo*/ true) : Promise.resolve(),
-  ]);
+  // Quests: dynamic — every ACTIVE quest advances purely from its own
+  // `trigger` (see advanceQuestsFor above). This replaces the old hardcoded
+  // 11-call list, so any admin-created quest tracks automatically.
+  await advanceQuestsFor(userId, { won, drew, captures, isRanked, streak });
 }
 
 async function settleMatch(io: IOServer, lm: LiveMatch): Promise<void> {

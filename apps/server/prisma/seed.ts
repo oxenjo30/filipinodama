@@ -92,20 +92,23 @@ const STORE = [
 // progress is only ever incremented by REAL match outcomes (played/won/captured/
 // ranked/streak), never fabricated. Adding a quest here without wiring its id in
 // recordPlayerOutcome() would leave it stuck at 0.
+// `trigger` reproduces the engine's OLD hardcoded advanceQuest() calls exactly
+// (see realtime/match.ts recordPlayerOutcome) — REGRESSION-CRITICAL: changing
+// any of these changes when an existing seeded quest advances.
 const QUESTS = [
   // ── Daily (reset at 00:00 UTC) — order here is the display order ──
-  { id: "daily-play5", scope: "daily", title: "Play 5 matches", description: "Play 5 matches of any mode today", goal: 5, rewardGold: 250 },
-  { id: "daily-win1", scope: "daily", title: "Win a match", description: "Claim victory in any match today", goal: 1, rewardGold: 150 },
-  { id: "daily-win3", scope: "daily", title: "Win 3 matches", description: "Claim victory in 3 matches today", goal: 3, rewardGold: 500 },
-  { id: "daily-capture10", scope: "daily", title: "Capture 10 pieces", description: "Capture 10 enemy pieces today", goal: 10, rewardGold: 150 },
-  { id: "daily-capture20", scope: "daily", title: "Capture 20 pieces", description: "Capture 20 enemy pieces today", goal: 20, rewardGold: 300 },
-  { id: "daily-ranked3", scope: "daily", title: "Play 3 ranked matches", description: "Play 3 ranked matches today", goal: 3, rewardGold: 400 },
+  { id: "daily-play5", scope: "daily", title: "Play 5 matches", description: "Play 5 matches of any mode today", goal: 5, rewardGold: 250, trigger: { event: "match_played" } },
+  { id: "daily-win1", scope: "daily", title: "Win a match", description: "Claim victory in any match today", goal: 1, rewardGold: 150, trigger: { event: "match_won" } },
+  { id: "daily-win3", scope: "daily", title: "Win 3 matches", description: "Claim victory in 3 matches today", goal: 3, rewardGold: 500, trigger: { event: "match_won" } },
+  { id: "daily-capture10", scope: "daily", title: "Capture 10 pieces", description: "Capture 10 enemy pieces today", goal: 10, rewardGold: 150, trigger: { event: "captures" } },
+  { id: "daily-capture20", scope: "daily", title: "Capture 20 pieces", description: "Capture 20 enemy pieces today", goal: 20, rewardGold: 300, trigger: { event: "captures" } },
+  { id: "daily-ranked3", scope: "daily", title: "Play 3 ranked matches", description: "Play 3 ranked matches today", goal: 3, rewardGold: 400, trigger: { event: "ranked_played" } },
 
   // ── Seasonal (last all season) ──
-  { id: "season-win50", scope: "seasonal", title: "Win 50 ranked matches", description: "Win 50 ranked matches this season", goal: 50, rewardGold: 5000 },
-  { id: "season-play100", scope: "seasonal", title: "Play 100 matches", description: "Play 100 matches of any mode this season", goal: 100, rewardGold: 3000 },
-  { id: "season-capture500", scope: "seasonal", title: "Capture 500 pieces", description: "Capture 500 enemy pieces this season", goal: 500, rewardGold: 4000 },
-  { id: "season-streak5", scope: "seasonal", title: "Reach a 5-win streak", description: "Win 5 matches in a row this season", goal: 5, rewardGold: 2500 },
+  { id: "season-win50", scope: "seasonal", title: "Win 50 ranked matches", description: "Win 50 ranked matches this season", goal: 50, rewardGold: 5000, trigger: { event: "ranked_won" } },
+  { id: "season-play100", scope: "seasonal", title: "Play 100 matches", description: "Play 100 matches of any mode this season", goal: 100, rewardGold: 3000, trigger: { event: "match_played" } },
+  { id: "season-capture500", scope: "seasonal", title: "Capture 500 pieces", description: "Capture 500 enemy pieces this season", goal: 500, rewardGold: 4000, trigger: { event: "captures" } },
+  { id: "season-streak5", scope: "seasonal", title: "Reach a 5-win streak", description: "Win 5 matches in a row this season", goal: 5, rewardGold: 2500, trigger: { event: "win_streak" } },
 ];
 
 /**

@@ -110,3 +110,139 @@ describe("admin liveops seasons — number + endsLabel", () => {
     await app.close();
   });
 });
+
+// Quest isn't in truncateAll()'s TRUNCATE list, so this block cleans up its
+// own test-created rows to avoid leaking Quest/QuestProgress across files.
+describe("admin liveops quests — trigger", () => {
+  afterEach(async () => {
+    await prisma.questProgress.deleteMany({ where: { questId: { startsWith: "t_quest_admin_" } } });
+    await prisma.quest.deleteMany({ where: { id: { startsWith: "t_quest_admin_" } } });
+  });
+
+  it("POST create with a valid trigger persists it; GET list returns it", async () => {
+    const app = await buildTestApp();
+    const econ = await seedUser({ adminRole: "ECONOMY" });
+    const cookie = authFor({ sub: econ.id, adminRole: "ECONOMY" });
+    const id = `t_quest_admin_${process.pid}_1`;
+
+    const res = await app.inject({
+      method: "POST",
+      url: "/api/admin/liveops/quests",
+      headers: { cookie },
+      payload: {
+        id,
+        scope: "daily",
+        title: "Win 5 ranked",
+        goal: 5,
+        rewardGold: 1000,
+        trigger: { event: "ranked_won" },
+        reason: "custom ranked-win quest",
+      },
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.json().data.id).toBe(id);
+
+    const row = await prisma.quest.findUnique({ where: { id } });
+    expect(row!.trigger).toEqual({ event: "ranked_won" });
+
+    const list = await app.inject({ method: "GET", url: "/api/admin/liveops/quests", headers: { cookie } });
+    expect(list.statusCode).toBe(200);
+    const item = list.json().data.items.find((i: { id: string }) => i.id === id);
+    expect(item).toBeTruthy();
+    expect(item.trigger).toEqual({ event: "ranked_won" });
+
+    await app.close();
+  });
+
+  it("POST create with an invalid trigger event → 400", async () => {
+    const app = await buildTestApp();
+    const econ = await seedUser({ adminRole: "ECONOMY" });
+    const cookie = authFor({ sub: econ.id, adminRole: "ECONOMY" });
+    const id = `t_quest_admin_${process.pid}_2`;
+
+    const res = await app.inject({
+      method: "POST",
+      url: "/api/admin/liveops/quests",
+      headers: { cookie },
+      payload: {
+        id,
+        scope: "daily",
+        title: "Bad trigger",
+        goal: 1,
+        rewardGold: 100,
+        trigger: { event: "not-a-real-event" },
+        reason: "should reject",
+      },
+    });
+    expect(res.statusCode).toBe(400);
+
+    const row = await prisma.quest.findUnique({ where: { id } });
+    expect(row).toBeNull();
+
+    await app.close();
+  });
+
+  it("POST create with NO trigger is allowed (draft quest, trigger null)", async () => {
+    const app = await buildTestApp();
+    const econ = await seedUser({ adminRole: "ECONOMY" });
+    const cookie = authFor({ sub: econ.id, adminRole: "ECONOMY" });
+    const id = `t_quest_admin_${process.pid}_3`;
+
+    const res = await app.inject({
+      method: "POST",
+      url: "/api/admin/liveops/quests",
+      headers: { cookie },
+      payload: { id, scope: "daily", title: "No trigger yet", goal: 1, rewardGold: 50, reason: "draft" },
+    });
+    expect(res.statusCode).toBe(200);
+
+    const row = await prisma.quest.findUnique({ where: { id } });
+    expect(row!.trigger).toBeNull();
+
+    await app.close();
+  });
+
+  it("PATCH edit sets a trigger on an existing quest", async () => {
+    const app = await buildTestApp();
+    const econ = await seedUser({ adminRole: "ECONOMY" });
+    const cookie = authFor({ sub: econ.id, adminRole: "ECONOMY" });
+    const id = `t_quest_admin_${process.pid}_4`;
+    await prisma.quest.create({ data: { id, scope: "daily", title: "Edit me", goal: 3, rewardGold: 200 } });
+
+    const res = await app.inject({
+      method: "PATCH",
+      url: `/api/admin/liveops/quests/${id}`,
+      headers: { cookie },
+      payload: { trigger: { event: "captures" }, reason: "wire up tracking" },
+    });
+    expect(res.statusCode).toBe(200);
+
+    const row = await prisma.quest.findUnique({ where: { id } });
+    expect(row!.trigger).toEqual({ event: "captures" });
+
+    await app.close();
+  });
+
+  it("PATCH edit with an invalid trigger event → 400, leaves the quest unchanged", async () => {
+    const app = await buildTestApp();
+    const econ = await seedUser({ adminRole: "ECONOMY" });
+    const cookie = authFor({ sub: econ.id, adminRole: "ECONOMY" });
+    const id = `t_quest_admin_${process.pid}_5`;
+    await prisma.quest.create({
+      data: { id, scope: "daily", title: "Untouched", goal: 3, rewardGold: 200, trigger: { event: "match_played" } },
+    });
+
+    const res = await app.inject({
+      method: "PATCH",
+      url: `/api/admin/liveops/quests/${id}`,
+      headers: { cookie },
+      payload: { trigger: { event: "bogus" }, reason: "should reject" },
+    });
+    expect(res.statusCode).toBe(400);
+
+    const row = await prisma.quest.findUnique({ where: { id } });
+    expect(row!.trigger).toEqual({ event: "match_played" }); // unchanged
+
+    await app.close();
+  });
+});

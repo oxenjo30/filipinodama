@@ -4,6 +4,7 @@ import { prisma } from "../db/client.js";
 import { ok, err } from "../lib/errors.js";
 import { requireAdmin } from "../auth/guards.js";
 import { audit } from "../lib/audit.js";
+import { questTriggerSchema } from "../lib/quest-trigger.js";
 
 /**
  * Live ops (Seasons + Quests) — /api/admin/liveops/*. Reads/authors the existing
@@ -180,7 +181,7 @@ export async function adminLiveOpsRoutes(app: FastifyInstance) {
     const quests = await prisma.quest.findMany({
       orderBy: [{ scope: "asc" }, { rewardGold: "asc" }],
       select: {
-        id: true, scope: true, title: true, description: true, goal: true, rewardGold: true, active: true,
+        id: true, scope: true, title: true, description: true, goal: true, rewardGold: true, active: true, trigger: true,
         _count: { select: { progress: true } },
       },
     });
@@ -193,6 +194,7 @@ export async function adminLiveOpsRoutes(app: FastifyInstance) {
         goal: q.goal,
         rewardGold: q.rewardGold,
         active: q.active,
+        trigger: q.trigger,
         activeProgress: q._count.progress,
       })),
     });
@@ -208,6 +210,10 @@ export async function adminLiveOpsRoutes(app: FastifyInstance) {
         description: z.string().trim().max(500).optional(),
         goal: z.number().int().min(1),
         rewardGold: z.number().int().min(0),
+        // Optional: a quest may be created without a trigger (draft — won't
+        // track until an admin sets one), but if PROVIDED it must be one of
+        // the 6 known events (questTriggerSchema, lib/quest-trigger.ts).
+        trigger: questTriggerSchema.optional(),
         reason: reasonField,
       })
       .parse(req.body);
@@ -221,8 +227,9 @@ export async function adminLiveOpsRoutes(app: FastifyInstance) {
         description: body.description,
         goal: body.goal,
         rewardGold: body.rewardGold,
+        trigger: body.trigger,
       },
-      select: { id: true, scope: true, title: true, goal: true, rewardGold: true, active: true },
+      select: { id: true, scope: true, title: true, goal: true, rewardGold: true, active: true, trigger: true },
     });
     await audit(prisma, {
       actorId: req.userId!,
@@ -244,12 +251,15 @@ export async function adminLiveOpsRoutes(app: FastifyInstance) {
         goal: z.number().int().min(1).optional(),
         rewardGold: z.number().int().min(0).optional(),
         active: z.boolean().optional(),
+        // Same optional-but-validated-if-present contract as create; `null`
+        // explicitly clears a trigger back to "not tracked".
+        trigger: questTriggerSchema.nullable().optional(),
         reason: reasonField,
       })
       .parse(req.body);
     const before = await prisma.quest.findUnique({
       where: { id: req.params.id },
-      select: { id: true, title: true, description: true, goal: true, rewardGold: true, active: true },
+      select: { id: true, title: true, description: true, goal: true, rewardGold: true, active: true, trigger: true },
     });
     if (!before) throw err.notFound("NO_QUEST", "Quest not found");
     const data: Record<string, unknown> = {};
@@ -258,10 +268,11 @@ export async function adminLiveOpsRoutes(app: FastifyInstance) {
     if (body.goal !== undefined) data.goal = body.goal;
     if (body.rewardGold !== undefined) data.rewardGold = body.rewardGold;
     if (body.active !== undefined) data.active = body.active;
+    if (body.trigger !== undefined) data.trigger = body.trigger;
     const after = await prisma.quest.update({
       where: { id: req.params.id },
       data: data as any,
-      select: { id: true, title: true, description: true, goal: true, rewardGold: true, active: true },
+      select: { id: true, title: true, description: true, goal: true, rewardGold: true, active: true, trigger: true },
     });
     await audit(prisma, {
       actorId: req.userId!,

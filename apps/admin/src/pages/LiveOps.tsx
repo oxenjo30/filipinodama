@@ -15,6 +15,8 @@ type Season = {
   participants: number;
 };
 
+type QuestTrigger = { event: string } | null;
+
 type Quest = {
   id: string;
   scope: string;
@@ -23,6 +25,7 @@ type Quest = {
   goal: number;
   rewardGold: number;
   active: boolean;
+  trigger: QuestTrigger;
   activeProgress: number;
 };
 
@@ -77,6 +80,25 @@ const EVENT_SCOPES = [
   { value: "region_ph", label: "Region: PH" },
   { value: "season_pass", label: "Season pass holders" },
 ];
+
+// Mirrors QUEST_EVENTS in apps/server/src/lib/quest-trigger.ts — the 6 match
+// outcomes the settlement engine can advance a quest from. "" = no trigger
+// (draft quest; won't track until an admin picks one).
+const QUEST_TRIGGERS = [
+  { value: "", label: "— not tracked —" },
+  { value: "match_played", label: "Match played" },
+  { value: "match_won", label: "Match won" },
+  { value: "ranked_played", label: "Ranked played" },
+  { value: "ranked_won", label: "Ranked won" },
+  { value: "captures", label: "Captures" },
+  { value: "win_streak", label: "Win streak" },
+];
+
+/** Human label for a quest's trigger (or the "not tracked" fallback). */
+function triggerLabel(trigger: QuestTrigger): string {
+  const found = QUEST_TRIGGERS.find((t) => t.value === trigger?.event);
+  return found && found.value ? found.label : "— not tracked —";
+}
 
 /** Compact preview of a `tiers` Json array — first few tiers, honestly summarized. */
 function tiersPreview(tiers: unknown): string {
@@ -430,6 +452,7 @@ function QuestsPanel({ quests, loading, onDone }: { quests: Quest[]; loading: bo
             <tr className="thead-raised">
               <th>Quest</th>
               <th>Scope</th>
+              <th>Tracks</th>
               <th className="num">Goal</th>
               <th className="num">Reward</th>
               <th style={{ textAlign: "center" }}>Active</th>
@@ -438,9 +461,9 @@ function QuestsPanel({ quests, loading, onDone }: { quests: Quest[]; loading: bo
           </thead>
           <tbody>
             {loading ? (
-              <tr><td colSpan={6} className="dim" style={{ textAlign: "center", padding: 24 }}>Loading…</td></tr>
+              <tr><td colSpan={7} className="dim" style={{ textAlign: "center", padding: 24 }}>Loading…</td></tr>
             ) : quests.length === 0 ? (
-              <tr><td colSpan={6} className="dim" style={{ textAlign: "center", padding: 24 }}>No quests yet.</td></tr>
+              <tr><td colSpan={7} className="dim" style={{ textAlign: "center", padding: 24 }}>No quests yet.</td></tr>
             ) : (
               quests.map((q) => (
                 <tr key={q.id} className="arow">
@@ -450,6 +473,9 @@ function QuestsPanel({ quests, loading, onDone }: { quests: Quest[]; loading: bo
                     <div className="mono dim" style={{ fontSize: 10 }}>{q.id}</div>
                   </td>
                   <td className="dim">{q.scope}</td>
+                  <td className={q.trigger ? "dim" : ""} style={q.trigger ? undefined : { color: "var(--red-lt, #ff8fae)" }}>
+                    {triggerLabel(q.trigger)}
+                  </td>
                   <td className="num" style={{ color: "var(--ink-2)" }}>{q.goal.toLocaleString()}</td>
                   <td className="num" style={{ color: "var(--gold-lt)" }}>{q.rewardGold.toLocaleString()} 🪙</td>
                   <td style={{ textAlign: "center" }}>
@@ -484,21 +510,24 @@ function QuestForm({ quest, onClose, onDone }: { quest?: Quest; onClose: () => v
   const [description, setDescription] = useState(quest?.description ?? "");
   const [goal, setGoal] = useState<number>(quest?.goal ?? 1);
   const [rewardGold, setRewardGold] = useState<number>(quest?.rewardGold ?? 0);
+  const [triggerEvent, setTriggerEvent] = useState(quest?.trigger?.event ?? "");
 
-  const submit = () =>
+  const submit = () => {
+    const trigger = triggerEvent ? { event: triggerEvent } : isEdit ? null : undefined;
     mutate({
       title: isEdit ? `Edit quest "${title}"` : `Create quest "${title}"`,
-      body: `Scope ${scope} · goal ${goal} · ${rewardGold} gold. Audited.`,
+      body: `Scope ${scope} · goal ${goal} · ${rewardGold} gold · tracks ${triggerEvent || "nothing yet"}. Audited.`,
       requireReason: true,
       confirmLabel: isEdit ? "Save quest" : "Create quest",
       method: isEdit ? "PATCH" : "POST",
       path: isEdit ? `/api/admin/liveops/quests/${quest!.id}` : "/api/admin/liveops/quests",
       payload: isEdit
-        ? { title, description: description || null, goal, rewardGold }
-        : { id, scope, title, description: description || undefined, goal, rewardGold },
+        ? { title, description: description || null, goal, rewardGold, trigger }
+        : { id, scope, title, description: description || undefined, goal, rewardGold, trigger },
       successMsg: isEdit ? "Quest updated." : "Quest created.",
       onDone: () => { onDone(); onClose(); },
     });
+  };
 
   const valid = title.trim() && goal >= 1 && (isEdit || (id.trim() && scope.trim()));
 
@@ -537,6 +566,19 @@ function QuestForm({ quest, onClose, onDone }: { quest?: Quest; onClose: () => v
           <label>Reward gold</label>
           <input className="input" type="number" min={0} value={rewardGold || ""} onChange={(e) => setRewardGold(Number(e.target.value))} />
         </div>
+      </div>
+      <div className="field">
+        <label>Tracks</label>
+        <select className="select" value={triggerEvent} onChange={(e) => setTriggerEvent(e.target.value)}>
+          {QUEST_TRIGGERS.map((o) => (
+            <option key={o.value} value={o.value}>{o.label}</option>
+          ))}
+        </select>
+        {!triggerEvent && (
+          <span className="dim" style={{ fontSize: 11 }}>
+            No trigger selected — this quest will not track progress until one is set.
+          </span>
+        )}
       </div>
       <div className="row" style={{ justifyContent: "flex-end" }}>
         <button className="abtn btn-ghost" onClick={onClose}>Cancel</button>
