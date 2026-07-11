@@ -21,10 +21,11 @@ import { startTournament, reportResult, completeTournament, cancelTournament } f
 
 const POWERS_OF_TWO = [2, 4, 8, 16, 32, 64, 128, 256] as const;
 const ELIMINATION_FORMATS = new Set(["SINGLE_ELIM", "DOUBLE_ELIM"]);
-/** Formats supported end-to-end THIS stage. DOUBLE_ELIM/SWISS stay rejected
- * until their own stages ship (see docs/superpowers/specs/2026-07-11-tournament-formats-v2.md). */
-const SUPPORTED_FORMATS = new Set(["SINGLE_ELIM", "ROUND_ROBIN"]);
+/** Formats supported end-to-end THIS stage. DOUBLE_ELIM stays rejected until
+ * its own stage ships (see docs/superpowers/specs/2026-07-11-tournament-formats-v2.md). */
+const SUPPORTED_FORMATS = new Set(["SINGLE_ELIM", "ROUND_ROBIN", "SWISS"]);
 const ROUND_ROBIN_MAX_PLAYERS = 16; // match count = n(n-1)/2 grows fast — cap RR at 16
+const SWISS_MAX_PLAYERS = 32; // Swiss scales far better than RR (rounds, not n(n-1)/2 matches) — cap at 32
 
 const createBody = z
   .object({
@@ -39,6 +40,9 @@ const createBody = z
     // Top-N prize split: 1..maxPlayers non-negative integers summing to
     // prizePoolGold. A 2-tuple (the pre-V2 shape) is just the N=2 case.
     prizeSplitGold: z.array(z.number().int().min(0)).min(1),
+    // SWISS ONLY: the number of Swiss rounds. Optional — Start computes
+    // ceil(log2(n)) when left unset. Ignored (but harmless) for other formats.
+    rounds: z.number().int().min(1).max(20).optional().nullable(),
   })
   .superRefine((b, ctx) => {
     if (!SUPPORTED_FORMATS.has(b.format)) {
@@ -46,7 +50,8 @@ const createBody = z
     }
     // Bracket-size validation is format-specific: power-of-two is an
     // ELIMINATION-bracket requirement (SINGLE_ELIM/DOUBLE_ELIM); ROUND_ROBIN
-    // needs any n in [2,16] (match count = n(n-1)/2 grows fast — capped).
+    // and SWISS relax that to any n within their own cap (match/round count
+    // grows differently for each, so each gets its own cap).
     if (ELIMINATION_FORMATS.has(b.format)) {
       if (!(POWERS_OF_TWO as readonly number[]).includes(b.maxPlayers)) {
         ctx.addIssue({ code: "custom", message: "maxPlayers must be a power of two in {2,4,8,16,32,64,128,256}", path: ["maxPlayers"] });
@@ -54,6 +59,10 @@ const createBody = z
     } else if (b.format === "ROUND_ROBIN") {
       if (b.maxPlayers > ROUND_ROBIN_MAX_PLAYERS) {
         ctx.addIssue({ code: "custom", message: `Round robin is capped at ${ROUND_ROBIN_MAX_PLAYERS} players`, path: ["maxPlayers"] });
+      }
+    } else if (b.format === "SWISS") {
+      if (b.maxPlayers > SWISS_MAX_PLAYERS) {
+        ctx.addIssue({ code: "custom", message: `Swiss is capped at ${SWISS_MAX_PLAYERS} players`, path: ["maxPlayers"] });
       }
     }
     if (b.prizeSplitGold.length > b.maxPlayers) {
@@ -142,7 +151,7 @@ export async function adminTournamentsRoutes(app: FastifyInstance) {
     const parsed = createBody.safeParse(req.body);
     if (!parsed.success) {
       const formatIssue = parsed.error.issues.find((i) => i.path[0] === "format");
-      if (formatIssue) throw err.badRequest("FORMAT_UNSUPPORTED", "Only SINGLE_ELIM and ROUND_ROBIN are supported right now");
+      if (formatIssue) throw err.badRequest("FORMAT_UNSUPPORTED", "Only SINGLE_ELIM, ROUND_ROBIN, and SWISS are supported right now");
       throw err.badRequest("VALIDATION_ERROR", parsed.error.issues[0]?.message ?? "Invalid request");
     }
     const b = parsed.data;
@@ -160,6 +169,7 @@ export async function adminTournamentsRoutes(app: FastifyInstance) {
           minTrophies: b.minTrophies,
           matchMode: b.matchMode,
           startsAt: b.startsAt ? new Date(b.startsAt) : null,
+          rounds: b.format === "SWISS" ? (b.rounds ?? null) : null,
           createdById: actorId,
         },
       });
@@ -184,7 +194,7 @@ export async function adminTournamentsRoutes(app: FastifyInstance) {
     const parsed = createBody.safeParse(req.body);
     if (!parsed.success) {
       const formatIssue = parsed.error.issues.find((i) => i.path[0] === "format");
-      if (formatIssue) throw err.badRequest("FORMAT_UNSUPPORTED", "Only SINGLE_ELIM and ROUND_ROBIN are supported right now");
+      if (formatIssue) throw err.badRequest("FORMAT_UNSUPPORTED", "Only SINGLE_ELIM, ROUND_ROBIN, and SWISS are supported right now");
       throw err.badRequest("VALIDATION_ERROR", parsed.error.issues[0]?.message ?? "Invalid request");
     }
     const b = parsed.data;
@@ -207,6 +217,7 @@ export async function adminTournamentsRoutes(app: FastifyInstance) {
           minTrophies: b.minTrophies,
           matchMode: b.matchMode,
           startsAt: b.startsAt ? new Date(b.startsAt) : null,
+          rounds: b.format === "SWISS" ? (b.rounds ?? null) : null,
         },
       });
       await audit(tx, {

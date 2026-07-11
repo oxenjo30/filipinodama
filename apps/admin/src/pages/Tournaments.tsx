@@ -21,6 +21,7 @@ type Tournament = {
   matchMode: "CASUAL" | "RANKED";
   startsAt: string | null;
   createdAt: string;
+  rounds: number | null; // SWISS only — configured round count (null = auto ceil(log2(n)))
 };
 
 type Stats = { liveNow: number; upcoming: number; playersRegistered: number; goldPrizePool: number };
@@ -59,12 +60,19 @@ type TournamentDetail = Tournament & {
 const BRACKET_SIZES = [8, 16, 32, 64, 128, 256] as const;
 const ROUND_ROBIN_SIZES = [2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16] as const;
 const ROUND_ROBIN_MAX_PLAYERS = 16;
+const SWISS_SIZES = Array.from({ length: 31 }, (_, i) => i + 2); // 2..32
+const SWISS_MAX_PLAYERS = 32;
 const FORMATS: { value: TournamentFormat; label: string; v1: boolean }[] = [
   { value: "SINGLE_ELIM", label: "Single elimination", v1: true },
   { value: "DOUBLE_ELIM", label: "Double elimination", v1: false },
-  { value: "SWISS", label: "Swiss", v1: false },
+  { value: "SWISS", label: "Swiss", v1: true },
   { value: "ROUND_ROBIN", label: "Round robin", v1: true },
 ];
+/** Formats ranked by a win/loss/points standings table instead of a bracket
+ * tree — RR and SWISS this stage (mirrors apps/web's isStandingsFormat). */
+function isStandingsFormat(format: TournamentFormat): boolean {
+  return format === "ROUND_ROBIN" || format === "SWISS";
+}
 
 const STATUS_CLASS: Record<TournamentStatus, string> = {
   DRAFT: "st-muted",
@@ -248,22 +256,31 @@ function TournamentRow({
   const start = () =>
     mutate({
       title: `Start "${t.name}"`,
-      body: `Seeds the ${t.format === "ROUND_ROBIN" ? "match schedule" : "bracket"} from ${t.registeredCount} registered player(s). This cannot be undone.`,
+      body:
+        t.format === "ROUND_ROBIN"
+          ? `Seeds the match schedule from ${t.registeredCount} registered player(s). This cannot be undone.`
+          : t.format === "SWISS"
+            ? `Seeds round 1 only from ${t.registeredCount} registered player(s) (${t.rounds ?? "auto"} round${t.rounds === 1 ? "" : "s"} total — later rounds generate automatically as each round is fully reported). This cannot be undone.`
+            : `Seeds the bracket from ${t.registeredCount} registered player(s). This cannot be undone.`,
       requireReason: true,
       confirmLabel: "Start",
       method: "POST",
       path: `/api/admin/tournaments/${t.id}/start`,
-      successMsg: t.format === "ROUND_ROBIN" ? "Matches scheduled — tournament is live." : "Bracket seeded — tournament is live.",
+      successMsg:
+        t.format === "ROUND_ROBIN"
+          ? "Matches scheduled — tournament is live."
+          : t.format === "SWISS"
+            ? "Round 1 seeded — tournament is live."
+            : "Bracket seeded — tournament is live.",
       onDone,
     });
 
   const complete = () =>
     mutate({
       title: `Complete "${t.name}"`,
-      body:
-        t.format === "ROUND_ROBIN"
-          ? "Pays the top placements by final standings. Requires every match to be reported."
-          : "Pays the top placements by final ranking. Requires a champion to already exist.",
+      body: isStandingsFormat(t.format)
+        ? "Pays the top placements by final standings. Requires every match to be reported."
+        : "Pays the top placements by final ranking. Requires a champion to already exist.",
       requireReason: true,
       confirmLabel: "Complete & pay prizes",
       method: "POST",
@@ -356,25 +373,31 @@ function TournamentForm({ tournament, onClose, onDone }: { tournament?: Tourname
   const [minTrophies, setMinTrophies] = useState<number>(tournament?.minTrophies ?? 0);
   const [matchMode, setMatchMode] = useState<"CASUAL" | "RANKED">(tournament?.matchMode ?? "CASUAL");
   const [startsAt, setStartsAt] = useState(tournament?.startsAt ? toLocalInput(tournament.startsAt) : "");
+  // SWISS ONLY: rounds — blank/null = auto (ceil(log2(n)), computed at Start).
+  const [rounds, setRounds] = useState<string>(tournament?.rounds != null ? String(tournament.rounds) : "");
 
   const isRoundRobin = format === "ROUND_ROBIN";
-  const bracketSizeOptions = isRoundRobin ? ROUND_ROBIN_SIZES : BRACKET_SIZES;
+  const isSwiss = format === "SWISS";
+  const bracketSizeOptions = isRoundRobin ? ROUND_ROBIN_SIZES : isSwiss ? SWISS_SIZES : BRACKET_SIZES;
 
   // When switching format, clamp maxPlayers into the new format's valid set
-  // (power-of-two bracket sizes for elimination, 2..16 for round robin).
+  // (power-of-two bracket sizes for elimination, 2..16 for round robin, 2..32 for swiss).
   const onFormatChange = (next: TournamentFormat) => {
     setFormat(next);
     if (next === "ROUND_ROBIN" && maxPlayers > ROUND_ROBIN_MAX_PLAYERS) {
       setMaxPlayers(ROUND_ROBIN_MAX_PLAYERS);
-    } else if (next !== "ROUND_ROBIN" && !(BRACKET_SIZES as readonly number[]).includes(maxPlayers)) {
+    } else if (next === "SWISS" && maxPlayers > SWISS_MAX_PLAYERS) {
+      setMaxPlayers(SWISS_MAX_PLAYERS);
+    } else if (next !== "ROUND_ROBIN" && next !== "SWISS" && !(BRACKET_SIZES as readonly number[]).includes(maxPlayers)) {
       setMaxPlayers(8);
     }
   };
 
+  const roundsValid = rounds.trim() === "" || (Number.isInteger(Number(rounds)) && Number(rounds) >= 1 && Number(rounds) <= 20);
   const splitSum = split.reduce((a, b) => a + b, 0);
   const splitValid = split.length >= 1 && split.length <= maxPlayers && splitSum === prizePoolGold;
-  const supportedFormat = format === "SINGLE_ELIM" || format === "ROUND_ROBIN";
-  const valid = name.trim().length > 0 && supportedFormat && splitValid;
+  const supportedFormat = format === "SINGLE_ELIM" || format === "ROUND_ROBIN" || format === "SWISS";
+  const valid = name.trim().length > 0 && supportedFormat && splitValid && roundsValid;
 
   const setPlace = (i: number, gold: number) => setSplit((s) => s.map((v, idx) => (idx === i ? gold : v)));
   const addPlace = () => setSplit((s) => (s.length < maxPlayers ? [...s, 0] : s));
@@ -399,6 +422,7 @@ function TournamentForm({ tournament, onClose, onDone }: { tournament?: Tourname
         minTrophies,
         matchMode,
         startsAt: startsAt ? new Date(startsAt).toISOString() : null,
+        rounds: isSwiss && rounds.trim() !== "" ? Number(rounds) : null,
       },
       successMsg: isEdit ? "Tournament updated." : "Tournament created as a draft.",
       onDone: () => { onDone(); onClose(); },
@@ -426,7 +450,7 @@ function TournamentForm({ tournament, onClose, onDone }: { tournament?: Tourname
           </select>
         </div>
         <div className="field" style={{ flex: 1, minWidth: 160 }}>
-          <label>{isRoundRobin ? "Players (cap 16)" : "Bracket size (cap)"}</label>
+          <label>{isRoundRobin ? "Players (cap 16)" : isSwiss ? "Players (cap 32)" : "Bracket size (cap)"}</label>
           <select className="select" value={maxPlayers} onChange={(e) => setMaxPlayers(Number(e.target.value))}>
             {bracketSizeOptions.map((n) => (
               <option key={n} value={n}>{n}</option>
@@ -440,10 +464,30 @@ function TournamentForm({ tournament, onClose, onDone }: { tournament?: Tourname
             <option value="RANKED">Ranked</option>
           </select>
         </div>
+        {isSwiss && (
+          <div className="field" style={{ flex: 1, minWidth: 160 }}>
+            <label>Rounds (optional)</label>
+            <input
+              className="input"
+              type="number"
+              min={1}
+              max={20}
+              placeholder="auto"
+              value={rounds}
+              onChange={(e) => setRounds(e.target.value)}
+            />
+          </div>
+        )}
       </div>
       {isRoundRobin && (
         <div className="dim" style={{ fontSize: 11, marginTop: -6, marginBottom: 12 }}>
           Round robin: every player plays every other player once. Match count grows fast — capped at 16 players ({(16 * 15) / 2} matches).
+        </div>
+      )}
+      {isSwiss && (
+        <div className="dim" style={{ fontSize: 11, marginTop: -6, marginBottom: 12 }}>
+          Swiss: players are paired by score each round (rematches avoided where possible). Leave rounds blank for the standard ceil(log2(players)) count.
+          {!roundsValid && <span style={{ color: "var(--red-lt)" }}> Rounds must be an integer from 1 to 20.</span>}
         </div>
       )}
 
@@ -553,6 +597,8 @@ function BracketDrawer({ id, onClose, onDone }: { id: string; onClose: () => voi
   const rounds = d ? Object.keys(d.bracket).map(Number).sort((a, b) => a - b) : [];
   const entryById = new Map((d?.entries ?? []).map((e) => [e.id, e]));
   const isRoundRobin = d?.format === "ROUND_ROBIN";
+  const isSwiss = d?.format === "SWISS";
+  const isStandings = d ? isStandingsFormat(d.format) : false;
 
   const entryLabel = (entryId: string | null): string => {
     if (!entryId) return "TBD";
@@ -561,13 +607,15 @@ function BracketDrawer({ id, onClose, onDone }: { id: string; onClose: () => voi
     return `${e.user.username} ${e.user.tag}${e.seed ? ` (seed ${e.seed})` : ""}`;
   };
 
-  // Standings for ROUND_ROBIN — a live win/loss tally from the reported
-  // matches so far (not just the final placement, which is only set at
-  // Complete). Ranked by wins desc, then seed asc — a lightweight client-side
-  // view; the authoritative ranking (incl. head-to-head tiebreak) is computed
-  // server-side by computeRoundRobinStandings at Complete time.
+  // Standings for ROUND_ROBIN and SWISS — a live win/loss tally from the
+  // reported matches so far (not just the final placement, which is only set
+  // at Complete; for SWISS a bye slot's winnerEntryId still counts as a
+  // "win" here exactly like a real match, matching how computeSwissStandings
+  // scores byes server-side). Ranked by wins desc, then seed asc — a
+  // lightweight client-side view; the authoritative ranking (incl.
+  // head-to-head/Buchholz tiebreak) is computed server-side at Complete time.
   const standings = (() => {
-    if (!d || !isRoundRobin) return [];
+    if (!d || !isStandings) return [];
     const allMatches = Object.values(d.bracket).flat();
     const wins = new Map<string, number>();
     const losses = new Map<string, number>();
@@ -644,10 +692,12 @@ function BracketDrawer({ id, onClose, onDone }: { id: string; onClose: () => voi
               </table>
             </div>
 
-            {isRoundRobin && (
+            {isStandings && (
               <>
                 <div style={{ fontWeight: 700, margin: "10px 0 8px" }}>
-                  Standings <span className="dim" style={{ fontWeight: 500 }}>· ranked by wins — final placement is set at Complete</span>
+                  Standings <span className="dim" style={{ fontWeight: 500 }}>
+                    · ranked by {isSwiss ? "score (wins + byes)" : "wins"} — final placement is set at Complete
+                  </span>
                 </div>
                 <div className="panel" style={{ marginBottom: 20, overflow: "hidden" }}>
                   <table className="tbl">
@@ -681,10 +731,13 @@ function BracketDrawer({ id, onClose, onDone }: { id: string; onClose: () => voi
             )}
 
             <div style={{ fontWeight: 700, margin: "10px 0 8px" }}>
-              {isRoundRobin ? "Matches" : "Bracket"} <span className="dim" style={{ fontWeight: 500 }}>· simple slot view — report each match's winner {isRoundRobin ? "" : "to advance"}</span>
+              {isStandings ? "Matches" : "Bracket"} <span className="dim" style={{ fontWeight: 500 }}>
+                · simple slot view — report each match's winner {isStandings ? "" : "to advance"}
+                {isSwiss ? " (later rounds appear automatically once the current round is fully reported)" : ""}
+              </span>
             </div>
             {rounds.length === 0 ? (
-              <div className="panel panel-pad dim">{isRoundRobin ? "Matches" : "Bracket"} not seeded yet — Start the tournament first.</div>
+              <div className="panel panel-pad dim">{isStandings ? "Matches" : "Bracket"} not seeded yet — Start the tournament first.</div>
             ) : (
               rounds.map((r) => (
                 <div key={r} style={{ marginBottom: 16 }}>
@@ -693,7 +746,7 @@ function BracketDrawer({ id, onClose, onDone }: { id: string; onClose: () => voi
                   </div>
                   <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
                     {d.bracket[String(r)]!.sort((a, b) => a.slot - b.slot).map((m) => (
-                      <SlotRow key={m.id} tournamentId={d.id} m={m} entryLabel={entryLabel} onDone={() => { load(); onDone(); }} isRoundRobin={isRoundRobin} />
+                      <SlotRow key={m.id} tournamentId={d.id} m={m} entryLabel={entryLabel} onDone={() => { load(); onDone(); }} isRoundRobin={isStandings} />
                     ))}
                   </div>
                 </div>
