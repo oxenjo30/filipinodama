@@ -15,6 +15,7 @@ import { friendRoutes } from "./modules/friends.js";
 import { guildRoutes } from "./modules/guilds.js";
 import { storeRoutes } from "./modules/store.js";
 import { questRoutes } from "./modules/quests.js";
+import { eventsRoutes } from "./modules/events.js";
 import { seasonRoutes } from "./modules/seasons.js";
 import { rewardRoutes } from "./modules/rewards.js";
 import { adminRoutes } from "./modules/admin.js";
@@ -105,6 +106,7 @@ export async function buildApp(): Promise<FastifyInstance> {
   await app.register(guildRoutes, { prefix: "/api" });
   await app.register(storeRoutes, { prefix: "/api" });
   await app.register(questRoutes, { prefix: "/api" });
+  await app.register(eventsRoutes, { prefix: "/api" });
   await app.register(seasonRoutes, { prefix: "/api" });
   await app.register(rewardRoutes, { prefix: "/api" });
   await app.register(adminRoutes, { prefix: "/api" });
