@@ -5,7 +5,7 @@ import { useAppStore } from "../../stores/appStore";
 import { useAuthStore } from "../../stores/authStore";
 import { Avatar, CurrencyPill } from "../../components";
 import { ICONS } from "../../lib/assets";
-import { FORMAT_LABEL, STATUS_META, formatStartsAt, isStandingsFormat, type TournamentDetail, type TournamentEntry } from "./types";
+import { FORMAT_LABEL, STATUS_META, formatStartsAt, isStandingsFormat, isDoubleElim, BRACKET_LABEL, type TournamentDetail, type TournamentEntry } from "./types";
 
 /**
  * TournamentDetailPage (/tournaments/:id) — one Cup's entry list + bracket.
@@ -198,6 +198,22 @@ export function TournamentDetailPage() {
       .map(Number)
       .sort((a, b) => a - b);
   }, [data]);
+
+  // DOUBLE_ELIM: group the flat round->matches map by each match's own
+  // `bracket` field ("W"/"L"/"GF") so the page can render three separate
+  // labeled sections instead of one flat, interleaved round list — the
+  // round-offset scheme (W rounds 1..k, L rounds 101+, GF 201+) guarantees
+  // round numbers never collide across sub-brackets, so this grouping is
+  // purely presentational (same derivation as the admin client's drawer).
+  const bracketGroups = useMemo(() => {
+    if (!data || !isDoubleElim(data.format)) return [];
+    return (["W", "L", "GF"] as const)
+      .map((key) => {
+        const roundsInBracket = rounds.filter((r) => (data.bracket[String(r)] ?? []).some((m) => m.bracket === key));
+        return { key, label: BRACKET_LABEL[key]!, rounds: roundsInBracket };
+      })
+      .filter((g) => g.rounds.length > 0);
+  }, [data, rounds]);
 
   // Standings for no-elimination formats (ROUND_ROBIN this stage) — a live
   // win/loss tally from reported matches, ranked by final placement (once
@@ -416,8 +432,9 @@ export function TournamentDetailPage() {
         </div>
       )}
 
-      {/* BRACKET (elimination formats) */}
-      {!isStandingsFormat(data.format) && rounds.length > 0 && (
+      {/* BRACKET (single-elim-shaped formats: SINGLE_ELIM, and DOUBLE_ELIM's
+          three sub-brackets rendered as separate labeled sections below) */}
+      {!isStandingsFormat(data.format) && !isDoubleElim(data.format) && rounds.length > 0 && (
         <div className="frame fd-card-m" style={{ padding: "20px 22px" }}>
           <div className="ptitle">Bracket</div>
           <div style={{ display: "flex", gap: 18, overflowX: "auto", paddingBottom: 8, marginTop: 6 }}>
@@ -442,6 +459,38 @@ export function TournamentDetailPage() {
           </div>
         </div>
       )}
+
+      {/* DOUBLE_ELIM: winners / losers / grand-final sections, each with its
+          own round-by-round columns — same round-column rendering as the
+          single-elim bracket above, repeated per sub-bracket. */}
+      {isDoubleElim(data.format) &&
+        bracketGroups.map((group) => (
+          <div key={group.key} className="frame fd-card-m" style={{ padding: "20px 22px" }}>
+            <div className="ptitle">{group.label}</div>
+            <div style={{ display: "flex", gap: 18, overflowX: "auto", paddingBottom: 8, marginTop: 6 }}>
+              {group.rounds.map((round) => (
+                <div key={round} style={{ flex: "none", minWidth: 220, display: "flex", flexDirection: "column", gap: 10 }}>
+                  <div style={{ font: "700 12px Inter", letterSpacing: ".5px", color: "var(--gold)", textAlign: "center" }}>
+                    {group.key === "GF" ? (round === 202 ? "Bracket reset (game 2)" : "Game 1") : round === group.rounds[group.rounds.length - 1] ? "Final" : `Round ${round}`}
+                  </div>
+                  {data.bracket[String(round)]
+                    .filter((m) => m.bracket === group.key)
+                    .map((m) => {
+                      const red = m.redEntryId ? (entryById.get(m.redEntryId) ?? null) : null;
+                      const blue = m.blueEntryId ? (entryById.get(m.blueEntryId) ?? null) : null;
+                      const bye = (!!m.redEntryId && !m.blueEntryId) || (!m.redEntryId && !!m.blueEntryId);
+                      return (
+                        <div key={m.id} style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                          <MatchSlot label="TBD" entry={red} isWinner={!!red && m.winnerEntryId === red.id} bye={bye && !red} />
+                          <MatchSlot label="TBD" entry={blue} isWinner={!!blue && m.winnerEntryId === blue.id} bye={bye && !blue} />
+                        </div>
+                      );
+                    })}
+                </div>
+              ))}
+            </div>
+          </div>
+        ))}
     </div>
   );
 }

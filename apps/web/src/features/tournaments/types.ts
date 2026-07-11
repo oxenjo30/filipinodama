@@ -36,17 +36,26 @@ export type TournamentEntry = {
 };
 
 /** True for formats with no elimination bracket — ranked by a win/loss
- * standings table instead of a bracket tree. (DOUBLE_ELIM/SWISS aren't
- * built yet — this stage only covers ROUND_ROBIN.) */
+ * standings table instead of a bracket tree. */
 export function isStandingsFormat(format: TournamentFormat): boolean {
   return format === "ROUND_ROBIN" || format === "SWISS";
 }
+
+/** DOUBLE_ELIM has THREE sub-brackets (winners/losers/grand final) instead of
+ * one — every other elimination format's matches all carry `bracket:"W"`
+ * (the schema default), so they keep the single flat round list. */
+export function isDoubleElim(format: TournamentFormat): boolean {
+  return format === "DOUBLE_ELIM";
+}
+
+export const BRACKET_LABEL: Record<string, string> = { W: "Winners bracket", L: "Losers bracket", GF: "Grand final" };
 
 export type TournamentMatch = {
   id: string;
   tournamentId: string;
   round: number;
   slot: number;
+  bracket: string; // "W" | "L" | "GF" — DOUBLE_ELIM only
   redEntryId: string | null;
   blueEntryId: string | null;
   winnerEntryId: string | null;

@@ -44,6 +44,7 @@ type TournamentMatch = {
   tournamentId: string;
   round: number;
   slot: number;
+  bracket: string; // "W" | "L" | "GF" — DOUBLE_ELIM only; every other format's matches are all "W" (the schema default)
   redEntryId: string | null;
   blueEntryId: string | null;
   matchId: string | null;
@@ -64,7 +65,7 @@ const SWISS_SIZES = Array.from({ length: 31 }, (_, i) => i + 2); // 2..32
 const SWISS_MAX_PLAYERS = 32;
 const FORMATS: { value: TournamentFormat; label: string; v1: boolean }[] = [
   { value: "SINGLE_ELIM", label: "Single elimination", v1: true },
-  { value: "DOUBLE_ELIM", label: "Double elimination", v1: false },
+  { value: "DOUBLE_ELIM", label: "Double elimination", v1: true },
   { value: "SWISS", label: "Swiss", v1: true },
   { value: "ROUND_ROBIN", label: "Round robin", v1: true },
 ];
@@ -73,6 +74,13 @@ const FORMATS: { value: TournamentFormat; label: string; v1: boolean }[] = [
 function isStandingsFormat(format: TournamentFormat): boolean {
   return format === "ROUND_ROBIN" || format === "SWISS";
 }
+/** DOUBLE_ELIM's bracket view groups matches by sub-bracket (W/L/GF) first,
+ * round second — every other elimination format has just one implicit
+ * bracket ("W", the schema default) so it keeps the flat round-only view. */
+function isDoubleElim(format: TournamentFormat): boolean {
+  return format === "DOUBLE_ELIM";
+}
+const BRACKET_LABEL: Record<string, string> = { W: "Winners bracket", L: "Losers bracket", GF: "Grand final" };
 
 const STATUS_CLASS: Record<TournamentStatus, string> = {
   DRAFT: "st-muted",
@@ -396,7 +404,7 @@ function TournamentForm({ tournament, onClose, onDone }: { tournament?: Tourname
   const roundsValid = rounds.trim() === "" || (Number.isInteger(Number(rounds)) && Number(rounds) >= 1 && Number(rounds) <= 20);
   const splitSum = split.reduce((a, b) => a + b, 0);
   const splitValid = split.length >= 1 && split.length <= maxPlayers && splitSum === prizePoolGold;
-  const supportedFormat = format === "SINGLE_ELIM" || format === "ROUND_ROBIN" || format === "SWISS";
+  const supportedFormat = format === "SINGLE_ELIM" || format === "ROUND_ROBIN" || format === "SWISS" || format === "DOUBLE_ELIM";
   const valid = name.trim().length > 0 && supportedFormat && splitValid && roundsValid;
 
   const setPlace = (i: number, gold: number) => setSplit((s) => s.map((v, idx) => (idx === i ? gold : v)));
@@ -599,6 +607,21 @@ function BracketDrawer({ id, onClose, onDone }: { id: string; onClose: () => voi
   const isRoundRobin = d?.format === "ROUND_ROBIN";
   const isSwiss = d?.format === "SWISS";
   const isStandings = d ? isStandingsFormat(d.format) : false;
+  const isDE = d ? isDoubleElim(d.format) : false;
+
+  // DOUBLE_ELIM: group the flat round->matches map by each match's own
+  // `bracket` field ("W"/"L"/"GF") so the drawer can render three separate
+  // labeled sections instead of one flat, interleaved round list — the
+  // round-offset scheme (W 1..k, L 101+, GF 201+) guarantees round numbers
+  // never collide across brackets, so this grouping is purely presentational.
+  const bracketGroups: Array<{ key: string; label: string; rounds: number[] }> = isDE
+    ? (["W", "L", "GF"] as const)
+        .map((key) => {
+          const roundsInBracket = rounds.filter((r) => (d!.bracket[String(r)] ?? []).some((m) => m.bracket === key));
+          return { key, label: BRACKET_LABEL[key]!, rounds: roundsInBracket };
+        })
+        .filter((g) => g.rounds.length > 0)
+    : [];
 
   const entryLabel = (entryId: string | null): string => {
     if (!entryId) return "TBD";
@@ -738,6 +761,28 @@ function BracketDrawer({ id, onClose, onDone }: { id: string; onClose: () => voi
             </div>
             {rounds.length === 0 ? (
               <div className="panel panel-pad dim">{isStandings ? "Matches" : "Bracket"} not seeded yet — Start the tournament first.</div>
+            ) : isDE ? (
+              // DOUBLE_ELIM: three labeled sections (Winners / Losers / Grand
+              // final), each with its own round-by-round slot list — grouping
+              // derived client-side from each match's `bracket` field (see
+              // `bracketGroups` above).
+              bracketGroups.map((group) => (
+                <div key={group.key} style={{ marginBottom: 24 }}>
+                  <div style={{ fontWeight: 700, marginBottom: 10, color: "var(--gold-lt)" }}>{group.label}</div>
+                  {group.rounds.map((r) => (
+                    <div key={r} style={{ marginBottom: 16 }}>
+                      <div className="dim" style={{ font: "700 11px var(--sans)", textTransform: "uppercase", letterSpacing: 1, marginBottom: 8 }}>
+                        {group.key === "GF" ? (r === 202 ? "Bracket reset (game 2)" : "Game 1") : `Round ${r}`}
+                      </div>
+                      <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                        {d.bracket[String(r)]!.filter((m) => m.bracket === group.key).sort((a, b) => a.slot - b.slot).map((m) => (
+                          <SlotRow key={m.id} tournamentId={d.id} m={m} entryLabel={entryLabel} onDone={() => { load(); onDone(); }} isRoundRobin={false} />
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ))
             ) : (
               rounds.map((r) => (
                 <div key={r} style={{ marginBottom: 16 }}>
