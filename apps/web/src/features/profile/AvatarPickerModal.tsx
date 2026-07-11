@@ -1,33 +1,22 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { api, ApiError } from "../../lib/api";
 import { useAppStore } from "../../stores/appStore";
 import { useAuthStore } from "../../stores/authStore";
 
 /**
- * AvatarPickerModal — faithful port of the prototype avatar-picker modal
- * (lines 2326-2352 / avatarChoices at line 4367), fully wired to LIVE data.
+ * AvatarPickerModal — the profile avatar picker, wired to OWNERSHIP.
  *
- * A modal grid of selectable portraits. The avatar currently equipped on the
- * account (useAuthStore().me.avatarUrl) shows a gold border. Clicking a portrait
- * persists it via PATCH /api/users/me { avatarUrl } then patchMe() to update the
- * local session, and closes. The prototype's uploads/* choices do not exist, so
- * we use the real /assets/avatars/*.png roster.
+ * The picker shows only avatars the player actually OWNS — the free starter
+ * avatars everyone is granted on signup, plus any avatars they've bought in the
+ * Store. This avoids the old bug where the picker gave away all 11 store avatars
+ * for free (a paid Store avatar could be equipped without buying it). Owned
+ * avatars come from the inventory (GET /api/users/me/export → inventory[itemId],
+ * the same read the Store uses). The equipped avatar shows a gold border.
+ * Clicking a portrait persists it via PATCH /api/users/me { avatarUrl }.
+ *
+ * Avatar store-item ids ARE the bare avatar key (e.g. "katipunero"), which is
+ * also what avatarUrl stores and what /assets/avatars/<key>.png resolves to.
  */
-
-// Real avatar roster (bare keys; Me.avatarUrl stores the bare key).
-const AVATAR_CHOICES = [
-  "champion",
-  "sovereign",
-  "strategist",
-  "babaylan",
-  "bagani",
-  "diwata",
-  "mandirigma",
-  "ermitanyo",
-  "dayang",
-  "priestess",
-  "sultan",
-] as const;
 
 /** Resolve a Me.avatarUrl (bare key | "/assets/…" | full URL) to a renderable src. */
 function avatarSrc(avatarUrl: string): string {
@@ -60,11 +49,44 @@ export type AvatarPickerModalProps = {
   onClose: () => void;
 };
 
+/** A catalog AVATAR item — its id is the bare avatar key. */
+type AvatarItem = { id: string; name: string };
+
 export function AvatarPickerModal({ open, onClose }: AvatarPickerModalProps) {
   const me = useAuthStore((s) => s.me);
   const patchMe = useAuthStore((s) => s.patchMe);
   const showToast = useAppStore((s) => s.showToast);
   const [saving, setSaving] = useState<string | null>(null);
+  // Owned avatars = the free starters (granted on signup) + any bought in the
+  // Store. Loaded when the modal opens: catalog AVATAR items ∩ the user's
+  // inventory. Never all avatars — a paid avatar only appears once purchased.
+  const [ownedAvatars, setOwnedAvatars] = useState<AvatarItem[] | null>(null);
+  const [loadError, setLoadError] = useState(false);
+
+  useEffect(() => {
+    if (!open) return;
+    let cancelled = false;
+    setOwnedAvatars(null);
+    setLoadError(false);
+    Promise.all([
+      api.get<{ items: { id: string; type: string; name: string }[] }>("/api/store/items"),
+      api.get<{ inventory: { itemId: string }[] }>("/api/users/me/export"),
+    ])
+      .then(([cat, inv]) => {
+        if (cancelled) return;
+        const ownedIds = new Set(inv.inventory.map((i) => i.itemId));
+        const avatars = cat.items
+          .filter((it) => it.type === "AVATAR" && ownedIds.has(it.id))
+          .map((it) => ({ id: it.id, name: it.name }));
+        setOwnedAvatars(avatars);
+      })
+      .catch(() => {
+        if (!cancelled) setLoadError(true);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [open]);
 
   if (!open) return null;
 
@@ -138,37 +160,56 @@ export function AvatarPickerModal({ open, onClose }: AvatarPickerModalProps) {
         </div>
         <h2 style={{ margin: "6px 0 4px", font: "800 26px Cinzel,serif", color: "var(--gold-lt)" }}>Choose Avatar</h2>
         <p style={{ font: "400 13px Inter", color: "var(--ink)", margin: "0 0 20px" }}>
-          Pick a portrait to represent you across the arena.
+          Pick a portrait to represent you across the arena. Unlock more in the Store.
         </p>
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", gap: 14 }}>
-          {AVATAR_CHOICES.map((key) => {
-            const on = key === currentKey;
-            const busy = saving === key;
-            return (
-              <img
-                key={key}
-                src={avatarSrc(key)}
-                alt={key}
-                onClick={() => pick(key)}
-                style={{
-                  width: "100%",
-                  aspectRatio: "1",
-                  borderRadius: 14,
-                  objectFit: "cover",
-                  cursor: saving ? "default" : "pointer",
-                  display: "block",
-                  filter: "brightness(1.25)",
-                  opacity: busy ? 0.55 : 1,
-                  border: `3px solid ${on ? "var(--gold)" : "rgba(232,184,75,.18)"}`,
-                  boxShadow: on
-                    ? "0 0 0 3px rgba(232,184,75,.28),0 6px 16px rgba(0,0,0,.45)"
-                    : "0 4px 10px rgba(0,0,0,.3)",
-                  transition: "transform .12s ease",
-                }}
-              />
-            );
-          })}
-        </div>
+
+        {ownedAvatars === null && !loadError ? (
+          <div style={{ padding: "30px 0", textAlign: "center", font: "500 13px Inter", color: "var(--ink2)" }}>
+            Loading your avatars…
+          </div>
+        ) : loadError ? (
+          <div style={{ padding: "30px 0", textAlign: "center", font: "500 13px Inter", color: "#ff8fae" }}>
+            Couldn't load your avatars. Please try again.
+          </div>
+        ) : ownedAvatars && ownedAvatars.length === 0 ? (
+          <div style={{ padding: "24px 0", textAlign: "center", font: "500 13px/1.6 Inter", color: "var(--ink2)" }}>
+            You don't own any avatars yet.
+            <br />
+            Visit the Store to unlock portraits.
+          </div>
+        ) : (
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", gap: 14 }}>
+            {(ownedAvatars ?? []).map((item) => {
+              const key = item.id;
+              const on = key === currentKey;
+              const busy = saving === key;
+              return (
+                <img
+                  key={key}
+                  src={avatarSrc(key)}
+                  alt={item.name}
+                  title={item.name}
+                  onClick={() => pick(key)}
+                  style={{
+                    width: "100%",
+                    aspectRatio: "1",
+                    borderRadius: 14,
+                    objectFit: "cover",
+                    cursor: saving ? "default" : "pointer",
+                    display: "block",
+                    filter: "brightness(1.25)",
+                    opacity: busy ? 0.55 : 1,
+                    border: `3px solid ${on ? "var(--gold)" : "rgba(232,184,75,.18)"}`,
+                    boxShadow: on
+                      ? "0 0 0 3px rgba(232,184,75,.28),0 6px 16px rgba(0,0,0,.45)"
+                      : "0 4px 10px rgba(0,0,0,.3)",
+                    transition: "transform .12s ease",
+                  }}
+                />
+              );
+            })}
+          </div>
+        )}
       </div>
     </div>
   );

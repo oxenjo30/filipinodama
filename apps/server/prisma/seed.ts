@@ -25,6 +25,17 @@ const STORE = [
   { id: "skin-classic", type: "SKIN", name: "Classic", description: "The classic default pieces.", assetKey: "classic", previewKey: "skin:classic", priceGold: 0, sortOrder: 1 },
   { id: "emote-resolve", type: "EMOTE", name: "Warrior's Resolve", assetKey: "victory", previewKey: "emote:💪", priceGold: 0, sortOrder: 2 },
 
+  // ── FREE starter avatars (priceGold:0 → auto-granted to every new player via
+  //    grantDefaults; shown in the profile Avatar picker). These are the ONLY
+  //    free avatars — distinct Meshy-generated portraits that do NOT duplicate
+  //    any paid Store avatar, so nothing sold is also given away. ──
+  { id: "katipunero", type: "AVATAR", name: "Katipunero", description: "Free starter avatar.", assetKey: "avatars/katipunero.png", previewKey: "avatar:avatars/katipunero.png", priceGold: 0, sortOrder: 3 },
+  { id: "mangangaso", type: "AVATAR", name: "Mangangaso Hunter", description: "Free starter avatar.", assetKey: "avatars/mangangaso.png", previewKey: "avatar:avatars/mangangaso.png", priceGold: 0, sortOrder: 4 },
+  { id: "rajah", type: "AVATAR", name: "Rajah Scholar", description: "Free starter avatar.", assetKey: "avatars/rajah.png", previewKey: "avatar:avatars/rajah.png", priceGold: 0, sortOrder: 5 },
+  { id: "kalikasan", type: "AVATAR", name: "Diwata of Kalikasan", description: "Free starter avatar.", assetKey: "avatars/kalikasan.png", previewKey: "avatar:avatars/kalikasan.png", priceGold: 0, sortOrder: 6 },
+  { id: "albularya", type: "AVATAR", name: "Babaylan Albularya", description: "Free starter avatar.", assetKey: "avatars/albularya.png", previewKey: "avatar:avatars/albularya.png", priceGold: 0, sortOrder: 7 },
+  { id: "dalisay", type: "AVATAR", name: "Dayang Dalisay", description: "Free starter avatar.", assetKey: "avatars/dalisay.png", previewKey: "avatar:avatars/dalisay.png", priceGold: 0, sortOrder: 8 },
+
   // ── Board Themes ──
   { id: "ebony", type: "BOARD", name: "Imperial Ebony Board", assetKey: "board-ebony.png", previewKey: "board:board-ebony.png", priceDiamonds: 480, tag: "NEW", featured: true, sortOrder: 10 },
   { id: "marble", type: "BOARD", name: "Marble Court Board", assetKey: "board-marble.png", previewKey: "board:board-marble.png", priceGold: 4200, sortOrder: 11 },
@@ -144,6 +155,29 @@ async function main() {
   for (const raw of STORE) {
     const it = toGoldOnly(raw as any);
     await prisma.storeItem.upsert({ where: { id: it.id }, update: it as any, create: it as any });
+  }
+
+  // Backfill the FREE starter avatars to EXISTING users. grantDefaults only runs
+  // at signup, so users created before these avatars existed wouldn't own them
+  // (their Avatar picker would be empty). Grant each free avatar to every user's
+  // inventory (owned, NOT equipped — we never change a user's current avatar).
+  const freeAvatarIds = STORE.filter(
+    (s): s is typeof s & { priceGold: number } =>
+      s.type === "AVATAR" && "priceGold" in s && (s as { priceGold?: number }).priceGold === 0,
+  ).map((s) => s.id);
+  if (freeAvatarIds.length > 0) {
+    const users = await prisma.user.findMany({ select: { id: true } });
+    for (const u of users) {
+      for (const itemId of freeAvatarIds) {
+        await prisma.inventoryItem.upsert({
+          where: { userId_itemId: { userId: u.id, itemId } },
+          update: {},
+          create: { userId: u.id, itemId, equipped: false },
+        });
+      }
+    }
+    // eslint-disable-next-line no-console
+    console.log(`Backfilled ${freeAvatarIds.length} free avatars to ${users.length} users.`);
   }
   for (const q of QUESTS) {
     await prisma.quest.upsert({ where: { id: q.id }, update: q, create: q });

@@ -49,27 +49,41 @@ async function uniqueTag(prisma: PrismaClient): Promise<string> {
  * StoreItem priced at 0 gold (the default marble board + classic skin), added
  * to their inventory and equipped. Idempotent (skips items already owned).
  */
+/** The avatar every new player starts equipped with (one of the free starters). */
+const DEFAULT_AVATAR_KEY = "katipunero";
+
 async function grantDefaults(prisma: PrismaClient, userId: string) {
   const defaults = await prisma.storeItem.findMany({
     where: { active: true, priceGold: 0, priceDiamonds: null },
   });
   let equippedBoard: string | undefined;
   let equippedSkin: string | undefined;
+  let equippedAvatar: string | undefined;
   for (const item of defaults) {
+    // Grant every free item to the inventory. For BOARD/SKIN the single default
+    // is auto-equipped. For AVATAR there are several free starters, so we only
+    // MARK the inventory equipped flag for the chosen default one — the others
+    // are owned-but-not-equipped, ready to pick in the profile Avatar modal.
+    const isDefaultAvatar = item.type === "AVATAR" && item.id === DEFAULT_AVATAR_KEY;
+    const equipped =
+      item.type === "BOARD" || item.type === "SKIN" || item.type === "EMOTE" || isDefaultAvatar;
     await prisma.inventoryItem.upsert({
       where: { userId_itemId: { userId, itemId: item.id } },
       update: {},
-      create: { userId, itemId: item.id, equipped: true },
+      create: { userId, itemId: item.id, equipped },
     });
     if (item.type === "BOARD" && !equippedBoard) equippedBoard = item.id;
     if (item.type === "SKIN" && !equippedSkin) equippedSkin = item.id;
+    if (isDefaultAvatar) equippedAvatar = item.id;
   }
-  if (equippedBoard || equippedSkin) {
+  if (equippedBoard || equippedSkin || equippedAvatar) {
     await prisma.user.update({
       where: { id: userId },
       data: {
         ...(equippedBoard ? { equippedBoard } : {}),
         ...(equippedSkin ? { equippedSkin } : {}),
+        // avatarUrl stores the bare avatar key (see AvatarPickerModal.avatarValue).
+        ...(equippedAvatar ? { avatarUrl: equippedAvatar } : {}),
       },
     });
   }
