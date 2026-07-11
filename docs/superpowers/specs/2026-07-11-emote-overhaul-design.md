@@ -42,6 +42,15 @@ pass-and-play, and spectate.
   (clamped 8 chars) and `body` text (clamped 200, blanked for muted players),
   anti-flood 8/4000ms. So quick-chat PHRASES ride the existing `body` path and
   emoji ride the `emote` path — no new socket event needed.
+- **`publicUser()` omits `equippedEmotes`** (`auth/service.ts:11-36`) — the
+  session user shape backing login/me lacks the field, so the client never sees
+  the loadout (see §2, blocker).
+- **OAuth signups never call `grantDefaults`** (`oauth.ts:135-163`) — Google/FB
+  users get zero free cosmetics (see §2, blocker).
+- **A 4th duplicate emote list** lives in `DamathRoomPage.tsx:20` (same hardcoded
+  4 phrases), a real human-vs-human mode — in scope (see §4).
+- **No `match-chat` tests exist** anywhere in the repo (verified) — so there are
+  no existing tests to "keep passing"; new coverage is additive (see Testing).
 
 ## 1. Expanded catalog (emoji + phrases)
 
@@ -64,31 +73,71 @@ premium flair emotes as upsell (plan decides; not required).
 
 ## 2. Default emote loadout (fix the bug + backfill)
 
-- **`grantDefaults` (`auth/service.ts`)**: collect the free EMOTE item ids while
-  looping `defaults`, then include `equippedEmotes: <free emote ids, capped at
-  6>` in the final `user.update`. So every new user starts with a full reaction
-  bar. (Order the free emotes by `sortOrder` and take the first 6 for the
-  default loadout; they still OWN all free emotes for equipping others in
-  Inventory.)
-- **Backfill (one-off script + prod run)**: for existing non-bot users with
-  `equippedEmotes = []` who OWN free emotes, set `equippedEmotes` to the same
-  default set. Mirrors the earlier trophy-backfill pattern (idempotent, dry-run
-  first, run against prod via the Railway public DB URL).
+Four coordinated changes (the review found the first two are REQUIRED or the
+feature silently fails):
+
+- **BLOCKER — add `equippedEmotes` to `publicUser()` (`auth/service.ts:11-36`).**
+  This shape backs login/register/guest/refresh/`GET /api/auth/me`, but it
+  currently OMITS `equippedEmotes` (only `publicProfile()` in `users.ts` has it).
+  So `me.equippedEmotes` is `undefined` all session and the match bar keeps
+  falling back to the hardcoded set even after the DB is fixed. Add
+  `equippedEmotes: u.equippedEmotes` to the returned object. (The client `Me`
+  type in `apps/web/src/lib/api.ts` already declares the field.)
+- **BLOCKER — call `grantDefaults` on OAuth signup (`oauth.ts:135-163`).**
+  `findOrCreateOAuthUser` branch 3 (`prisma.user.create`, lines 151-162) never
+  calls `grantDefaults`, so Google/Facebook signups get NO free board/skin/
+  avatar/emotes at all (pre-existing bug). Add `await grantDefaults(prisma,
+  user.id)` after the create in that branch ONLY (branches 1 and 2 return an
+  existing user — don't re-grant). Import `grantDefaults` (currently unexported
+  — export it from `service.ts`).
+- **`grantDefaults` (`auth/service.ts:55-90`)**: while looping `defaults`,
+  collect free EMOTE item ids. The query at `service.ts:56-58` has **no
+  `orderBy`** — add `orderBy: { sortOrder: "asc" }` so ordering is deterministic.
+  Then include `equippedEmotes: <free emote ids, capped at 6>` in the final
+  `user.update`. Users still OWN all free emotes (inventory rows); the 6-cap is
+  only the DEFAULT equipped loadout, consistent with the `EMOTE_LIMIT` of 6 at
+  `users.ts:188`.
+- **Backfill (one-off script + prod run)** — must grant OWNERSHIP, not just
+  equip. Mirror the free-avatar backfill in `seed.ts:157-178`:
+  - For each existing non-bot, non-deleted user: **upsert an `InventoryItem`**
+    for every free EMOTE they don't own (so store cards show OWNED, not
+    "Claim"), AND
+  - if their `equippedEmotes` is EMPTY (`[]`), set it to the default 6.
+    **Any NON-empty `equippedEmotes` — even a single paid emote — is left
+    untouched** (never clobber an intentional loadout).
+  - Idempotent, dry-run first, run against prod via the Railway public DB URL
+    (same pattern as the trophy/soft-delete scripts).
 
 ## 3. Shared `MatchChat` component
 
 - **New `apps/web/src/features/play/MatchChat.tsx`** — the single in-match
-  emote/chat surface. Renders:
-  - a **reactions row** from the viewer's equipped emote glyphs (resolved via
-    `cosmeticsStore.emoteGlyph`), falling back to a sensible default set if the
-    loadout is somehow empty;
+  emote/chat surface. A NEW component (do NOT reuse `features/shared/EmotePicker.tsx`
+  — that's a draft-insert popover for DM/Guild composers, a different
+  interaction from an immediate-send reaction row). Renders:
+  - a **reactions row** showing **ALL free emotes the viewer OWNS** — not just
+    the 6 equipped — so the in-match bar is genuinely rich (per decision). Source
+    the owned free-emote glyphs from the cosmetics catalog (`byId` +
+    `emoteGlyph`) filtered to owned+free, plus any equipped paid emotes. Falls
+    back to a default glyph set only if that list is somehow empty.
   - a **phrases row** from the shared `MATCH_PHRASES`;
-  - the incoming-message display (recent emote/phrase bubbles).
+  - **the free-text input** (200-char box) is KEPT for online matches (it exists
+    today at `OnlineMatchPage.tsx:615-628`); it is optional per caller (rooms may
+    omit it) via a prop;
+  - the incoming-message display (recent bubbles).
+- **Define a normalized `MatchChatMsg` type** (in the component or a shared
+  spot): `{ from: string; color?: "red"|"blue"|null; emote?: string|null; body?: string|null; at: number }`.
+  The online store's `ChatMsg` already has separate `emote`/`body`
+  (`onlineStore.ts`); the room store's `RoomChatMsg` is `body`-only
+  (`roomStore.ts`). **Each caller maps its own message list to `MatchChatMsg[]`**
+  before passing it in — the online adapter preserves the emoji-bubble
+  treatment; the room adapter passes everything as `body` (emoji-as-text, matching
+  the room channel's existing behavior).
 - **Props (transport injected by caller):**
-  `{ send: (p: { emote?: string; body?: string }) => void; messages: MatchChatMsg[]; disabled?: boolean }`.
-  The component owns layout + the two rows; the caller owns the socket.
-- Replaces the duplicated Quick-Chat markup in `OnlineMatchPage` and the
-  `RoomChat` emote list in `PrivateRoomPage`. GamePage's stub is deleted (see §4).
+  `{ send: (p: { emote?: string; body?: string }) => void; messages: MatchChatMsg[]; showTextInput?: boolean; disabled?: boolean }`.
+  The component owns layout + rows; the caller owns the socket/adapter.
+- Replaces the duplicated Quick-Chat markup in `OnlineMatchPage`, the `RoomChat`
+  emote list in `PrivateRoomPage`, AND the identical one in `DamathRoomPage`
+  (see §4). GamePage's stub is deleted (see §4).
 
 ## 4. Per-mode presence (multiplayer only)
 
@@ -102,40 +151,67 @@ premium flair emotes as upsell (plan decides; not required).
   pick and a phrase pick to a single `sendChat(<glyph-or-phrase>)` string — this
   matches the room's current behavior (its `onEmote` already calls
   `sendChat(em)`). Replace the hardcoded 4-phrase `EMOTES` list with the shared
-  reactions + `MATCH_PHRASES`.
+  reactions + `MATCH_PHRASES`. **Room mute caveat:** the room relay
+  (`rooms.ts:325-339`) drops the WHOLE payload for a muted user (unlike the match
+  relay which only blanks text) — so a muted room player's emoji are dropped.
+  This is existing behavior; we do NOT change it here (documented, not a bug this
+  spec introduces).
+- **Damath rooms** (`DamathRoomPage.tsx`): the Damath variant room has the SAME
+  hardcoded 4-phrase `EMOTES` duplicate (`DamathRoomPage.tsx:20`) and is a real
+  routed human-vs-human mode (`/damath/room`). Apply the SAME shared `MatchChat`
+  treatment as private rooms.
 - **VS-AI** (`GamePage.tsx`): REMOVE the Quick-Chat panel + emote tray + the
   `sendChat` toast stub + local `GAME_EMOTES`. No emote bar in solo play.
 - **Local pass-and-play**: no emote bar (same removal as VS-AI — it shares the
   GamePage surface).
 - **Spectate**: no send (handled by the online-mode spectator gate above).
 
+## "Thin" resolution (explicit)
+
+The in-match reactions row shows **ALL free emotes the viewer owns** (~13), not
+only the 6 equipped — so the bar is genuinely rich. The 6-slot equip limit still
+governs the loadout concept elsewhere (Inventory/profile) but does NOT cap the
+in-match bar. Plus the phrases row adds a second dimension. This is the concrete
+fix for "so thin."
+
+**Store display:** the ~13 free emotes appear in the Store's Emotes tab as
+OWNED cards (not "Claim"), exactly like the 6 free avatars already sit among the
+paid avatars (`seed.ts:32-37` precedent) — `grantDefaults`/backfill pre-own them.
+The Emotes tab will skew free-heavy (~13 free : 2 paid); acceptable, matches the
+avatars precedent. No store code change needed.
+
 ## Data flow
 
-Equipped emote glyphs (`user.equippedEmotes` → `emoteGlyph`) + shared
-`MATCH_PHRASES` → `MatchChat` rows → caller's `send({emote})` / `send({body})`
-→ socket relay (`match.ts` for online; room channel for rooms) → both players'
-message displays.
+Owned free emote glyphs (+ equipped paid) via cosmetics catalog → `emoteGlyph` +
+shared `MATCH_PHRASES` → `MatchChat` rows → caller's `send({emote})` /
+`send({body})` (online) or `sendChat(text)` (rooms) → relay → each caller maps
+the incoming feed to `MatchChatMsg[]` → message display.
 
 ## Error handling / edge cases
 
-- New users: full default reaction bar (bug fixed). Existing users: backfilled.
+- New users (email + OAuth): full default reaction bar + ownership. Existing
+  users: backfilled (ownership + empty-loadout equip).
 - Empty loadout (shouldn't happen post-fix): `MatchChat` falls back to a default
   glyph set so the bar is never empty.
-- Muted players: server already blanks their text but allows emoji — unchanged.
-- Spectators: input hidden, not silently dropped.
-- 6-slot equip limit unchanged; phrases are a separate free list, not
-  slot-limited.
-- Anti-flood (8/4000ms) already covers both emoji + phrases.
+- Muted players: online relay blanks text but allows emoji; ROOM relay drops the
+  whole payload (existing behavior, documented — §4).
+- Spectators: input hidden (online-mode gate), not silently dropped.
+- Backfill: NEVER clobbers a non-empty `equippedEmotes` (even one paid emote).
+- Anti-flood (8/4000ms) covers both emoji + phrases; a throttled send is a silent
+  server no-op — the client shows no cooldown UI (acceptable; not adding one).
 
 ## Testing
 
-- **Server**: `pnpm --filter server typecheck`; existing match-chat tests still
-  pass; a new/updated test asserts `grantDefaults` populates `equippedEmotes`
-  with the free set (capped at 6).
+- **Server**: `pnpm --filter server typecheck`. There are NO existing match-chat
+  tests, so no regression suite to lean on — add a focused test that
+  `grantDefaults` populates `equippedEmotes` with the free set (capped at 6) and
+  grants EMOTE inventory rows. (Server has a vitest suite — follow its pattern.)
 - **Web**: `pnpm --filter web typecheck && lint && build`; manual — emote bar
-  appears and sends in online + private rooms, is ABSENT in VS-AI / local /
-  spectate; phrases deliver as text bubbles, emoji as emote bubbles.
-- **Backfill**: dry-run shows the affected existing users before applying.
+  appears and sends in online + private + Damath rooms, is ABSENT in VS-AI /
+  local / spectate; phrases deliver as text bubbles, emoji as emote bubbles; the
+  in-match reactions row shows all owned free emotes (not just 6).
+- **Backfill**: dry-run shows affected existing users + which get ownership vs
+  equip, before applying.
 
 ## Out of scope
 
