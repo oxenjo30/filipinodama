@@ -1,8 +1,9 @@
-import { useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useEffect, useState } from "react";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { api, ApiError } from "../../lib/api";
 import { useAppStore } from "../../stores/appStore";
 import { useAuthStore } from "../../stores/authStore";
+import { MyTicketsPanel } from "./MyTicketsPanel";
 
 /**
  * ContactPage (/contact) — Contact / Support screen.
@@ -65,6 +66,31 @@ export function ContactPage() {
   // visitors keep the mailto fallback (guests are treated as logged-out here —
   // the server also rejects guest-filed tickets, defense in depth).
   const isAuthedFiler = Boolean(me && !me.isGuest);
+
+  // "My Tickets" tab — only meaningful for signed-in non-guest players (guests
+  // only ever see the New Ticket form, as before). Deep-linked via
+  // ?tab=tickets&ticket=<id> — the support_reply notification carries
+  // data.ticketId and NotificationsMenu routes here on click.
+  const [searchParams, setSearchParams] = useSearchParams();
+  const deepLinkedTicketId = searchParams.get("ticket");
+  const [tab, setTab] = useState<"new" | "tickets">(
+    isAuthedFiler && (searchParams.get("tab") === "tickets" || deepLinkedTicketId) ? "tickets" : "new",
+  );
+
+  // If the URL carries a ticket deep-link after mount (e.g. navigating here
+  // from the bell while already on /contact), follow it.
+  useEffect(() => {
+    if (isAuthedFiler && (searchParams.get("tab") === "tickets" || searchParams.get("ticket"))) {
+      setTab("tickets");
+    }
+  }, [isAuthedFiler, searchParams]);
+
+  function switchTab(next: "new" | "tickets") {
+    setTab(next);
+    // Clear the query string once the user navigates away from the deep link
+    // so tab switches afterward don't keep re-opening the same old ticket.
+    if (searchParams.toString()) setSearchParams({}, { replace: true });
+  }
 
   const [name, setName] = useState(me?.displayName ?? "");
   const [email, setEmail] = useState(me?.email ?? "");
@@ -239,6 +265,32 @@ export function ContactPage() {
         </p>
       </div>
 
+      {/* Tabs — only signed-in non-guest players have tickets to view; guests
+          keep the mailto-only form exactly as before. */}
+      {isAuthedFiler && (
+        <div style={{ display: "flex", gap: 8, justifyContent: "center" }}>
+          <button
+            type="button"
+            onClick={() => switchTab("new")}
+            style={chipStyle(tab === "new")}
+          >
+            New Ticket
+          </button>
+          <button
+            type="button"
+            onClick={() => switchTab("tickets")}
+            style={chipStyle(tab === "tickets")}
+          >
+            My Tickets
+          </button>
+        </div>
+      )}
+
+      {isAuthedFiler && tab === "tickets" ? (
+        <div style={{ maxWidth: 700, margin: "0 auto", width: "100%" }}>
+          <MyTicketsPanel openTicketId={deepLinkedTicketId} />
+        </div>
+      ) : (
       <div
         style={{
           display: "grid",
@@ -512,6 +564,7 @@ export function ContactPage() {
           </div>
         </div>
       </div>
+      )}
     </div>
   );
 }

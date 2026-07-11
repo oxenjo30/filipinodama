@@ -48,4 +48,59 @@ export async function supportRoutes(app: FastifyInstance) {
     req.log.info({ evt: "ticket.create", userId, ticketId: id, category: b.category });
     return ok({ id });
   });
+
+  // GET /support/tickets — the authed player's own tickets (read-only; staff actions stay admin-only)
+  app.get("/support/tickets", { preHandler: requireAuth }, async (req) => {
+    if (req.isGuest) throw err.forbidden("GUEST_CANNOT_FILE", "Guests can't file support tickets");
+    const userId = req.userId!;
+
+    const rows = await prisma.ticket.findMany({
+      where: { userId },
+      orderBy: [{ updatedAt: "desc" }, { id: "desc" }],
+      include: { _count: { select: { messages: true } } },
+    });
+
+    return ok({
+      items: rows.map((t) => ({
+        id: t.id,
+        subject: t.subject,
+        category: t.category,
+        status: t.status,
+        priority: t.priority,
+        createdAt: t.createdAt,
+        updatedAt: t.updatedAt,
+        msgCount: t._count.messages,
+      })),
+    });
+  });
+
+  // GET /support/tickets/:id — ticket + thread, ownership-guarded. Mismatched owner → 404
+  // (not 403) so we don't leak whether a given ticket id exists, matching notifications.ts.
+  app.get<{ Params: { id: string } }>("/support/tickets/:id", { preHandler: requireAuth }, async (req) => {
+    const userId = req.userId!;
+    const ticket = await prisma.ticket.findUnique({
+      where: { id: req.params.id },
+      include: { messages: { orderBy: { createdAt: "asc" } } },
+    });
+    if (!ticket || ticket.userId !== userId) throw err.notFound("NO_TICKET", "Ticket not found");
+
+    return ok({
+      ticket: {
+        id: ticket.id,
+        subject: ticket.subject,
+        category: ticket.category,
+        status: ticket.status,
+        priority: ticket.priority,
+        createdAt: ticket.createdAt,
+        updatedAt: ticket.updatedAt,
+      },
+      thread: ticket.messages.map((m) => ({
+        id: m.id,
+        isStaff: m.isStaff,
+        authorName: m.authorName,
+        body: m.body,
+        createdAt: m.createdAt,
+      })),
+    });
+  });
 }

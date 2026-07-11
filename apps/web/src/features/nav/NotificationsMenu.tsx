@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { api } from "../../lib/api";
 
 /**
@@ -21,7 +22,13 @@ type NotifData = {
   byUserId?: string;
   avatarUrl?: string | null;
   status?: "accepted" | "declined";
+  ticketId?: string;
 };
+
+/** A support ticket notification (staff reply or resolution) carries a ticketId to deep-link to. */
+function isSupportTicketType(type: NotifType): boolean {
+  return type === "support_reply" || type === "support_resolved";
+}
 
 type Notif = {
   id: string;
@@ -99,6 +106,7 @@ function relativeTime(iso: string): string {
 }
 
 export function NotificationsMenu({ open, onClose, onUnreadChange }: NotificationsMenuProps) {
+  const navigate = useNavigate();
   const [data, setData] = useState<NotifResponse | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(false);
@@ -391,10 +399,20 @@ export function NotificationsMenu({ open, onClose, onUnreadChange }: Notificatio
                         : d.status === "declined"
                           ? "Declined"
                           : "";
+                    // A support ticket reply/resolution deep-links to that
+                    // ticket's thread in Contact > My Tickets.
+                    const ticketId = isSupportTicketType(n.type) ? d.ticketId : undefined;
+                    const handleClick = () => {
+                      markRead(n.id);
+                      if (ticketId) {
+                        onClose();
+                        navigate(`/contact?tab=tickets&ticket=${ticketId}`);
+                      }
+                    };
                     return (
                       <div
                         key={n.id}
-                        onClick={() => markRead(n.id)}
+                        onClick={handleClick}
                         style={{
                           position: "relative",
                           display: "flex",
