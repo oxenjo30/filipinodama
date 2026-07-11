@@ -18,11 +18,14 @@ import { env } from "../config/env.js";
  *
  * PUBLIC_CONFIG_KEYS is a hard-coded per-key ALLOW-LIST, NOT a category
  * filter — a `where: { category: "flag" }` filter would auto-leak every
- * future flag (e.g. DAILY_LOGIN_ENABLED) to anonymous callers.
+ * future flag to anonymous callers. DAILY_LOGIN_ENABLED is allow-listed so
+ * the web client can proactively hide the daily-login UI when it's off,
+ * instead of only finding out via a failed POST /api/rewards/daily-login
+ * (which stays the authoritative server-side gate either way).
  */
 
 const LOCKED_KEYS = new Set(["DIAMOND_TOPUP_ENABLED"]);          // env-governed, never a writable row
-const PUBLIC_CONFIG_KEYS = ["MAINTENANCE_BANNER", "MAINTENANCE_TEXT"] as const;
+const PUBLIC_CONFIG_KEYS = ["MAINTENANCE_BANNER", "MAINTENANCE_TEXT", "DAILY_LOGIN_ENABLED"] as const;
 
 function validate(type: string, value: string): boolean {
   if (type === "bool") return value === "true" || value === "false";

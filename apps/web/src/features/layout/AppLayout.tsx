@@ -77,15 +77,23 @@ export function AppLayout() {
   // GET /api/config/public. A failed/empty fetch or a "false" flag just leaves
   // this null, so the app renders exactly as before (never blocks/crashes).
   const [maintenanceText, setMaintenanceText] = useState<string | null>(null);
+  // Daily-login UI gate — same fetch. Default true (absent key = enabled, the
+  // prior behavior) so this can only ever HIDE the UI on an explicit "false";
+  // it never blocks the modal from a failed/slow fetch. The server-side gate
+  // in rewards.ts stays authoritative — this is purely a proactive UI hide.
+  const [dailyLoginEnabled, setDailyLoginEnabled] = useState(true);
 
   useEffect(() => {
     let cancelled = false;
     api
-      .get<{ MAINTENANCE_BANNER?: string; MAINTENANCE_TEXT?: string }>("/api/config/public")
+      .get<{ MAINTENANCE_BANNER?: string; MAINTENANCE_TEXT?: string; DAILY_LOGIN_ENABLED?: string }>("/api/config/public")
       .then((cfg) => {
         if (cancelled) return;
         if (cfg?.MAINTENANCE_BANNER === "true") {
           setMaintenanceText(cfg.MAINTENANCE_TEXT?.trim() || "The game is undergoing maintenance.");
+        }
+        if (cfg?.DAILY_LOGIN_ENABLED === "false") {
+          setDailyLoginEnabled(false);
         }
       })
       .catch(() => {
@@ -560,7 +568,7 @@ export function AppLayout() {
       </div>
       <Toasts />
       <OnboardingFlow />
-      <DailyLoginBonusModal />
+      {dailyLoginEnabled && <DailyLoginBonusModal />}
       <CookieConsent />
       <TopUpModal open={topUpOpen} onClose={() => setTopUpOpen(false)} />
       <NotificationsMenu open={notifOpen} onClose={() => setNotifOpen(false)} onUnreadChange={setNotifUnread} />

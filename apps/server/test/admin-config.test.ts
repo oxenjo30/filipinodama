@@ -48,13 +48,32 @@ describe("admin-config", () => {
     await prisma.config.createMany({ data: [
       { key: "MAINTENANCE_BANNER", value: "true", type: "bool", category: "flag", label: "m" },
       { key: "MAINTENANCE_TEXT", value: "brb", type: "string", category: "flag", label: "t" },
-      { key: "DAILY_LOGIN_ENABLED", value: "true", type: "bool", category: "flag", label: "d" }, // NOT public
+      { key: "DAILY_LOGIN_ENABLED", value: "false", type: "bool", category: "flag", label: "d" }, // allow-listed
+      { key: "SOME_OTHER_FLAG", value: "true", type: "bool", category: "flag", label: "o" }, // NOT allow-listed
     ]});
     const res = await app.inject({ method: "GET", url: "/api/config/public" });
     expect(res.statusCode).toBe(200);
     const keys = Object.keys(res.json().data);
-    expect(keys.sort()).toEqual(["MAINTENANCE_BANNER", "MAINTENANCE_TEXT"]);
-    expect(keys).not.toContain("DAILY_LOGIN_ENABLED");
+    expect(keys.sort()).toEqual(["DAILY_LOGIN_ENABLED", "MAINTENANCE_BANNER", "MAINTENANCE_TEXT"]);
+    expect(keys).not.toContain("SOME_OTHER_FLAG");
+    await app.close();
+  });
+
+  it("GET /api/config/public includes DAILY_LOGIN_ENABLED's value when a Config row exists for it", async () => {
+    const app = await buildTestApp();
+    await prisma.config.create({ data: { key: "DAILY_LOGIN_ENABLED", value: "false", type: "bool", category: "flag", label: "d" } });
+    const res = await app.inject({ method: "GET", url: "/api/config/public" });
+    expect(res.statusCode).toBe(200);
+    expect(res.json().data.DAILY_LOGIN_ENABLED).toBe("false");
+    await app.close();
+  });
+
+  it("GET /api/config/public omits DAILY_LOGIN_ENABLED entirely when no Config row exists for it", async () => {
+    const app = await buildTestApp();
+    await prisma.config.create({ data: { key: "MAINTENANCE_BANNER", value: "false", type: "bool", category: "flag", label: "m" } });
+    const res = await app.inject({ method: "GET", url: "/api/config/public" });
+    expect(res.statusCode).toBe(200);
+    expect(Object.keys(res.json().data)).not.toContain("DAILY_LOGIN_ENABLED");
     await app.close();
   });
 });
