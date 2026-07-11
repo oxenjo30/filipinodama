@@ -3,6 +3,7 @@ import { useNavigate, useSearchParams } from "react-router-dom";
 import { rankTierFor } from "@dama/shared";
 import type { Move, Square } from "@dama/shared";
 import { Board, Avatar } from "../../components";
+import { api } from "../../lib/api";
 import { useOnlineStore } from "../../stores/onlineStore";
 import { useAuthStore } from "../../stores/authStore";
 import { useAppStore } from "../../stores/appStore";
@@ -148,10 +149,42 @@ export function OnlineMatchPage() {
     if (st.matchId && (st.status === "playing" || st.status === "found")) {
       setResuming(true);
       resync();
-    } else {
-      joinQueue(mode, colorPref);
+      return () => {
+        leaveQueue();
+        reset();
+      };
     }
+
+    // Fresh entry with an EMPTY store — most importantly, a PAGE RELOAD while a
+    // game is in progress (the store is memory-only, so matchId is gone on
+    // reload). Before starting a brand-new search, ask the server if we already
+    // have a live match and, if so, resume INTO it so a reload never abandons a
+    // game the player is still in. Only queue when there's genuinely no live game.
+    let cancelled = false;
+    setResuming(true); // show the loader while we check (avoids a matchmaking flash)
+    void (async () => {
+      try {
+        const { match } = await api.get<{ match: { id: string; red: { id: string } | null } | null }>(
+          "/api/matches/active",
+        );
+        if (cancelled) return;
+        if (match) {
+          // Resume the live game instead of matchmaking.
+          const myColor = match.red?.id === me.id ? "red" : "blue";
+          useOnlineStore.setState({ status: "playing", matchId: match.id, myColor, state: null, end: null });
+          resync();
+          return;
+        }
+      } catch {
+        // Network/API failure → fall through to matchmaking (never trap the player).
+      }
+      if (cancelled) return;
+      setResuming(false);
+      joinQueue(mode, colorPref);
+    })();
+
     return () => {
+      cancelled = true;
       leaveQueue();
       reset();
     };

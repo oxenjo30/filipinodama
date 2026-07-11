@@ -65,8 +65,15 @@ export function onMatchEnd(hook: (matchId: string) => void): void {
  * it always settles (no phantom "endedAt:null" rows, no dodgeable ranked losses,
  * no opponent stuck forever). Keyed `matchId:userId`. Reconnecting (resync/join)
  * clears the timer. Bots never disconnect, so this only ever targets humans.
+ *
+ * The window is 90s (not a snappier 30–45s) deliberately: real mobile clients
+ * drop routinely — a tunnel, an elevator, a backgrounded tab — and the socket.io
+ * client retries reconnection indefinitely, so a player who comes back within
+ * 90s has their live game fully restored (resync → matchState) with no loss. 90s
+ * covers the vast majority of transient drops while still settling a genuinely
+ * abandoned game before the waiting opponent gives up.
  */
-const ABANDON_MS = 45_000;
+const ABANDON_MS = 90_000;
 const abandonTimers: Map<string, NodeJS.Timeout> = new Map();
 const abandonKey = (matchId: string, userId: string) => `${matchId}:${userId}`;
 function clearAbandon(matchId: string, userId: string): void {
