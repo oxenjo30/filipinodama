@@ -7,14 +7,11 @@ import { useOnlineStore } from "../../stores/onlineStore";
 import { useAuthStore } from "../../stores/authStore";
 import { useAppStore } from "../../stores/appStore";
 import { useSettingsStore } from "../../stores/settingsStore";
-import { useCosmeticsStore } from "../../stores/cosmeticsStore";
 import { Modal } from "../shared/Modal";
 import { LoadingScreen } from "../shared/LoadingScreen";
 import { useGameSounds } from "../../lib/useGameSounds";
 import { avatar as avatarUrl, PIECE_SKINS, type PieceSkin } from "../../lib/assets";
-
-/** Quick-chat emotes (prototype `gameEmotes`). */
-const GAME_EMOTES = ["👋", "😄", "😮", "😢", "👍", "🔥"];
+import { MatchChat, type MatchChatMsg } from "./MatchChat";
 
 /** How long the branded pre-match loader shows before the search UI (handoff: 3.4s). */
 const ONLINE_LOADER_MS = 3400;
@@ -77,13 +74,6 @@ export function OnlineMatchPage() {
   // account's equipped skin by the core-sync agent, so reading it here is all the
   // board needs to render the player's cosmetic (matches how GamePage feeds Board).
   const skin = useSettingsStore((s) => s.skin);
-
-  // Equipped emote loadout → tray glyphs. Resolve each equipped store-item id to
-  // its glyph via the shared cosmetics resolver; fall back to the hardcoded
-  // GAME_EMOTES when nothing is equipped so the tray is never empty.
-  const emoteGlyph = useCosmeticsStore((s) => s.emoteGlyph);
-  const equippedEmotes = me?.equippedEmotes ?? [];
-  const emoteTray = equippedEmotes.length > 0 ? equippedEmotes.map(emoteGlyph) : GAME_EMOTES;
 
   const showToast = useAppStore((s) => s.showToast);
   const {
@@ -225,25 +215,8 @@ export function OnlineMatchPage() {
       ? (opponent.skin as PieceSkin)
       : "default";
 
-  // In-match Quick Chat draft. This is REAL: the text/emote is emitted over the
-  // match socket (EV.matchChat) and the server relays it back to both players,
-  // where the store appends it to `chat`. We never fabricate a message or reply.
-  const [chatDraft, setChatDraft] = useState("");
   // Static rotating Tip of the Day (no backend needed); rotates by day-of-year.
   const tip = TIPS[Math.floor(Date.now() / 86_400_000) % TIPS.length];
-
-  const chatScrollRef = useRef<HTMLDivElement | null>(null);
-  useEffect(() => {
-    const el = chatScrollRef.current;
-    if (el) el.scrollTop = el.scrollHeight;
-  }, [chat.length]);
-
-  function sendChat() {
-    const text = chatDraft.trim();
-    if (!text) return;
-    sendMatchChat(text);
-    setChatDraft("");
-  }
 
   // ── Branded pre-match loader (prototype playWithLoader) — themed per mode:
   //    ranked ladder vs casual matchmaking. Shown briefly on fresh entry only. ──
@@ -584,96 +557,20 @@ export function OnlineMatchPage() {
           </div>
         </div>
 
-        {/* Quick Chat — REAL in-match chat. Emote buttons emit EV.matchChat
-            {emote}; the text box emits EV.matchChat {body}. The server relays
-            both back to the room and the store appends them to `chat`, so what
-            renders here is only genuine messages from the two players.
-            Spectators have no seat to chat as (the server drops a non-player's
-            matchChat), so the whole panel is hidden rather than offering
-            controls that silently do nothing. */}
-        {!isSpectating && (
-        <div className="frame" style={{ padding: 16 }}>
-          <div className="ptitle">Quick Chat</div>
-
-          {/* Live message/emote log — "You" (right, gold) vs opponent (left). */}
-          <div
-            ref={chatScrollRef}
-            style={{
-              display: "flex", flexDirection: "column", gap: 6,
-              maxHeight: 176, minHeight: 64, overflowY: "auto", marginBottom: 12,
-              paddingRight: 2,
-            }}
-          >
-            {chat.length === 0 ? (
-              <div style={{ font: "500 12px Inter", color: "var(--ink2)", textAlign: "center", padding: "20px 0" }}>
-                Say hello or send an emote 👋
-              </div>
-            ) : (
-              chat.map((m) => (
-                <div
-                  key={m.id}
-                  style={{
-                    display: "flex", flexDirection: "column",
-                    alignItems: m.mine ? "flex-end" : "flex-start",
-                    alignSelf: m.mine ? "flex-end" : "flex-start",
-                    maxWidth: "88%",
-                  }}
-                >
-                  <div style={{ font: "700 10px Inter", color: m.mine ? "var(--gold-lt)" : "#ff9fb4", marginBottom: 2 }}>
-                    {m.mine ? "You" : opponent?.displayName ?? "Opponent"}
-                  </div>
-                  {m.emote ? (
-                    <div style={{ fontSize: 26, lineHeight: 1 }}>{m.emote}</div>
-                  ) : (
-                    <div
-                      style={{
-                        padding: "8px 12px",
-                        borderRadius: m.mine ? "13px 13px 4px 13px" : "13px 13px 13px 4px",
-                        background: m.mine ? "linear-gradient(180deg,#f0c24b,#c98b2e)" : "rgba(255,255,255,.06)",
-                        border: m.mine ? "none" : "1px solid rgba(232,184,75,.14)",
-                        color: m.mine ? "#2a1607" : "#efe7fb",
-                        font: "500 13px Inter", lineHeight: 1.4, wordBreak: "break-word",
-                      }}
-                    >
-                      {m.body}
-                    </div>
-                  )}
-                </div>
-              ))
-            )}
-          </div>
-
-          <div style={{ display: "flex", gap: 6, flexWrap: "wrap", justifyContent: "center", marginBottom: 12 }}>
-            {emoteTray.map((ch) => (
-              <button
-                key={ch}
-                onClick={() => sendEmote(ch)}
-                style={{
-                  width: 38, height: 38, borderRadius: 9,
-                  border: "1px solid rgba(232,184,75,.3)", background: "rgba(15,8,32,.5)",
-                  fontSize: 18, cursor: "pointer",
-                }}
-              >
-                {ch}
-              </button>
-            ))}
-          </div>
-          <div style={{ display: "flex", gap: 8 }}>
-            <input
-              value={chatDraft}
-              onChange={(e) => setChatDraft(e.target.value)}
-              onKeyDown={(e) => { if (e.key === "Enter") sendChat(); }}
-              maxLength={200}
-              placeholder="Type a message..."
-              style={{
-                flex: 1, minWidth: 0, padding: "10px 12px", borderRadius: 8,
-                border: "1px solid rgba(232,184,75,.3)", background: "rgba(0,0,0,.3)",
-                color: "#fff", font: "500 13px Inter",
-              }}
+        {/* Quick Chat — REAL in-match chat via the shared MatchChat surface.
+            Emote/phrase taps and the text box all emit EV.matchChat; the server
+            relays both back to the room and the store appends them to `chat`, so
+            what renders here is only genuine messages from the two players.
+            Hidden for spectators (myColor null) — they can't send anyway. */}
+        {myColor !== null && (
+          <div className="frame" style={{ padding: 16 }}>
+            <div className="ptitle">Quick Chat</div>
+            <MatchChat
+              showTextInput
+              messages={chat.map((m): MatchChatMsg => ({ id: m.id, mine: m.mine, emote: m.emote, body: m.body, at: m.at }))}
+              send={(p) => { if (p.emote) sendEmote(p.emote); else if (p.body) sendMatchChat(p.body); }}
             />
-            <button onClick={sendChat} className="btn btn-gold" style={{ padding: "10px 12px" }}>➤</button>
           </div>
-        </div>
         )}
 
         {/* Tip of the Day — static rotating strategy tip (no backend). */}
