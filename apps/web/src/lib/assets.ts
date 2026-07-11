@@ -87,7 +87,14 @@ export function avatar(key: AvatarKey | (string & {})): string {
     const rel = key.replace(/^avatars\//, "");
     return `${BASE}/avatars/${rel}`;
   }
-  return `${BASE}/avatars/${key}`;
+  // Bare key (no folder, no extension) → the file is `<key>.png`. This is the
+  // documented contract (avatarUrl stores the bare key; see AvatarPickerModal):
+  // a starter avatar like "katipunero" is persisted as its item id and MUST
+  // resolve to /assets/avatars/katipunero.png. Forgetting the extension here
+  // produced /assets/avatars/katipunero (404 → broken avatar for every account
+  // on a default starter, e.g. guests). Empty string → fall back to champion.
+  if (!key) return AVATARS.champion;
+  return `${BASE}/avatars/${key}.png`;
 }
 
 /** Cosmetic profile frames (in the frames/ subfolder, per ASSETS.md). */

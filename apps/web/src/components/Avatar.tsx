@@ -82,6 +82,14 @@ export function Avatar({
           src={url}
           alt={alt}
           draggable={false}
+          onError={(e) => {
+            // Never leave a broken-image glyph in the ring. If the resolved URL
+            // 404s (stale/unknown avatar key), fall back to the default portrait
+            // once (guard against a fallback that itself fails looping forever).
+            const img = e.currentTarget;
+            const fallback = resolveAvatar("champion");
+            if (img.src !== fallback) img.src = fallback;
+          }}
           style={{
             width: "100%",
             height: "100%",
