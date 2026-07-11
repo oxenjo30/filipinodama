@@ -74,6 +74,21 @@ const MODE_LABEL: Record<string, string> = {
   LOCAL: "Local Match",
 };
 
+// GET /api/events — admin-scheduled Live-ops events (double-gold windows,
+// fiestas, sales, tournaments, etc.) currently relevant to players
+// ("scheduled" or "live"; "ended" ones are excluded server-side).
+type LiveEventItem = {
+  id: string;
+  name: string;
+  type: string;
+  status: "scheduled" | "live";
+  scope: string;
+  reward: string;
+  startsLabel: string | null;
+  endsLabel: string | null;
+  color: string | null;
+};
+
 // Daily Challenge card is driven by the first daily quest from GET /api/quests.
 // Shape matches the quests API (same as QuestsPage): id/title/description/goal/
 // rewardGold/value/completed/claimed/claimable.
@@ -219,6 +234,29 @@ export function HomePage() {
     void loadQuest();
   }, [loadQuest]);
 
+  // ── Live Events (admin-scheduled Live-ops: double-gold, fiestas, sales) ──
+  const [liveEvents, setLiveEvents] = useState<LiveEventItem[]>([]);
+  useEffect(() => {
+    if (!me) {
+      setLiveEvents([]);
+      return;
+    }
+    let cancelled = false;
+    void (async () => {
+      try {
+        const data = await api.get<{ items: LiveEventItem[] }>("/api/events");
+        if (!cancelled) setLiveEvents(data.items ?? []);
+      } catch {
+        // Silent: this strip is ambient/opportunistic — a failed fetch just
+        // means nothing shows (honest: no fabricated events on error).
+        if (!cancelled) setLiveEvents([]);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [me]);
+
   // ── Featured store items (public catalog; curated featured cosmetics) ──
   const [featuredItems, setFeaturedItems] = useState<HomeStoreItem[]>([]);
   useEffect(() => {
@@ -360,6 +398,72 @@ export function HomePage() {
             </div>
           ))}
         </div>
+
+        {/* LIVE EVENTS — admin-scheduled Live-ops (double-gold windows, fiestas,
+            sales, tournaments) from GET /api/events. Renders nothing at all when
+            there are no currently-relevant events — no fake/empty box. */}
+        {liveEvents.length > 0 && (
+          <div className="frame fd-card-m" style={{ padding: 18 }}>
+            <div className="ptitle" style={{ textAlign: "left", border: "none", margin: "0 0 12px" }}>✦ Live Events</div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+              {liveEvents.map((ev) => (
+                <div
+                  key={ev.id}
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 12,
+                    padding: "10px 12px",
+                    borderRadius: 10,
+                    border: "1px solid rgba(232,184,75,.16)",
+                    background: "rgba(255,255,255,.02)",
+                    flexWrap: "wrap",
+                  }}
+                >
+                  <span
+                    aria-hidden="true"
+                    style={{
+                      width: 10,
+                      height: 10,
+                      borderRadius: "50%",
+                      flex: "none",
+                      background: ev.color ?? "var(--gold)",
+                      boxShadow: `0 0 8px ${ev.color ?? "var(--gold)"}`,
+                    }}
+                  />
+                  <div style={{ minWidth: 0, flex: "1 1 220px" }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                      <span style={{ font: "700 13px Inter", color: "var(--gold-lt)" }}>{ev.name}</span>
+                      <span
+                        style={{
+                          font: "700 9px Inter",
+                          letterSpacing: "1px",
+                          textTransform: "uppercase",
+                          padding: "2px 7px",
+                          borderRadius: 100,
+                          flex: "none",
+                          ...(ev.status === "live"
+                            ? { color: "#7fe0a6", background: "rgba(50,150,100,.18)", border: "1px solid rgba(63,191,111,.4)" }
+                            : { color: "var(--gold-lt)", background: "rgba(232,184,75,.12)", border: "1px solid rgba(232,184,75,.3)" }),
+                        }}
+                      >
+                        {ev.status === "live" ? "● Live" : "Scheduled"}
+                      </span>
+                    </div>
+                    {(ev.startsLabel || ev.endsLabel) && (
+                      <div style={{ font: "500 11px Inter", color: "var(--ink2)", marginTop: 3 }}>
+                        {ev.startsLabel ?? ""}
+                        {ev.startsLabel && ev.endsLabel ? " – " : ""}
+                        {ev.endsLabel ?? ""}
+                      </div>
+                    )}
+                  </div>
+                  <span style={{ font: "600 12px Inter", color: "var(--ink)", flex: "none" }}>{ev.reward}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
 
         {/* CONTINUE PLAYING + RECENT UPDATES — the resume card renders only when
             GET /api/matches/active returns a live match for the caller (honest:
