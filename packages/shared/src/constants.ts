@@ -27,3 +27,15 @@ export const LIMITS = {
 } as const;
 
 export const ROOM_CODE_LENGTH = 6;
+
+/** Quick-chat phrases available to every player in a match (free, sent as text). */
+export const MATCH_PHRASES = [
+  "Good game!",
+  "Nice move!",
+  "Let's go!",
+  "Well played",
+  "Good luck",
+  "Oops",
+  "Close one",
+  "Rematch?",
+] as const;
