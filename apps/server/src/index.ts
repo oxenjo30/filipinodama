@@ -40,6 +40,7 @@ import { reportRoutes } from "./modules/reports.js";
 import { supportRoutes } from "./modules/support.js";
 import { tournamentsRoutes } from "./modules/tournaments.js";
 import { registerRealtime } from "./realtime/index.js";
+import { runDueCampaigns } from "./modules/campaign-scheduler.js";
 
 export { prisma };
 
@@ -146,6 +147,15 @@ async function main() {
     cors: { origin: corsOrigins.length > 1 ? corsOrigins : corsOrigins[0], credentials: true },
   });
   registerRealtime(io);
+
+  // Due-campaign poller — sends any admin-scheduled Campaign once its
+  // scheduledFor has passed (campaign-scheduler.ts). Started here, AFTER
+  // listen(), and only on the real boot path — NOT inside buildApp() — so
+  // the test harness (which only calls buildApp) never spawns a live
+  // interval alongside its own direct runDueCampaigns() calls.
+  setInterval(() => {
+    runDueCampaigns().catch((e) => app.log.error({ err: e }, "campaign-scheduler tick failed"));
+  }, 60_000);
 
   app.log.info(`FilipinoDama server listening on :${env.PORT}`);
 }

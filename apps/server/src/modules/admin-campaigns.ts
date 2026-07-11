@@ -23,7 +23,7 @@ const segmentSchema = z.union([
   z.string().startsWith("rank:").transform((s) => s.slice(5)).pipe(rankTierSchema).transform((k) => `rank:${k}` as const),
 ]);
 
-function segmentWhere(segment: string): Prisma.UserWhereInput {
+export function segmentWhere(segment: string): Prisma.UserWhereInput {
   const base: Prisma.UserWhereInput = { isBot: false, isGuest: false, deletedAt: null };
   if (segment === "all") return base;
   if (segment === "active7d") return { ...base, lastSeenAt: { gte: new Date(Date.now() - 7 * 86_400_000) } };
@@ -40,22 +40,32 @@ const contentSchema = z.object({
 });
 
 /**
- * Resolve the segment, fan out one "announcement" notification per target in
- * CHUNKs, and persist a "sent" Campaign + audit row. Shared by the legacy
+ * Resolve the segment and fan out one "announcement" notification per target
+ * in CHUNKs. Shared by sendCampaign() (new Campaign) and the campaign
+ * scheduler (an already-claimed, existing Campaign row) so both fan out
+ * identically. Throws EMPTY_SEGMENT (400) if no players match.
+ */
+export async function fanOutNotifications(seg: string, title: string, body: string): Promise<number> {
+  const targets = await prisma.user.findMany({ where: segmentWhere(seg), select: { id: true } });
+  if (targets.length === 0) throw err.badRequest("EMPTY_SEGMENT", "No players match this segment");
+  let reach = 0;
+  for (let i = 0; i < targets.length; i += CHUNK) {
+    const slice = targets.slice(i, i + CHUNK);
+    const res = await prisma.notification.createMany({ data: slice.map((u) => ({ userId: u.id, type: "announcement", title, body })) });
+    reach += res.count;
+  }
+  return reach;
+}
+
+/**
+ * Fan out + persist a "sent" Campaign + audit row. Shared by the legacy
  * POST /admin/campaigns/send route and the new create endpoint's send action so
  * both behave identically. Throws EMPTY_SEGMENT (400) if no players match.
  */
 async function sendCampaign(actorId: string, content: z.infer<typeof contentSchema>, seg: string, channel: string) {
-  const targets = await prisma.user.findMany({ where: segmentWhere(seg), select: { id: true } });
-  if (targets.length === 0) throw err.badRequest("EMPTY_SEGMENT", "No players match this segment");
   const actor = await prisma.user.findUnique({ where: { id: actorId }, select: { username: true, tag: true } });
   const sentByName = `${actor!.username}${actor!.tag}`;
-  let reach = 0;
-  for (let i = 0; i < targets.length; i += CHUNK) {
-    const slice = targets.slice(i, i + CHUNK);
-    const res = await prisma.notification.createMany({ data: slice.map((u) => ({ userId: u.id, type: "announcement", title: content.title, body: content.body })) });
-    reach += res.count;
-  }
+  const reach = await fanOutNotifications(seg, content.title, content.body);
   const camp = await prisma.campaign.create({ data: { title: content.title, body: content.body, segment: seg, status: "sent", channel, reach, sentById: actorId, sentByName } });
   await audit(prisma, { actorId, action: "campaign.send", targetType: "campaign", targetId: camp.id, after: { segment: seg, channel, reach }, reason: content.title });
   return { id: camp.id, reach, status: "sent" as const };
