@@ -46,6 +46,20 @@ type LiveMatch = {
 const live: Map<string, LiveMatch> = new Map();
 
 /**
+ * Optional hooks fired once a match has fully SETTLED (result persisted + ledger
+ * applied + matchEnded broadcast). Registered by other realtime modules that
+ * keep state tied to a match's lifetime — e.g. rooms.ts keeps a private room
+ * alive for spectators during play and reclaims it here. Kept as a callback list
+ * (not an import) so match.ts has no dependency back on those modules (avoids an
+ * import cycle). Each hook is best-effort — a throwing hook never breaks
+ * settlement.
+ */
+const matchEndHooks: Array<(matchId: string) => void> = [];
+export function onMatchEnd(hook: (matchId: string) => void): void {
+  matchEndHooks.push(hook);
+}
+
+/**
  * Abandonment: if a human player's sockets all disconnect mid-match and they do
  * not reconnect within this window, the match is forfeited to their opponent so
  * it always settles (no phantom "endedAt:null" rows, no dodgeable ranked losses,
@@ -464,6 +478,16 @@ async function settleMatch(io: IOServer, lm: LiveMatch): Promise<void> {
   }
 
   live.delete(lm.matchId);
+
+  // Notify lifetime-bound listeners (e.g. rooms.ts reclaims a private room kept
+  // alive for spectators). Best-effort — a throwing hook must not break anything.
+  for (const hook of matchEndHooks) {
+    try {
+      hook(lm.matchId);
+    } catch (e) {
+      console.error("[match] onMatchEnd hook failed", lm.matchId, e);
+    }
+  }
 }
 
 /** Prune expired rematch offers (called opportunistically on each offer). */

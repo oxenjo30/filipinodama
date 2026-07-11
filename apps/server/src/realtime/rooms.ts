@@ -3,7 +3,7 @@ import { EV, DEFAULT_SETTINGS, type GameSettings } from "@dama/shared";
 import type { MatchMode as PrismaMatchMode } from "@prisma/client";
 import { prisma } from "../db/client.js";
 import { isMuted } from "../lib/mute.js";
-import { createLiveMatch, endLiveMatch, forfeitLiveMatch } from "./match.js";
+import { createLiveMatch, onMatchEnd } from "./match.js";
 import { allow } from "./rate-limit.js";
 
 /**
@@ -32,7 +32,9 @@ function sanitizeSettings(base: GameSettings, patch: unknown): GameSettings {
  * a room (6-char code); one guest and any number of spectators can join by code.
  * The host controls settings, can kick/ban, and starts the match (which seeds a
  * real server-authoritative Match for host + guest). Room chat is relayed live.
- * Rooms are ephemeral: they vanish on server restart or when the host leaves.
+ * Rooms are ephemeral: an UNSTARTED lobby vanishes when the host leaves; once a
+ * match has started the room is kept alive (so its spectate code keeps resolving)
+ * and is reclaimed when that match ends. All rooms vanish on server restart.
  */
 
 // A member tracks ALL of a user's sockets in this room (multi-tab), so one tab
@@ -52,6 +54,11 @@ type Room = {
 
 const rooms = new Map<string, Room>(); // code → room
 const userRoom = new Map<string, string>(); // userId → code they're in
+
+// Reclaim a private room once its match settles (it's kept alive during play so
+// spectators can still resolve the code — see removeMember). Registered once at
+// module load; match.ts fires it with no import back to this module.
+onMatchEnd((matchId) => clearRoomForMatch(matchId));
 
 const ROOM_PREFIX = (code: string) => `room:${code}`;
 const CODE_CHARS = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"; // no ambiguous chars
@@ -116,21 +123,33 @@ function removeMember(io: IOServer, userId: string) {
   const member = memberIn(room, userId);
   if (member) detachSockets(io, room, member);
 
+  // Once the match has STARTED, the live-match layer (match.ts) is the sole owner
+  // of that match's lifecycle — including disconnect/abandonment (its 45s abandon
+  // timer forfeits a player who truly drops and doesn't reconnect). Leaving the
+  // room here must therefore NEVER settle, forfeit, or tear down the match — and,
+  // crucially, must NOT destroy the ROOM either: clicking "Start" navigates the
+  // room page → /play/online, which unmounts the page and fires this exact
+  // leave() for the host AND the guest. Two failures came from tearing down here:
+  //   • forfeiting the just-started match ended the game the instant it began, and
+  //     (by deleting the live match before the host could resync into it) showed
+  //     up as "Connection Lost / 0 moves";
+  //   • deleting the ROOM made its shareable spectate link resolve to a
+  //     non-existent room, so watching broke the moment the match actually started.
+  // While the match is live we KEEP the room (its `matchId` is what a late
+  // spectator's code resolves to) and only detach the leaving user's own
+  // membership. The room is reclaimed when the match ENDS (see clearRoomForMatch,
+  // wired into match settlement) or on server restart.
+  if (room.matchId) {
+    if (room.guest?.userId === userId) room.guest = null;
+    else room.spectators.delete(userId);
+    // Host leaving the room page after start is normal (they're now in the match);
+    // the room lives on for spectators. Nothing else to do — never touch the match.
+    return;
+  }
+
   if (room.hostId === userId) {
-    // Host left → close the room for everyone. If a match had already STARTED,
-    // the host abandoning it must settle the guest's in-progress game as a WIN
-    // for the guest (forfeit) rather than silently discarding it. Only an
-    // unstarted lobby (or a match with no guest) is cleaned up without settling.
-    if (room.matchId) {
-      if (room.guest) {
-        // Host = red, guest = blue (see roomStart) → guest wins as blue.
-        void forfeitLiveMatch(io, room.matchId, "blue").catch((e) =>
-          console.error("[rooms] host-abandon forfeit failed", room.matchId, e),
-        );
-      } else {
-        endLiveMatch(room.matchId);
-      }
-    }
+    // Unstarted lobby: the host leaving closes the room for everyone. No match
+    // exists yet, so there is nothing to settle.
     io.to(ROOM_PREFIX(code)).emit(EV.roomState, { code, closed: true });
     for (const m of [room.guest, ...room.spectators.values()]) if (m) userRoom.delete(m.userId);
     rooms.delete(code);
@@ -139,6 +158,23 @@ function removeMember(io: IOServer, userId: string) {
   if (room.guest?.userId === userId) room.guest = null;
   room.spectators.delete(userId);
   emitState(io, room);
+}
+
+/**
+ * Reclaim the room that hosted `matchId` once its match has ended. Called from
+ * match settlement so a room kept alive for spectating during play doesn't leak
+ * after the game is over. No-op if no room maps to this match (matchmade games,
+ * already-cleaned rooms). Frees each remaining member's userRoom mapping too.
+ */
+export function clearRoomForMatch(matchId: string): void {
+  for (const [code, room] of rooms) {
+    if (room.matchId !== matchId) continue;
+    for (const m of [room.host, room.guest, ...room.spectators.values()]) {
+      if (m && userRoom.get(m.userId) === code) userRoom.delete(m.userId);
+    }
+    rooms.delete(code);
+    return;
+  }
 }
 
 /**
