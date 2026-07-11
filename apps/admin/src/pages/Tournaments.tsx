@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { api } from "../lib/api";
 import { useAdminMutation } from "../lib/ui";
 
@@ -383,15 +383,6 @@ function TournamentForm({ tournament, onClose, onDone }: { tournament?: Tourname
   const [startsAt, setStartsAt] = useState(tournament?.startsAt ? toLocalInput(tournament.startsAt) : "");
   // SWISS ONLY: rounds — blank/null = auto (ceil(log2(n)), computed at Start).
   const [rounds, setRounds] = useState<string>(tournament?.rounds != null ? String(tournament.rounds) : "");
-  const formRef = useRef<HTMLDivElement>(null);
-
-  // Scroll the form into view when it opens (mount) — the tournament list
-  // can be long, and this form renders above the table, so a bottom-row Edit
-  // click would otherwise open it off-screen above the fold.
-  useEffect(() => {
-    formRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
-    formRef.current?.querySelector<HTMLElement>("input,select,textarea")?.focus();
-  }, []);
 
   const isRoundRobin = format === "ROUND_ROBIN";
   const isSwiss = format === "SWISS";
@@ -447,8 +438,13 @@ function TournamentForm({ tournament, onClose, onDone }: { tournament?: Tourname
   };
 
   return (
-    <div ref={formRef} className="panel panel-pad">
-      <div style={{ font: "800 16px var(--serif)", color: "var(--ink)", marginBottom: 12 }}>{isEdit ? "Edit tournament" : "New tournament"}</div>
+    <div className="drawer-wrap">
+      <div className="drawer-bd" onClick={onClose} />
+      <div className="drawer" style={{ width: "min(96vw,640px)" }}>
+      <div className="row" style={{ justifyContent: "space-between", marginBottom: 12 }}>
+        <div style={{ font: "800 16px var(--serif)", color: "var(--ink)" }}>{isEdit ? "Edit tournament" : "New tournament"}</div>
+        <button className="btn" onClick={onClose}>Close</button>
+      </div>
 
       <div className="field">
         <label>Tournament name</label>
@@ -594,6 +590,7 @@ function TournamentForm({ tournament, onClose, onDone }: { tournament?: Tourname
       <div className="row" style={{ justifyContent: "flex-end" }}>
         <button className="btn" onClick={onClose}>Cancel</button>
         <button className="btn gold" style={PRIMARY_GOLD_STYLE} disabled={!valid} onClick={submit}>{isEdit ? "Save tournament" : "Create tournament"}</button>
+      </div>
       </div>
     </div>
   );

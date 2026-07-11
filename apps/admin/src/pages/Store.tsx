@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { api } from "../lib/api";
 import { useAdminMutation } from "../lib/ui";
 
@@ -79,18 +79,6 @@ export function StoreCatalog() {
   const [form, setForm] = useState<Form | null>(null);
   const [editId, setEditId] = useState<string | null>(null);
   const mutate = useAdminMutation();
-  const formRef = useRef<HTMLDivElement>(null);
-
-  // Scroll the inline create/edit form into view whenever it opens — the
-  // catalog table can be long, and the form renders above it, so clicking
-  // Edit on a bottom row would otherwise open the form off-screen above the
-  // fold. Re-fires on editId too, so re-clicking Edit on a different row
-  // (while the form panel stays mounted) re-scrolls as well.
-  useEffect(() => {
-    if (!form) return;
-    formRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
-    formRef.current?.querySelector<HTMLElement>("input,select,textarea")?.focus();
-  }, [!!form, editId]);
 
   const load = () => {
     setLoading(true);
@@ -267,91 +255,100 @@ export function StoreCatalog() {
           </button>
         </div>
 
-        {/* inline create / edit form */}
+        {/* create / edit drawer */}
         {form && (
-          <div ref={formRef} style={{ padding: 18, borderBottom: "1px solid rgba(232,184,75,.1)", background: "var(--panel-2)", display: "flex", flexDirection: "column", gap: 12 }}>
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(180px,1fr))", gap: 12 }}>
-              <div className="field" style={{ gridColumn: "1/-1", marginBottom: 0 }}>
-                <label>Item name</label>
-                <input className="input" placeholder="e.g. Sapphire Court Board" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
+          <div className="drawer-wrap">
+            <div className="drawer-bd" onClick={closeForm} />
+            <div className="drawer">
+              <div className="row" style={{ justifyContent: "space-between", marginBottom: 16 }}>
+                <div style={{ font: "800 18px var(--serif)", color: "var(--gold-lt)" }}>{editId ? "Edit item" : "Add item"}</div>
+                <button className="abtn btn-ghost btn-ghost-sm" onClick={closeForm}>Close</button>
               </div>
-              <div className="field" style={{ marginBottom: 0 }}>
-                <label>Item id {editId ? "(locked)" : "(slug)"}</label>
-                <input
-                  className="input"
-                  placeholder="sapphire-court"
-                  value={form.id}
-                  disabled={!!editId}
-                  onChange={(e) => setForm({ ...form, id: e.target.value })}
-                />
-              </div>
-              <div className="field" style={{ marginBottom: 0 }}>
-                <label>Type</label>
-                <select className="select" value={form.type} onChange={(e) => setForm({ ...form, type: e.target.value as ItemType })}>
-                  {ITEM_TYPES.map((t) => (
-                    <option key={t} value={t}>
-                      {typeLabel(t)}
-                    </option>
+              <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(180px,1fr))", gap: 12 }}>
+                  <div className="field" style={{ gridColumn: "1/-1", marginBottom: 0 }}>
+                    <label>Item name</label>
+                    <input className="input" placeholder="e.g. Sapphire Court Board" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
+                  </div>
+                  <div className="field" style={{ marginBottom: 0 }}>
+                    <label>Item id {editId ? "(locked)" : "(slug)"}</label>
+                    <input
+                      className="input"
+                      placeholder="sapphire-court"
+                      value={form.id}
+                      disabled={!!editId}
+                      onChange={(e) => setForm({ ...form, id: e.target.value })}
+                    />
+                  </div>
+                  <div className="field" style={{ marginBottom: 0 }}>
+                    <label>Type</label>
+                    <select className="select" value={form.type} onChange={(e) => setForm({ ...form, type: e.target.value as ItemType })}>
+                      {ITEM_TYPES.map((t) => (
+                        <option key={t} value={t}>
+                          {typeLabel(t)}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="field" style={{ marginBottom: 0 }}>
+                    <label>Tag / badge</label>
+                    <input className="input" placeholder="NEW · VALUE · -35%" value={form.tag} onChange={(e) => setForm({ ...form, tag: e.target.value })} />
+                  </div>
+                  <div className="field" style={{ marginBottom: 0 }}>
+                    <label>Price (gold)</label>
+                    <input className="input" inputMode="numeric" placeholder="—" value={form.priceGold} onChange={(e) => setForm({ ...form, priceGold: e.target.value })} />
+                  </div>
+                  <div className="field" style={{ marginBottom: 0 }}>
+                    <label>Price (diamonds)</label>
+                    <input className="input" inputMode="numeric" placeholder="—" value={form.priceDiamonds} onChange={(e) => setForm({ ...form, priceDiamonds: e.target.value })} />
+                  </div>
+                  <div className="field" style={{ marginBottom: 0 }}>
+                    <label>Sale price</label>
+                    <input className="input" inputMode="numeric" placeholder="—" value={form.salePrice} onChange={(e) => setForm({ ...form, salePrice: e.target.value })} />
+                  </div>
+                  <div className="field" style={{ marginBottom: 0 }}>
+                    <label>Sort order</label>
+                    <input className="input" inputMode="numeric" placeholder="0" value={form.sortOrder} onChange={(e) => setForm({ ...form, sortOrder: e.target.value })} />
+                  </div>
+                  <div className="field" style={{ gridColumn: "1/-1", marginBottom: 0 }}>
+                    <label>Asset key (uploads/…)</label>
+                    <input className="input" placeholder="uploads/board-marble.png" value={form.assetKey} onChange={(e) => setForm({ ...form, assetKey: e.target.value })} />
+                  </div>
+                  <div className="field" style={{ gridColumn: "1/-1", marginBottom: 0 }}>
+                    <label>Preview key (optional)</label>
+                    <input className="input" placeholder="uploads/board-marble-preview.png" value={form.previewKey} onChange={(e) => setForm({ ...form, previewKey: e.target.value })} />
+                  </div>
+                  <div className="field" style={{ gridColumn: "1/-1", marginBottom: 0 }}>
+                    <label>Description (optional)</label>
+                    <input className="input" placeholder="Shown in the item detail sheet" value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} />
+                  </div>
+                </div>
+
+                {/* boolean toggles */}
+                <div className="row" style={{ gap: 8 }}>
+                  {(
+                    [
+                      ["active", "Active"],
+                      ["onSale", "On sale"],
+                      ["featured", "Featured"],
+                      ["isPremium", "Premium"],
+                    ] as const
+                  ).map(([k, label]) => (
+                    <button key={k} className={`chip ${form[k] ? "on" : ""}`} onClick={() => setForm({ ...form, [k]: !form[k] })}>
+                      {label}
+                    </button>
                   ))}
-                </select>
-              </div>
-              <div className="field" style={{ marginBottom: 0 }}>
-                <label>Tag / badge</label>
-                <input className="input" placeholder="NEW · VALUE · -35%" value={form.tag} onChange={(e) => setForm({ ...form, tag: e.target.value })} />
-              </div>
-              <div className="field" style={{ marginBottom: 0 }}>
-                <label>Price (gold)</label>
-                <input className="input" inputMode="numeric" placeholder="—" value={form.priceGold} onChange={(e) => setForm({ ...form, priceGold: e.target.value })} />
-              </div>
-              <div className="field" style={{ marginBottom: 0 }}>
-                <label>Price (diamonds)</label>
-                <input className="input" inputMode="numeric" placeholder="—" value={form.priceDiamonds} onChange={(e) => setForm({ ...form, priceDiamonds: e.target.value })} />
-              </div>
-              <div className="field" style={{ marginBottom: 0 }}>
-                <label>Sale price</label>
-                <input className="input" inputMode="numeric" placeholder="—" value={form.salePrice} onChange={(e) => setForm({ ...form, salePrice: e.target.value })} />
-              </div>
-              <div className="field" style={{ marginBottom: 0 }}>
-                <label>Sort order</label>
-                <input className="input" inputMode="numeric" placeholder="0" value={form.sortOrder} onChange={(e) => setForm({ ...form, sortOrder: e.target.value })} />
-              </div>
-              <div className="field" style={{ gridColumn: "1/-1", marginBottom: 0 }}>
-                <label>Asset key (uploads/…)</label>
-                <input className="input" placeholder="uploads/board-marble.png" value={form.assetKey} onChange={(e) => setForm({ ...form, assetKey: e.target.value })} />
-              </div>
-              <div className="field" style={{ gridColumn: "1/-1", marginBottom: 0 }}>
-                <label>Preview key (optional)</label>
-                <input className="input" placeholder="uploads/board-marble-preview.png" value={form.previewKey} onChange={(e) => setForm({ ...form, previewKey: e.target.value })} />
-              </div>
-              <div className="field" style={{ gridColumn: "1/-1", marginBottom: 0 }}>
-                <label>Description (optional)</label>
-                <input className="input" placeholder="Shown in the item detail sheet" value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} />
-              </div>
-            </div>
+                </div>
 
-            {/* boolean toggles */}
-            <div className="row" style={{ gap: 8 }}>
-              {(
-                [
-                  ["active", "Active"],
-                  ["onSale", "On sale"],
-                  ["featured", "Featured"],
-                  ["isPremium", "Premium"],
-                ] as const
-              ).map(([k, label]) => (
-                <button key={k} className={`chip ${form[k] ? "on" : ""}`} onClick={() => setForm({ ...form, [k]: !form[k] })}>
-                  {label}
-                </button>
-              ))}
-            </div>
-
-            <div className="row" style={{ justifyContent: "flex-end" }}>
-              <button className="abtn btn-ghost" onClick={closeForm}>
-                Cancel
-              </button>
-              <button className="abtn btn-gold-pill" disabled={!form.name.trim() || (!editId && !form.id.trim()) || !form.assetKey.trim()} onClick={save}>
-                {editId ? "Save changes" : "Add item"}
-              </button>
+                <div className="row" style={{ justifyContent: "flex-end" }}>
+                  <button className="abtn btn-ghost" onClick={closeForm}>
+                    Cancel
+                  </button>
+                  <button className="abtn btn-gold-pill" disabled={!form.name.trim() || (!editId && !form.id.trim()) || !form.assetKey.trim()} onClick={save}>
+                    {editId ? "Save changes" : "Add item"}
+                  </button>
+                </div>
+              </div>
             </div>
           </div>
         )}
