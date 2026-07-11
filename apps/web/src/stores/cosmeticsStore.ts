@@ -22,6 +22,7 @@ type CatalogItem = {
   type: string;
   assetKey: string;
   previewKey: string | null;
+  priceGold: number | null;
 };
 
 interface CosmeticsState {
@@ -39,6 +40,8 @@ interface CosmeticsState {
   boardKey: (equippedBoardId: string | null | undefined) => string | null;
   /** emote item id → emoji glyph (from previewKey "emote:<glyph>"), or the id. */
   emoteGlyph: (emoteId: string) => string;
+  /** glyphs of ALL free (priceGold 0) EMOTE items — the in-match reactions row. */
+  freeEmoteGlyphs: () => string[];
 }
 
 export const useCosmeticsStore = create<CosmeticsState>((set, get) => ({
@@ -96,5 +99,12 @@ export const useCosmeticsStore = create<CosmeticsState>((set, get) => ({
     const it = get().byId[id];
     if (it?.previewKey?.startsWith("emote:")) return it.previewKey.slice("emote:".length);
     return id;
+  },
+
+  freeEmoteGlyphs: () => {
+    const items = Object.values(get().byId);
+    return items
+      .filter((it) => it.type === "EMOTE" && it.priceGold === 0 && it.previewKey?.startsWith("emote:"))
+      .map((it) => it.previewKey!.slice("emote:".length));
   },
 }));
