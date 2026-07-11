@@ -22,3 +22,6 @@ export type { PieceProps } from "./Piece";
 
 export { Board } from "./Board";
 export type { BoardProps } from "./Board";
+
+export { PlayerLink } from "./PlayerLink";
+export { GuildLink } from "./GuildLink";

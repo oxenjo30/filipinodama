@@ -2,7 +2,7 @@ import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { rankTierFor } from "@dama/shared";
 import { api, ApiError } from "../../lib/api";
-import { Avatar } from "../../components";
+import { Avatar, PlayerLink } from "../../components";
 import { CRESTS, CREST_KEYS, guildCrest, ICONS, type CrestKey } from "../../lib/assets";
 import { useAppStore } from "../../stores/appStore";
 import { useAuthStore } from "../../stores/authStore";
@@ -633,13 +633,21 @@ export function GuildsPage() {
                   return (
                     <div key={m.userId} className="fd-social-row" style={{ display: "flex", alignItems: "center", gap: 13, padding: 12, borderRadius: 12, border: mine ? "1px solid rgba(232,184,75,.35)" : "1px solid rgba(232,184,75,.12)", background: mine ? "rgba(232,184,75,.06)" : "rgba(0,0,0,.2)" }}>
                       <span style={{ font: "800 14px 'JetBrains Mono',monospace", color: "var(--ink2)", width: 20, flex: "none", textAlign: "center" }}>{i + 1}</span>
-                      <Avatar src={m.user.avatarUrl ?? "champion"} frame={m.user.frameId ?? undefined} size={40} />
                       <div style={{ flex: 1, minWidth: 0 }}>
-                        <div style={{ font: "700 15px Inter", color: "#fff" }}>{m.user.displayName}{mine ? " (You)" : ""}</div>
-                        <div style={{ display: "flex", alignItems: "center", gap: 7, marginTop: 2 }}>
-                          <span style={{ font: "700 11px Inter", color: ROLE_COLOR[m.role] }}>{ROLE_LABEL[m.role]}</span>
-                          <span style={{ font: "500 11px Inter", color: status.color }}>· {status.label}</span>
-                        </div>
+                        <PlayerLink
+                          id={m.user.id}
+                          name={`${m.user.displayName}${mine ? " (You)" : ""}`}
+                          avatar={m.user.avatarUrl ?? "champion"}
+                          frame={m.user.frameId ?? undefined}
+                          size={40}
+                          nameStyle={{ font: "700 15px Inter" }}
+                          subtitle={
+                            <div style={{ display: "flex", alignItems: "center", gap: 7, marginTop: 2 }}>
+                              <span style={{ font: "700 11px Inter", color: ROLE_COLOR[m.role] }}>{ROLE_LABEL[m.role]}</span>
+                              <span style={{ font: "500 11px Inter", color: status.color }}>· {status.label}</span>
+                            </div>
+                          }
+                        />
                       </div>
                       <div style={{ textAlign: "right", flex: "none" }}>
                         <div style={{ font: "800 15px 'JetBrains Mono',monospace", color: "var(--gold-lt)" }}>{m.weeklyContribution.toLocaleString()}</div>
@@ -791,6 +799,7 @@ export function GuildsPage() {
                   : { flex: "none", padding: "9px 18px", borderRadius: 8, border: "1px solid rgba(232,184,75,.35)", background: "rgba(232,184,75,.1)", color: "var(--gold-lt)", font: "700 12px Inter", letterSpacing: ".3px", cursor: "pointer" };
               return (
                 <div key={g.id} className="fd-social-row" style={{ display: "flex", alignItems: "center", gap: 14, padding: 12, borderRadius: 12, border: "1px solid rgba(232,184,75,.12)", background: "rgba(0,0,0,.2)" }}>
+                  <div onClick={() => navigate(`/guilds/${g.id}`)} style={{ display: "flex", alignItems: "center", gap: 14, flex: 1, minWidth: 0, cursor: "pointer" }}>
                   <Emblem crestKey={g.crestKey} seed={g.id} size={52} />
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
@@ -802,6 +811,7 @@ export function GuildsPage() {
                       )}
                     </div>
                     <div style={{ font: "500 12px Inter", color: "var(--ink2)", marginTop: 3 }}>{g.memberCount} members · {g.weeklyPoints.toLocaleString()} pts</div>
+                  </div>
                   </div>
                   <div className="fd-row-actions" style={{ display: "flex", flex: "none" }}>
                     <button onClick={() => { if (!isMine) void onJoin(g); }} disabled={isMine || busy} style={joinStyle}>{isMine ? "Your Guild" : open ? "Join" : "Request"}</button>

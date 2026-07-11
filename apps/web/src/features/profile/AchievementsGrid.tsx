@@ -1,14 +1,11 @@
-import { useAuthStore } from "../../stores/authStore";
-import type { Me } from "../../lib/api";
-
 /**
  * AchievementsGrid — the profile's Achievements panel (proto 1424-1434).
  *
  * Faithful reproduction of the prototype's 2-column card grid (First Blood,
- * Royal Streak, Grandmaster, Kingmaker). Achievements are computed CLIENT-SIDE
- * from the real logged-in account (useAuthStore().me) — no mock data. Each card
- * renders unlocked (full gold) vs locked (dimmed) based on the real stat, so the
- * grid always reflects the player's actual progress.
+ * Royal Streak, Grandmaster, Kingmaker). Achievements are computed from the
+ * passed stats object — no mock data. Each card renders unlocked (full gold)
+ * vs locked (dimmed) based on the stat, so the grid always reflects the
+ * player's actual progress.
  *
  * Icons ship under /assets (first-blood.png etc.); we render the real art.
  */
@@ -19,45 +16,42 @@ type Achievement = {
   name: string;
   desc: string;
   img: string;
-  unlocked: (me: Me) => boolean;
+  unlocked: (s: { wins: number; streak: number; trophies: number }) => boolean;
 };
 
 /**
- * The four prototype achievements with faithful client-side thresholds against
- * the real Me stats. (The prototype's flavor text — "Reach 3,000 rating",
- * "Promote 3 kings" — is kept verbatim; unlock logic uses the stats the account
- * actually exposes: wins, streak, trophies.)
+ * The four prototype achievements with faithful client-side thresholds.
+ * (The prototype's flavor text — "Reach 3,000 rating", "Promote 3 kings" —
+ * is kept verbatim; unlock logic uses the stats passed in: wins, streak, trophies.)
  */
 const ACHIEVEMENTS: Achievement[] = [
   {
     name: "First Blood",
     desc: "Win your first match",
     img: `${BASE}/first-blood.png`,
-    unlocked: (me) => me.wins >= 1,
+    unlocked: (s) => s.wins >= 1,
   },
   {
     name: "Royal Streak",
     desc: "Win 5 matches in a row",
     img: `${BASE}/royal-streak.png`,
-    unlocked: (me) => me.streak >= 5,
+    unlocked: (s) => s.streak >= 5,
   },
   {
     name: "Grandmaster",
     desc: "Reach 1,800 rating",
     img: `${BASE}/grandmaster.png`,
-    unlocked: (me) => me.trophies >= 1800,
+    unlocked: (s) => s.trophies >= 1800,
   },
   {
     name: "Kingmaker",
     desc: "Win 50 matches",
     img: `${BASE}/kingmaker.png`,
-    unlocked: (me) => me.wins >= 50,
+    unlocked: (s) => s.wins >= 50,
   },
 ];
 
-export default function AchievementsGrid() {
-  const me = useAuthStore((s) => s.me);
-  if (!me) return null;
+export default function AchievementsGrid({ stats }: { stats: { wins: number; streak: number; trophies: number } }) {
 
   return (
     <div className="frame fd-card-m" style={{ padding: 24 }}>
@@ -67,7 +61,7 @@ export default function AchievementsGrid() {
         style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}
       >
         {ACHIEVEMENTS.map((a) => {
-          const unlocked = a.unlocked(me);
+          const unlocked = a.unlocked(stats);
           return (
             <div
               key={a.name}
