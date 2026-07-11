@@ -2,13 +2,14 @@ import { useCallback, useEffect, useMemo, useState, type ReactNode, type CSSProp
 import { useNavigate } from "react-router-dom";
 import { createInitialState, legalMoves, applyMove } from "@dama/game-engine";
 import { DEFAULT_SETTINGS } from "@dama/shared";
-import { Board } from "../../components";
+import { Board, CurrencyPill } from "../../components";
 import { api, ApiError, type Me } from "../../lib/api";
 import { useAppStore } from "../../stores/appStore";
 import { useAuthStore } from "../../stores/authStore";
 import { useOnlineStore } from "../../stores/onlineStore";
 import { ICONS, avatar as avatarSrc } from "../../lib/assets";
 import { recentUpdates, timeAgo } from "./updates";
+import { FORMAT_LABEL, STATUS_META, formatStartsAt, type TournamentListItem } from "../tournaments/types";
 
 /**
  * HomePage — adapted from the prototype's Home screen (handoff/FilipinoDama
@@ -243,6 +244,28 @@ export function HomePage() {
     };
   }, []);
 
+  // ── Tournaments discovery strip (open/live Cups; requireAuth on the API) ──
+  const [tournaments, setTournaments] = useState<TournamentListItem[]>([]);
+  useEffect(() => {
+    if (!me) {
+      setTournaments([]);
+      return;
+    }
+    let cancelled = false;
+    void (async () => {
+      try {
+        const data = await api.get<{ items: TournamentListItem[] }>("/api/tournaments");
+        if (!cancelled) setTournaments((data.items ?? []).slice(0, 3));
+      } catch {
+        // Silent, like the other opportunistic home strips: no Cups → no strip.
+        if (!cancelled) setTournaments([]);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [me]);
+
   // Tick the "Ends in" countdown once a minute.
   useEffect(() => {
     const t = setInterval(() => setEndsIn(timeUntilUtcMidnight()), 60_000);
@@ -360,6 +383,62 @@ export function HomePage() {
             </div>
           ))}
         </div>
+
+        {/* TOURNAMENTS — real open/live Cups from GET /api/tournaments (default
+            OPEN+RUNNING). A deliberate addition beyond the mockup: renders only
+            when the API returns at least one Cup, so it never shows an empty
+            frame or fabricated tournaments. Gold-only (entry fee + prize pool). */}
+        {tournaments.length > 0 && (
+          <>
+            <div className="divider"><i /><span>✦ Tournaments ✦</span><i /></div>
+            <div className="fd-modes-grid" style={{ display: "grid", gridTemplateColumns: `repeat(${tournaments.length},minmax(0,1fr))`, gap: 14 }}>
+              {tournaments.map((t) => {
+                const status = STATUS_META[t.status];
+                return (
+                  <div
+                    key={t.id}
+                    className="frame"
+                    onClick={() => navigate(`/tournaments/${t.id}`)}
+                    style={{ padding: 18, display: "flex", flexDirection: "column", gap: 11, cursor: "pointer" }}
+                  >
+                    <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 8 }}>
+                      <div style={{ font: "700 16px Cinzel,serif", color: "var(--gold-lt)", lineHeight: 1.2, overflowWrap: "anywhere" }}>{t.name}</div>
+                      <span
+                        style={{
+                          flex: "none",
+                          font: "800 9px Inter",
+                          letterSpacing: ".6px",
+                          textTransform: "uppercase",
+                          padding: "3px 8px",
+                          borderRadius: 100,
+                          color: status.color,
+                          background: status.bg,
+                          border: `1px solid ${status.color}55`,
+                          whiteSpace: "nowrap",
+                        }}
+                      >
+                        {status.label}
+                      </span>
+                    </div>
+                    <div style={{ font: "600 12px Inter", color: "var(--ink2)" }}>
+                      {FORMAT_LABEL[t.format]} · Starts {formatStartsAt(t.startsAt)}
+                    </div>
+                    <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+                      <CurrencyPill kind="gold" value={t.entryFeeGold} title="Entry fee" iconSize={16} />
+                      <CurrencyPill kind="gold" value={t.prizePoolGold} title="Prize pool" iconSize={16} style={{ color: "#f2d493" }} />
+                      <span className="pill" style={{ color: "var(--ink)" }}>{t.registered}/{t.maxPlayers}</span>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+            <div style={{ display: "flex", justifyContent: "flex-end", marginTop: -6 }}>
+              <span onClick={() => navigate("/tournaments")} style={{ font: "600 11px Inter", color: "var(--gold)", cursor: "pointer" }}>
+                View all →
+              </span>
+            </div>
+          </>
+        )}
 
         {/* CONTINUE PLAYING + RECENT UPDATES — the resume card renders only when
             GET /api/matches/active returns a live match for the caller (honest:
