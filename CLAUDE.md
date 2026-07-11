@@ -280,3 +280,28 @@ Before closing a task:
 ## Core Principle
 
 Plan first. Keep context clean. Learn from corrections. Prove the work. Choose simple, proper fixes. Avoid lazy shortcuts. Minimize unintended impact.
+
+## Agent Browser
+
+**This is the #1 rule when using agent browser: avoid closing the actual Chrome browser of the user.**
+
+The user's personal Chrome (and its open tabs/work) has been closed on them multiple times by browser-driving tools. It is highly disruptive and must never happen again. For ANY task that drives a browser — agentic browser, screenshots, e2e, web-perf, Chrome DevTools MCP, Playwright, Puppeteer, Selenium:
+
+- NEVER close, quit, or kill the user's Chrome. NEVER run a process-name-wide kill like `taskkill //IM chrome.exe //F` or `pkill chrome` — it kills every Chrome on the machine, including the user's real browser and all their tabs (even a headless instance shares the `chrome.exe` image name, so a name-wide kill can't tell them apart).
+- Launch automation ONLY in an ISOLATED instance: a separate temp `--user-data-dir`, a dedicated automation channel (Chrome for Testing / headless / a separate binary), or a different browser — never the user's default profile or running instance.
+- On teardown, close only the automation's OWN pages/child process (capture the spawned child's PID and kill exactly that: `child.kill()` / `taskkill //PID <pid> //F`). Never a global "quit browser". If a tool's only teardown is "quit Chrome", use a tool/mode that doesn't, or leave it running.
+- When spawning a subagent that will use a browser, put this constraint in its prompt explicitly.
+- If isolation cannot be guaranteed, ASK the user before launching anything that drives their browser.
+
+## Design Fidelity — Copy the Handoff Mockup Exactly
+
+When the user says "copy the design fidelity" / "follow the approved handoff design" / "copy the mockup" for the admin console (and web), it means **reproduce the mockup 1:1 — NO reinvention or reinterpretation**, not a loose re-skin or "match the vibe."
+
+Verbatim from the user: *"when I say copy the handoff mockup, all elements, assets, spaces, buttons, colors are to be copied. NO reinvention or reinterpretation of the mockup. You won't create your own design and use the mockup as reference."* The mockup is the SOURCE to reproduce, not a reference to riff on.
+
+- **Ground truth:** `handoffv2/FilipinoDama Admin.dc.html` (approved, gitignored). Extract the exact `secXxx` section for the page AND the shared chrome (sidebar nav sections/labels/badges, top bar "VIEWING AS" role select + account chip, logo lockup). Worktree agents can't see the gitignored mockup — copy the extracted HTML/CSS into the worktree.
+- **Copy as-is, every nesting level:** every element, field, control, label, badge, chip, and its exact placement — including inside panels/drawers/modals (avatar, tiles, styled list rows, button grids, footers). A re-skin that gets columns right but drops the VIEWING-AS dropdown, account chip, nav badge counts, per-tier rank colors, or a drawer's inner components is a FAIL. Audit element-by-element with a checklist, not a screenshot glance.
+- **The ONLY sanctioned deviations:** no fabricated/fake data (use real values or an honest empty/deferred state), and the gold-only economy (no Diamonds top-up). Never ship a fabricated control or secret. Everything else copies exactly.
+- **Verify by MEASURING rendered pixels, not by reading CSS.** Reading source values and asserting "it matches" has failed repeatedly — structural/layout bugs (a duplicated title header, a full-width topbar vs. centered `max-width:1240px` content misaligning on a 1920px screen, flex `margin`+`gap` stacking) are invisible in per-element value diffs and only show in the composed page. Render in a headless ISOLATED browser (Playwright from the pnpm store, imported via absolute `file://`; NEVER the user's Chrome — see Agent Browser) and assert edge/gap deltas with `getBoundingClientRect()`. ALWAYS measure at the user's real ~1920px width, not the mockup's ~1240px design width.
+- **Sweep holistically, don't spot-patch** the one element the user screenshots — they mean every element/asset/space/button/color across all pages must match. Fidelity lives mostly in SHARED classes/layout (`index.css` `.main`/`.topbar`/`.tbl`/`.field`/`.chip`, the app shell) — fix the shared layer first; per-page inline values are the last mile.
+- If the mockup's literal CSS looks wrong at the user's width, that's a DESIGN decision — ask, don't silently change or leave it. After pushing, remind the user to hard-refresh (Ctrl+Shift+R) — a stale cached bundle looks identical to "not fixed."
