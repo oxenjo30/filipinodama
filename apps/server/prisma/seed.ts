@@ -86,6 +86,17 @@ const STORE = [
   { id: "capizf", type: "FRAME", name: "Capiz Pearl Frame", assetKey: "frames/capiz.png", previewKey: "frame:frames/capiz.png", priceDiamonds: 300, tag: "NEW", isPremium: true, sortOrder: 57 },
 
   // ── Emotes ──
+  { id: "emote-wave", type: "EMOTE", name: "Wave", assetKey: "emote", previewKey: "emote:👋", priceGold: 0, sortOrder: 40 },
+  { id: "emote-laugh", type: "EMOTE", name: "Laugh", assetKey: "emote", previewKey: "emote:😄", priceGold: 0, sortOrder: 41 },
+  { id: "emote-wow", type: "EMOTE", name: "Wow", assetKey: "emote", previewKey: "emote:😮", priceGold: 0, sortOrder: 42 },
+  { id: "emote-cry", type: "EMOTE", name: "Cry", assetKey: "emote", previewKey: "emote:😢", priceGold: 0, sortOrder: 43 },
+  { id: "emote-thumbsup", type: "EMOTE", name: "Thumbs Up", assetKey: "emote", previewKey: "emote:👍", priceGold: 0, sortOrder: 44 },
+  { id: "emote-fire", type: "EMOTE", name: "Fire", assetKey: "emote", previewKey: "emote:🔥", priceGold: 0, sortOrder: 45 },
+  { id: "emote-cool", type: "EMOTE", name: "Cool", assetKey: "emote", previewKey: "emote:😎", priceGold: 0, sortOrder: 46 },
+  { id: "emote-handshake", type: "EMOTE", name: "Good Game", assetKey: "emote", previewKey: "emote:🤝", priceGold: 0, sortOrder: 47 },
+  { id: "emote-salute", type: "EMOTE", name: "Salute", assetKey: "emote", previewKey: "emote:🫡", priceGold: 0, sortOrder: 48 },
+  { id: "emote-clap", type: "EMOTE", name: "Clap", assetKey: "emote", previewKey: "emote:👏", priceGold: 0, sortOrder: 49 },
+  { id: "emote-pray", type: "EMOTE", name: "Respect", assetKey: "emote", previewKey: "emote:🙏", priceGold: 0, sortOrder: 50 },
   { id: "victory", type: "EMOTE", name: "Victory Royale", assetKey: "victory", previewKey: "emote:👑", priceGold: 1500, sortOrder: 60 },
   { id: "focused", type: "EMOTE", name: "Focused", assetKey: "focused", previewKey: "emote:🎯", priceGold: 2000, salePrice: 1200, onSale: true, sortOrder: 61 },
 
