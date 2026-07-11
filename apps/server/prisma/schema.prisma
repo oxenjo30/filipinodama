@@ -703,6 +703,15 @@ model TournamentMatch {
   round        Int        // 1 = first round; final round = log2(B)
   slot         Int        // 0-based position within the round (parent = slot >> 1 in round+1)
 
+  // DOUBLE_ELIM only: which sub-bracket this slot belongs to. "W" (winners,
+  // the default — SINGLE_ELIM/ROUND_ROBIN/SWISS never set anything else),
+  // "L" (losers), or "GF" (grand final). round/slot are scoped WITHIN a
+  // bracket but the @@unique below is still (tournamentId,round,slot) only —
+  // see the ROUND-OFFSET note in tournaments-core.ts's DOUBLE_ELIM section
+  // for how W/L/GF avoid colliding on that unique index without a schema
+  // change (L rounds start at 101, GF at 201).
+  bracket      String     @default("W")
+
   // The two competitors for this slot. null = not yet determined (awaiting a
   // feeder result) OR a bye (one side null with the other present in round 1).
   redEntryId   String?

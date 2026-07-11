@@ -453,6 +453,187 @@ export function swissPairNextRound(
   return out;
 }
 
+// ─────────────────────────── Double-elim (pure) ───────────────────────────
+//
+// ROUND-OFFSET SCHEME (documented here once, referenced by tournaments-core.ts):
+// TournamentMatch.round/slot is a single (tournamentId,round,slot) unique
+// index shared by all three sub-brackets. To avoid a schema change (adding
+// `bracket` to the unique constraint) the three sub-brackets are namespaced
+// by ROUND NUMBER instead: W rounds are 1..log2(B) (unchanged from
+// single-elim), L rounds are offset by +100 (local L-round 1 is stored as
+// round 101, local L-round 2 as 102, …), and the Grand Final is 201 (game 1)
+// / 202 (game 2, the bracket-reset game). round<100 always means W,
+// 100<=round<200 always means L, round>=200 always means GF — a match's
+// `bracket` column ("W"/"L"/"GF") is redundant with this but is stored
+// anyway for cheap querying/grouping (admin + web bracket views group by it
+// directly instead of re-deriving from the round number).
+export const L_ROUND_OFFSET = 100;
+export const GF_ROUND = 201;
+export const GF_RESET_ROUND = 202;
+
+/**
+ * The losers-bracket ROUND SIZES (match counts) for a winners-bracket of size
+ * B (power of two, B>=2). Verified against the standard double-elimination
+ * structure for B=4 ([1,1]) and B=8 ([2,2,1,1]); the general form is
+ * B/4,B/4,B/8,B/8,B/16,B/16,…,1,1 — `2*(k-1)` rounds where k=log2(B), summing
+ * to B-2 total losers-bracket matches (B=2 has zero L-rounds: the single
+ * W-R1 loser is trivially already the L-champion with no match needed).
+ *
+ * Each entry is `{ localRound, matches, dropsFrom }` — `dropsFrom` is the
+ * W-round (1-indexed) whose losers fill the "new entrant" side of that L
+ * round's matches (round sizes that are a pure consolidation — no new W
+ * losers entering — have `dropsFrom: null`). Pure — no I/O.
+ */
+export function losersBracketStructure(B: number): Array<{ localRound: number; matches: number; dropsFrom: number | null }> {
+  const k = Math.log2(B);
+  if (!Number.isInteger(k) || B < 2) throw new Error(`losersBracketStructure: B must be a power of two >= 2, got ${B}`);
+  if (k === 1) return []; // B=2: no losers bracket at all
+
+  const out: Array<{ localRound: number; matches: number; dropsFrom: number | null }> = [];
+  let localRound = 1;
+  // W-round 1 losers (B/2 of them) always pair off amongst themselves first
+  // (a pure drop round with no prior L-survivors to face).
+  out.push({ localRound: localRound++, matches: B / 4, dropsFrom: 1 });
+  for (let r = 2; r <= k; r++) {
+    // Drop round: L-survivors-so-far (== previous round's match count) face
+    // W-round-r's losers 1:1.
+    const size = B / Math.pow(2, r);
+    out.push({ localRound: localRound++, matches: size, dropsFrom: r });
+    // Consolidation round: halve the survivors, UNLESS this was already the
+    // last W-round (r===k) — the L-bracket final IS that last drop round;
+    // no consolidation follows it.
+    if (r < k && size > 1) {
+      out.push({ localRound: localRound++, matches: size / 2, dropsFrom: null });
+    }
+  }
+  return out;
+}
+
+/**
+ * The CANONICAL drop target for the loser of winners-bracket round `wRound`
+ * slot `wSlot` (wRound 1-indexed, wSlot 0-indexed, bracket size B). Returns
+ * the LOCAL losers-bracket round number (1-indexed, NOT yet +100-offset —
+ * callers apply `L_ROUND_OFFSET` themselves) and slot within that round.
+ *
+ * SIMPLIFIED MAPPING (documented deviation from tournament-standard seeding):
+ * a fully standard bracket additionally reverses slot order on certain drop
+ * rounds specifically to avoid an immediate rematch of a pairing that just
+ * happened in the winners bracket. This implementation uses a plain
+ * INDEX-ALIGNED mapping instead (W-round-r loser slot `s` always drops into
+ * the L drop-round for round r at slot `s` if that round's match count
+ * equals B/2^r, else `s` mapped onto the round's smaller slot count via
+ * `s % matches`) — simpler, and it still guarantees every required
+ * INVARIANT (valid slot 0..matches-1, no two same-round losers collide on
+ * the same slot, every L round fills to exactly one winner) but does NOT
+ * guarantee the zero-immediate-rematch property a fully standard bracket
+ * has. See losersBracketStructure's doc comment for the round-size derivation
+ * this mapping is built on. Pure — no I/O.
+ */
+export function losersDropSlot(wRound: number, wSlot: number, B: number): { localRound: number; slot: number } {
+  const structure = losersBracketStructure(B);
+  const target = structure.find((r) => r.dropsFrom === wRound);
+  if (!target) throw new Error(`losersDropSlot: no L-round accepts drops from W-round ${wRound} for B=${B}`);
+  // W-round-1 losers: B/2 losers pairing off B/4 matches, two losers per
+  // match — slot = floor(wSlot/2). W-round-r>=2 losers: exactly one loser
+  // per L-drop-round match (matches === B/2^r by construction) — slot =
+  // wSlot directly.
+  const slot = wRound === 1 ? Math.floor(wSlot / 2) : wSlot;
+  if (slot < 0 || slot >= target.matches) {
+    throw new Error(`losersDropSlot: computed slot ${slot} out of range for L-round ${target.localRound} (${target.matches} matches)`);
+  }
+  return { localRound: target.localRound, slot };
+}
+
+/** Given a local L-round `lRound` slot `lSlot`, the local L-round + slot its
+ * winner advances into — i.e. `parentSlot` but for the losers bracket, which
+ * is a single-elimination-shaped tree of its OWN (every L round's match
+ * count is either equal to or double the next L round's, per
+ * `losersBracketStructure`, so the parent slot is always `slot` unchanged
+ * when the round sizes match 1:1 (a drop round feeding the round right
+ * after it 1:1) or `slot>>1` when the next round is a consolidation halving
+ * the survivor count. Both cases collapse to the same simple rule: within a
+ * single L-round-to-L-round step the match count either stays the same or
+ * halves, and slot indices are assigned low-to-high in both — so the parent
+ * slot is `Math.floor(slot * (nextMatches / thisMatches))`. Pure — no I/O;
+ * `structure` is the same array `losersBracketStructure(B)` returns (passed
+ * in rather than recomputed so callers that already have it don't redo the
+ * work, and so this function has no implicit B-dependence baked in).
+ */
+export function lWinnerAdvance(
+  lRound: number,
+  lSlot: number,
+  structure: Array<{ localRound: number; matches: number; dropsFrom: number | null }>,
+): { localRound: number; slot: number } | null {
+  const idx = structure.findIndex((r) => r.localRound === lRound);
+  if (idx === -1) throw new Error(`lWinnerAdvance: unknown L-round ${lRound}`);
+  if (idx === structure.length - 1) return null; // L-bracket final — winner goes to the Grand Final, not another L slot
+  const thisRound = structure[idx]!;
+  const nextRound = structure[idx + 1]!;
+  const slot = Math.floor((lSlot * nextRound.matches) / thisRound.matches);
+  return { localRound: nextRound.localRound, slot };
+}
+
+export type DoubleElimMatchLike = {
+  bracket: string; // "W" | "L" | "GF"
+  round: number; // raw stored round (W: 1..k, L: 101.., GF: 201/202)
+  slot: number;
+  redEntryId: string | null;
+  blueEntryId: string | null;
+  winnerEntryId: string | null;
+  status: string;
+};
+
+/**
+ * Compute display placements from a full/partial set of DOUBLE_ELIM
+ * TournamentMatch rows (pure — no I/O). Champion = 1 (the Grand Final's
+ * ultimate winner — game 2's winner if a reset happened, else game 1's
+ * winner). Runner-up = 2 (the Grand Final's ultimate loser — always the
+ * L-bracket champion, whether they lost game 1 outright or lost the reset
+ * game 2). Everyone else is placed by L-bracket elimination round: LATER L
+ * elimination = HIGHER placement (3rd = the L-bracket-final loser, and so on
+ * down through each earlier L round, with round-mates who lost in the same L
+ * round tied at the same placement number — mirrors single-elim's
+ * display-only semifinal-tie convention).
+ */
+export function computeDoubleElimPlacements(matches: DoubleElimMatchLike[]): Array<{ entryId: string; placement: number }> {
+  const results: Array<{ entryId: string; placement: number }> = [];
+  if (matches.length === 0) return results;
+
+  const gf2 = matches.find((m) => m.round === GF_RESET_ROUND && m.status === "done" && m.winnerEntryId != null);
+  const gf1 = matches.find((m) => m.round === GF_ROUND && m.status === "done" && m.winnerEntryId != null);
+  const finalGame = gf2 ?? gf1;
+  if (!finalGame) return results; // no champion decided yet
+
+  const champion = finalGame.winnerEntryId!;
+  const runnerUp = finalGame.redEntryId === champion ? finalGame.blueEntryId : finalGame.redEntryId;
+  results.push({ entryId: champion, placement: 1 });
+  if (runnerUp) results.push({ entryId: runnerUp, placement: 2 });
+
+  // Every L-bracket match's loser is eliminated in that match — group losers
+  // by L-round, later rounds (higher `round` number, since L rounds are
+  // stored in ascending elimination order 101,102,...) get a lower (better)
+  // placement number. The L-bracket-FINAL's loser already appears above as
+  // the Grand Final's L-side entrant if they reached GF — but the L-final's
+  // LOSER (the one eliminated in the L bracket itself, never reaching GF) is
+  // placement 3.
+  const lMatches = matches.filter((m) => m.bracket === "L" && m.status === "done" && m.winnerEntryId != null);
+  const lRoundsDesc = [...new Set(lMatches.map((m) => m.round))].sort((a, b) => b - a);
+  let placement = 3;
+  for (const r of lRoundsDesc) {
+    const losersThisRound = lMatches
+      .filter((m) => m.round === r)
+      .map((m) => (m.redEntryId === m.winnerEntryId ? m.blueEntryId : m.redEntryId))
+      .filter((id): id is string => id != null);
+    for (const loser of losersThisRound) {
+      if (loser === runnerUp) continue; // already placed 2 (reached GF via the L bracket)
+      results.push({ entryId: loser, placement });
+    }
+    if (losersThisRound.length > 0) placement += losersThisRound.length;
+  }
+
+  return results;
+}
+
 export type SwissEntryLike = { id: string; seed: number | null };
 export type SwissMatchLike = {
   redEntryId: string;

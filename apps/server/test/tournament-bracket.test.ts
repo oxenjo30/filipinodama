@@ -9,6 +9,14 @@ import {
   swissPairRound1,
   swissPairNextRound,
   computeSwissStandings,
+  losersBracketStructure,
+  losersDropSlot,
+  lWinnerAdvance,
+  computeDoubleElimPlacements,
+  L_ROUND_OFFSET,
+  GF_ROUND,
+  GF_RESET_ROUND,
+  type DoubleElimMatchLike,
 } from "../src/lib/tournament-bracket.js";
 
 describe("seedPairings (pure, no DB)", () => {
@@ -579,5 +587,240 @@ describe("computeSwissStandings (pure, no DB) — score, Buchholz tiebreak, seed
     const matches: Match[] = [{ redEntryId: "A", blueEntryId: "B", winnerEntryId: null, status: "ready" }];
     const standings = computeSwissStandings(entries, matches, new Set());
     expect(standings.map((s) => s.entryId)).toEqual(["A", "B"]); // both 0 pts — seed asc
+  });
+});
+
+// ─────────────────────────── Double-elim (pure) ───────────────────────────
+//
+// NOTE (correctness caveat, documented per the task brief): losersDropSlot
+// uses a SIMPLER-THAN-TOURNAMENT-STANDARD index-aligned drop mapping, not
+// the fully standard mapping that additionally reverses slot order on some
+// rounds specifically to avoid an immediate rematch of a pairing that just
+// happened in the winners bracket. The tests below assert the INVARIANTS
+// that must hold regardless of the exact mapping used (every loser lands in
+// a valid slot, no two losers collide on the same slot, the L bracket always
+// resolves to exactly one L-champion) rather than pinning down one
+// tournament-standard "correct" seeding — see losersDropSlot's doc comment.
+
+describe("losersBracketStructure (pure, no DB)", () => {
+  it("B=2 → no losers bracket at all (empty array)", () => {
+    expect(losersBracketStructure(2)).toEqual([]);
+  });
+
+  it("B=4 → 2 L-rounds of 1 match each (total 2 = B-2), round 1 drops from W1, round 2 drops from W2", () => {
+    const s = losersBracketStructure(4);
+    expect(s.map((r) => r.matches)).toEqual([1, 1]);
+    expect(s.reduce((sum, r) => sum + r.matches, 0)).toBe(2); // B-2
+    expect(s[0]!.dropsFrom).toBe(1);
+    expect(s[1]!.dropsFrom).toBe(2);
+  });
+
+  it("B=8 → 4 L-rounds sized [2,2,1,1] (total 6 = B-2), rounds alternate drop/drop/consolidation/drop", () => {
+    const s = losersBracketStructure(8);
+    expect(s.map((r) => r.matches)).toEqual([2, 2, 1, 1]);
+    expect(s.reduce((sum, r) => sum + r.matches, 0)).toBe(6); // B-2
+    expect(s.map((r) => r.dropsFrom)).toEqual([1, 2, null, 3]);
+  });
+
+  it("B=16 → 6 L-rounds sized [4,4,2,2,1,1] (total 14 = B-2)", () => {
+    const s = losersBracketStructure(16);
+    expect(s.map((r) => r.matches)).toEqual([4, 4, 2, 2, 1, 1]);
+    expect(s.reduce((sum, r) => sum + r.matches, 0)).toBe(14);
+  });
+
+  it("local round numbers are contiguous 1..N with no gaps or dupes, for every tested B", () => {
+    for (const B of [4, 8, 16, 32]) {
+      const rounds = losersBracketStructure(B).map((r) => r.localRound);
+      expect(rounds).toEqual(Array.from({ length: rounds.length }, (_, i) => i + 1));
+    }
+  });
+
+  it("rejects a non-power-of-two B", () => {
+    expect(() => losersBracketStructure(6)).toThrow();
+  });
+});
+
+describe("losersDropSlot (pure, no DB) — INVARIANTS hold even with a simplified mapping", () => {
+  it("B=4: every W-R1 loser (slots 0,1) drops into local L-round 1 slot 0 (the only slot) with no collision", () => {
+    const d0 = losersDropSlot(1, 0, 4);
+    const d1 = losersDropSlot(1, 1, 4);
+    expect(d0).toEqual({ localRound: 1, slot: 0 });
+    expect(d1).toEqual({ localRound: 1, slot: 0 });
+  });
+
+  it("B=4: the W-final (W-R2) loser drops into local L-round 2 slot 0", () => {
+    expect(losersDropSlot(2, 0, 4)).toEqual({ localRound: 2, slot: 0 });
+  });
+
+  it("B=8: all 4 W-R1 losers land in local L-round 1 across exactly 2 valid slots (0 or 1), two losers per slot, no slot out of range", () => {
+    const structure = losersBracketStructure(8);
+    const round1 = structure.find((r) => r.dropsFrom === 1)!;
+    const drops = [0, 1, 2, 3].map((wSlot) => losersDropSlot(1, wSlot, 8));
+    for (const d of drops) {
+      expect(d.localRound).toBe(round1.localRound);
+      expect(d.slot).toBeGreaterThanOrEqual(0);
+      expect(d.slot).toBeLessThan(round1.matches);
+    }
+    // Exactly 2 losers map to each of the 2 slots (paired, not all-colliding
+    // on one slot and not spread beyond the round's match count).
+    const bySlot = new Map<number, number>();
+    for (const d of drops) bySlot.set(d.slot, (bySlot.get(d.slot) ?? 0) + 1);
+    expect([...bySlot.values()].sort()).toEqual([2, 2]);
+  });
+
+  it("B=8: the 2 W-R2 losers drop one-per-slot into their L round with NO collision (INVARIANT)", () => {
+    const structure = losersBracketStructure(8);
+    const round2 = structure.find((r) => r.dropsFrom === 2)!;
+    const d0 = losersDropSlot(2, 0, 8);
+    const d1 = losersDropSlot(2, 1, 8);
+    expect(d0.localRound).toBe(round2.localRound);
+    expect(d1.localRound).toBe(round2.localRound);
+    expect(d0.slot).not.toBe(d1.slot); // no collision
+    expect(d0.slot).toBeLessThan(round2.matches);
+    expect(d1.slot).toBeLessThan(round2.matches);
+  });
+
+  it("B=8: the W-final (W-R3) loser drops into the L-bracket final (the last local round), slot 0", () => {
+    const structure = losersBracketStructure(8);
+    const last = structure[structure.length - 1]!;
+    expect(last.dropsFrom).toBe(3);
+    expect(losersDropSlot(3, 0, 8)).toEqual({ localRound: last.localRound, slot: 0 });
+  });
+
+  it("throws for a W-round with no L-round accepting drops (out of range)", () => {
+    expect(() => losersDropSlot(5, 0, 8)).toThrow();
+  });
+
+  it("EXHAUSTIVE invariant check B=8: every W-loser slot (all rounds) maps to a valid, non-colliding L slot", () => {
+    const structure = losersBracketStructure(8);
+    const k = 3; // log2(8)
+    for (let wRound = 1; wRound <= k; wRound++) {
+      const wMatches = 8 / Math.pow(2, wRound);
+      const seen = new Map<number, number>(); // slot -> count
+      for (let wSlot = 0; wSlot < wMatches; wSlot++) {
+        const d = losersDropSlot(wRound, wSlot, 8);
+        const round = structure.find((r) => r.localRound === d.localRound)!;
+        expect(d.slot).toBeGreaterThanOrEqual(0);
+        expect(d.slot).toBeLessThan(round.matches);
+        seen.set(d.slot, (seen.get(d.slot) ?? 0) + 1);
+      }
+      // Each slot receives at most 2 losers this round (W-R1 pairs 2-per-slot;
+      // every later round is 1-per-slot) — never more (that would be an
+      // actual collision beyond the intended pairing).
+      for (const count of seen.values()) expect(count).toBeLessThanOrEqual(2);
+    }
+  });
+});
+
+describe("lWinnerAdvance (pure, no DB)", () => {
+  it("B=4: L-round-1 winner (slot 0) advances to L-round 2 slot 0 (the L-bracket final)", () => {
+    const structure = losersBracketStructure(4);
+    expect(lWinnerAdvance(1, 0, structure)).toEqual({ localRound: 2, slot: 0 });
+  });
+
+  it("B=4: L-round-2 (the last round) has no further advance — returns null (winner goes to Grand Final instead)", () => {
+    const structure = losersBracketStructure(4);
+    expect(lWinnerAdvance(2, 0, structure)).toBeNull();
+  });
+
+  it("B=8: L-round-1 (2 matches) winners advance 1:1 into L-round 2 (also 2 matches) at the SAME slot index", () => {
+    const structure = losersBracketStructure(8);
+    expect(lWinnerAdvance(1, 0, structure)).toEqual({ localRound: 2, slot: 0 });
+    expect(lWinnerAdvance(1, 1, structure)).toEqual({ localRound: 2, slot: 1 });
+  });
+
+  it("B=8: L-round-2 (2 matches) winners advance into L-round 3 (1 match, consolidation) — both collapse to slot 0", () => {
+    const structure = losersBracketStructure(8);
+    expect(lWinnerAdvance(2, 0, structure)).toEqual({ localRound: 3, slot: 0 });
+    expect(lWinnerAdvance(2, 1, structure)).toEqual({ localRound: 3, slot: 0 });
+  });
+
+  it("B=8: the final local round (4) returns null — its winner is the L-champion, headed to the Grand Final", () => {
+    const structure = losersBracketStructure(8);
+    expect(lWinnerAdvance(4, 0, structure)).toBeNull();
+  });
+
+  it("throws for an unknown L round", () => {
+    const structure = losersBracketStructure(8);
+    expect(() => lWinnerAdvance(99, 0, structure)).toThrow();
+  });
+});
+
+describe("computeDoubleElimPlacements (pure, no DB) — constructed full 4-player DE", () => {
+  // Bracket: W-R1 (round 1): A vs B (A wins), C vs D (C wins).
+  // W-final (round 2): A vs C (A wins) → A is W-champion, C drops to L.
+  // L-round-1 (round 101): B vs D (B wins) → D eliminated (placement 3).
+  // L-final (round 102, = GF's L-side feed): B vs C (C wins) → B eliminated
+  // (placement 4... but B already lost once in W and once in L: 2 losses,
+  // correctly eliminated). C is the L-champion, advances to the Grand Final.
+  // GF game 1 (round 201): A (W-champ, 0 losses) vs C (L-champ, 1 loss). A
+  // wins outright (no reset needed since A had zero prior losses) → A is
+  // tournament champion (1), C is runner-up (2).
+  function fourPlayerNoReset(): DoubleElimMatchLike[] {
+    return [
+      { bracket: "W", round: 1, slot: 0, redEntryId: "A", blueEntryId: "B", winnerEntryId: "A", status: "done" },
+      { bracket: "W", round: 1, slot: 1, redEntryId: "C", blueEntryId: "D", winnerEntryId: "C", status: "done" },
+      { bracket: "W", round: 2, slot: 0, redEntryId: "A", blueEntryId: "C", winnerEntryId: "A", status: "done" },
+      { bracket: "L", round: 101, slot: 0, redEntryId: "B", blueEntryId: "D", winnerEntryId: "B", status: "done" },
+      { bracket: "L", round: 102, slot: 0, redEntryId: "B", blueEntryId: "C", winnerEntryId: "C", status: "done" },
+      { bracket: "GF", round: GF_ROUND, slot: 0, redEntryId: "A", blueEntryId: "C", winnerEntryId: "A", status: "done" },
+    ];
+  }
+
+  it("champion=1 (W-champ, won GF outright), runner-up=2 (L-champ) — exactly one of each", () => {
+    const placements = computeDoubleElimPlacements(fourPlayerNoReset());
+    const champs = placements.filter((p) => p.placement === 1);
+    const runnersUp = placements.filter((p) => p.placement === 2);
+    expect(champs.length).toBe(1);
+    expect(champs[0]!.entryId).toBe("A");
+    expect(runnersUp.length).toBe(1);
+    expect(runnersUp[0]!.entryId).toBe("C");
+  });
+
+  it("L-bracket-final loser (B) placed 3rd, first-round L loser (D) placed 4th — later L-elimination ranks higher", () => {
+    const placements = computeDoubleElimPlacements(fourPlayerNoReset());
+    const bPlace = placements.find((p) => p.entryId === "B")!.placement;
+    const dPlace = placements.find((p) => p.entryId === "D")!.placement;
+    expect(bPlace).toBe(3); // eliminated in the LATER L round (102)
+    expect(dPlace).toBe(4); // eliminated in the EARLIER L round (101)
+    expect(bPlace).toBeLessThan(dPlace);
+  });
+
+  it("every entry appears in placements exactly once (no duplicates, no one missing)", () => {
+    const placements = computeDoubleElimPlacements(fourPlayerNoReset());
+    const ids = placements.map((p) => p.entryId).sort();
+    expect(ids).toEqual(["A", "B", "C", "D"]);
+  });
+
+  it("BRACKET RESET: L-champion wins GF game 1 → GF game 2 decides the real champion", () => {
+    const matches = fourPlayerNoReset();
+    // Overwrite GF game 1: C (L-champ) wins it → reset.
+    matches[5] = { bracket: "GF", round: GF_ROUND, slot: 0, redEntryId: "A", blueEntryId: "C", winnerEntryId: "C", status: "done" };
+    // GF game 2: A wins the reset — A is the real champion.
+    matches.push({ bracket: "GF", round: GF_RESET_ROUND, slot: 0, redEntryId: "A", blueEntryId: "C", winnerEntryId: "A", status: "done" });
+
+    const placements = computeDoubleElimPlacements(matches);
+    expect(placements.filter((p) => p.placement === 1)).toEqual([{ entryId: "A", placement: 1 }]);
+    expect(placements.filter((p) => p.placement === 2)).toEqual([{ entryId: "C", placement: 2 }]);
+  });
+
+  it("BRACKET RESET where the L-champion wins BOTH games → L-champion is the real, final champion", () => {
+    const matches = fourPlayerNoReset();
+    matches[5] = { bracket: "GF", round: GF_ROUND, slot: 0, redEntryId: "A", blueEntryId: "C", winnerEntryId: "C", status: "done" };
+    matches.push({ bracket: "GF", round: GF_RESET_ROUND, slot: 0, redEntryId: "A", blueEntryId: "C", winnerEntryId: "C", status: "done" });
+
+    const placements = computeDoubleElimPlacements(matches);
+    expect(placements.filter((p) => p.placement === 1)).toEqual([{ entryId: "C", placement: 1 }]);
+    expect(placements.filter((p) => p.placement === 2)).toEqual([{ entryId: "A", placement: 2 }]);
+  });
+
+  it("no champion decided yet (GF not done) → empty placements, no crash", () => {
+    const matches = fourPlayerNoReset();
+    matches[5] = { bracket: "GF", round: GF_ROUND, slot: 0, redEntryId: "A", blueEntryId: "C", winnerEntryId: null, status: "ready" };
+    expect(computeDoubleElimPlacements(matches)).toEqual([]);
+  });
+
+  it("empty match list → empty placements", () => {
+    expect(computeDoubleElimPlacements([])).toEqual([]);
   });
 });
