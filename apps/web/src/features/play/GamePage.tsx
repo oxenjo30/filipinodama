@@ -6,7 +6,6 @@ import { useGameStore, HUMAN_COLOR, AI_COLOR } from "../../stores/gameStore";
 import { useSettingsStore } from "../../stores/settingsStore";
 import { useAppStore } from "../../stores/appStore";
 import { useAuthStore } from "../../stores/authStore";
-import { useCosmeticsStore } from "../../stores/cosmeticsStore";
 import { useGameSounds } from "../../lib/useGameSounds";
 import { PlayerPanel } from "./PlayerPanel";
 import { Modal } from "../shared/Modal";
@@ -27,9 +26,6 @@ const AI_NAME: Record<AiDifficulty, string> = {
   normal: "Tactician",
   hard: "Master",
 };
-
-/** Quick-chat emotes from the prototype. */
-const GAME_EMOTES = ["👋", "😄", "😮", "😢", "👍", "🔥"];
 
 /** Board square → algebraic coordinate (col letter + row number, 8×8). */
 function coord(sq: Square): string {
@@ -75,13 +71,6 @@ export function GamePage({ mode = "ai" }: { mode?: "ai" | "local" }) {
   const trophies = me?.trophies ?? 0;
   const avatar = me?.avatarUrl ?? "champion";
 
-  // Equipped emote loadout → tray glyphs. When the player has equipped emotes we
-  // resolve each store-item id to its glyph via the shared cosmetics resolver;
-  // otherwise fall back to the hardcoded GAME_EMOTES so the tray is never empty.
-  const emoteGlyph = useCosmeticsStore((s) => s.emoteGlyph);
-  const equippedEmotes = me?.equippedEmotes ?? [];
-  const emoteTray = equippedEmotes.length > 0 ? equippedEmotes.map(emoteGlyph) : GAME_EMOTES;
-
   const {
     state,
     selected,
@@ -102,7 +91,6 @@ export function GamePage({ mode = "ai" }: { mode?: "ai" | "local" }) {
     swapSides,
   } = useGameStore();
 
-  const [chatDraft, setChatDraft] = useState("");
   // Pre-match loader (handoff `playWithLoader`): show the themed loading screen,
   // then start a fresh match. Offline vs-AI / local both use the "default" ctx.
   const [loading, setLoading] = useState(true);
@@ -141,19 +129,6 @@ export function GamePage({ mode = "ai" }: { mode?: "ai" | "local" }) {
   const humanTurn = isLocal ? redToMove || blueToMove : redToMove;
 
   const rows = toRows(state.history);
-
-  // Online-play gate (mirrors PlayHubPage.requireLogin). A logged-out visitor is
-  // Offline echo only. There is NO match-chat socket yet (see task notes), so we
-  // cannot deliver a message to an opponent. Matching the prototype's
-  // `sendGameChat`, we locally echo the text via a toast and never claim it was
-  // delivered online. Wire to a real socket when online match-chat ships.
-  function sendChat(text?: string) {
-    const msg = (text ?? chatDraft).trim();
-    if (!msg) return;
-    setChatDraft("");
-    showToast(`Sent: ${msg}`);
-  }
-
 
   // Player names for the two seats. Local: Player 1 (red) vs Player 2 (blue).
   // vs-AI: the human (red) vs the difficulty-named bot (blue).
@@ -534,51 +509,6 @@ export function GamePage({ mode = "ai" }: { mode?: "ai" | "local" }) {
                 </div>
               ))
             )}
-          </div>
-        </div>
-
-        <div className="frame" style={{ padding: 16 }}>
-          <div className="ptitle">Quick Chat</div>
-          <div style={{ display: "flex", gap: 6, flexWrap: "wrap", justifyContent: "center", marginBottom: 12 }}>
-            {emoteTray.map((ch) => (
-              <button
-                key={ch}
-                onClick={() => sendChat(ch)}
-                style={{
-                  width: 38,
-                  height: 38,
-                  borderRadius: 9,
-                  border: "1px solid rgba(232,184,75,.3)",
-                  background: "rgba(15,8,32,.5)",
-                  fontSize: 18,
-                  cursor: "pointer",
-                }}
-              >
-                {ch}
-              </button>
-            ))}
-          </div>
-          <div style={{ display: "flex", gap: 8 }}>
-            <input
-              value={chatDraft}
-              onChange={(e) => setChatDraft(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") sendChat();
-              }}
-              placeholder="Type a message..."
-              style={{
-                flex: 1,
-                padding: "10px 12px",
-                borderRadius: 8,
-                border: "1px solid rgba(232,184,75,.3)",
-                background: "rgba(0,0,0,.3)",
-                color: "#fff",
-                font: "500 13px Inter",
-              }}
-            />
-            <button onClick={() => sendChat()} className="btn btn-gold" style={{ padding: "10px 12px" }}>
-              ➤
-            </button>
           </div>
         </div>
 
