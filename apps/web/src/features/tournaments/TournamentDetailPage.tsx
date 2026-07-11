@@ -5,7 +5,7 @@ import { useAppStore } from "../../stores/appStore";
 import { useAuthStore } from "../../stores/authStore";
 import { Avatar, CurrencyPill } from "../../components";
 import { ICONS } from "../../lib/assets";
-import { FORMAT_LABEL, STATUS_META, formatStartsAt, type TournamentDetail, type TournamentEntry } from "./types";
+import { FORMAT_LABEL, STATUS_META, formatStartsAt, isStandingsFormat, type TournamentDetail, type TournamentEntry } from "./types";
 
 /**
  * TournamentDetailPage (/tournaments/:id) — one Cup's entry list + bracket.
@@ -52,6 +52,62 @@ function EntryRow({ e, isMe }: { e: TournamentEntry; isMe: boolean }) {
       {isMe && (
         <span style={{ flex: "none", font: "800 10px Inter", letterSpacing: ".5px", color: "var(--gold)", textTransform: "uppercase" }}>You</span>
       )}
+    </div>
+  );
+}
+
+type StandingsRow = { entry: TournamentEntry; wins: number; losses: number };
+
+function StandingsTable({ rows, myEntryId }: { rows: StandingsRow[]; myEntryId: string | undefined }) {
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 6, marginTop: 6 }}>
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns: "32px 1fr 44px 44px 70px",
+          gap: 8,
+          padding: "4px 10px",
+          font: "700 10px Inter",
+          letterSpacing: ".4px",
+          textTransform: "uppercase",
+          color: "var(--ink2)",
+        }}
+      >
+        <span>#</span>
+        <span>Player</span>
+        <span style={{ textAlign: "right" }}>W</span>
+        <span style={{ textAlign: "right" }}>L</span>
+        <span style={{ textAlign: "right" }}>Place</span>
+      </div>
+      {rows.map((row, i) => {
+        const isMe = row.entry.id === myEntryId;
+        return (
+          <div
+            key={row.entry.id}
+            style={{
+              display: "grid",
+              gridTemplateColumns: "32px 1fr 44px 44px 70px",
+              gap: 8,
+              alignItems: "center",
+              padding: "8px 10px",
+              borderRadius: 8,
+              border: `1px solid ${isMe ? "var(--gold)" : "rgba(232,184,75,.14)"}`,
+              background: isMe ? "rgba(232,184,75,.08)" : "rgba(255,255,255,.02)",
+            }}
+          >
+            <span style={{ font: "800 12px 'JetBrains Mono',monospace", color: "var(--gold-lt)" }}>{i + 1}</span>
+            <span style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0 }}>
+              <Avatar src={row.entry.user.avatarUrl ?? "champion"} size={24} ring={false} />
+              <span style={{ font: "700 12.5px Inter", color: "#f2e9d2", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                {row.entry.user.username}
+              </span>
+            </span>
+            <span style={{ textAlign: "right", font: "700 12px 'JetBrains Mono',monospace", color: "#7ee6a4" }}>{row.wins}</span>
+            <span style={{ textAlign: "right", font: "700 12px 'JetBrains Mono',monospace", color: "var(--ink2)" }}>{row.losses}</span>
+            <span style={{ textAlign: "right", font: "700 12px Inter", color: "var(--gold)" }}>{row.entry.placement ?? "—"}</span>
+          </div>
+        );
+      })}
     </div>
   );
 }
@@ -141,6 +197,32 @@ export function TournamentDetailPage() {
     return Object.keys(data.bracket)
       .map(Number)
       .sort((a, b) => a - b);
+  }, [data]);
+
+  // Standings for no-elimination formats (ROUND_ROBIN this stage) — a live
+  // win/loss tally from reported matches, ranked by final placement (once
+  // set at Complete) then wins desc then seed asc. The authoritative ranking
+  // (incl. head-to-head tiebreak) is computed server-side at Complete time;
+  // this is a lightweight client-side view of the same match data the
+  // bracket would otherwise render.
+  const standings = useMemo(() => {
+    if (!data || !isStandingsFormat(data.format)) return [];
+    const allMatches = Object.values(data.bracket).flat();
+    const wins = new Map<string, number>();
+    const losses = new Map<string, number>();
+    for (const e of data.entries) {
+      wins.set(e.id, 0);
+      losses.set(e.id, 0);
+    }
+    for (const m of allMatches) {
+      if (m.status !== "done" || !m.winnerEntryId) continue;
+      wins.set(m.winnerEntryId, (wins.get(m.winnerEntryId) ?? 0) + 1);
+      const loser = m.redEntryId === m.winnerEntryId ? m.blueEntryId : m.redEntryId;
+      if (loser) losses.set(loser, (losses.get(loser) ?? 0) + 1);
+    }
+    return [...data.entries]
+      .map((e) => ({ entry: e, wins: wins.get(e.id) ?? 0, losses: losses.get(e.id) ?? 0 }))
+      .sort((a, b) => (a.entry.placement ?? 999) - (b.entry.placement ?? 999) || b.wins - a.wins || (a.entry.seed ?? 999) - (b.entry.seed ?? 999));
   }, [data]);
 
   const onJoin = useCallback(async () => {
@@ -326,8 +408,16 @@ export function TournamentDetailPage() {
         )}
       </div>
 
-      {/* BRACKET */}
-      {rounds.length > 0 && (
+      {/* STANDINGS (round robin / other no-elimination formats) */}
+      {isStandingsFormat(data.format) && standings.length > 0 && (
+        <div className="frame fd-card-m" style={{ padding: "20px 22px" }}>
+          <div className="ptitle">Standings</div>
+          <StandingsTable rows={standings} myEntryId={data.myEntry?.id} />
+        </div>
+      )}
+
+      {/* BRACKET (elimination formats) */}
+      {!isStandingsFormat(data.format) && rounds.length > 0 && (
         <div className="frame fd-card-m" style={{ padding: "20px 22px" }}>
           <div className="ptitle">Bracket</div>
           <div style={{ display: "flex", gap: 18, overflowX: "auto", paddingBottom: 8, marginTop: 6 }}>

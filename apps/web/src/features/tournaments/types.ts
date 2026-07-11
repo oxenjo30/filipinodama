@@ -35,6 +35,13 @@ export type TournamentEntry = {
   user: TournamentEntryUser;
 };
 
+/** True for formats with no elimination bracket — ranked by a win/loss
+ * standings table instead of a bracket tree. (DOUBLE_ELIM/SWISS aren't
+ * built yet — this stage only covers ROUND_ROBIN.) */
+export function isStandingsFormat(format: TournamentFormat): boolean {
+  return format === "ROUND_ROBIN" || format === "SWISS";
+}
+
 export type TournamentMatch = {
   id: string;
   tournamentId: string;

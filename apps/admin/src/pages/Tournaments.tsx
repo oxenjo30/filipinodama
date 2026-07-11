@@ -57,11 +57,13 @@ type TournamentDetail = Tournament & {
 };
 
 const BRACKET_SIZES = [8, 16, 32, 64, 128, 256] as const;
+const ROUND_ROBIN_SIZES = [2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16] as const;
+const ROUND_ROBIN_MAX_PLAYERS = 16;
 const FORMATS: { value: TournamentFormat; label: string; v1: boolean }[] = [
   { value: "SINGLE_ELIM", label: "Single elimination", v1: true },
   { value: "DOUBLE_ELIM", label: "Double elimination", v1: false },
   { value: "SWISS", label: "Swiss", v1: false },
-  { value: "ROUND_ROBIN", label: "Round robin", v1: false },
+  { value: "ROUND_ROBIN", label: "Round robin", v1: true },
 ];
 
 const STATUS_CLASS: Record<TournamentStatus, string> = {
@@ -246,19 +248,22 @@ function TournamentRow({
   const start = () =>
     mutate({
       title: `Start "${t.name}"`,
-      body: `Seeds the bracket from ${t.registeredCount} registered player(s). This cannot be undone.`,
+      body: `Seeds the ${t.format === "ROUND_ROBIN" ? "match schedule" : "bracket"} from ${t.registeredCount} registered player(s). This cannot be undone.`,
       requireReason: true,
       confirmLabel: "Start",
       method: "POST",
       path: `/api/admin/tournaments/${t.id}/start`,
-      successMsg: "Bracket seeded — tournament is live.",
+      successMsg: t.format === "ROUND_ROBIN" ? "Matches scheduled — tournament is live." : "Bracket seeded — tournament is live.",
       onDone,
     });
 
   const complete = () =>
     mutate({
       title: `Complete "${t.name}"`,
-      body: "Pays the champion and runner-up their gold prizes. Requires a champion to already exist.",
+      body:
+        t.format === "ROUND_ROBIN"
+          ? "Pays the top placements by final standings. Requires every match to be reported."
+          : "Pays the top placements by final ranking. Requires a champion to already exist.",
       requireReason: true,
       confirmLabel: "Complete & pay prizes",
       method: "POST",
@@ -329,6 +334,9 @@ function TournamentRow({
 
 // ── Create / edit form ──────────────────────────────────────────────────────
 
+const ORDINAL = ["1st", "2nd", "3rd", "4th", "5th", "6th", "7th", "8th", "9th", "10th", "11th", "12th", "13th", "14th", "15th", "16th"];
+const ordinalLabel = (i: number) => ORDINAL[i] ?? `${i + 1}th`;
+
 function TournamentForm({ tournament, onClose, onDone }: { tournament?: Tournament; onClose: () => void; onDone: () => void }) {
   const mutate = useAdminMutation();
   const isEdit = !!tournament;
@@ -338,22 +346,45 @@ function TournamentForm({ tournament, onClose, onDone }: { tournament?: Tourname
   const [maxPlayers, setMaxPlayers] = useState<number>(tournament?.maxPlayers ?? 16);
   const [entryFeeGold, setEntryFeeGold] = useState<number>(tournament?.entryFeeGold ?? 0);
   const [prizePoolGold, setPrizePoolGold] = useState<number>(tournament?.prizePoolGold ?? 0);
-  const initialSplit = Array.isArray(tournament?.prizeSplitGold) ? (tournament!.prizeSplitGold as number[]) : [0, 0];
-  const [firstPrize, setFirstPrize] = useState<number>(initialSplit[0] ?? 0);
-  const [secondPrize, setSecondPrize] = useState<number>(initialSplit[1] ?? 0);
+  // Top-N prize split — a dynamic list of per-placement gold amounts (was a
+  // fixed 1st/2nd pair). A 2-length split is just the old shape; N can be
+  // anywhere from 1 (winner-takes-all) up to maxPlayers.
+  const initialSplit = Array.isArray(tournament?.prizeSplitGold) && (tournament!.prizeSplitGold as number[]).length > 0
+    ? (tournament!.prizeSplitGold as number[])
+    : [0, 0];
+  const [split, setSplit] = useState<number[]>(initialSplit);
   const [minTrophies, setMinTrophies] = useState<number>(tournament?.minTrophies ?? 0);
   const [matchMode, setMatchMode] = useState<"CASUAL" | "RANKED">(tournament?.matchMode ?? "CASUAL");
   const [startsAt, setStartsAt] = useState(tournament?.startsAt ? toLocalInput(tournament.startsAt) : "");
 
-  const splitSum = firstPrize + secondPrize;
-  const splitValid = splitSum === prizePoolGold;
-  const valid = name.trim().length > 0 && format === "SINGLE_ELIM" && splitValid;
+  const isRoundRobin = format === "ROUND_ROBIN";
+  const bracketSizeOptions = isRoundRobin ? ROUND_ROBIN_SIZES : BRACKET_SIZES;
+
+  // When switching format, clamp maxPlayers into the new format's valid set
+  // (power-of-two bracket sizes for elimination, 2..16 for round robin).
+  const onFormatChange = (next: TournamentFormat) => {
+    setFormat(next);
+    if (next === "ROUND_ROBIN" && maxPlayers > ROUND_ROBIN_MAX_PLAYERS) {
+      setMaxPlayers(ROUND_ROBIN_MAX_PLAYERS);
+    } else if (next !== "ROUND_ROBIN" && !(BRACKET_SIZES as readonly number[]).includes(maxPlayers)) {
+      setMaxPlayers(8);
+    }
+  };
+
+  const splitSum = split.reduce((a, b) => a + b, 0);
+  const splitValid = split.length >= 1 && split.length <= maxPlayers && splitSum === prizePoolGold;
+  const supportedFormat = format === "SINGLE_ELIM" || format === "ROUND_ROBIN";
+  const valid = name.trim().length > 0 && supportedFormat && splitValid;
+
+  const setPlace = (i: number, gold: number) => setSplit((s) => s.map((v, idx) => (idx === i ? gold : v)));
+  const addPlace = () => setSplit((s) => (s.length < maxPlayers ? [...s, 0] : s));
+  const removePlace = (i: number) => setSplit((s) => (s.length > 1 ? s.filter((_, idx) => idx !== i) : s));
 
   const submit = () => {
     if (!splitValid) return; // client-side gate — mirrors server's PRIZE_SPLIT_MISMATCH
     mutate({
       title: isEdit ? `Edit tournament "${name}"` : `Create tournament "${name}"`,
-      body: `${FORMATS.find((f) => f.value === format)?.label} · ${maxPlayers} players · entry ${entryFeeGold} 🪙 · pool ${prizePoolGold} 🪙 (${firstPrize}/${secondPrize}). Audited.`,
+      body: `${FORMATS.find((f) => f.value === format)?.label} · ${maxPlayers} players · entry ${entryFeeGold} 🪙 · pool ${prizePoolGold} 🪙 (${split.join("/")}). Audited.`,
       requireReason: true,
       confirmLabel: isEdit ? "Save tournament" : "Create tournament",
       method: isEdit ? "PATCH" : "POST",
@@ -363,7 +394,7 @@ function TournamentForm({ tournament, onClose, onDone }: { tournament?: Tourname
         format,
         entryFeeGold,
         prizePoolGold,
-        prizeSplitGold: [firstPrize, secondPrize],
+        prizeSplitGold: split,
         maxPlayers,
         minTrophies,
         matchMode,
@@ -386,7 +417,7 @@ function TournamentForm({ tournament, onClose, onDone }: { tournament?: Tourname
       <div className="row" style={{ alignItems: "flex-start" }}>
         <div className="field" style={{ flex: 1, minWidth: 200 }}>
           <label>Format</label>
-          <select className="select" value={format} onChange={(e) => setFormat(e.target.value as TournamentFormat)}>
+          <select className="select" value={format} onChange={(e) => onFormatChange(e.target.value as TournamentFormat)}>
             {FORMATS.map((f) => (
               <option key={f.value} value={f.value} disabled={!f.v1} style={!f.v1 ? { color: "var(--dim-2)" } : undefined}>
                 {f.label}
@@ -395,9 +426,9 @@ function TournamentForm({ tournament, onClose, onDone }: { tournament?: Tourname
           </select>
         </div>
         <div className="field" style={{ flex: 1, minWidth: 160 }}>
-          <label>Bracket size (cap)</label>
+          <label>{isRoundRobin ? "Players (cap 16)" : "Bracket size (cap)"}</label>
           <select className="select" value={maxPlayers} onChange={(e) => setMaxPlayers(Number(e.target.value))}>
-            {BRACKET_SIZES.map((n) => (
+            {bracketSizeOptions.map((n) => (
               <option key={n} value={n}>{n}</option>
             ))}
           </select>
@@ -410,6 +441,11 @@ function TournamentForm({ tournament, onClose, onDone }: { tournament?: Tourname
           </select>
         </div>
       </div>
+      {isRoundRobin && (
+        <div className="dim" style={{ fontSize: 11, marginTop: -6, marginBottom: 12 }}>
+          Round robin: every player plays every other player once. Match count grows fast — capped at 16 players ({(16 * 15) / 2} matches).
+        </div>
+      )}
 
       <div className="row" style={{ alignItems: "flex-start" }}>
         <div className="field" style={{ flex: 1, minWidth: 180 }}>
@@ -438,19 +474,48 @@ function TournamentForm({ tournament, onClose, onDone }: { tournament?: Tourname
         </div>
       </div>
 
-      <div className="row" style={{ alignItems: "flex-start" }}>
-        <div className="field" style={{ flex: 1, minWidth: 140 }}>
-          <label>1st place (gold)</label>
-          <input className="input" type="number" min={0} value={firstPrize || ""} onChange={(e) => setFirstPrize(Number(e.target.value) || 0)} />
+      <div className="field">
+        <label>Prize split by placement (gold)</label>
+        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+          {split.map((gold, i) => (
+            <div key={i} className="row" style={{ alignItems: "center", gap: 8 }}>
+              <span style={{ width: 44, font: "700 12px var(--sans)", color: "var(--gold-lt)" }}>{ordinalLabel(i)}</span>
+              <input
+                className="input"
+                type="number"
+                min={0}
+                style={{ flex: 1 }}
+                value={gold || ""}
+                onChange={(e) => setPlace(i, Number(e.target.value) || 0)}
+              />
+              <button
+                type="button"
+                className="btn"
+                style={{ padding: "6px 10px" }}
+                disabled={split.length <= 1}
+                onClick={() => removePlace(i)}
+                aria-label={`Remove ${ordinalLabel(i)} place`}
+              >
+                −
+              </button>
+            </div>
+          ))}
         </div>
-        <div className="field" style={{ flex: 1, minWidth: 140 }}>
-          <label>2nd place (gold)</label>
-          <input className="input" type="number" min={0} value={secondPrize || ""} onChange={(e) => setSecondPrize(Number(e.target.value) || 0)} />
-        </div>
+        <button
+          type="button"
+          className="btn"
+          style={{ marginTop: 8, alignSelf: "flex-start" }}
+          disabled={split.length >= maxPlayers}
+          onClick={addPlace}
+        >
+          + Add place
+        </button>
       </div>
       {!splitValid && (
         <div style={{ color: "var(--red-lt)", fontSize: 12, marginTop: -6, marginBottom: 12 }}>
-          1st + 2nd ({splitSum.toLocaleString()} 🪙) must equal the prize pool ({prizePoolGold.toLocaleString()} 🪙). V1 pays only the top two placements.
+          {split.length > maxPlayers
+            ? `Prize split has more placements (${split.length}) than max players (${maxPlayers}).`
+            : `Split total (${splitSum.toLocaleString()} 🪙) must equal the prize pool (${prizePoolGold.toLocaleString()} 🪙).`}
         </div>
       )}
 
@@ -487,6 +552,7 @@ function BracketDrawer({ id, onClose, onDone }: { id: string; onClose: () => voi
 
   const rounds = d ? Object.keys(d.bracket).map(Number).sort((a, b) => a - b) : [];
   const entryById = new Map((d?.entries ?? []).map((e) => [e.id, e]));
+  const isRoundRobin = d?.format === "ROUND_ROBIN";
 
   const entryLabel = (entryId: string | null): string => {
     if (!entryId) return "TBD";
@@ -494,6 +560,31 @@ function BracketDrawer({ id, onClose, onDone }: { id: string; onClose: () => voi
     if (!e) return entryId;
     return `${e.user.username} ${e.user.tag}${e.seed ? ` (seed ${e.seed})` : ""}`;
   };
+
+  // Standings for ROUND_ROBIN — a live win/loss tally from the reported
+  // matches so far (not just the final placement, which is only set at
+  // Complete). Ranked by wins desc, then seed asc — a lightweight client-side
+  // view; the authoritative ranking (incl. head-to-head tiebreak) is computed
+  // server-side by computeRoundRobinStandings at Complete time.
+  const standings = (() => {
+    if (!d || !isRoundRobin) return [];
+    const allMatches = Object.values(d.bracket).flat();
+    const wins = new Map<string, number>();
+    const losses = new Map<string, number>();
+    for (const e of d.entries) {
+      wins.set(e.id, 0);
+      losses.set(e.id, 0);
+    }
+    for (const m of allMatches) {
+      if (m.status !== "done" || !m.winnerEntryId) continue;
+      wins.set(m.winnerEntryId, (wins.get(m.winnerEntryId) ?? 0) + 1);
+      const loser = m.redEntryId === m.winnerEntryId ? m.blueEntryId : m.redEntryId;
+      if (loser) losses.set(loser, (losses.get(loser) ?? 0) + 1);
+    }
+    return [...d.entries]
+      .map((e) => ({ entry: e, wins: wins.get(e.id) ?? 0, losses: losses.get(e.id) ?? 0 }))
+      .sort((a, b) => (a.entry.placement ?? 999) - (b.entry.placement ?? 999) || b.wins - a.wins || (a.entry.seed ?? 999) - (b.entry.seed ?? 999));
+  })();
 
   return (
     <div className="drawer-wrap">
@@ -553,11 +644,47 @@ function BracketDrawer({ id, onClose, onDone }: { id: string; onClose: () => voi
               </table>
             </div>
 
+            {isRoundRobin && (
+              <>
+                <div style={{ fontWeight: 700, margin: "10px 0 8px" }}>
+                  Standings <span className="dim" style={{ fontWeight: 500 }}>· ranked by wins — final placement is set at Complete</span>
+                </div>
+                <div className="panel" style={{ marginBottom: 20, overflow: "hidden" }}>
+                  <table className="tbl">
+                    <thead>
+                      <tr>
+                        <th className="num">#</th>
+                        <th>Player</th>
+                        <th className="num">W</th>
+                        <th className="num">L</th>
+                        <th className="num">Placement</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {standings.length === 0 ? (
+                        <tr><td colSpan={5} className="dim" style={{ textAlign: "center", padding: 18 }}>No entries.</td></tr>
+                      ) : (
+                        standings.map((row, i) => (
+                          <tr key={row.entry.id}>
+                            <td className="num">{i + 1}</td>
+                            <td>{row.entry.user.username} <span className="dim mono">{row.entry.user.tag}</span></td>
+                            <td className="num">{row.wins}</td>
+                            <td className="num">{row.losses}</td>
+                            <td className="num">{row.entry.placement ?? "—"}</td>
+                          </tr>
+                        ))
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </>
+            )}
+
             <div style={{ fontWeight: 700, margin: "10px 0 8px" }}>
-              Bracket <span className="dim" style={{ fontWeight: 500 }}>· simple slot view — report each match's winner to advance</span>
+              {isRoundRobin ? "Matches" : "Bracket"} <span className="dim" style={{ fontWeight: 500 }}>· simple slot view — report each match's winner {isRoundRobin ? "" : "to advance"}</span>
             </div>
             {rounds.length === 0 ? (
-              <div className="panel panel-pad dim">Bracket not seeded yet — Start the tournament first.</div>
+              <div className="panel panel-pad dim">{isRoundRobin ? "Matches" : "Bracket"} not seeded yet — Start the tournament first.</div>
             ) : (
               rounds.map((r) => (
                 <div key={r} style={{ marginBottom: 16 }}>
@@ -566,7 +693,7 @@ function BracketDrawer({ id, onClose, onDone }: { id: string; onClose: () => voi
                   </div>
                   <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
                     {d.bracket[String(r)]!.sort((a, b) => a.slot - b.slot).map((m) => (
-                      <SlotRow key={m.id} tournamentId={d.id} m={m} entryLabel={entryLabel} onDone={() => { load(); onDone(); }} />
+                      <SlotRow key={m.id} tournamentId={d.id} m={m} entryLabel={entryLabel} onDone={() => { load(); onDone(); }} isRoundRobin={isRoundRobin} />
                     ))}
                   </div>
                 </div>
@@ -584,24 +711,26 @@ function SlotRow({
   m,
   entryLabel,
   onDone,
+  isRoundRobin,
 }: {
   tournamentId: string;
   m: TournamentMatch;
   entryLabel: (entryId: string | null) => string;
   onDone: () => void;
+  isRoundRobin?: boolean;
 }) {
   const mutate = useAdminMutation();
 
   const report = (winnerEntryId: string) =>
     mutate({
       title: `Report winner: ${entryLabel(winnerEntryId)}`,
-      body: "Resolves this slot and advances the winner into the next round.",
+      body: isRoundRobin ? "Resolves this match. Standings update once every match is reported." : "Resolves this slot and advances the winner into the next round.",
       requireReason: true,
       confirmLabel: "Report result",
       method: "POST",
       path: `/api/admin/tournaments/${tournamentId}/matches/${m.id}/report`,
       payload: { winnerEntryId },
-      successMsg: "Result recorded — bracket advanced.",
+      successMsg: isRoundRobin ? "Result recorded." : "Result recorded — bracket advanced.",
       onDone,
     });
 
