@@ -8,6 +8,7 @@ import { api, ApiError } from "../../lib/api";
 import { useDamathRoomStore } from "../../stores/damathRoomStore";
 import { useDamathOnlineStore } from "../../stores/damathOnlineStore";
 import { variantInfo } from "./variants";
+import { MatchChat, type MatchChatMsg } from "../play/MatchChat";
 
 type FriendUser = {
   id: string;
@@ -16,8 +17,6 @@ type FriendUser = {
   avatarUrl: string | null;
   trophies: number;
 };
-
-const EMOTES = ["👋 Hi!", "😄 GG", "🔥 Let's go", "🤝 Good luck"];
 
 const goldHeading: React.CSSProperties = {
   background: "linear-gradient(180deg,#f7e2a0,#d5a63a)",
@@ -71,20 +70,13 @@ export function DamathRoomPage() {
   const [friendsLoading, setFriendsLoading] = useState(true);
   const [joinInput, setJoinInput] = useState("");
   const [copyLabel, setCopyLabel] = useState("Copy");
-  const [chatInput, setChatInput] = useState("");
   const [narrow, setNarrow] = useState(typeof window !== "undefined" ? window.innerWidth <= 860 : false);
-  const chatEndRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     const onResize = () => setNarrow(window.innerWidth <= 860);
     window.addEventListener("resize", onResize);
     return () => window.removeEventListener("resize", onResize);
   }, []);
-
-  // Auto-scroll chat to the newest line.
-  useEffect(() => {
-    chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [chat.length]);
 
   // Auto-enter from a shared link: ?code=XXXXXX (&spectate=1 to watch). A
   // logged-out visitor is dropped in as a guest first.
@@ -210,14 +202,6 @@ export function DamathRoomPage() {
     }
     start();
   };
-  const submitChat = (e: React.FormEvent) => {
-    e.preventDefault();
-    const text = chatInput.trim();
-    if (!text) return;
-    sendChat(text);
-    setChatInput("");
-  };
-
   const info = variantInfo(inRoom ? liveVariant : variant);
 
   // ── Auto-joining from a shared link (guest sign-in + join/spectate in flight):
@@ -390,30 +374,13 @@ export function DamathRoomPage() {
                 <span className="ptitle" style={{ marginBottom: 0 }}>Room Chat</span>
                 <span style={{ font: "700 10px Inter", color: "#8ce0ad" }}>● Live</span>
               </div>
-              <div style={{ display: "flex", flexDirection: "column", gap: 6, minHeight: 120, maxHeight: 200, overflowY: "auto", margin: "12px 0" }}>
-                {chat.length === 0 ? (
-                  <div style={{ font: "500 12px Inter", color: "var(--ink2)", textAlign: "center", padding: "22px 8px" }}>
-                    No messages yet — say hi to your opponent.
-                  </div>
-                ) : (
-                  chat.map((m) => (
-                    <div key={m.id} style={{ display: "flex", flexDirection: "column", alignItems: m.from.userId === me.id ? "flex-end" : "flex-start" }}>
-                      <span style={{ font: "700 10px Inter", color: "var(--ink2)", marginBottom: 2 }}>{m.from.userId === me.id ? "You" : m.from.name}</span>
-                      <span style={{ font: "500 13px Inter", color: "#fff", background: m.from.userId === me.id ? "rgba(232,184,75,.16)" : "rgba(46,107,198,.2)", padding: "6px 10px", borderRadius: 10, maxWidth: "85%" }}>{m.body}</span>
-                    </div>
-                  ))
+              <MatchChat
+                showTextInput
+                messages={chat.map(
+                  (m): MatchChatMsg => ({ id: m.id, mine: m.from.userId === me.id, emote: null, body: m.body, at: m.at }),
                 )}
-                <div ref={chatEndRef} />
-              </div>
-              <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 10 }}>
-                {EMOTES.map((e) => (
-                  <button key={e} onClick={() => sendChat(e)} style={{ ...pillBtn, padding: "5px 10px", fontSize: 12 }}>{e}</button>
-                ))}
-              </div>
-              <form onSubmit={submitChat} style={{ display: "flex", gap: 6 }}>
-                <input value={chatInput} onChange={(e) => setChatInput(e.target.value)} placeholder="Message…" style={{ ...codeInput, flex: 1, letterSpacing: 0, textAlign: "left", font: "500 13px Inter", width: "auto" }} />
-                <Button variant="gold" size="sm" type="submit">Send</Button>
-              </form>
+                send={(p) => sendChat(p.emote ?? p.body ?? "")}
+              />
             </div>
           </div>
         </div>
