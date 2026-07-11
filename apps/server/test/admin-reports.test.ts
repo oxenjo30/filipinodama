@@ -2,12 +2,20 @@ import { describe, it, expect, afterEach, afterAll } from "vitest";
 import { prisma } from "../src/db/client.js";
 import { buildTestApp, seedUser, authFor, truncateAll } from "./helpers.js";
 
-afterEach(truncateAll);
+// Clean up "report_resolved" Notification rows THIS file creates, in addition
+// to truncateAll()'s users/Report/AuditLog/etc — Notification has no FK to
+// Report so TRUNCATE ... CASCADE on Report does not remove them, and a
+// leftover row here would pollute another test file's notification counts.
+afterEach(async () => {
+  await prisma.notification.deleteMany({ where: { type: "report_resolved" } });
+  await truncateAll();
+});
 afterAll(async () => { await prisma.$disconnect(); });
 
 async function seedReport(accusedId: string, extra = {}) {
   const reporter = await seedUser();
-  return prisma.report.create({ data: { reporterId: reporter.id, reporterName: "r#1", accusedId, accusedName: "a#1", reason: "SPAM", context: "profile", note: "n", status: "OPEN", ...extra } });
+  const report = await prisma.report.create({ data: { reporterId: reporter.id, reporterName: "r#1", accusedId, accusedName: "a#1", reason: "SPAM", context: "profile", note: "n", status: "OPEN", ...extra } });
+  return { report, reporter };
 }
 
 describe("admin reports queue", () => {
@@ -34,7 +42,7 @@ describe("admin reports queue", () => {
     const app = await buildTestApp();
     const mod = await seedUser({ adminRole: "MODERATOR" });
     const accused = await seedUser();
-    const rep = await seedReport(accused.id);
+    const { report: rep } = await seedReport(accused.id);
     const res = await app.inject({ method: "POST", url: `/api/admin/reports/${rep.id}/mute`, headers: { cookie: authFor({ sub: mod.id, adminRole: "MODERATOR" }) }, payload: { durationHours: 24, reason: "toxic" } });
     expect(res.statusCode).toBe(200);
     const after = await prisma.report.findUnique({ where: { id: rep.id } });
@@ -48,7 +56,7 @@ describe("admin reports queue", () => {
     const app = await buildTestApp();
     const mod = await seedUser({ adminRole: "MODERATOR" });
     const accused = await seedUser();
-    const rep = await seedReport(accused.id, { status: "DISMISSED" });
+    const { report: rep } = await seedReport(accused.id, { status: "DISMISSED" });
     const res = await app.inject({ method: "POST", url: `/api/admin/reports/${rep.id}/ban`, headers: { cookie: authFor({ sub: mod.id, adminRole: "MODERATOR" }) }, payload: { reason: "x" } });
     expect(res.statusCode).toBe(409);
     expect(res.json().error.code).toBe("REPORT_RESOLVED");
@@ -69,7 +77,7 @@ describe("admin reports queue", () => {
     const app = await buildTestApp();
     const mod = await seedUser({ adminRole: "MODERATOR" });
     const accused = await seedUser();
-    const rep = await seedReport(accused.id);
+    const { report: rep } = await seedReport(accused.id);
     const cookie = authFor({ sub: mod.id, adminRole: "MODERATOR" });
     const [a, b] = await Promise.all([
       app.inject({ method: "POST", url: `/api/admin/reports/${rep.id}/mute`, headers: { cookie }, payload: { reason: "a" } }),
@@ -77,5 +85,66 @@ describe("admin reports queue", () => {
     ]);
     const codes = [a.statusCode, b.statusCode].sort();
     expect(codes).toEqual([200, 409]);
+  });
+});
+
+describe("admin reports — reporter notified on resolution", () => {
+  it("dismiss notifies the reporter with a safe, non-detailed summary", async () => {
+    const app = await buildTestApp();
+    const mod = await seedUser({ adminRole: "MODERATOR" });
+    const accused = await seedUser();
+    const { report: rep, reporter } = await seedReport(accused.id);
+    const res = await app.inject({ method: "POST", url: `/api/admin/reports/${rep.id}/dismiss`, headers: { cookie: authFor({ sub: mod.id, adminRole: "MODERATOR" }) }, payload: { reason: "moot" } });
+    expect(res.statusCode).toBe(200);
+    const notifs = await prisma.notification.findMany({ where: { userId: reporter.id, type: "report_resolved" } });
+    expect(notifs.length).toBe(1);
+    const body = `${notifs[0]!.title} ${notifs[0]!.body ?? ""}`;
+    expect(body).not.toContain(accused.username);
+    expect(body).not.toContain(mod.username);
+    expect(body.toLowerCase()).not.toContain("dismiss");
+    await app.close();
+  });
+
+  it("mute notifies the reporter with a safe, non-detailed summary", async () => {
+    const app = await buildTestApp();
+    const mod = await seedUser({ adminRole: "MODERATOR" });
+    const accused = await seedUser();
+    const { report: rep, reporter } = await seedReport(accused.id);
+    const res = await app.inject({ method: "POST", url: `/api/admin/reports/${rep.id}/mute`, headers: { cookie: authFor({ sub: mod.id, adminRole: "MODERATOR" }) }, payload: { durationHours: 24, reason: "toxic" } });
+    expect(res.statusCode).toBe(200);
+    const notifs = await prisma.notification.findMany({ where: { userId: reporter.id, type: "report_resolved" } });
+    expect(notifs.length).toBe(1);
+    const body = `${notifs[0]!.title} ${notifs[0]!.body ?? ""}`;
+    expect(body).not.toContain(accused.username);
+    expect(body).not.toContain(mod.username);
+    expect(body.toLowerCase()).not.toContain("mute");
+    await app.close();
+  });
+
+  it("ban notifies the reporter with a safe, non-detailed summary", async () => {
+    const app = await buildTestApp();
+    const mod = await seedUser({ adminRole: "MODERATOR" });
+    const accused = await seedUser();
+    const { report: rep, reporter } = await seedReport(accused.id);
+    const res = await app.inject({ method: "POST", url: `/api/admin/reports/${rep.id}/ban`, headers: { cookie: authFor({ sub: mod.id, adminRole: "MODERATOR" }) }, payload: { reason: "toxic" } });
+    expect(res.statusCode).toBe(200);
+    const notifs = await prisma.notification.findMany({ where: { userId: reporter.id, type: "report_resolved" } });
+    expect(notifs.length).toBe(1);
+    const body = `${notifs[0]!.title} ${notifs[0]!.body ?? ""}`;
+    expect(body).not.toContain(accused.username);
+    expect(body).not.toContain(mod.username);
+    expect(body.toLowerCase()).not.toContain("ban");
+    await app.close();
+  });
+
+  it("reporterId null (deleted reporter account) → no crash, no notification created", async () => {
+    const app = await buildTestApp();
+    const mod = await seedUser({ adminRole: "MODERATOR" });
+    const accused = await seedUser();
+    const rep = await prisma.report.create({ data: { reporterId: null, reporterName: "gone#2", accusedId: accused.id, accusedName: "a#1", reason: "SPAM", context: "profile", note: "n", status: "OPEN" } });
+    const res = await app.inject({ method: "POST", url: `/api/admin/reports/${rep.id}/dismiss`, headers: { cookie: authFor({ sub: mod.id, adminRole: "MODERATOR" }) }, payload: { reason: "moot" } });
+    expect(res.statusCode).toBe(200);
+    expect(await prisma.notification.count({ where: { type: "report_resolved" } })).toBe(0);
+    await app.close();
   });
 });
