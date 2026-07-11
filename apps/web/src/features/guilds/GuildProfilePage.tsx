@@ -2,6 +2,8 @@ import { useEffect, useState } from "react";
 import { useParams, useNavigate, useLocation } from "react-router-dom";
 import { api, ApiError } from "../../lib/api";
 import { PlayerLink } from "../../components";
+import { guildCrest } from "../../lib/assets";
+import { useAppStore } from "../../stores/appStore";
 
 type RosterMember = {
   role: string;
@@ -12,13 +14,14 @@ type GuildDetail = {
   guild: { id: string; name: string; tag: string; description: string | null; crestKey: string | null; minTrophies: number; joinPolicy: string; weeklyPoints: number; createdAt: string; memberCount: number };
   roster: RosterMember[];
   myRole: string | null;
-  joinState: "member" | "in-other-guild" | "requested" | "joinable" | "guest";
+  joinState: "member" | "in-other-guild" | "requested" | "invite-only" | "joinable" | "guest";
 };
 
 export function GuildProfilePage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const location = useLocation();
+  const showToast = useAppStore((s) => s.showToast);
   const [data, setData] = useState<GuildDetail | null>(null);
   const [notFound, setNotFound] = useState(false);
   const [error, setError] = useState(false);
@@ -51,7 +54,9 @@ export function GuildProfilePage() {
     try {
       const res = await api.post<{ status: string }>(`/api/guilds/${g.id}/join`, {});
       setJoinState(res.status === "joined" ? "member" : "requested");
-    } catch { /* server enforces the real guards; leave state */ }
+    } catch (e) {
+      showToast(e instanceof ApiError ? e.message : "Couldn't join this guild.");
+    }
   }
 
   const joinBtn = () => {
@@ -59,6 +64,7 @@ export function GuildProfilePage() {
       case "guest": return <button className="btn btn-gold" style={jbtn} onClick={onJoin}>Sign in to Join</button>;
       case "member": return <button style={{ ...jbtn, opacity: 0.7, cursor: "default", background: "rgba(63,191,111,.15)", color: "#8ce0ad", border: "1px solid rgba(63,191,111,.5)" }} disabled>Member</button>;
       case "in-other-guild": return <button style={{ ...jbtn, opacity: 0.5, cursor: "default", background: "rgba(0,0,0,.3)", color: "var(--ink2)", border: "1px solid rgba(232,184,75,.2)" }} disabled>In another guild</button>;
+      case "invite-only": return <button style={{ ...jbtn, opacity: 0.5, cursor: "default", background: "rgba(0,0,0,.3)", color: "var(--ink2)", border: "1px solid rgba(232,184,75,.2)" }} disabled>Invite only</button>;
       case "requested": return <button style={{ ...jbtn, opacity: 0.6, cursor: "default", background: "rgba(0,0,0,.3)", color: "var(--ink2)", border: "1px solid rgba(232,184,75,.2)" }} disabled>Requested</button>;
       case "joinable": return <button className="btn btn-gold" style={jbtn} onClick={onJoin}>{g.joinPolicy === "open" ? "Join Guild" : "Request to Join"}</button>;
     }
@@ -67,7 +73,9 @@ export function GuildProfilePage() {
   return (
     <div style={wrap}>
       <div className="frame" style={{ padding: 24, display: "flex", alignItems: "center", gap: 18, flexWrap: "wrap" }}>
-        <div style={{ width: 72, height: 72, flex: "none", borderRadius: 12, border: "1px solid rgba(232,184,75,.35)", background: "rgba(15,8,32,.6)", display: "flex", alignItems: "center", justifyContent: "center", font: "800 22px Cinzel,serif", color: "var(--gold-lt)" }}>{g.tag.slice(0, 2).toUpperCase()}</div>
+        <div style={{ width: 72, height: 72, flex: "none", borderRadius: 12, border: "1px solid rgba(232,184,75,.35)", background: "rgba(15,8,32,.6)", display: "flex", alignItems: "center", justifyContent: "center" }}>
+          <img src={guildCrest(g.crestKey, g.id).src} alt="" style={{ width: 48, height: 48, objectFit: "contain", filter: "drop-shadow(0 6px 14px rgba(0,0,0,.55))" }} />
+        </div>
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ font: "800 26px Cinzel,serif", color: "#fff" }}>{g.name}</div>
           <div style={{ font: "700 12px 'JetBrains Mono',monospace", color: "var(--ink2)" }}>{g.tag}</div>

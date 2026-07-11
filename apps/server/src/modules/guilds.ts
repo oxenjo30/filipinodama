@@ -177,8 +177,9 @@ export async function guildRoutes(app: FastifyInstance) {
       //  - member: already in THIS guild
       //  - in-other-guild: in a DIFFERENT guild
       //  - requested: has a pending join request to this guild
+      //  - invite-only: at/above the trophy floor but joinPolicy is "invite" (join route 403s)
       //  - joinable: everything else (open/request policy, or below-floor request path)
-      let joinState: "member" | "in-other-guild" | "requested" | "joinable" | "guest";
+      let joinState: "member" | "in-other-guild" | "requested" | "invite-only" | "joinable" | "guest";
       if (!me) {
         joinState = "guest";
       } else if (mine) {
@@ -191,7 +192,19 @@ export async function guildRoutes(app: FastifyInstance) {
           const pending = await prisma.guildJoinRequest.findUnique({
             where: { guildId_userId: { guildId: guild.id, userId: me } },
           });
-          joinState = pending && pending.status === "pending" ? "requested" : "joinable";
+          if (pending && pending.status === "pending") {
+            joinState = "requested";
+          } else {
+            // Below the trophy floor always falls through to the join-request path
+            // regardless of policy (mirrors POST /:id/join), so only gate on policy
+            // when the viewer meets the floor.
+            const viewer = await prisma.user.findUnique({ where: { id: me }, select: { trophies: true } });
+            const viewerTrophies = viewer?.trophies ?? 0;
+            joinState =
+              guild.joinPolicy === "invite" && viewerTrophies >= guild.minTrophies
+                ? "invite-only"
+                : "joinable";
+          }
         }
       }
 
