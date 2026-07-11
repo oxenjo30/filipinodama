@@ -3,7 +3,6 @@ import { useNavigate } from "react-router-dom";
 import { rankTierFor } from "@dama/shared";
 import { Avatar } from "../../components";
 import { api, ApiError } from "../../lib/api";
-import { ReportPlayerModal } from "../moderation/ReportPlayerModal";
 import { useAppStore } from "../../stores/appStore";
 import { useAuthStore } from "../../stores/authStore";
 import { usePresenceStore } from "../../stores/presenceStore";
@@ -15,7 +14,6 @@ import { usePresenceStore } from "../../stores/presenceStore";
  *   GET  /api/friends            → accepted friends
  *   GET  /api/friends/requests   → { incoming, outgoing } pending requests
  *   GET  /api/friends/suggested  → discovery candidates (real users)
- *   GET  /api/users/:id          → public profile for the profile modal
  *   POST /api/friends/request                 { toUserId }   (Add from list)
  *   POST /api/friends/request-by-tag          { tag }        (Add Friend modal)
  *   POST /api/friends/request/:id/accept                     (Accept)
@@ -49,25 +47,6 @@ type FriendUser = {
   presence: "unknown";
 };
 type FriendReq = { id: string; createdAt: string; user: FriendUser };
-
-/** publicProfile() shape from GET /api/users/:id (subset the modal renders). */
-type PublicProfile = {
-  id: string;
-  displayName: string;
-  tag: string;
-  bio: string | null;
-  avatarUrl: string | null;
-  frameId: string | null;
-  countryCode: string | null;
-  trophies: number;
-  tier: { key: string; label: string; sub: string; accent: string; img: string };
-  wins: number;
-  losses: number;
-  draws: number;
-  streak: number;
-  createdAt: string;
-  guild: { id: string; name: string; tag: string; role: string } | null;
-};
 
 /** Resolve a tier {label,color} — ALWAYS derived from trophies (the authoritative
  *  source); the stored rankTier column is a cache that can be stale. */
@@ -265,13 +244,6 @@ export function FriendsPage() {
   const [tagInput, setTagInput] = useState("");
   const [addBusy, setAddBusy] = useState(false);
 
-  // Profile modal (loaded from GET /api/users/:id)
-  const [profileId, setProfileId] = useState<string | null>(null);
-  const [profile, setProfile] = useState<PublicProfile | null>(null);
-  const [profileLoading, setProfileLoading] = useState(false);
-  const [profileError, setProfileError] = useState<string | null>(null);
-  const [reportOpen, setReportOpen] = useState(false);
-
   useEffect(() => {
     if (!me) {
       setFriends([]);
@@ -305,36 +277,6 @@ export function FriendsPage() {
       alive = false;
     };
   }, [me, showToast]);
-
-  // Load the public profile whenever the modal target changes.
-  useEffect(() => {
-    setReportOpen(false);
-    if (!profileId) {
-      setProfile(null);
-      setProfileError(null);
-      return;
-    }
-    let alive = true;
-    setProfileLoading(true);
-    setProfileError(null);
-    setProfile(null);
-    void (async () => {
-      try {
-        const { user } = await api.get<{ user: PublicProfile }>(`/api/users/${profileId}`);
-        if (alive) setProfile(user);
-      } catch (e) {
-        if (alive) {
-          const msg = e instanceof ApiError ? e.message : "Couldn't load this profile.";
-          setProfileError(msg);
-        }
-      } finally {
-        if (alive) setProfileLoading(false);
-      }
-    })();
-    return () => {
-      alive = false;
-    };
-  }, [profileId]);
 
   const markBusy = (id: string, v: boolean) => setBusy((b) => ({ ...b, [id]: v }));
 
@@ -616,7 +558,7 @@ export function FriendsPage() {
                       frame={r.user.frameId ?? undefined}
                     />
                     <div
-                      onClick={() => setProfileId(r.user.id)}
+                      onClick={() => navigate(`/profile/${r.user.id}`)}
                       style={{ flex: 1, minWidth: 0, cursor: "pointer" }}
                     >
                       <div style={{ font: "700 15px Inter", color: "#fff" }}>{r.user.displayName}</div>
@@ -699,7 +641,7 @@ export function FriendsPage() {
                         key={f.id}
                         friend={f}
                         online
-                        onOpen={() => setProfileId(f.id)}
+                        onOpen={() => navigate(`/profile/${f.id}`)}
                         onMessage={() => messageFriend(f.id)}
                         onInvite={() => navigate("/play")}
                       />
@@ -719,7 +661,7 @@ export function FriendsPage() {
                         key={f.id}
                         friend={f}
                         online={false}
-                        onOpen={() => setProfileId(f.id)}
+                        onOpen={() => navigate(`/profile/${f.id}`)}
                         onMessage={() => messageFriend(f.id)}
                         onInvite={() => navigate("/play")}
                       />
@@ -755,7 +697,7 @@ export function FriendsPage() {
                     >
                       <Avatar src={s.avatarUrl ?? "champion"} size={44} frame={s.frameId ?? undefined} />
                       <div
-                        onClick={() => setProfileId(s.id)}
+                        onClick={() => navigate(`/profile/${s.id}`)}
                         style={{ flex: 1, minWidth: 0, cursor: "pointer" }}
                       >
                         <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
@@ -933,256 +875,6 @@ export function FriendsPage() {
         </div>
       )}
 
-      {/* ===== Profile modal (GET /api/users/:id) ===== */}
-      {profileId && (
-        <div
-          className="fd-sheet-overlay"
-          onClick={() => setProfileId(null)}
-          style={{
-            position: "fixed",
-            inset: 0,
-            zIndex: 84,
-            background: "rgba(8,4,18,.74)",
-            backdropFilter: "blur(6px)",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            padding: 20,
-          }}
-        >
-          <div
-            className="fd-sheet"
-            onClick={(e) => e.stopPropagation()}
-            style={{
-              width: "100%",
-              maxWidth: 440,
-              maxHeight: "88vh",
-              overflow: "auto",
-              borderRadius: 18,
-              border: "1px solid rgba(232,184,75,.35)",
-              background: "linear-gradient(180deg,#1a0f30,#140a24)",
-              boxShadow: "0 30px 80px rgba(0,0,0,.6)",
-            }}
-          >
-            <div
-              style={{
-                padding: "18px 22px",
-                borderBottom: "1px solid rgba(232,184,75,.16)",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "space-between",
-              }}
-            >
-              <div style={{ font: "800 16px Cinzel,serif", color: "var(--gold-lt)" }}>Player Profile</div>
-              <button
-                onClick={() => setProfileId(null)}
-                style={{
-                  flex: "none",
-                  width: 34,
-                  height: 34,
-                  borderRadius: 9,
-                  border: "1px solid rgba(232,184,75,.2)",
-                  background: "transparent",
-                  color: "var(--ink2)",
-                  font: "700 17px Inter",
-                  cursor: "pointer",
-                }}
-              >
-                ✕
-              </button>
-            </div>
-
-            {profileLoading ? (
-              <div
-                style={{
-                  padding: 40,
-                  textAlign: "center",
-                  color: "var(--ink2)",
-                  font: "500 14px Inter",
-                }}
-              >
-                Loading profile…
-              </div>
-            ) : profileError ? (
-              <div
-                style={{
-                  padding: 40,
-                  textAlign: "center",
-                  color: "var(--ink2)",
-                  font: "500 14px Inter",
-                }}
-              >
-                {profileError}
-              </div>
-            ) : profile ? (
-              <div style={{ padding: 22, display: "flex", flexDirection: "column", gap: 18 }}>
-                {/* Identity */}
-                <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
-                  <Avatar
-                    src={profile.avatarUrl ?? "champion"}
-                    size={64}
-                    frame={profile.frameId ?? undefined}
-                  />
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ font: "800 20px Cinzel,serif", color: "#fff" }}>
-                      {profile.displayName}
-                    </div>
-                    <div
-                      style={{
-                        display: "flex",
-                        alignItems: "center",
-                        gap: 8,
-                        flexWrap: "wrap",
-                        marginTop: 5,
-                      }}
-                    >
-                      <span
-                        style={{ font: "700 11px 'JetBrains Mono',monospace", color: "var(--ink2)" }}
-                      >
-                        {profile.tag}
-                      </span>
-                      <span
-                        style={{
-                          display: "inline-flex",
-                          alignItems: "center",
-                          gap: 5,
-                          padding: "2px 8px",
-                          borderRadius: 100,
-                          border: "1px solid rgba(232,184,75,.2)",
-                          background: "rgba(15,8,32,.5)",
-                        }}
-                      >
-                        <span
-                          style={{
-                            width: 8,
-                            height: 8,
-                            borderRadius: "50%",
-                            background: profile.tier.accent,
-                          }}
-                        />
-                        <span style={{ font: "600 10px Inter", color: profile.tier.accent }}>
-                          {profile.tier.label}
-                        </span>
-                      </span>
-                    </div>
-                  </div>
-                </div>
-
-                {profile.bio && (
-                  <div style={{ font: "500 13px/1.55 Inter", color: "var(--ink)" }}>{profile.bio}</div>
-                )}
-
-                {/* Stats grid — rank tier + record */}
-                <div className="fd-stat-3" style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10 }}>
-                  {[
-                    { k: "Trophies", v: profile.trophies.toLocaleString(), c: "var(--gold-lt)" },
-                    { k: "Wins", v: String(profile.wins), c: "#7ee6a4" },
-                    { k: "Losses", v: String(profile.losses), c: "#ff9aa6" },
-                  ].map((s) => (
-                    <div
-                      key={s.k}
-                      className="frame"
-                      style={{ padding: 14, textAlign: "center" }}
-                    >
-                      <div style={{ font: "800 20px 'JetBrains Mono',monospace", color: s.c }}>
-                        {s.v}
-                      </div>
-                      <div style={{ font: "500 11px Inter", color: "var(--ink2)", marginTop: 2 }}>
-                        {s.k}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-
-                <div className="fd-stat-2" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
-                  {[
-                    { k: "Draws", v: String(profile.draws), c: "var(--ink)" },
-                    { k: "Streak", v: String(profile.streak), c: "var(--gold-lt)" },
-                  ].map((s) => (
-                    <div key={s.k} className="frame" style={{ padding: 14, textAlign: "center" }}>
-                      <div style={{ font: "800 20px 'JetBrains Mono',monospace", color: s.c }}>
-                        {s.v}
-                      </div>
-                      <div style={{ font: "500 11px Inter", color: "var(--ink2)", marginTop: 2 }}>
-                        {s.k}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-
-                {/* Rank tier row */}
-                <div
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "space-between",
-                    padding: "12px 14px",
-                    borderRadius: 12,
-                    border: "1px solid rgba(232,184,75,.16)",
-                    background: "rgba(0,0,0,.2)",
-                  }}
-                >
-                  <span style={{ font: "600 12px Inter", color: "var(--ink2)" }}>Rank Tier</span>
-                  <span style={{ font: "700 13px Inter", color: profile.tier.accent }}>
-                    {profile.tier.label} · {profile.tier.sub}
-                  </span>
-                </div>
-
-                {profile.guild && (
-                  <div
-                    style={{
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "space-between",
-                      padding: "12px 14px",
-                      borderRadius: 12,
-                      border: "1px solid rgba(232,184,75,.16)",
-                      background: "rgba(0,0,0,.2)",
-                    }}
-                  >
-                    <span style={{ font: "600 12px Inter", color: "var(--ink2)" }}>Guild</span>
-                    <span style={{ font: "700 13px Inter", color: "var(--gold-lt)" }}>
-                      {profile.guild.name} [{profile.guild.tag}]
-                    </span>
-                  </div>
-                )}
-
-                {/* NOTE: "recent form" is intentionally omitted — the public
-                    profile endpoint does not return a match-history summary, so
-                    showing one would be fabricated. */}
-
-                {me && profile.id !== me.id && (
-                  <button
-                    onClick={() => setReportOpen(true)}
-                    style={{
-                      alignSelf: "flex-start",
-                      padding: 0,
-                      border: "none",
-                      background: "transparent",
-                      color: "var(--ink2)",
-                      font: "600 11px Inter",
-                      letterSpacing: ".3px",
-                      cursor: "pointer",
-                      opacity: 0.8,
-                    }}
-                  >
-                    Report player
-                  </button>
-                )}
-              </div>
-            ) : null}
-          </div>
-        </div>
-      )}
-
-      {profile && (
-        <ReportPlayerModal
-          open={reportOpen}
-          accusedId={profile.id}
-          context="profile"
-          onClose={() => setReportOpen(false)}
-        />
-      )}
     </div>
   );
 }

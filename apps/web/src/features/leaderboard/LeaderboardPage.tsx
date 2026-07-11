@@ -1,9 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { RANK_TIERS, rankTierFor } from "@dama/shared";
-import { Avatar } from "../../components";
+import { Avatar, PlayerLink, GuildLink } from "../../components";
 import { api } from "../../lib/api";
-import { guildCrest } from "../../lib/assets";
 import { useAuthStore } from "../../stores/authStore";
 
 /**
@@ -258,14 +257,9 @@ export function LeaderboardPage() {
                 <span style={{ font: "800 14px 'JetBrains Mono',monospace", color: "var(--gold)", width: 16 }}>{i + 1}</span>
                 {/* Real guild crest art (matches the Guild page's Emblem) — resolves
                     the guild's crestKey, with a stable per-guild fallback. Never an emoji. */}
-                <img
-                  src={guildCrest(g.crestKey, g.id).src}
-                  alt=""
-                  width={30}
-                  height={30}
-                  style={{ width: 30, height: 30, flex: "none", objectFit: "contain", filter: "drop-shadow(0 4px 10px rgba(0,0,0,.5))" }}
-                />
-                <span style={{ flex: 1, font: "600 13px Inter" }}>{g.name}</span>
+                <span style={{ flex: 1, minWidth: 0 }}>
+                  <GuildLink id={g.id} name={g.name} crestKey={g.crestKey} size={30} />
+                </span>
                 <span style={{ font: "700 12px 'JetBrains Mono',monospace", color: "var(--gold)" }}>🏆 {g.weeklyPoints.toLocaleString()}</span>
               </div>
             ))
@@ -384,8 +378,8 @@ export function LeaderboardPage() {
                 return (
                   <div key={p.userId} className="frame" style={{ position: "relative", padding: "20px 16px", textAlign: "center", borderColor: accent, paddingTop: first ? 34 : 24, marginTop: first ? -44 : 0, overflow: "visible" }}>
                     <img src={SB(MEDALS[p.rank - 1] ?? "medal-3.png")} alt="" style={{ position: "absolute", top: -26, left: "50%", transform: "translateX(-50%)", width: first ? 58 : 48, height: first ? 58 : 48, objectFit: "contain", filter: "drop-shadow(0 6px 14px rgba(0,0,0,.5))", zIndex: 2 }} />
-                    <Avatar src={p.avatarUrl ?? "champion"} frame={p.frameId ?? undefined} size={first ? 84 : 70} style={{ margin: "6px auto 0" }} />
-                    <div style={{ font: "700 17px Cinzel,serif", color: "var(--gold-lt)", marginTop: 9 }}>{p.displayName}</div>
+                    <Avatar src={p.avatarUrl ?? "champion"} frame={p.frameId ?? undefined} size={first ? 84 : 70} style={{ margin: "6px auto 0", cursor: "pointer" }} onClick={() => navigate(`/profile/${p.userId}`)} />
+                    <div style={{ font: "700 17px Cinzel,serif", color: "var(--gold-lt)", marginTop: 9, cursor: "pointer" }} onClick={() => navigate(`/profile/${p.userId}`)}>{p.displayName}</div>
                     <div style={{ font: "500 12px Inter", color: "var(--ink)", marginTop: 2 }}>{p.rankTier.label}</div>
                     <div style={{ font: "700 16px 'JetBrains Mono',monospace", color: "var(--gold)", marginTop: 7 }}>🏆 {p.trophies.toLocaleString()}</div>
                   </div>
@@ -407,14 +401,23 @@ export function LeaderboardPage() {
                     <div key={r.userId} className="fd-ladder-card" style={{ display: "grid", gridTemplateColumns: GRID, gap: 8, alignItems: "center", padding: "11px 16px", borderTop: "1px solid rgba(232,184,75,.1)", background: isYou ? "rgba(232,184,75,.06)" : undefined }}>
                       <span style={{ font: "800 15px 'JetBrains Mono',monospace", color: "var(--ink)" }}>{r.rank}</span>
                       <span style={{ display: "flex", alignItems: "center", gap: 11, flex: 1, minWidth: 0 }}>
-                        <Avatar src={r.avatarUrl ?? "strategist"} frame={r.frameId ?? undefined} size={34} />
-                        <span style={{ minWidth: 0 }}>
-                          <span style={{ font: "600 14px Inter", display: "block" }}>{r.displayName}{isYou && <span style={{ color: "var(--gold)", fontWeight: 600 }}> (You)</span>}</span>
-                          <span style={{ display: "inline-flex", alignItems: "center", gap: 5, marginTop: 4, padding: "2px 8px", borderRadius: 100, border: "1px solid rgba(232,184,75,.2)", background: "rgba(15,8,32,.5)" }}>
-                            <span style={{ width: 9, height: 9, borderRadius: "50%", background: `radial-gradient(circle at 35% 30%,${r.rankTier.accent},rgba(0,0,0,.6))`, border: `1px solid ${r.rankTier.accent}` }} />
-                            <span style={{ font: "600 10px Inter", color: r.rankTier.accent }}>{r.rankTier.label}</span>
-                          </span>
-                        </span>
+                        <PlayerLink
+                          id={r.userId}
+                          name={r.displayName}
+                          avatar={r.avatarUrl ?? "strategist"}
+                          frame={r.frameId ?? undefined}
+                          size={34}
+                          nameStyle={{ font: "600 14px Inter", color: "#fff" }}
+                          subtitle={
+                            <>
+                              {isYou && <span style={{ font: "600 14px Inter", color: "var(--gold)", fontWeight: 600 }}> (You)</span>}
+                              <span style={{ display: "inline-flex", alignItems: "center", gap: 5, marginTop: 4, padding: "2px 8px", borderRadius: 100, border: "1px solid rgba(232,184,75,.2)", background: "rgba(15,8,32,.5)" }}>
+                                <span style={{ width: 9, height: 9, borderRadius: "50%", background: `radial-gradient(circle at 35% 30%,${r.rankTier.accent},rgba(0,0,0,.6))`, border: `1px solid ${r.rankTier.accent}` }} />
+                                <span style={{ font: "600 10px Inter", color: r.rankTier.accent }}>{r.rankTier.label}</span>
+                              </span>
+                            </>
+                          }
+                        />
                       </span>
                       {/* stats: on desktop `display:contents` lets these 3 spans sit in the
                           5-col grid; on mobile fd-ladder-stats makes them one chip line */}
@@ -511,8 +514,9 @@ export function LeaderboardPage() {
             climbers.map((c) => (
               <div key={c.userId} style={{ display: "flex", alignItems: "center", gap: 11, padding: "9px 0", borderTop: "1px solid rgba(232,184,75,.1)" }}>
                 <span style={{ font: "800 13px 'JetBrains Mono',monospace", color: "var(--ink2)", width: 14 }}>{c.rank}</span>
-                <Avatar src={c.avatarUrl ?? "strategist"} frame={c.frameId ?? undefined} size={30} />
-                <span style={{ flex: 1, font: "600 13px Inter" }}>{c.displayName}</span>
+                <span style={{ flex: 1, minWidth: 0 }}>
+                  <PlayerLink id={c.userId} name={c.displayName} avatar={c.avatarUrl ?? "strategist"} frame={c.frameId ?? undefined} size={30} nameStyle={{ font: "600 13px Inter", color: "#fff" }} />
+                </span>
                 <span style={{ font: "700 12px 'JetBrains Mono',monospace", color: "var(--gold)" }}>🏆 {c.trophies.toLocaleString()}</span>
               </div>
             ))

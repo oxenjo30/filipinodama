@@ -4,7 +4,7 @@ import { updateProfileSchema, equipSchema, equipEmoteSchema, deleteAccountSchema
 import type { Currency } from "@prisma/client";
 import { prisma } from "../db/client.js";
 import { ok, err } from "../lib/errors.js";
-import { requireAuth } from "../auth/guards.js";
+import { requireAuth, attachUser } from "../auth/guards.js";
 
 /** Public-profile projection: stats + rank tier + guild, never sensitive fields. */
 function publicProfile(u: {
@@ -67,13 +67,45 @@ const ledgerQuerySchema = z.object({
 
 export async function userRoutes(app: FastifyInstance) {
   // GET /api/users/:id — public profile (stats, rank tier, guild)
-  app.get<{ Params: { id: string } }>("/users/:id", async (req) => {
+  app.get<{ Params: { id: string } }>("/users/:id", { preHandler: attachUser }, async (req) => {
     const user = await prisma.user.findFirst({
       where: { id: req.params.id, deletedAt: null },
       include: guildInclude,
     });
     if (!user) throw err.notFound("USER_NOT_FOUND", "User not found");
-    return ok({ user: publicProfile(user) });
+
+    const me = req.userId ?? null;
+    let relationship: "self" | "friends" | "request-sent" | "request-received" | "none" = "none";
+    let requestId: string | undefined;
+
+    if (me && !user.isBot) {
+      if (me === user.id) {
+        relationship = "self";
+      } else {
+        const [aId, bId] = me < user.id ? [me, user.id] : [user.id, me];
+        const friendship = await prisma.friendship.findUnique({ where: { aId_bId: { aId, bId } } });
+        if (friendship) {
+          relationship = "friends";
+        } else {
+          const outgoing = await prisma.friendRequest.findUnique({
+            where: { fromId_toId: { fromId: me, toId: user.id } },
+          });
+          if (outgoing && outgoing.status === "pending") {
+            relationship = "request-sent";
+          } else {
+            const incoming = await prisma.friendRequest.findUnique({
+              where: { fromId_toId: { fromId: user.id, toId: me } },
+            });
+            if (incoming && incoming.status === "pending") {
+              relationship = "request-received";
+              requestId = incoming.id;
+            }
+          }
+        }
+      }
+    }
+
+    return ok({ user: { ...publicProfile(user), isBot: user.isBot, relationship, requestId } });
   });
 
   // PATCH /api/users/me — update own profile
