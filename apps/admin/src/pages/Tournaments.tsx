@@ -438,8 +438,13 @@ function TournamentForm({ tournament, onClose, onDone }: { tournament?: Tourname
   };
 
   return (
-    <div className="panel panel-pad">
-      <div style={{ font: "800 16px var(--serif)", color: "var(--ink)", marginBottom: 12 }}>{isEdit ? "Edit tournament" : "New tournament"}</div>
+    <div className="drawer-wrap">
+      <div className="drawer-bd" onClick={onClose} />
+      <div className="drawer" style={{ width: "min(96vw,640px)" }}>
+      <div className="row" style={{ justifyContent: "space-between", marginBottom: 12 }}>
+        <div style={{ font: "800 16px var(--serif)", color: "var(--ink)" }}>{isEdit ? "Edit tournament" : "New tournament"}</div>
+        <button className="btn" onClick={onClose}>Close</button>
+      </div>
 
       <div className="field">
         <label>Tournament name</label>
@@ -585,6 +590,7 @@ function TournamentForm({ tournament, onClose, onDone }: { tournament?: Tourname
       <div className="row" style={{ justifyContent: "flex-end" }}>
         <button className="btn" onClick={onClose}>Cancel</button>
         <button className="btn gold" style={PRIMARY_GOLD_STYLE} disabled={!valid} onClick={submit}>{isEdit ? "Save tournament" : "Create tournament"}</button>
+      </div>
       </div>
     </div>
   );

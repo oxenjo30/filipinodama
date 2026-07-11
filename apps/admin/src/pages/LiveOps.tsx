@@ -333,42 +333,49 @@ function SeasonForm({ season, onClose, onDone }: { season?: Season; onClose: () 
   const valid = name.trim() && startsAt && endsAt;
 
   return (
-    <div style={{ marginTop: 16, paddingTop: 16, borderTop: "1px solid rgba(232,184,75,.15)" }}>
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(160px,1fr))", gap: 12, alignItems: "end" }}>
-        <div className="field" style={{ gridColumn: "1/-1", marginBottom: 0 }}>
-          <label>Season name</label>
-          <input className="input" placeholder="e.g. Rise of the Datu" value={name} onChange={(e) => setName(e.target.value)} />
+    <div className="drawer-wrap">
+      <div className="drawer-bd" onClick={onClose} />
+      <div className="drawer">
+        <div className="row" style={{ justifyContent: "space-between", marginBottom: 16 }}>
+          <div style={{ font: "800 18px var(--serif)", color: "var(--gold-lt)" }}>{isEdit ? "Edit season" : "New season"}</div>
+          <button className="abtn btn-ghost btn-ghost-sm" onClick={onClose}>Close</button>
         </div>
-        <div className="field" style={{ marginBottom: 0 }}>
-          <label>Season number</label>
-          <input className="input" inputMode="numeric" placeholder="3" value={number} onChange={(e) => setNumber(e.target.value)} />
-        </div>
-        <div className="field" style={{ gridColumn: "2/-1", marginBottom: 0 }}>
-          <label>Ends / status line</label>
-          <input className="input" placeholder="Ends Aug 31 · 23:59" value={endsLabel} onChange={(e) => setEndsLabel(e.target.value)} />
-        </div>
-        <div className="field" style={{ marginBottom: 0 }}>
-          <label>Starts (actual)</label>
-          <input className="input" type="datetime-local" value={startsAt} onChange={(e) => setStartsAt(e.target.value)} />
-        </div>
-        <div className="field" style={{ marginBottom: 0 }}>
-          <label>Ends (actual)</label>
-          <input className="input" type="datetime-local" value={endsAt} onChange={(e) => setEndsAt(e.target.value)} />
-        </div>
-        <div className="field" style={{ gridColumn: "1/-1", marginBottom: 0 }}>
-          <label>Tiers (JSON array)</label>
-          <textarea
-            className="input mono"
-            style={{ minHeight: 120, resize: "vertical", fontSize: 12 }}
-            value={tiersText}
-            onChange={(e) => setTiersText(e.target.value)}
-            placeholder='[{ "tier": 1, "xp": 100, "freeReward": { "gold": 100 } }]'
-          />
-          {tiersErr && <span style={{ color: "var(--red-lt)", fontSize: 12 }}>{tiersErr}</span>}
-        </div>
-        <div style={{ gridColumn: "1/-1", display: "flex", gap: 8, justifyContent: "flex-end" }}>
-          <button className="abtn btn-ghost" onClick={onClose}>Cancel</button>
-          <button className="abtn btn-gold-pill" disabled={!valid} onClick={submit}>{isEdit ? "Save season" : "Create season"}</button>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(160px,1fr))", gap: 12, alignItems: "end" }}>
+          <div className="field" style={{ gridColumn: "1/-1", marginBottom: 0 }}>
+            <label>Season name</label>
+            <input className="input" placeholder="e.g. Rise of the Datu" value={name} onChange={(e) => setName(e.target.value)} />
+          </div>
+          <div className="field" style={{ marginBottom: 0 }}>
+            <label>Season number</label>
+            <input className="input" inputMode="numeric" placeholder="3" value={number} onChange={(e) => setNumber(e.target.value)} />
+          </div>
+          <div className="field" style={{ gridColumn: "2/-1", marginBottom: 0 }}>
+            <label>Ends / status line</label>
+            <input className="input" placeholder="Ends Aug 31 · 23:59" value={endsLabel} onChange={(e) => setEndsLabel(e.target.value)} />
+          </div>
+          <div className="field" style={{ marginBottom: 0 }}>
+            <label>Starts (actual)</label>
+            <input className="input" type="datetime-local" value={startsAt} onChange={(e) => setStartsAt(e.target.value)} />
+          </div>
+          <div className="field" style={{ marginBottom: 0 }}>
+            <label>Ends (actual)</label>
+            <input className="input" type="datetime-local" value={endsAt} onChange={(e) => setEndsAt(e.target.value)} />
+          </div>
+          <div className="field" style={{ gridColumn: "1/-1", marginBottom: 0 }}>
+            <label>Tiers (JSON array)</label>
+            <textarea
+              className="input mono"
+              style={{ minHeight: 120, resize: "vertical", fontSize: 12 }}
+              value={tiersText}
+              onChange={(e) => setTiersText(e.target.value)}
+              placeholder='[{ "tier": 1, "xp": 100, "freeReward": { "gold": 100 } }]'
+            />
+            {tiersErr && <span style={{ color: "var(--red-lt)", fontSize: 12 }}>{tiersErr}</span>}
+          </div>
+          <div style={{ gridColumn: "1/-1", display: "flex", gap: 8, justifyContent: "flex-end" }}>
+            <button className="abtn btn-ghost" onClick={onClose}>Cancel</button>
+            <button className="abtn btn-gold-pill" disabled={!valid} onClick={submit}>{isEdit ? "Save season" : "Create season"}</button>
+          </div>
         </div>
       </div>
     </div>
@@ -435,16 +442,8 @@ function QuestsPanel({ quests, loading, onDone }: { quests: Quest[]; loading: bo
         <button className="abtn btn-gold-pill sm" onClick={() => { setCreating(true); setEditing(null); }}>+ New quest</button>
       </div>
 
-      {creating && (
-        <div style={{ padding: "0 18px" }}>
-          <QuestForm onClose={() => setCreating(false)} onDone={onDone} />
-        </div>
-      )}
-      {editing && (
-        <div style={{ padding: "0 18px" }}>
-          <QuestForm quest={editing} onClose={() => setEditing(null)} onDone={onDone} />
-        </div>
-      )}
+      {creating && <QuestForm onClose={() => setCreating(false)} onDone={onDone} />}
+      {editing && <QuestForm quest={editing} onClose={() => setEditing(null)} onDone={onDone} />}
 
       <div style={{ overflowX: "auto" }}>
         <table className="tbl" style={{ minWidth: 560 }}>
@@ -532,57 +531,63 @@ function QuestForm({ quest, onClose, onDone }: { quest?: Quest; onClose: () => v
   const valid = title.trim() && goal >= 1 && (isEdit || (id.trim() && scope.trim()));
 
   return (
-    <div className="panel panel-pad" style={{ margin: "14px 0" }}>
-      <div style={{ fontWeight: 700, marginBottom: 12 }}>{isEdit ? "Edit quest" : "New quest"}</div>
-      {!isEdit && (
-        <div className="row" style={{ alignItems: "flex-start" }}>
-          <div className="field" style={{ flex: 1, minWidth: 160 }}>
-            <label>Quest id</label>
-            <input className="input mono" placeholder="daily-play5" value={id} onChange={(e) => setId(e.target.value)} />
+    <div className="drawer-wrap">
+      <div className="drawer-bd" onClick={onClose} />
+      <div className="drawer">
+        <div className="row" style={{ justifyContent: "space-between", marginBottom: 16 }}>
+          <div style={{ font: "800 18px var(--serif)", color: "var(--gold-lt)" }}>{isEdit ? "Edit quest" : "New quest"}</div>
+          <button className="abtn btn-ghost btn-ghost-sm" onClick={onClose}>Close</button>
+        </div>
+        {!isEdit && (
+          <div className="row" style={{ alignItems: "flex-start" }}>
+            <div className="field" style={{ flex: 1, minWidth: 160 }}>
+              <label>Quest id</label>
+              <input className="input mono" placeholder="daily-play5" value={id} onChange={(e) => setId(e.target.value)} />
+            </div>
+            <div className="field" style={{ flex: 1, minWidth: 160 }}>
+              <label>Scope</label>
+              <select className="select" value={scope} onChange={(e) => setScope(e.target.value)}>
+                <option value="daily">daily</option>
+                <option value="seasonal">seasonal</option>
+              </select>
+            </div>
           </div>
-          <div className="field" style={{ flex: 1, minWidth: 160 }}>
-            <label>Scope</label>
-            <select className="select" value={scope} onChange={(e) => setScope(e.target.value)}>
-              <option value="daily">daily</option>
-              <option value="seasonal">seasonal</option>
-            </select>
-          </div>
-        </div>
-      )}
-      <div className="field">
-        <label>Title</label>
-        <input className="input" placeholder="Win 3 matches" value={title} onChange={(e) => setTitle(e.target.value)} />
-      </div>
-      <div className="field">
-        <label>Description</label>
-        <input className="input" placeholder="Claim victory in 3 matches today" value={description} onChange={(e) => setDescription(e.target.value)} />
-      </div>
-      <div className="row" style={{ alignItems: "flex-start" }}>
-        <div className="field" style={{ flex: 1, minWidth: 140 }}>
-          <label>Goal</label>
-          <input className="input" type="number" min={1} value={goal || ""} onChange={(e) => setGoal(Number(e.target.value))} />
-        </div>
-        <div className="field" style={{ flex: 1, minWidth: 140 }}>
-          <label>Reward gold</label>
-          <input className="input" type="number" min={0} value={rewardGold || ""} onChange={(e) => setRewardGold(Number(e.target.value))} />
-        </div>
-      </div>
-      <div className="field">
-        <label>Tracks</label>
-        <select className="select" value={triggerEvent} onChange={(e) => setTriggerEvent(e.target.value)}>
-          {QUEST_TRIGGERS.map((o) => (
-            <option key={o.value} value={o.value}>{o.label}</option>
-          ))}
-        </select>
-        {!triggerEvent && (
-          <span className="dim" style={{ fontSize: 11 }}>
-            No trigger selected — this quest will not track progress until one is set.
-          </span>
         )}
-      </div>
-      <div className="row" style={{ justifyContent: "flex-end" }}>
-        <button className="abtn btn-ghost" onClick={onClose}>Cancel</button>
-        <button className="abtn btn-gold-pill" disabled={!valid} onClick={submit}>{isEdit ? "Save quest" : "Create quest"}</button>
+        <div className="field">
+          <label>Title</label>
+          <input className="input" placeholder="Win 3 matches" value={title} onChange={(e) => setTitle(e.target.value)} />
+        </div>
+        <div className="field">
+          <label>Description</label>
+          <input className="input" placeholder="Claim victory in 3 matches today" value={description} onChange={(e) => setDescription(e.target.value)} />
+        </div>
+        <div className="row" style={{ alignItems: "flex-start" }}>
+          <div className="field" style={{ flex: 1, minWidth: 140 }}>
+            <label>Goal</label>
+            <input className="input" type="number" min={1} value={goal || ""} onChange={(e) => setGoal(Number(e.target.value))} />
+          </div>
+          <div className="field" style={{ flex: 1, minWidth: 140 }}>
+            <label>Reward gold</label>
+            <input className="input" type="number" min={0} value={rewardGold || ""} onChange={(e) => setRewardGold(Number(e.target.value))} />
+          </div>
+        </div>
+        <div className="field">
+          <label>Tracks</label>
+          <select className="select" value={triggerEvent} onChange={(e) => setTriggerEvent(e.target.value)}>
+            {QUEST_TRIGGERS.map((o) => (
+              <option key={o.value} value={o.value}>{o.label}</option>
+            ))}
+          </select>
+          {!triggerEvent && (
+            <span className="dim" style={{ fontSize: 11 }}>
+              No trigger selected — this quest will not track progress until one is set.
+            </span>
+          )}
+        </div>
+        <div className="row" style={{ justifyContent: "flex-end" }}>
+          <button className="abtn btn-ghost" onClick={onClose}>Cancel</button>
+          <button className="abtn btn-gold-pill" disabled={!valid} onClick={submit}>{isEdit ? "Save quest" : "Create quest"}</button>
+        </div>
       </div>
     </div>
   );
@@ -701,57 +706,66 @@ function EventForm({ event, onClose, onDone }: { event?: LiveEvent; onClose: () 
   const valid = name.trim() && type.trim() && scope.trim() && reward.trim();
 
   return (
-    <div style={{ marginTop: 14, paddingTop: 14, borderTop: "1px solid rgba(232,184,75,.12)", display: "flex", flexDirection: "column", gap: 12 }}>
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(170px,1fr))", gap: 12 }}>
-        <div className="field" style={{ gridColumn: "1/-1", marginBottom: 0 }}>
-          <label>Event name</label>
-          <input className="input" placeholder="e.g. Fiesta Weekend" value={name} onChange={(e) => setName(e.target.value)} />
+    <div className="drawer-wrap">
+      <div className="drawer-bd" onClick={onClose} />
+      <div className="drawer">
+        <div className="row" style={{ justifyContent: "space-between", marginBottom: 16 }}>
+          <div style={{ font: "800 18px var(--serif)", color: "var(--gold-lt)" }}>{isEdit ? "Edit event" : "Schedule event"}</div>
+          <button className="abtn btn-ghost btn-ghost-sm" onClick={onClose}>Close</button>
         </div>
-        <div className="field" style={{ marginBottom: 0 }}>
-          <label>Type</label>
-          <select className="select" value={type} onChange={(e) => setType(e.target.value)}>
-            {EVENT_TYPES.map((o) => (
-              <option key={o.value} value={o.value}>{o.label}</option>
-            ))}
-          </select>
+        <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(170px,1fr))", gap: 12 }}>
+            <div className="field" style={{ gridColumn: "1/-1", marginBottom: 0 }}>
+              <label>Event name</label>
+              <input className="input" placeholder="e.g. Fiesta Weekend" value={name} onChange={(e) => setName(e.target.value)} />
+            </div>
+            <div className="field" style={{ marginBottom: 0 }}>
+              <label>Type</label>
+              <select className="select" value={type} onChange={(e) => setType(e.target.value)}>
+                {EVENT_TYPES.map((o) => (
+                  <option key={o.value} value={o.value}>{o.label}</option>
+                ))}
+              </select>
+            </div>
+            <div className="field" style={{ marginBottom: 0 }}>
+              <label>Status</label>
+              <select className="select" value={status} onChange={(e) => setStatus(e.target.value)}>
+                {EVENT_STATUSES.map((o) => (
+                  <option key={o.value} value={o.value}>{o.label}</option>
+                ))}
+              </select>
+            </div>
+            <div className="field" style={{ marginBottom: 0 }}>
+              <label>Audience / scope</label>
+              <select className="select" value={scope} onChange={(e) => setScope(e.target.value)}>
+                {EVENT_SCOPES.map((o) => (
+                  <option key={o.value} value={o.value}>{o.label}</option>
+                ))}
+              </select>
+            </div>
+            <div className="field" style={{ gridColumn: "1/-1", marginBottom: 0 }}>
+              <label>Reward</label>
+              <input
+                className="input"
+                placeholder="e.g. 2× Gold all modes, or 500 Gold + exclusive frame"
+                value={reward}
+                onChange={(e) => setReward(e.target.value)}
+              />
+            </div>
+            <div className="field" style={{ marginBottom: 0 }}>
+              <label>Starts</label>
+              <input className="input" placeholder="e.g. Jul 12" value={startsLabel} onChange={(e) => setStartsLabel(e.target.value)} />
+            </div>
+            <div className="field" style={{ marginBottom: 0 }}>
+              <label>Ends</label>
+              <input className="input" placeholder="e.g. Jul 14" value={endsLabel} onChange={(e) => setEndsLabel(e.target.value)} />
+            </div>
+          </div>
+          <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+            <button className="abtn btn-ghost" onClick={onClose}>Cancel</button>
+            <button className="abtn btn-gold-pill" disabled={!valid} onClick={submit}>{isEdit ? "Save event" : "Schedule event"}</button>
+          </div>
         </div>
-        <div className="field" style={{ marginBottom: 0 }}>
-          <label>Status</label>
-          <select className="select" value={status} onChange={(e) => setStatus(e.target.value)}>
-            {EVENT_STATUSES.map((o) => (
-              <option key={o.value} value={o.value}>{o.label}</option>
-            ))}
-          </select>
-        </div>
-        <div className="field" style={{ marginBottom: 0 }}>
-          <label>Audience / scope</label>
-          <select className="select" value={scope} onChange={(e) => setScope(e.target.value)}>
-            {EVENT_SCOPES.map((o) => (
-              <option key={o.value} value={o.value}>{o.label}</option>
-            ))}
-          </select>
-        </div>
-        <div className="field" style={{ gridColumn: "1/-1", marginBottom: 0 }}>
-          <label>Reward</label>
-          <input
-            className="input"
-            placeholder="e.g. 2× Gold all modes, or 500 Gold + exclusive frame"
-            value={reward}
-            onChange={(e) => setReward(e.target.value)}
-          />
-        </div>
-        <div className="field" style={{ marginBottom: 0 }}>
-          <label>Starts</label>
-          <input className="input" placeholder="e.g. Jul 12" value={startsLabel} onChange={(e) => setStartsLabel(e.target.value)} />
-        </div>
-        <div className="field" style={{ marginBottom: 0 }}>
-          <label>Ends</label>
-          <input className="input" placeholder="e.g. Jul 14" value={endsLabel} onChange={(e) => setEndsLabel(e.target.value)} />
-        </div>
-      </div>
-      <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
-        <button className="abtn btn-ghost" onClick={onClose}>Cancel</button>
-        <button className="abtn btn-gold-pill" disabled={!valid} onClick={submit}>{isEdit ? "Save event" : "Schedule event"}</button>
       </div>
     </div>
   );
