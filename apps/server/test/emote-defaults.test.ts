@@ -3,11 +3,15 @@ import { prisma } from "../src/db/client.js";
 import { grantDefaults } from "../src/auth/service.js";
 import { seedUser, truncateAll } from "./helpers.js";
 
-// InventoryItem cascades on User delete, but clear it explicitly (mirrors
-// admin-analytics.test.ts) so a failed run never leaves rows behind for the
-// next file. truncateAll() removes the t_user_ rows seedUser() creates.
+// The test seeds its OWN free-emote store items (prefix "t_item_emote_") rather
+// than assuming the DB is seeded — the CI test DB runs `migrate deploy` only
+// (no `db seed`), so store items don't exist there. Clean them + inventory +
+// test users after each test so no rows leak into the next file.
+const TEST_EMOTE_IDS = ["t_item_emote_a", "t_item_emote_b", "t_item_emote_c"];
+
 afterEach(async () => {
   await prisma.inventoryItem.deleteMany({});
+  await prisma.storeItem.deleteMany({ where: { id: { startsWith: "t_item_emote_" } } });
   await truncateAll();
 });
 afterAll(async () => {
@@ -16,7 +20,23 @@ afterAll(async () => {
 
 describe("grantDefaults emote loadout", () => {
   it("equips up to 6 free emotes and grants EMOTE inventory rows", async () => {
-    // Arrange: a bare user with no cosmetics.
+    // Arrange: seed free EMOTE store items (grantDefaults equips free emotes it
+    // finds; without these the loadout is legitimately empty).
+    await prisma.storeItem.createMany({
+      data: TEST_EMOTE_IDS.map((id, i) => ({
+        id,
+        type: "EMOTE" as const,
+        name: `Test Emote ${i}`,
+        assetKey: "emote",
+        previewKey: `emote:${["😀", "😎", "🎉"][i]}`,
+        priceGold: 0,
+        priceDiamonds: null,
+        active: true,
+        sortOrder: 100 + i,
+      })),
+    });
+
+    // A bare user with no cosmetics.
     const user = await seedUser();
 
     // Act
