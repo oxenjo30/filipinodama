@@ -227,6 +227,90 @@ describe("admin tournaments — create validation", () => {
   });
 });
 
+describe("admin tournaments — ROUND_ROBIN validation (format-specific bracket-size rules)", () => {
+  it("ROUND_ROBIN with a non-power-of-two maxPlayers (e.g. 5) → 201 (power-of-two check only applies to elimination formats)", async () => {
+    const app = await buildTestApp();
+    const econ = await seedUser({ adminRole: "ECONOMY" });
+    const res = await app.inject({
+      method: "POST",
+      url: "/api/admin/tournaments",
+      headers: { cookie: authFor({ sub: econ.id, adminRole: "ECONOMY" }) },
+      payload: { ...validCreateBody, format: "ROUND_ROBIN", maxPlayers: 5, prizeSplitGold: [1000] },
+    });
+    expect(res.statusCode).toBe(201);
+    expect(res.json().data.format).toBe("ROUND_ROBIN");
+    await app.close();
+  });
+
+  it("ROUND_ROBIN with maxPlayers > 16 → 400 (RR is capped)", async () => {
+    const app = await buildTestApp();
+    const econ = await seedUser({ adminRole: "ECONOMY" });
+    const res = await app.inject({
+      method: "POST",
+      url: "/api/admin/tournaments",
+      headers: { cookie: authFor({ sub: econ.id, adminRole: "ECONOMY" }) },
+      payload: { ...validCreateBody, format: "ROUND_ROBIN", maxPlayers: 17, prizeSplitGold: [1000] },
+    });
+    expect(res.statusCode).toBe(400);
+    await app.close();
+  });
+
+  it("ROUND_ROBIN with maxPlayers = 16 (the cap) → 201", async () => {
+    const app = await buildTestApp();
+    const econ = await seedUser({ adminRole: "ECONOMY" });
+    const res = await app.inject({
+      method: "POST",
+      url: "/api/admin/tournaments",
+      headers: { cookie: authFor({ sub: econ.id, adminRole: "ECONOMY" }) },
+      payload: { ...validCreateBody, format: "ROUND_ROBIN", maxPlayers: 16, prizeSplitGold: [1000] },
+    });
+    expect(res.statusCode).toBe(201);
+    await app.close();
+  });
+
+  it("SINGLE_ELIM still requires a power-of-two maxPlayers (unrelaxed) → 400 for maxPlayers=5", async () => {
+    const app = await buildTestApp();
+    const econ = await seedUser({ adminRole: "ECONOMY" });
+    const res = await app.inject({
+      method: "POST",
+      url: "/api/admin/tournaments",
+      headers: { cookie: authFor({ sub: econ.id, adminRole: "ECONOMY" }) },
+      payload: { ...validCreateBody, format: "SINGLE_ELIM", maxPlayers: 5 },
+    });
+    expect(res.statusCode).toBe(400);
+    await app.close();
+  });
+
+  it("DOUBLE_ELIM / SWISS still rejected this stage → 400 FORMAT_UNSUPPORTED", async () => {
+    const app = await buildTestApp();
+    const econ = await seedUser({ adminRole: "ECONOMY" });
+    for (const format of ["DOUBLE_ELIM", "SWISS"]) {
+      const res = await app.inject({
+        method: "POST",
+        url: "/api/admin/tournaments",
+        headers: { cookie: authFor({ sub: econ.id, adminRole: "ECONOMY" }) },
+        payload: { ...validCreateBody, format },
+      });
+      expect(res.statusCode).toBe(400);
+      expect(res.json().error.code).toBe("FORMAT_UNSUPPORTED");
+    }
+    await app.close();
+  });
+
+  it("top-N prizeSplitGold: a 3-length split summing to prizePoolGold → 201 (was rejected pre-generalization as length !== 2)", async () => {
+    const app = await buildTestApp();
+    const econ = await seedUser({ adminRole: "ECONOMY" });
+    const res = await app.inject({
+      method: "POST",
+      url: "/api/admin/tournaments",
+      headers: { cookie: authFor({ sub: econ.id, adminRole: "ECONOMY" }) },
+      payload: { ...validCreateBody, prizeSplitGold: [500, 300, 200] },
+    });
+    expect(res.statusCode).toBe(201);
+    await app.close();
+  });
+});
+
 describe("admin tournaments — edit gate", () => {
   it("PATCH on DRAFT → 200", async () => {
     const app = await buildTestApp();
@@ -369,6 +453,129 @@ describe("admin tournaments — full lifecycle happy path", () => {
 
     const after = await prisma.tournament.findUniqueOrThrow({ where: { id: tId } });
     expect(after.status).toBe("COMPLETED");
+    await app.close();
+  });
+});
+
+describe("admin tournaments — ROUND_ROBIN full lifecycle happy path", () => {
+  it("create → open → join 4 players → start (6 matches, all ready) → report all → complete pays top-N by standings", async () => {
+    const app = await buildTestApp();
+    const econ = await seedUser({ adminRole: "ECONOMY" });
+    const econCookie = authFor({ sub: econ.id, adminRole: "ECONOMY" });
+
+    const createRes = await app.inject({
+      method: "POST",
+      url: "/api/admin/tournaments",
+      headers: { cookie: econCookie },
+      payload: { ...validCreateBody, format: "ROUND_ROBIN", maxPlayers: 4, entryFeeGold: 0, prizePoolGold: 1000, prizeSplitGold: [600, 400] },
+    });
+    expect(createRes.statusCode).toBe(201);
+    const tId = createRes.json().data.id;
+
+    const openRes = await app.inject({ method: "POST", url: `/api/admin/tournaments/${tId}/open`, headers: { cookie: econCookie }, payload: { reason: "go" } });
+    expect(openRes.statusCode).toBe(200);
+
+    for (let i = 0; i < 4; i++) {
+      const p = await seedUser({ gold: 0 });
+      const joinRes = await app.inject({ method: "POST", url: `/api/tournaments/${tId}/join`, headers: { cookie: authFor({ sub: p.id }) } });
+      expect(joinRes.statusCode).toBe(201);
+      await new Promise((r) => setTimeout(r, 2));
+    }
+
+    const startRes = await app.inject({ method: "POST", url: `/api/admin/tournaments/${tId}/start`, headers: { cookie: econCookie }, payload: { reason: "start" } });
+    expect(startRes.statusCode).toBe(200);
+
+    const matches = await prisma.tournamentMatch.findMany({ where: { tournamentId: tId } });
+    expect(matches.length).toBe(6); // n(n-1)/2 for n=4
+    expect(matches.every((m) => m.status === "ready")).toBe(true);
+
+    // report every match — seed 1's entry wins whenever it plays (guarantees
+    // a clean, decisive standings winner with no ties to worry about here).
+    const entries = await prisma.tournamentEntry.findMany({ where: { tournamentId: tId } });
+    const seed1 = entries.find((e) => e.seed === 1)!;
+    for (const m of matches) {
+      const winnerEntryId = m.redEntryId === seed1.id || m.blueEntryId === seed1.id ? seed1.id : m.redEntryId!;
+      const res = await app.inject({
+        method: "POST",
+        url: `/api/admin/tournaments/${tId}/matches/${m.id}/report`,
+        headers: { cookie: econCookie },
+        payload: { winnerEntryId, reason: "report" },
+      });
+      expect(res.statusCode).toBe(200);
+    }
+
+    // complete-before-final-report guard already exercised elsewhere; here go straight to complete.
+    const completeRes = await app.inject({ method: "POST", url: `/api/admin/tournaments/${tId}/complete`, headers: { cookie: econCookie }, payload: { reason: "payout" } });
+    expect(completeRes.statusCode).toBe(200);
+
+    const seed1After = await prisma.tournamentEntry.findUniqueOrThrow({ where: { id: seed1.id } });
+    expect(seed1After.placement).toBe(1); // seed1 won every game it played → 1st place
+    const seed1User = await prisma.user.findUniqueOrThrow({ where: { id: seed1After.userId } });
+    expect(seed1User.gold).toBe(600);
+
+    const after = await prisma.tournament.findUniqueOrThrow({ where: { id: tId } });
+    expect(after.status).toBe("COMPLETED");
+    await app.close();
+  });
+
+  it("complete before all RR matches are reported → 409 NOT_FINISHED", async () => {
+    const app = await buildTestApp();
+    const econ = await seedUser({ adminRole: "ECONOMY" });
+    const econCookie = authFor({ sub: econ.id, adminRole: "ECONOMY" });
+
+    const createRes = await app.inject({
+      method: "POST",
+      url: "/api/admin/tournaments",
+      headers: { cookie: econCookie },
+      payload: { ...validCreateBody, format: "ROUND_ROBIN", maxPlayers: 4, entryFeeGold: 0, prizePoolGold: 1000, prizeSplitGold: [600, 400] },
+    });
+    const tId = createRes.json().data.id;
+    await app.inject({ method: "POST", url: `/api/admin/tournaments/${tId}/open`, headers: { cookie: econCookie }, payload: { reason: "go" } });
+    for (let i = 0; i < 4; i++) {
+      const p = await seedUser({ gold: 0 });
+      await app.inject({ method: "POST", url: `/api/tournaments/${tId}/join`, headers: { cookie: authFor({ sub: p.id }) } });
+      await new Promise((r) => setTimeout(r, 2));
+    }
+    await app.inject({ method: "POST", url: `/api/admin/tournaments/${tId}/start`, headers: { cookie: econCookie }, payload: { reason: "start" } });
+
+    const completeRes = await app.inject({ method: "POST", url: `/api/admin/tournaments/${tId}/complete`, headers: { cookie: econCookie }, payload: { reason: "too early" } });
+    expect(completeRes.statusCode).toBe(409);
+    expect(completeRes.json().error.code).toBe("NOT_FINISHED");
+    await app.close();
+  });
+
+  it("join/leave/capacity/trophy-gate are format-agnostic — still work for a ROUND_ROBIN tournament", async () => {
+    const app = await buildTestApp();
+    const econ = await seedUser({ adminRole: "ECONOMY" });
+    const econCookie = authFor({ sub: econ.id, adminRole: "ECONOMY" });
+
+    const createRes = await app.inject({
+      method: "POST",
+      url: "/api/admin/tournaments",
+      headers: { cookie: econCookie },
+      payload: { ...validCreateBody, format: "ROUND_ROBIN", maxPlayers: 3, entryFeeGold: 50, prizePoolGold: 100, prizeSplitGold: [100], minTrophies: 0 },
+    });
+    const tId = createRes.json().data.id;
+    await app.inject({ method: "POST", url: `/api/admin/tournaments/${tId}/open`, headers: { cookie: econCookie }, payload: { reason: "go" } });
+
+    const p1 = await seedUser({ gold: 100 });
+    const join1 = await app.inject({ method: "POST", url: `/api/tournaments/${tId}/join`, headers: { cookie: authFor({ sub: p1.id }) } });
+    expect(join1.statusCode).toBe(201);
+
+    const leave1 = await app.inject({ method: "POST", url: `/api/tournaments/${tId}/leave`, headers: { cookie: authFor({ sub: p1.id }) } });
+    expect(leave1.statusCode).toBe(200);
+    const p1After = await prisma.user.findUniqueOrThrow({ where: { id: p1.id } });
+    expect(p1After.gold).toBe(100); // refunded
+
+    // capacity: fill to 3, 4th rejected
+    for (let i = 0; i < 3; i++) {
+      const p = await seedUser({ gold: 100 });
+      const res = await app.inject({ method: "POST", url: `/api/tournaments/${tId}/join`, headers: { cookie: authFor({ sub: p.id }) } });
+      expect(res.statusCode).toBe(201);
+    }
+    const overflow = await seedUser({ gold: 100 });
+    const overflowRes = await app.inject({ method: "POST", url: `/api/tournaments/${tId}/join`, headers: { cookie: authFor({ sub: overflow.id }) } });
+    expect(overflowRes.statusCode).toBe(409);
     await app.close();
   });
 });

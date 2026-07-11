@@ -29,7 +29,14 @@ import type { PrismaClient, Prisma } from "@prisma/client";
 import { err, ApiError } from "../lib/errors.js";
 import { audit } from "../lib/audit.js";
 import { chargeEntryFeeTx, refundEntryFeeTx, payPrizeTx } from "../economy/tournament-ledger.js";
-import { seedPairings, parentSlot, resolveTournamentSlot } from "../lib/tournament-bracket.js";
+import {
+  seedPairings,
+  parentSlot,
+  resolveTournamentSlot,
+  resolveRoundRobinSlot,
+  roundRobinSchedule,
+  computeRoundRobinStandings,
+} from "../lib/tournament-bracket.js";
 
 type Tx = Prisma.TransactionClient;
 type Db = PrismaClient;
@@ -166,90 +173,12 @@ export async function startTournament(db: Db, tournamentId: string, actorId: str
   if (n < 2) throw err.badRequest("TOO_FEW_PLAYERS", "Need at least 2 registered players to start");
 
   const clamped = entries.slice(0, n);
-  const B = nextPow2(n);
-  const rounds = Math.log2(B);
 
   try {
-    return await db.$transaction(async (tx) => {
-      // Guarded status flip FIRST — only one concurrent Start can win.
-      const flip = await tx.tournament.updateMany({ where: { id: tournamentId, status: "OPEN" }, data: { status: "RUNNING", startedAt: new Date() } });
-      if (flip.count === 0) throw new Error("ALREADY_STARTED");
-
-      // Assign seeds 1..n by joinedAt order.
-      for (let i = 0; i < clamped.length; i++) {
-        await tx.tournamentEntry.update({ where: { id: clamped[i]!.id }, data: { seed: i + 1 } });
-      }
-      const bySeed = new Map<number, (typeof clamped)[number]>();
-      clamped.forEach((e, i) => bySeed.set(i + 1, e));
-
-      // Round 1: standard seed pairing; byes for seeds > n.
-      const pairs = seedPairings(n, B);
-      const round1Ids: string[] = [];
-      for (const p of pairs) {
-        const topEntry = bySeed.get(p.top) ?? null;
-        const bottomEntry = bySeed.get(p.bottom) ?? null;
-        const isBye = !topEntry || !bottomEntry;
-        const presentEntry = topEntry ?? bottomEntry;
-        const created = await tx.tournamentMatch.create({
-          data: {
-            tournamentId,
-            round: 1,
-            slot: p.slot,
-            redEntryId: topEntry?.id ?? null,
-            blueEntryId: bottomEntry?.id ?? null,
-            status: isBye ? "done" : topEntry && bottomEntry ? "ready" : "pending",
-            winnerEntryId: isBye ? presentEntry?.id ?? null : null,
-            resolvedAt: isBye ? new Date() : null,
-          },
-        });
-        round1Ids.push(created.id);
-      }
-
-      // Rounds 2..rounds: empty pending slots.
-      const slotsByRoundSlot = new Map<string, string>(); // `${round}:${slot}` -> tmId
-      for (let r = 1; r <= rounds; r++) {
-        const count = B / Math.pow(2, r);
-        for (let s = 0; s < count; s++) {
-          if (r === 1) continue; // already created above
-          const created = await tx.tournamentMatch.create({
-            data: { tournamentId, round: r, slot: s, status: "pending" },
-          });
-          slotsByRoundSlot.set(`${r}:${s}`, created.id);
-        }
-      }
-      // record round-1 ids too, for bye advancement below
-      const round1Rows = await tx.tournamentMatch.findMany({ where: { id: { in: round1Ids } } });
-      for (const row of round1Rows) slotsByRoundSlot.set(`1:${row.slot}`, row.id);
-
-      // Advance byes into round 2 immediately.
-      for (const row of round1Rows) {
-        if (row.status !== "done" || !row.winnerEntryId) continue;
-        if (rounds < 2) continue; // n==2 case: round 1 IS the final, no parent
-        const parent = parentSlot(row.round, row.slot);
-        const parentId = slotsByRoundSlot.get(`${parent.round}:${parent.slot}`);
-        if (!parentId) continue;
-        const isEven = row.slot % 2 === 0;
-        const parentRow = await tx.tournamentMatch.findUniqueOrThrow({ where: { id: parentId } });
-        const data = isEven ? { redEntryId: row.winnerEntryId } : { blueEntryId: row.winnerEntryId };
-        const otherSide = isEven ? parentRow.blueEntryId : parentRow.redEntryId;
-        await tx.tournamentMatch.update({
-          where: { id: parentId },
-          data: { ...data, ...(otherSide != null ? { status: "ready" } : {}) },
-        });
-      }
-
-      await audit(tx, {
-        actorId,
-        action: "tournament.start",
-        targetType: "tournament",
-        targetId: tournamentId,
-        before: { status: "OPEN" },
-        after: { status: "RUNNING", n, bracketSize: B, rounds },
-        reason: "admin start",
-      });
-
-      return { bracketSize: B, rounds, seededCount: n };
-    });
+    if (tournament.format === "ROUND_ROBIN") {
+      return await startRoundRobin(db, tournamentId, clamped, actorId);
+    }
+    return await startSingleElim(db, tournamentId, n, clamped, actorId);
   } catch (e) {
     if (e instanceof Error && e.message === "ALREADY_STARTED") throw err.conflict("ALREADY_TERMINAL", "Tournament already started");
     if (e instanceof ApiError) throw e;
@@ -257,12 +186,158 @@ export async function startTournament(db: Db, tournamentId: string, actorId: str
   }
 }
 
+/** SINGLE_ELIM start branch — byte-identical to the pre-formats-v2 behavior. */
+async function startSingleElim(
+  db: Db,
+  tournamentId: string,
+  n: number,
+  clamped: Array<{ id: string }>,
+  actorId: string,
+) {
+  const B = nextPow2(n);
+  const rounds = Math.log2(B);
+
+  return db.$transaction(async (tx) => {
+    // Guarded status flip FIRST — only one concurrent Start can win.
+    const flip = await tx.tournament.updateMany({ where: { id: tournamentId, status: "OPEN" }, data: { status: "RUNNING", startedAt: new Date() } });
+    if (flip.count === 0) throw new Error("ALREADY_STARTED");
+
+    // Assign seeds 1..n by joinedAt order.
+    for (let i = 0; i < clamped.length; i++) {
+      await tx.tournamentEntry.update({ where: { id: clamped[i]!.id }, data: { seed: i + 1 } });
+    }
+    const bySeed = new Map<number, (typeof clamped)[number]>();
+    clamped.forEach((e, i) => bySeed.set(i + 1, e));
+
+    // Round 1: standard seed pairing; byes for seeds > n.
+    const pairs = seedPairings(n, B);
+    const round1Ids: string[] = [];
+    for (const p of pairs) {
+      const topEntry = bySeed.get(p.top) ?? null;
+      const bottomEntry = bySeed.get(p.bottom) ?? null;
+      const isBye = !topEntry || !bottomEntry;
+      const presentEntry = topEntry ?? bottomEntry;
+      const created = await tx.tournamentMatch.create({
+        data: {
+          tournamentId,
+          round: 1,
+          slot: p.slot,
+          redEntryId: topEntry?.id ?? null,
+          blueEntryId: bottomEntry?.id ?? null,
+          status: isBye ? "done" : topEntry && bottomEntry ? "ready" : "pending",
+          winnerEntryId: isBye ? presentEntry?.id ?? null : null,
+          resolvedAt: isBye ? new Date() : null,
+        },
+      });
+      round1Ids.push(created.id);
+    }
+
+    // Rounds 2..rounds: empty pending slots.
+    const slotsByRoundSlot = new Map<string, string>(); // `${round}:${slot}` -> tmId
+    for (let r = 1; r <= rounds; r++) {
+      const count = B / Math.pow(2, r);
+      for (let s = 0; s < count; s++) {
+        if (r === 1) continue; // already created above
+        const created = await tx.tournamentMatch.create({
+          data: { tournamentId, round: r, slot: s, status: "pending" },
+        });
+        slotsByRoundSlot.set(`${r}:${s}`, created.id);
+      }
+    }
+    // record round-1 ids too, for bye advancement below
+    const round1Rows = await tx.tournamentMatch.findMany({ where: { id: { in: round1Ids } } });
+    for (const row of round1Rows) slotsByRoundSlot.set(`1:${row.slot}`, row.id);
+
+    // Advance byes into round 2 immediately.
+    for (const row of round1Rows) {
+      if (row.status !== "done" || !row.winnerEntryId) continue;
+      if (rounds < 2) continue; // n==2 case: round 1 IS the final, no parent
+      const parent = parentSlot(row.round, row.slot);
+      const parentId = slotsByRoundSlot.get(`${parent.round}:${parent.slot}`);
+      if (!parentId) continue;
+      const isEven = row.slot % 2 === 0;
+      const parentRow = await tx.tournamentMatch.findUniqueOrThrow({ where: { id: parentId } });
+      const data = isEven ? { redEntryId: row.winnerEntryId } : { blueEntryId: row.winnerEntryId };
+      const otherSide = isEven ? parentRow.blueEntryId : parentRow.redEntryId;
+      await tx.tournamentMatch.update({
+        where: { id: parentId },
+        data: { ...data, ...(otherSide != null ? { status: "ready" } : {}) },
+      });
+    }
+
+    await audit(tx, {
+      actorId,
+      action: "tournament.start",
+      targetType: "tournament",
+      targetId: tournamentId,
+      before: { status: "OPEN" },
+      after: { status: "RUNNING", n, bracketSize: B, rounds },
+      reason: "admin start",
+    });
+
+    return { bracketSize: B, rounds, seededCount: n };
+  });
+}
+
+/**
+ * ROUND_ROBIN start branch — assign seeds by joinedAt order (same as
+ * single-elim), then create every pairing from `roundRobinSchedule(n)` as a
+ * TournamentMatch with status "ready" (both sides are known immediately —
+ * unlike elimination, there's no feeder round to wait on). `bracket` stays
+ * unused ("W" default); there are no parent slots for RR.
+ */
+async function startRoundRobin(db: Db, tournamentId: string, clamped: Array<{ id: string }>, actorId: string) {
+  const n = clamped.length;
+  const schedule = roundRobinSchedule(n);
+
+  return db.$transaction(async (tx) => {
+    const flip = await tx.tournament.updateMany({ where: { id: tournamentId, status: "OPEN" }, data: { status: "RUNNING", startedAt: new Date() } });
+    if (flip.count === 0) throw new Error("ALREADY_STARTED");
+
+    for (let i = 0; i < clamped.length; i++) {
+      await tx.tournamentEntry.update({ where: { id: clamped[i]!.id }, data: { seed: i + 1 } });
+    }
+    const bySeed = new Map<number, (typeof clamped)[number]>();
+    clamped.forEach((e, i) => bySeed.set(i + 1, e));
+
+    for (const p of schedule) {
+      const redEntry = bySeed.get(p.a)!;
+      const blueEntry = bySeed.get(p.b)!;
+      await tx.tournamentMatch.create({
+        data: {
+          tournamentId,
+          round: p.round,
+          slot: p.slot,
+          redEntryId: redEntry.id,
+          blueEntryId: blueEntry.id,
+          status: "ready",
+        },
+      });
+    }
+
+    await audit(tx, {
+      actorId,
+      action: "tournament.start",
+      targetType: "tournament",
+      targetId: tournamentId,
+      before: { status: "OPEN" },
+      after: { status: "RUNNING", n, matchCount: schedule.length, format: "ROUND_ROBIN" },
+      reason: "admin start",
+    });
+
+    return { bracketSize: n, rounds: Math.max(...schedule.map((p) => p.round), 0), seededCount: n };
+  });
+}
+
 // ─────────────────────────── Report result (advance) ───────────────────────────
 
 /**
  * The only V1 bracket-advance path: admin reports the winner of a `ready`
- * slot. Delegates to resolveTournamentSlot for the atomic guard + advance;
- * this wrapper adds the tournament-scope lookup + audit row.
+ * slot. Delegates to resolveTournamentSlot (elimination formats — advances
+ * the winner into a parent slot + eliminates the loser) or
+ * resolveRoundRobinSlot (ROUND_ROBIN — just marks the slot done, no advance,
+ * no elimination) depending on the tournament's format; this wrapper adds
+ * the tournament-scope lookup + audit row shared by both.
  *
  * `actorId` is optional so this function is directly testable without a
  * caller identity; the route task must always pass `req.userId!` in
@@ -275,11 +350,17 @@ export async function reportResult(
   winnerEntryId: string,
   opts: { matchId?: string | null; reason?: string; actorId?: string } = {},
 ) {
+  const tournament = await db.tournament.findUnique({ where: { id: tournamentId } });
+  if (!tournament) throw err.notFound("NO_TOURNAMENT", "Tournament not found");
   const slot = await db.tournamentMatch.findUnique({ where: { id: tmId } });
   if (!slot || slot.tournamentId !== tournamentId) throw err.notFound("NO_TOURNAMENT_MATCH", "Tournament match slot not found");
 
   return db.$transaction(async (tx) => {
-    await resolveTournamentSlot(tx, tmId, winnerEntryId, opts.matchId ?? null);
+    if (tournament.format === "ROUND_ROBIN") {
+      await resolveRoundRobinSlot(tx, tmId, winnerEntryId, opts.matchId ?? null);
+    } else {
+      await resolveTournamentSlot(tx, tmId, winnerEntryId, opts.matchId ?? null);
+    }
     const after = await tx.tournamentMatch.findUniqueOrThrow({ where: { id: tmId } });
 
     if (opts.actorId) {
@@ -300,11 +381,22 @@ export async function reportResult(
 
 // ─────────────────────────── Complete (pay prizes) ───────────────────────────
 
+/** One resolved placement, ready for the shared payout loop below. */
+type PlacementRow = { entryId: string; placement: number };
+
 /**
- * Pay the champion + runner-up. Status flip is the FIRST step of the
+ * Pay top-N by final placement. Status flip is the FIRST step of the
  * transaction (atomic claim) so a losing concurrent complete 409s before
  * touching the ledger — this is what prevents double-pay, not merely the
  * ledger's unique index.
+ *
+ * `prizeSplitGold` is an int array of length 1..maxPlayers, every entry >= 0,
+ * summing to prizePoolGold. A split of length K pays placements 1..K by
+ * final ranking; placements beyond split.length are still recorded (display)
+ * but unpaid. SINGLE_ELIM's classic 2-tuple (champion/runner-up) is just the
+ * N=2 case of this general rule — its placement computation (final-slot
+ * champion/runner-up + display-only semifinal-loser 3rd) is unchanged from
+ * before this generalization.
  *
  * `actorId` is the ACTING admin (the one who clicked Complete) — the audit
  * row must attribute to them, never to the tournament's creator.
@@ -314,8 +406,14 @@ export async function completeTournament(db: Db, tournamentId: string, actorId: 
   if (!tournament) throw err.notFound("NO_TOURNAMENT", "Tournament not found");
 
   const split = Array.isArray(tournament.prizeSplitGold) ? (tournament.prizeSplitGold as unknown as number[]) : [];
-  if (split.length !== 2 || split[0]! + split[1]! !== tournament.prizePoolGold) {
-    throw err.badRequest("PRIZE_SPLIT_MISMATCH", "prizeSplitGold must be a 2-tuple summing to prizePoolGold");
+  const sum = split.reduce((a, b) => a + b, 0);
+  const valid =
+    split.length >= 1 &&
+    split.length <= tournament.maxPlayers &&
+    split.every((v) => Number.isInteger(v) && v >= 0) &&
+    sum === tournament.prizePoolGold;
+  if (!valid) {
+    throw err.badRequest("PRIZE_SPLIT_MISMATCH", "prizeSplitGold must be a 1..maxPlayers-length array of non-negative integers summing to prizePoolGold");
   }
 
   if (tournament.status !== "RUNNING") {
@@ -324,13 +422,20 @@ export async function completeTournament(db: Db, tournamentId: string, actorId: 
     if (tournament.status === "COMPLETED" || tournament.status === "CANCELLED") throw err.conflict("ALREADY_TERMINAL", "Tournament is already terminal");
   }
 
-  // Find the final round's done slot (the champion) BEFORE flipping, to fail
-  // fast with NOT_FINISHED if there's no champion yet.
-  const maxRoundRow = await db.tournamentMatch.findFirst({ where: { tournamentId }, orderBy: { round: "desc" } });
-  const finalRound = maxRoundRow?.round ?? 0;
-  const finalSlot = await db.tournamentMatch.findFirst({ where: { tournamentId, round: finalRound } });
-  if (!finalSlot || finalSlot.status !== "done" || !finalSlot.winnerEntryId) {
-    throw err.conflict("NOT_FINISHED", "The tournament has no champion yet");
+  // Fail fast with NOT_FINISHED (format-specific readiness check) BEFORE
+  // flipping status, so a premature Complete never touches the ledger.
+  if (tournament.format === "ROUND_ROBIN") {
+    const unfinished = await db.tournamentMatch.count({ where: { tournamentId, status: { not: "done" } } });
+    const total = await db.tournamentMatch.count({ where: { tournamentId } });
+    if (total === 0 || unfinished > 0) throw err.conflict("NOT_FINISHED", "Not every round-robin match has been reported yet");
+  } else {
+    // Elimination formats: find the final round's done slot (the champion).
+    const maxRoundRow = await db.tournamentMatch.findFirst({ where: { tournamentId }, orderBy: { round: "desc" } });
+    const finalRound = maxRoundRow?.round ?? 0;
+    const finalSlot = await db.tournamentMatch.findFirst({ where: { tournamentId, round: finalRound } });
+    if (!finalSlot || finalSlot.status !== "done" || !finalSlot.winnerEntryId) {
+      throw err.conflict("NOT_FINISHED", "The tournament has no champion yet");
+    }
   }
 
   try {
@@ -339,27 +444,24 @@ export async function completeTournament(db: Db, tournamentId: string, actorId: 
       const flip = await tx.tournament.updateMany({ where: { id: tournamentId, status: "RUNNING" }, data: { status: "COMPLETED", completedAt: new Date() } });
       if (flip.count === 0) throw new Error("ALREADY_TERMINAL");
 
-      const finalRow = await tx.tournamentMatch.findUniqueOrThrow({ where: { id: finalSlot.id } });
-      const championEntryId = finalRow.winnerEntryId!;
-      const runnerUpEntryId = finalRow.redEntryId === championEntryId ? finalRow.blueEntryId : finalRow.redEntryId;
+      const placements: PlacementRow[] =
+        tournament.format === "ROUND_ROBIN" ? await computeRoundRobinPlacements(tx, tournamentId) : await computeSingleElimPlacements(tx, tournamentId);
 
-      await tx.tournamentEntry.update({ where: { id: championEntryId }, data: { placement: 1 } });
-      if (runnerUpEntryId) await tx.tournamentEntry.update({ where: { id: runnerUpEntryId }, data: { placement: 2 } });
-
-      // Display-only placement 3 for the semifinal losers (never paid).
-      if (finalRound >= 2) {
-        const semis = await tx.tournamentMatch.findMany({ where: { tournamentId, round: finalRound - 1, status: "done" } });
-        for (const m of semis) {
-          const loser = m.redEntryId === m.winnerEntryId ? m.blueEntryId : m.redEntryId;
-          if (loser) await tx.tournamentEntry.update({ where: { id: loser }, data: { placement: 3 } }).catch(() => {});
-        }
+      for (const p of placements) {
+        await tx.tournamentEntry.update({ where: { id: p.entryId }, data: { placement: p.placement } }).catch(() => {});
       }
 
-      const champEntry = await tx.tournamentEntry.findUniqueOrThrow({ where: { id: championEntryId } });
-      if (split[0]! > 0) await payPrizeTx(tx, champEntry, split[0]!);
-      if (runnerUpEntryId && split[1]! > 0) {
-        const runnerEntry = await tx.tournamentEntry.findUniqueOrThrow({ where: { id: runnerUpEntryId } });
-        await payPrizeTx(tx, runnerEntry, split[1]!);
+      // Shared payout-by-placement loop: placement i (1-based) gets split[i-1]
+      // gold, when that slot exists and is > 0.
+      const paidOut: Record<number, { entryId: string; amount: number }> = {};
+      for (let i = 1; i <= split.length; i++) {
+        const amount = split[i - 1]!;
+        if (amount <= 0) continue;
+        const row = placements.find((p) => p.placement === i);
+        if (!row) continue; // fewer real placements than split length (edge case) — nothing to pay
+        const entry = await tx.tournamentEntry.findUniqueOrThrow({ where: { id: row.entryId } });
+        await payPrizeTx(tx, entry, amount);
+        paidOut[i] = { entryId: row.entryId, amount };
       }
 
       await audit(tx, {
@@ -368,17 +470,67 @@ export async function completeTournament(db: Db, tournamentId: string, actorId: 
         targetType: "tournament",
         targetId: tournamentId,
         before: { status: "RUNNING" },
-        after: { status: "COMPLETED", championEntryId, runnerUpEntryId, payout: split },
+        after: { status: "COMPLETED", placements, payout: split, paidOut },
         reason: reason ?? "admin complete",
       });
 
-      return { championEntryId, runnerUpEntryId, payout: split };
+      // Back-compat return shape for SINGLE_ELIM callers (existing route/tests
+      // read championEntryId/runnerUpEntryId) plus the general placements/payout.
+      const championEntryId = placements.find((p) => p.placement === 1)?.entryId ?? null;
+      const runnerUpEntryId = placements.find((p) => p.placement === 2)?.entryId ?? null;
+      return { championEntryId, runnerUpEntryId, payout: split, placements };
     });
   } catch (e) {
     if (e instanceof Error && e.message === "ALREADY_TERMINAL") throw err.conflict("ALREADY_TERMINAL", "Tournament is already terminal");
     if (e instanceof ApiError) throw e;
     throw e;
   }
+}
+
+/**
+ * SINGLE_ELIM placement branch — unchanged from the pre-formats-v2 behavior:
+ * champion (final-slot winner) = 1, runner-up (final-slot loser) = 2,
+ * semifinal losers = 3 (display-only, never paid unless split.length >= 3).
+ */
+async function computeSingleElimPlacements(tx: Tx, tournamentId: string): Promise<PlacementRow[]> {
+  const maxRoundRow = await tx.tournamentMatch.findFirst({ where: { tournamentId }, orderBy: { round: "desc" } });
+  const finalRound = maxRoundRow?.round ?? 0;
+  const finalSlot = await tx.tournamentMatch.findFirstOrThrow({ where: { tournamentId, round: finalRound } });
+
+  const championEntryId = finalSlot.winnerEntryId!;
+  const runnerUpEntryId = finalSlot.redEntryId === championEntryId ? finalSlot.blueEntryId : finalSlot.redEntryId;
+
+  const placements: PlacementRow[] = [{ entryId: championEntryId, placement: 1 }];
+  if (runnerUpEntryId) placements.push({ entryId: runnerUpEntryId, placement: 2 });
+
+  if (finalRound >= 2) {
+    const semis = await tx.tournamentMatch.findMany({ where: { tournamentId, round: finalRound - 1, status: "done" } });
+    for (const m of semis) {
+      const loser = m.redEntryId === m.winnerEntryId ? m.blueEntryId : m.redEntryId;
+      if (loser) placements.push({ entryId: loser, placement: 3 });
+    }
+  }
+
+  return placements;
+}
+
+/**
+ * ROUND_ROBIN placement branch — ranks by computeRoundRobinStandings (wins
+ * desc, head-to-head, seed asc), placements 1..n.
+ */
+async function computeRoundRobinPlacements(tx: Tx, tournamentId: string): Promise<PlacementRow[]> {
+  const entries = await tx.tournamentEntry.findMany({ where: { tournamentId }, select: { id: true, seed: true } });
+  const matches = await tx.tournamentMatch.findMany({
+    where: { tournamentId },
+    select: { redEntryId: true, blueEntryId: true, winnerEntryId: true, status: true },
+  });
+  const standings = computeRoundRobinStandings(
+    entries.map((e) => ({ id: e.id, seed: e.seed })),
+    matches
+      .filter((m): m is typeof m & { redEntryId: string; blueEntryId: string } => m.redEntryId != null && m.blueEntryId != null)
+      .map((m) => ({ redEntryId: m.redEntryId, blueEntryId: m.blueEntryId, winnerEntryId: m.winnerEntryId, status: m.status })),
+  );
+  return standings;
 }
 
 // ─────────────────────────── Cancel (refund all) ───────────────────────────

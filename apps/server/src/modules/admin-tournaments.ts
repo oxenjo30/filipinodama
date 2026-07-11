@@ -20,6 +20,11 @@ import { audit } from "../lib/audit.js";
 import { startTournament, reportResult, completeTournament, cancelTournament } from "./tournaments-core.js";
 
 const POWERS_OF_TWO = [2, 4, 8, 16, 32, 64, 128, 256] as const;
+const ELIMINATION_FORMATS = new Set(["SINGLE_ELIM", "DOUBLE_ELIM"]);
+/** Formats supported end-to-end THIS stage. DOUBLE_ELIM/SWISS stay rejected
+ * until their own stages ship (see docs/superpowers/specs/2026-07-11-tournament-formats-v2.md). */
+const SUPPORTED_FORMATS = new Set(["SINGLE_ELIM", "ROUND_ROBIN"]);
+const ROUND_ROBIN_MAX_PLAYERS = 16; // match count = n(n-1)/2 grows fast — cap RR at 16
 
 const createBody = z
   .object({
@@ -27,19 +32,34 @@ const createBody = z
     format: z.enum(["SINGLE_ELIM", "DOUBLE_ELIM", "SWISS", "ROUND_ROBIN"]),
     entryFeeGold: z.number().int().min(0).max(1_000_000),
     prizePoolGold: z.number().int().min(0),
-    maxPlayers: z.number().int().refine((n) => (POWERS_OF_TWO as readonly number[]).includes(n), {
-      message: "maxPlayers must be a power of two in {2,4,8,16,32,64,128,256}",
-    }),
+    maxPlayers: z.number().int().min(2),
     minTrophies: z.number().int().min(0).default(0),
     matchMode: z.enum(["CASUAL", "RANKED"]).default("CASUAL"),
     startsAt: z.string().datetime().optional().nullable(),
-    prizeSplitGold: z.tuple([z.number().int().min(0), z.number().int().min(0)]),
+    // Top-N prize split: 1..maxPlayers non-negative integers summing to
+    // prizePoolGold. A 2-tuple (the pre-V2 shape) is just the N=2 case.
+    prizeSplitGold: z.array(z.number().int().min(0)).min(1),
   })
   .superRefine((b, ctx) => {
-    if (b.format !== "SINGLE_ELIM") {
-      ctx.addIssue({ code: "custom", message: "Only SINGLE_ELIM is supported in V1", path: ["format"] });
+    if (!SUPPORTED_FORMATS.has(b.format)) {
+      ctx.addIssue({ code: "custom", message: "This format is not supported yet", path: ["format"] });
     }
-    if (b.prizeSplitGold[0] + b.prizeSplitGold[1] !== b.prizePoolGold) {
+    // Bracket-size validation is format-specific: power-of-two is an
+    // ELIMINATION-bracket requirement (SINGLE_ELIM/DOUBLE_ELIM); ROUND_ROBIN
+    // needs any n in [2,16] (match count = n(n-1)/2 grows fast — capped).
+    if (ELIMINATION_FORMATS.has(b.format)) {
+      if (!(POWERS_OF_TWO as readonly number[]).includes(b.maxPlayers)) {
+        ctx.addIssue({ code: "custom", message: "maxPlayers must be a power of two in {2,4,8,16,32,64,128,256}", path: ["maxPlayers"] });
+      }
+    } else if (b.format === "ROUND_ROBIN") {
+      if (b.maxPlayers > ROUND_ROBIN_MAX_PLAYERS) {
+        ctx.addIssue({ code: "custom", message: `Round robin is capped at ${ROUND_ROBIN_MAX_PLAYERS} players`, path: ["maxPlayers"] });
+      }
+    }
+    if (b.prizeSplitGold.length > b.maxPlayers) {
+      ctx.addIssue({ code: "custom", message: "prizeSplitGold cannot pay more placements than maxPlayers", path: ["prizeSplitGold"] });
+    }
+    if (b.prizeSplitGold.reduce((a, v) => a + v, 0) !== b.prizePoolGold) {
       ctx.addIssue({ code: "custom", message: "prizeSplitGold must sum to prizePoolGold", path: ["prizeSplitGold"] });
     }
   });
@@ -122,7 +142,7 @@ export async function adminTournamentsRoutes(app: FastifyInstance) {
     const parsed = createBody.safeParse(req.body);
     if (!parsed.success) {
       const formatIssue = parsed.error.issues.find((i) => i.path[0] === "format");
-      if (formatIssue) throw err.badRequest("FORMAT_UNSUPPORTED", "Only SINGLE_ELIM is supported in V1");
+      if (formatIssue) throw err.badRequest("FORMAT_UNSUPPORTED", "Only SINGLE_ELIM and ROUND_ROBIN are supported right now");
       throw err.badRequest("VALIDATION_ERROR", parsed.error.issues[0]?.message ?? "Invalid request");
     }
     const b = parsed.data;
@@ -164,7 +184,7 @@ export async function adminTournamentsRoutes(app: FastifyInstance) {
     const parsed = createBody.safeParse(req.body);
     if (!parsed.success) {
       const formatIssue = parsed.error.issues.find((i) => i.path[0] === "format");
-      if (formatIssue) throw err.badRequest("FORMAT_UNSUPPORTED", "Only SINGLE_ELIM is supported in V1");
+      if (formatIssue) throw err.badRequest("FORMAT_UNSUPPORTED", "Only SINGLE_ELIM and ROUND_ROBIN are supported right now");
       throw err.badRequest("VALIDATION_ERROR", parsed.error.issues[0]?.message ?? "Invalid request");
     }
     const b = parsed.data;
@@ -254,7 +274,7 @@ export async function adminTournamentsRoutes(app: FastifyInstance) {
     },
   );
 
-  // POST /admin/tournaments/:id/complete — pays champion + runner-up
+  // POST /admin/tournaments/:id/complete — pays top-N by final placement
   app.post<{ Params: { id: string } }>("/admin/tournaments/:id/complete", { preHandler: requireAdmin("ECONOMY") }, async (req) => {
     const { reason } = reasonBody.parse(req.body);
     const result = await completeTournament(prisma, req.params.id, req.userId!, reason);

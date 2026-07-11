@@ -559,9 +559,24 @@ describe("completeTournament — pay champion + runner-up only (money-critical)"
     expect(await prisma.ledgerEntry.count({ where: { reason: "tournament-prize" } })).toBe(0);
   });
 
-  it("prizeSplitGold with length !== 2 → 400 PRIZE_SPLIT_MISMATCH", async () => {
-    const { tournament } = await finishedFourPlayerTournament(1000, [1000]);
-    await expect(completeTournament(prisma, tournament.id, await actingAdmin(), "payout")).rejects.toMatchObject({ status: 400, code: "PRIZE_SPLIT_MISMATCH" });
+  // NOTE: prizeSplitGold was generalized from a fixed 2-tuple to a top-N array
+  // (length 1..maxPlayers) — see "top-N prize splits (money-critical)" below
+  // for the length-1/3/4 + mismatch + zero-middle-slot coverage. A length-1
+  // split is now a VALID winner-takes-all payout (not a 400), which the next
+  // test proves.
+  it("prizeSplitGold length 1 (winner-takes-all) → pays only the champion, no runner-up payout", async () => {
+    const { tournament, championEntryId, runnerUpEntryId } = await finishedFourPlayerTournament(1000, [1000]);
+    await completeTournament(prisma, tournament.id, await actingAdmin(), "payout");
+
+    const champUser = await prisma.user.findUniqueOrThrow({
+      where: { id: (await prisma.tournamentEntry.findUniqueOrThrow({ where: { id: championEntryId } })).userId },
+    });
+    expect(champUser.gold).toBe(1000);
+
+    const prizeRows = await prisma.ledgerEntry.findMany({ where: { reason: "tournament-prize" } });
+    expect(prizeRows.length).toBe(1);
+    expect(prizeRows[0]!.refId).toBe(championEntryId);
+    expect(prizeRows[0]!.refId).not.toBe(runnerUpEntryId);
   });
 
   it("complete before a champion exists (still RUNNING, final not done) → 409 NOT_FINISHED", async () => {
@@ -616,6 +631,137 @@ describe("completeTournament — pay champion + runner-up only (money-critical)"
     const totalPaid = prizeRows.reduce((sum, r) => sum + r.amount, 0);
     expect(totalPaid).toBe(500); // === prizePoolGold, real gold, never fabricated
   });
+});
+
+describe("top-N prize splits (money-critical) — generalized payout-by-placement", () => {
+  /** An 8-player single-elim bracket reported to a champion, giving two
+   * entries tied at placement 3 (both semifinal losers) — useful for
+   * exercising a 3+ length split. */
+  async function finishedEightPlayerTournament(prizePoolGold: number, prizeSplitGold: number[]) {
+    const t = await seedTournament({ status: "OPEN", maxPlayers: 8, entryFeeGold: 0, prizePoolGold, prizeSplitGold });
+    for (let i = 0; i < 8; i++) {
+      const u = await seedUser({ gold: 0 });
+      await joinTournament(prisma, t.id, u.id);
+      await new Promise((r) => setTimeout(r, 2));
+    }
+    await startTournament(prisma, t.id, await actingAdmin());
+
+    // Report round 1 (4 matches) → round 2 (2 matches, semis) → round 3 (final).
+    let round = await prisma.tournamentMatch.findMany({ where: { tournamentId: t.id, round: 1 }, orderBy: { slot: "asc" } });
+    for (const m of round) await reportResult(prisma, t.id, m.id, m.redEntryId!);
+
+    round = await prisma.tournamentMatch.findMany({ where: { tournamentId: t.id, round: 2 }, orderBy: { slot: "asc" } });
+    const semiLoserIds = round.map((m) => m.blueEntryId!); // red always wins above
+    for (const m of round) await reportResult(prisma, t.id, m.id, m.redEntryId!);
+
+    const final = await prisma.tournamentMatch.findFirstOrThrow({ where: { tournamentId: t.id, round: 3, slot: 0 } });
+    const championEntryId = final.redEntryId!;
+    const runnerUpEntryId = final.blueEntryId!;
+    await reportResult(prisma, t.id, final.id, championEntryId);
+
+    return { tournament: t, championEntryId, runnerUpEntryId, semiLoserIds };
+  }
+
+  it("split length 3: pays 1st, 2nd, and one of the (tied) 3rd-place entries; the other placement-3 entry gets nothing", async () => {
+    const { tournament, championEntryId, runnerUpEntryId, semiLoserIds } = await finishedEightPlayerTournament(1000, [500, 300, 200]);
+    await completeTournament(prisma, tournament.id, await actingAdmin(), "payout");
+
+    const prizeRows = await prisma.ledgerEntry.findMany({ where: { reason: "tournament-prize" } });
+    expect(prizeRows.length).toBe(3); // champion + runner-up + exactly one 3rd-place entry
+    const totalPaid = prizeRows.reduce((sum, r) => sum + r.amount, 0);
+    expect(totalPaid).toBe(1000);
+
+    const champRow = prizeRows.find((r) => r.refId === championEntryId)!;
+    const runnerRow = prizeRows.find((r) => r.refId === runnerUpEntryId)!;
+    expect(champRow.amount).toBe(500);
+    expect(runnerRow.amount).toBe(300);
+
+    const thirdRow = prizeRows.find((r) => semiLoserIds.includes(r.refId));
+    expect(thirdRow).toBeTruthy();
+    expect(thirdRow!.amount).toBe(200);
+
+    // both placement-3 entries are recorded (display), but only one paid.
+    const thirdPlaceEntries = await prisma.tournamentEntry.findMany({ where: { id: { in: semiLoserIds } } });
+    expect(thirdPlaceEntries.every((e) => e.placement === 3)).toBe(true);
+  });
+
+  it("split length 4 summing to prizePoolGold with a ZERO in the middle (skip 2nd, pay 1st + 3rd): no ledger row for the zero slot", async () => {
+    const { tournament, championEntryId, runnerUpEntryId, semiLoserIds } = await finishedEightPlayerTournament(1000, [700, 0, 300, 0]);
+    await completeTournament(prisma, tournament.id, await actingAdmin(), "payout");
+
+    const prizeRows = await prisma.ledgerEntry.findMany({ where: { reason: "tournament-prize" } });
+    expect(prizeRows.length).toBe(2); // 1st + one of the 3rd-place entries; 2nd and 4th are zero/nonexistent
+    expect(prizeRows.some((r) => r.refId === runnerUpEntryId)).toBe(false);
+
+    const champRow = prizeRows.find((r) => r.refId === championEntryId)!;
+    expect(champRow.amount).toBe(700);
+    const thirdRow = prizeRows.find((r) => semiLoserIds.includes(r.refId));
+    expect(thirdRow!.amount).toBe(300);
+
+    const totalPaid = prizeRows.reduce((sum, r) => sum + r.amount, 0);
+    expect(totalPaid).toBe(1000);
+  });
+
+  it("split length > entrants (e.g. length 4 on a 4-player bracket where only placements 1/2/3/3 exist): placement 4 slot amount is simply unpaid, no crash, sum still validated against prizePoolGold", async () => {
+    // 4-player bracket only ever produces placements {1,2,3,3} — no placement 4 exists.
+    const { tournament, championEntryId, runnerUpEntryId } = await finishedFourPlayerTournament(1000, [400, 300, 200, 100]);
+    await completeTournament(prisma, tournament.id, await actingAdmin(), "payout");
+
+    const after = await prisma.tournament.findUniqueOrThrow({ where: { id: tournament.id } });
+    expect(after.status).toBe("COMPLETED");
+
+    const prizeRows = await prisma.ledgerEntry.findMany({ where: { reason: "tournament-prize" } });
+    // 1st(400) + 2nd(300) + exactly one 3rd(200) paid; the 4th-place slot (100)
+    // has no entry at placement 4 in a 4-player bracket, so it's unpaid —
+    // NOT redistributed, NOT paid to someone else. Total paid < prizePoolGold
+    // in this edge case (declared pool is a ceiling, not a guarantee every
+    // gold moves).
+    const totalPaid = prizeRows.reduce((sum, r) => sum + r.amount, 0);
+    expect(totalPaid).toBe(900); // 400+300+200, the 100 (placement 4) goes unpaid
+    expect(prizeRows.some((r) => r.refId === championEntryId)).toBe(true);
+    expect(prizeRows.some((r) => r.refId === runnerUpEntryId)).toBe(true);
+  });
+
+  it("split length 0 → 400 PRIZE_SPLIT_MISMATCH (must be at least length 1)", async () => {
+    const { tournament } = await finishedFourPlayerTournament(1000, []);
+    await expect(completeTournament(prisma, tournament.id, await actingAdmin(), "payout")).rejects.toMatchObject({ status: 400, code: "PRIZE_SPLIT_MISMATCH" });
+  });
+
+  it("split with a negative entry → 400 PRIZE_SPLIT_MISMATCH", async () => {
+    const { tournament } = await finishedFourPlayerTournament(1000, [1100, -100]);
+    await expect(completeTournament(prisma, tournament.id, await actingAdmin(), "payout")).rejects.toMatchObject({ status: 400, code: "PRIZE_SPLIT_MISMATCH" });
+  });
+
+  it("split summing correctly but length > maxPlayers → 400 PRIZE_SPLIT_MISMATCH", async () => {
+    // maxPlayers=4 but a 5-length split is provided.
+    const { tournament } = await finishedFourPlayerTournament(1000, [200, 200, 200, 200, 200]);
+    await expect(completeTournament(prisma, tournament.id, await actingAdmin(), "payout")).rejects.toMatchObject({ status: 400, code: "PRIZE_SPLIT_MISMATCH" });
+  });
+
+  /** Re-declare the 4-player helper locally (mirrors the one inside the
+   * completeTournament describe above — kept local to avoid cross-describe
+   * coupling on a closure-scoped helper). */
+  async function finishedFourPlayerTournament(prizePoolGold: number, prizeSplitGold: number[]) {
+    const t = await seedTournament({ status: "OPEN", maxPlayers: 4, entryFeeGold: 0, prizePoolGold, prizeSplitGold });
+    const players = [];
+    for (let i = 0; i < 4; i++) {
+      const u = await seedUser({ gold: 0 });
+      const entry = await joinTournament(prisma, t.id, u.id);
+      players.push({ user: u, entry });
+      await new Promise((r) => setTimeout(r, 2));
+    }
+    await startTournament(prisma, t.id, await actingAdmin());
+    const round1 = await prisma.tournamentMatch.findMany({ where: { tournamentId: t.id, round: 1 }, orderBy: { slot: "asc" } });
+    const w0 = round1[0]!.redEntryId!;
+    const w1 = round1[1]!.redEntryId!;
+    await reportResult(prisma, t.id, round1[0]!.id, w0);
+    await reportResult(prisma, t.id, round1[1]!.id, w1);
+    const final = await prisma.tournamentMatch.findFirstOrThrow({ where: { tournamentId: t.id, round: 2, slot: 0 } });
+    const championEntryId = final.redEntryId!;
+    const runnerUpEntryId = final.blueEntryId!;
+    await reportResult(prisma, t.id, final.id, championEntryId);
+    return { tournament: t, championEntryId, runnerUpEntryId, players };
+  }
 });
 
 describe("cancelTournament — refund all entrants exactly once", () => {
