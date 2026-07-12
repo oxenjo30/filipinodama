@@ -135,7 +135,7 @@ function FriendRow({
         opacity: online ? 1 : 0.72,
       }}
     >
-      <div style={{ position: "relative", flex: "none" }}>
+      <div onClick={onOpen} style={{ position: "relative", flex: "none", cursor: "pointer" }}>
         <Avatar src={friend.avatarUrl ?? "champion"} size={44} frame={friend.frameId ?? undefined} />
         <span
           style={{
@@ -695,7 +695,12 @@ export function FriendsPage() {
                         background: "rgba(0,0,0,.2)",
                       }}
                     >
-                      <Avatar src={s.avatarUrl ?? "champion"} size={44} frame={s.frameId ?? undefined} />
+                      <div
+                        onClick={() => navigate(`/profile/${s.id}`)}
+                        style={{ flex: "none", cursor: "pointer" }}
+                      >
+                        <Avatar src={s.avatarUrl ?? "champion"} size={44} frame={s.frameId ?? undefined} />
+                      </div>
                       <div
                         onClick={() => navigate(`/profile/${s.id}`)}
                         style={{ flex: 1, minWidth: 0, cursor: "pointer" }}

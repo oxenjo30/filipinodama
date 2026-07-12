@@ -641,6 +641,7 @@ export function GuildsPage() {
                           frame={m.user.frameId ?? undefined}
                           size={40}
                           nameStyle={{ font: "700 15px Inter" }}
+                          disabled={mine}
                           subtitle={
                             <div style={{ display: "flex", alignItems: "center", gap: 7, marginTop: 2 }}>
                               <span style={{ font: "700 11px Inter", color: ROLE_COLOR[m.role] }}>{ROLE_LABEL[m.role]}</span>
@@ -719,7 +720,7 @@ export function GuildsPage() {
                     const tb = tierBadge(r.user.trophies);
                     return (
                       <div key={r.id} className="fd-social-row" style={{ display: "flex", alignItems: "center", gap: 13, padding: 13, borderRadius: 12, border: "1px solid rgba(232,184,75,.14)", background: "rgba(15,8,32,.4)" }}>
-                        <Avatar src={r.user.avatarUrl ?? "champion"} size={44} />
+                        <Avatar src={r.user.avatarUrl ?? "champion"} size={44} onClick={() => navigate(`/profile/${r.user.id}`)} />
                         <div style={{ flex: 1, minWidth: 0 }}>
                           <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
                             <span style={{ font: "700 15px Inter", color: "#fff" }}>{r.user.displayName}</span>
@@ -828,7 +829,7 @@ export function GuildsPage() {
         <div onClick={() => setManage(null)} className="fd-sheet-overlay" style={{ position: "fixed", inset: 0, zIndex: 82, background: "rgba(8,4,18,.72)", backdropFilter: "blur(6px)", display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}>
           <div onClick={(e) => e.stopPropagation()} className="fd-sheet" style={{ width: "100%", maxWidth: 400, borderRadius: 18, border: "1px solid rgba(232,184,75,.35)", background: "linear-gradient(180deg,#1a0f30,#140a24)", boxShadow: "0 30px 80px rgba(0,0,0,.6)", overflow: "hidden" }}>
             <div style={{ padding: "22px 24px 18px", display: "flex", alignItems: "center", gap: 14, borderBottom: "1px solid rgba(232,184,75,.16)" }}>
-              <Avatar src={manage.user.avatarUrl ?? "champion"} size={48} />
+              <Avatar src={manage.user.avatarUrl ?? "champion"} size={48} onClick={() => navigate(`/profile/${manage.user.id}`)} />
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div style={{ font: "800 19px Cinzel,serif", color: "var(--gold-lt)" }}>{manage.user.displayName}</div>
                 <div style={{ font: "600 12px Inter", color: "var(--ink2)", marginTop: 2 }}>Current role · <b style={{ color: ROLE_COLOR[manage.role] }}>{ROLE_LABEL[manage.role]}</b></div>
