@@ -13,6 +13,7 @@ import { api } from "../../lib/api";
 import { Toasts } from "../shared/Toasts";
 import { TopUpModal } from "../store/TopUpModal";
 import { NotificationsMenu } from "../nav/NotificationsMenu";
+import { GlobalPlayerSearchModal } from "../nav/GlobalPlayerSearchModal";
 import { CookieConsent } from "../consent/CookieConsent";
 import { Footer } from "./Footer";
 import { OnboardingFlow } from "../onboarding/OnboardingFlow";
@@ -140,6 +141,7 @@ export function AppLayout() {
     if (me && !me.isGuest) void refreshDmUnread();
   }, [me, pathname, refreshDmUnread]);
   const [topUpOpen, setTopUpOpen] = useState(false);
+  const [searchOpen, setSearchOpen] = useState(false);
   const [notifOpen, setNotifOpen] = useState(false);
   const [notifUnread, setNotifUnread] = useState(0);
   const [menuOpen, setMenuOpen] = useState(false); // mobile hamburger drawer
@@ -366,6 +368,9 @@ export function AppLayout() {
                       <button onClick={() => setTopUpOpen(true)} title="Top up Diamonds" style={{ width: 22, height: 22, flex: "none", borderRadius: "50%", border: "none", background: "linear-gradient(180deg,#f0cf72,#c99a2e)", color: "#3a2405", font: "800 15px Inter", lineHeight: 1, cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" }}>+</button>
                     </span>
                   )}
+                  <button onClick={() => setSearchOpen(true)} title="Search players" style={{ width: 40, height: 40, borderRadius: 10, border: "1px solid rgba(232,184,75,.35)", background: "rgba(15,8,32,.6)", color: "var(--gold-lt)", cursor: "pointer", fontSize: 18 }}>
+                    🔍
+                  </button>
                   <button onClick={() => setNotifOpen((o) => !o)} title="Notifications" style={{ position: "relative", width: 40, height: 40, borderRadius: 10, border: "1px solid rgba(232,184,75,.35)", background: "rgba(15,8,32,.6)", color: "var(--gold-lt)", cursor: "pointer", fontSize: 18 }}>
                     🔔
                     {notifUnread > 0 && (
@@ -572,6 +577,7 @@ export function AppLayout() {
       <CookieConsent />
       <TopUpModal open={topUpOpen} onClose={() => setTopUpOpen(false)} />
       <NotificationsMenu open={notifOpen} onClose={() => setNotifOpen(false)} onUnreadChange={setNotifUnread} />
+      <GlobalPlayerSearchModal open={searchOpen} onClose={() => setSearchOpen(false)} />
     </>
   );
 }

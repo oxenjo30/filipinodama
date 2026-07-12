@@ -65,6 +65,22 @@ const ledgerQuerySchema = z.object({
   limit: z.coerce.number().int().min(1).max(100).default(50),
 });
 
+const userSearchQuerySchema = z.object({
+  q: z.string().optional().default(""),
+});
+
+/** Public search-result projection — only fields safe to show in a results list. */
+const searchSelect = {
+  id: true,
+  username: true,
+  displayName: true,
+  tag: true,
+  avatarUrl: true,
+  frameId: true,
+  trophies: true,
+  rankTier: true,
+} as const;
+
 export async function userRoutes(app: FastifyInstance) {
   // GET /api/users/:id — public profile (stats, rank tier, guild)
   app.get<{ Params: { id: string } }>("/users/:id", { preHandler: attachUser }, async (req) => {
@@ -106,6 +122,32 @@ export async function userRoutes(app: FastifyInstance) {
     }
 
     return ok({ user: { ...publicProfile(user), isBot: user.isBot, relationship, requestId } });
+  });
+
+  // GET /api/users/search?q= — global player search (topbar 🔍). Case-insensitive
+  // substring match on username, displayName, or tag. Bots and deleted accounts
+  // are excluded; guests ARE included (they're real players). Capped to 20
+  // results, and a query shorter than 2 chars returns empty (avoid full scans).
+  app.get("/users/search", { preHandler: requireAuth }, async (req) => {
+    const { q } = userSearchQuerySchema.parse(req.query);
+    const query = q.trim();
+    if (query.length < 2) return ok({ items: [] });
+
+    const users = await prisma.user.findMany({
+      where: {
+        isBot: false,
+        deletedAt: null,
+        OR: [
+          { username: { contains: query, mode: "insensitive" } },
+          { displayName: { contains: query, mode: "insensitive" } },
+          { tag: { contains: query, mode: "insensitive" } },
+        ],
+      },
+      select: searchSelect,
+      take: 20,
+      orderBy: { trophies: "desc" },
+    });
+    return ok({ items: users });
   });
 
   // PATCH /api/users/me — update own profile
