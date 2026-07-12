@@ -9,21 +9,40 @@ import { ICONS } from "../../lib/assets";
  * DailyLoginBonusModal — the prototype's "Daily Login Bonus" (handoff line 2599),
  * rebuilt server-authoritative. On first mount per browser day (for a signed-in,
  * non-guest account) it fetches GET /api/rewards/daily-login; if today's bonus
- * isn't claimed yet it pops the modal showing the 7-day gold track with today
- * highlighted. Claiming POSTs the endpoint, credits gold, and closes.
+ * isn't claimed yet it pops the modal showing the 7-day track with today
+ * highlighted. Claiming POSTs the endpoint, credits gold/diamonds, and closes.
  *
  * A per-day localStorage marker only suppresses the AUTO-POP (so it doesn't
  * reopen on every navigation) — it never gates the reward itself; the server is
  * the sole authority on whether the bonus is claimable.
+ *
+ * Reward types (v3 delta Cluster A7): the ladder is admin-configurable
+ * (Cluster A6) and a day can be gold, gem (diamonds), or — day 7 only — a
+ * grand chest of both. `trackFull` (one row per day, `{type:'gold'|'gem',amt}`
+ * or `{type:'chest',gold,gem}`) is the source of truth for rendering; `track`
+ * (gold-only numbers) is kept only as a fallback for a stale cached response
+ * that predates trackFull. With the default all-gold production ladder every
+ * row is `{type:'gold',amt}`, so the rendered tiles are pixel-identical to the
+ * old gold-only version — only a genuinely configured gem/chest day changes
+ * what's drawn.
  */
+
+type LadderRow = { type: "gold"; amt: number } | { type: "gem"; amt: number } | { type: "chest"; gold: number; gem: number };
 
 type LoginStatus = {
   day: number;
   claimedToday: boolean;
   rewardToday: number;
+  rewardGemsToday?: number;
   track: number[];
+  trackFull?: LadderRow[];
   streak: number;
 };
+
+/** Fallback when trackFull is absent (stale cache): synthesize all-gold rows from `track`. */
+function fallbackTrack(track: number[]): LadderRow[] {
+  return track.map((amt) => ({ type: "gold", amt }));
+}
 
 const SEEN_KEY = "fdr.loginBonusSeen"; // stores the UTC day-key we last auto-popped
 
@@ -80,9 +99,16 @@ export function DailyLoginBonusModal() {
     if (claiming || !status) return;
     setClaiming(true);
     try {
-      const res = await api.post<{ rewardGold: number; goldBalance: number; day: number }>("/api/rewards/daily-login");
-      patchMe({ gold: res.goldBalance });
-      showToast(`Daily bonus · +${res.rewardGold.toLocaleString()} Gold (Day ${res.day})`);
+      const res = await api.post<{ rewardGold: number; rewardGems?: number; goldBalance: number; gemsBalance?: number; day: number }>(
+        "/api/rewards/daily-login",
+      );
+      const patch: { gold: number; diamonds?: number } = { gold: res.goldBalance };
+      if (res.gemsBalance !== undefined) patch.diamonds = res.gemsBalance;
+      patchMe(patch);
+      const parts = [];
+      if (res.rewardGold > 0) parts.push(`+${res.rewardGold.toLocaleString()} Gold`);
+      if (res.rewardGems && res.rewardGems > 0) parts.push(`+${res.rewardGems.toLocaleString()} Diamonds`);
+      showToast(`Daily bonus · ${parts.join(" · ")} (Day ${res.day})`);
       setOpen(false);
     } catch (e) {
       // Already claimed (e.g. another tab) → just close gracefully.
@@ -107,12 +133,15 @@ export function DailyLoginBonusModal() {
         Log in every day to keep your streak — rewards grow all week.
       </p>
 
-      {/* 7-day track — today highlighted, earlier days marked done. */}
+      {/* 7-day track — today highlighted, earlier days marked done. Each day renders
+          its REAL configured reward (gold, gem, or day-7 chest); with the default
+          all-gold ladder every row is {type:'gold'}, so this looks identical to before. */}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(7,1fr)", gap: 7, marginBottom: 22 }}>
-        {status.track.map((gold, i) => {
+        {(status.trackFull ?? fallbackTrack(status.track)).map((row, i) => {
           const day = i + 1;
           const isToday = day === today;
           const isPast = day < today;
+          const isChestWithGem = row.type === "chest" && row.gem > 0;
           return (
             <div
               key={day}
@@ -131,10 +160,27 @@ export function DailyLoginBonusModal() {
               <div style={{ font: "700 9px Inter", letterSpacing: ".5px", color: isToday ? "var(--gold-lt)" : "var(--ink2)", textTransform: "uppercase" }}>
                 Day {day}
               </div>
-              <img src={ICONS.coin} alt="" width={20} height={20} style={{ objectFit: "contain", margin: "5px auto 3px", display: "block" }} />
-              <div style={{ font: "700 11px 'JetBrains Mono',monospace", color: isToday ? "#f2d493" : "var(--ink)" }}>
-                {gold.toLocaleString()}
-              </div>
+              {row.type === "gem" ? (
+                <>
+                  <img src={ICONS.gem} alt="" width={20} height={20} style={{ objectFit: "contain", margin: "5px auto 3px", display: "block" }} />
+                  <div style={{ font: "700 11px 'JetBrains Mono',monospace", color: isToday ? "#f2d493" : "var(--ink)" }}>{row.amt.toLocaleString()}</div>
+                </>
+              ) : isChestWithGem ? (
+                <>
+                  <img src={ICONS.chest} alt="" width={20} height={20} style={{ objectFit: "contain", margin: "5px auto 3px", display: "block" }} />
+                  <div style={{ font: "700 10px 'JetBrains Mono',monospace", color: isToday ? "#f2d493" : "var(--ink)", display: "flex", flexDirection: "column", gap: 1 }}>
+                    <span>{row.gold.toLocaleString()}🪙</span>
+                    <span>{row.gem.toLocaleString()}💎</span>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <img src={ICONS.coin} alt="" width={20} height={20} style={{ objectFit: "contain", margin: "5px auto 3px", display: "block" }} />
+                  <div style={{ font: "700 11px 'JetBrains Mono',monospace", color: isToday ? "#f2d493" : "var(--ink)" }}>
+                    {(row.type === "chest" ? row.gold : row.amt).toLocaleString()}
+                  </div>
+                </>
+              )}
               {isPast && <div style={{ font: "700 10px Inter", color: "#8ce0ad", marginTop: 2 }}>✓</div>}
             </div>
           );
@@ -147,8 +193,16 @@ export function DailyLoginBonusModal() {
         disabled={claiming}
         style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 10, padding: "14px 32px", fontSize: 15, width: "100%", opacity: claiming ? 0.7 : 1 }}
       >
-        <img src={ICONS.coin} alt="" width={20} height={20} style={{ objectFit: "contain" }} />
-        {claiming ? "Claiming…" : `Claim ${status.rewardToday.toLocaleString()} Gold`}
+        {status.rewardToday > 0 && <img src={ICONS.coin} alt="" width={20} height={20} style={{ objectFit: "contain" }} />}
+        {status.rewardGemsToday ? <img src={ICONS.gem} alt="" width={20} height={20} style={{ objectFit: "contain" }} /> : null}
+        {claiming
+          ? "Claiming…"
+          : `Claim ${[
+              status.rewardToday > 0 ? `${status.rewardToday.toLocaleString()} Gold` : null,
+              status.rewardGemsToday ? `${status.rewardGemsToday.toLocaleString()} Diamonds` : null,
+            ]
+              .filter(Boolean)
+              .join(" + ")}`}
       </button>
     </Modal>
   );
