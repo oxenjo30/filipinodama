@@ -114,3 +114,14 @@
   2. If you find TWO functions doing the same resolution (one local, one shared) and they disagree, the shared one is the bug surface — fix it and prefer deleting the local duplicate (or have the local one call the shared). Divergent copies hide bugs (the picker looked fine; matches didn't).
   3. For any <img> rendering user/opponent-controlled asset keys, add an onError fallback so a stale/unknown key never shows a broken-image glyph (guard against a fallback that itself fails → loop).
   4. avatarUrl contract in this repo: it stores a BARE key (e.g. "katipunero"); the file is /assets/avatars/<key>.png. grantDefaults stores the item id as that bare key. Keep resolver, picker, and seed aligned on this.
+
+## 2026-07-12 - Avatar resolver: default the ambiguous, don't build a maybe-404 URL
+
+- Mistake: After fixing bare-key avatars (58df3f8), the avatar() resolver STILL broke for some real users (e.g. leaderboard player "lmaw"): any avatarUrl containing "." or "/" was optimistically turned into /assets/avatars/<value>, on the assumption it named a real file. A store-item id / legacy / renamed value that ISN'T a served avatar file → 404 → broken portrait. The client <img onError>→champion fallback was the ONLY safety net, and only on a deployed bundle that includes it.
+- Cause: The "guarantee every avatar has a default" was living in the last-resort <img onError>, not in the resolver. A resolver that guesses (build a URL and hope it exists) pushes the failure to runtime; a resolver that only emits URLs it can confidently map makes the default deterministic.
+- Rule:
+  1. For any user-controlled asset key that MUST always render, the resolver is the guarantee: map known keys, pass through values that clearly point at a served file (leading /, http, assets/, avatars/, or a bare-key→<key>.png), and DEFAULT everything else to the known-good fallback. Never build an optimistic maybe-404 URL for an unrecognized value.
+  2. onError on <img> is the belt, not the suspenders — keep it, but don't rely on it for the guarantee (a stale bundle or a non-erroring 200-of-HTML can defeat it).
+  3. Decorative overlays (frames) also need an onError that HIDES them, so a broken decoration never sits as a broken square over valid content.
+  4. Verify resolver changes by simulating EVERY real value shape (null, map key, bare default-starter key, assetKey path, uploaded/remote URL, and weird/legacy values) and confirming no regression before shipping — the codebase's stored shapes are the spec.
+  5. When the user reports a broken avatar that "should have a default," first check whether the existing fix is actually DEPLOYED (a failing build can leave the fix committed-but-not-live) before assuming a new code bug.
