@@ -5,11 +5,14 @@ import { RANK_TIERS } from "@dama/shared";
 import { api } from "../lib/api";
 import { useAuth } from "../lib/auth";
 import { useAdminMutation, useToast } from "../lib/ui";
+import { avatar, frameArt } from "../lib/assets";
 
 type PlayerRow = {
   id: string; username: string; displayName: string; tag: string; email: string | null;
   rankTier: string; trophies: number; gold: number; diamonds: number; status: string; createdAt: string;
+  avatarUrl: string | null; online: boolean;
 };
+type Purchase = { id: string; name: string; currency: "GOLD" | "DIAMONDS" | "TOPUP"; price: number; createdAt: string };
 type Detail = PlayerRow & {
   bio: string | null; countryCode: string | null; isGuest: boolean; adminRole: string | null;
   wins: number; losses: number; draws: number; streak: number;
@@ -17,6 +20,8 @@ type Detail = PlayerRow & {
   guildMember: { guild: { name: string; tag: string }; role: string } | null;
   ledger: { id: string; currency: string; amount: number; reason: string; createdAt: string }[];
   openReportsAgainst: number;
+  frameId: string | null;
+  purchases: Purchase[];
 };
 type MatchRow = { id: string; mode: string; winner: string | null; startedAt: string; red: { username: string } | null; blue: { username: string } | null };
 
@@ -32,6 +37,60 @@ function initials(name: string): string {
   if (parts.length === 0) return "?";
   if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
   return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+}
+
+/** Relative time ("Xm/h/d ago") — handoffv3 row 21's `_agoLabel`. */
+function agoLabel(iso: string): string {
+  const ms = Date.now() - new Date(iso).getTime();
+  const min = Math.floor(ms / 60000);
+  if (min < 1) return "just now";
+  if (min < 60) return `${min}m ago`;
+  const hr = Math.floor(min / 60);
+  if (hr < 24) return `${hr}h ago`;
+  const d = Math.floor(hr / 24);
+  return `${d}d ago`;
+}
+
+const CURRENCY_ICON: Record<Purchase["currency"], string> = { GOLD: "🪙", DIAMONDS: "💎", TOPUP: "💳" };
+
+/** Small green "Live" pill — real presence (handoffv3 row 19), shown when the player has an active socket. */
+function LivePill() {
+  return <span className="badge-rect live-pill">● Live</span>;
+}
+
+/**
+ * Real avatar + optional frame overlay (handoffv3 row 20), falling back to the
+ * existing initials circle when avatarUrl is null. Renders INSIDE the caller's
+ * same-size token class (`.fd-avatar.*` or `.pd-av`) — layout metrics unchanged.
+ */
+function PlayerAvatar({ avatarUrl, frameId, name, className }: { avatarUrl: string | null; frameId?: string | null; name: string; className: string }) {
+  if (!avatarUrl) return <div className={className}>{initials(name)}</div>;
+  const frameSrc = frameId ? frameArt(frameId) : null;
+  return (
+    <div className={className} style={{ position: "relative", padding: 0, overflow: "visible" }}>
+      <img
+        src={avatar(avatarUrl)}
+        alt=""
+        draggable={false}
+        onError={(e) => {
+          const img = e.currentTarget;
+          const fallback = avatar("champion");
+          if (img.src !== fallback) img.src = fallback;
+        }}
+        style={{ width: "100%", height: "100%", borderRadius: "50%", objectFit: "cover", objectPosition: "50% 12%", display: "block" }}
+      />
+      {frameSrc && (
+        <img
+          src={frameSrc}
+          alt=""
+          aria-hidden
+          draggable={false}
+          onError={(e) => { e.currentTarget.style.display = "none"; }}
+          style={{ position: "absolute", inset: "-16%", width: "132%", height: "132%", objectFit: "contain", pointerEvents: "none" }}
+        />
+      )}
+    </div>
+  );
 }
 
 // Drawer action-button styles — copied verbatim from the mockup (actDefs).
@@ -82,6 +141,19 @@ export function PlayersPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [q, filter]);
 
+  // Liveness refresh (handoffv3 rows 22-23 adaptation): the "Live" presence
+  // pill is real server state, not a localStorage bridge, so there's no push
+  // channel into this page (admin has no sockets). Cheaply re-poll the list on
+  // window focus and every 60s while this page is mounted so presence changes
+  // (and any other admin's concurrent edits) show up without a manual refresh.
+  useEffect(() => {
+    const onFocus = () => load(q);
+    window.addEventListener("focus", onFocus);
+    const t = setInterval(() => load(q), 60_000);
+    return () => { window.removeEventListener("focus", onFocus); clearInterval(t); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [q, filter]);
+
   return (
     <>
       <div className="row" style={{ marginBottom: 16, gap: 10, flexWrap: "wrap" }}>
@@ -116,9 +188,12 @@ export function PlayersPage() {
                   <tr key={p.id} className="arow" style={{ cursor: "pointer" }} onClick={() => setSelId(p.id)}>
                     <td>
                       <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                        <div className="fd-avatar md">{initials(p.displayName || p.username)}</div>
+                        <PlayerAvatar avatarUrl={p.avatarUrl} name={p.displayName || p.username} className="fd-avatar md" />
                         <div>
-                          <div style={{ font: "700 12.5px var(--sans)", color: "var(--ink-2)" }}>{p.displayName}</div>
+                          <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                            <span style={{ font: "700 12.5px var(--sans)", color: "var(--ink-2)" }}>{p.displayName}</span>
+                            {p.online && <LivePill />}
+                          </div>
                           <div className="dim mono" style={{ fontSize: 10.5, fontWeight: 500 }}>{p.tag}</div>
                         </div>
                       </div>
@@ -240,9 +315,12 @@ function PlayerDrawer({ id, onClose, onChanged }: { id: string; onClose: () => v
           <>
             {/* Header: avatar · name · tag·email · close */}
             <div className="pd-head">
-              <div className="pd-av">{initials(d.displayName || d.username)}</div>
+              <PlayerAvatar avatarUrl={d.avatarUrl} frameId={d.frameId} name={d.displayName || d.username} className="pd-av" />
               <div style={{ flex: 1, minWidth: 0 }}>
-                <div className="pd-name">{d.displayName}</div>
+                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                  <div className="pd-name">{d.displayName}</div>
+                  {d.online && <LivePill />}
+                </div>
                 <div className="pd-sub">{d.tag}{d.email ? ` · ${d.email}` : ""}</div>
               </div>
               <button className="pd-close" onClick={onClose} aria-label="Close">✕</button>
@@ -273,6 +351,22 @@ function PlayerDrawer({ id, onClose, onChanged }: { id: string; onClose: () => v
                       <span className={`pd-res ${m.res === "W" ? "win" : m.res === "L" ? "loss" : "draw"}`}>{m.res}</span>
                       <span className="pd-opp">vs {m.opp}</span>
                       <span className="pd-mode">{m.mode}</span>
+                    </div>
+                  ))
+                )}
+              </div>
+
+              {/* Recent purchases (handoffv3 row 21) — real orders + top-ups, newest first, ≤8. */}
+              <div className="pd-section-l">RECENT PURCHASES</div>
+              <div className="pd-purchases">
+                {d.purchases.length === 0 ? (
+                  <div className="pd-empty">No purchases yet.</div>
+                ) : (
+                  d.purchases.map((pu) => (
+                    <div key={pu.id} className="pd-purchase">
+                      <span className="pd-pu-name">{pu.name}</span>
+                      <span className="pd-pu-price">{CURRENCY_ICON[pu.currency]} {pu.price.toLocaleString()}</span>
+                      <span className="pd-pu-when">{agoLabel(pu.createdAt)}</span>
                     </div>
                   ))
                 )}

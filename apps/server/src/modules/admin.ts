@@ -8,6 +8,7 @@ import { audit } from "../lib/audit.js";
 import { applyLedger } from "../economy/ledger.js";
 import { sendEmail, banEmailHtml } from "../lib/email.js";
 import { muteUser, banUser } from "../lib/sanctions.js";
+import { isOnline } from "../realtime/presence.js";
 
 /**
  * Admin console API — /api/admin/*. Every route is role-gated by requireAdmin()
@@ -194,7 +195,7 @@ export async function adminRoutes(app: FastifyInstance) {
       total,
       page: q.page,
       limit: q.limit,
-      items: rows.map((u) => ({ ...u, status: statusOf(u) })),
+      items: rows.map((u) => ({ ...u, status: statusOf(u), online: isOnline(u.id) })),
     });
   });
 
@@ -221,7 +222,32 @@ export async function adminRoutes(app: FastifyInstance) {
       select: { id: true, currency: true, amount: true, reason: true, refType: true, refId: true, createdAt: true },
     });
     const openReportsAgainst = await prisma.report.count({ where: { accusedId: u.id, status: "OPEN" } });
-    return ok({ ...u, status: statusOf(u), ledger, openReportsAgainst });
+    // RECENT PURCHASES (handoffv3 row 21) — real orders for this player, newest
+    // first, capped at 8. Merges in-game item purchases (Order rows, spent
+    // GOLD/DIAMONDS) with real-money diamond top-ups (settled Payment rows) —
+    // the same normalization GET /orders uses for the player-facing app, just
+    // admin-scoped to one userId and capped at 8 instead of 100.
+    const [orders, payments] = await Promise.all([
+      prisma.order.findMany({ where: { userId: u.id }, orderBy: { createdAt: "desc" }, take: 8 }),
+      prisma.payment.findMany({ where: { userId: u.id, status: "settled" }, orderBy: { settledAt: "desc" }, take: 8 }),
+    ]);
+    type PurchaseRow = { id: string; name: string; currency: "GOLD" | "DIAMONDS" | "TOPUP"; price: number; createdAt: Date };
+    const itemPurchases: PurchaseRow[] = orders.map((o) => {
+      const items = Array.isArray(o.items) ? (o.items as { name?: string }[]) : [];
+      const name = items[0]?.name ?? "Store item";
+      return { id: o.id, name, currency: o.currency as "GOLD" | "DIAMONDS", price: o.total, createdAt: o.createdAt };
+    });
+    const topupPurchases: PurchaseRow[] = payments.map((p) => ({
+      id: p.id,
+      name: `${p.diamonds} Diamonds — top-up`,
+      currency: "TOPUP",
+      price: p.amountCents,
+      createdAt: p.settledAt ?? p.createdAt,
+    }));
+    const purchases = [...itemPurchases, ...topupPurchases]
+      .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())
+      .slice(0, 8);
+    return ok({ ...u, status: statusOf(u), online: isOnline(u.id), ledger, openReportsAgainst, purchases });
   });
 
   // ── 1.3 Player recent matches (SUPPORT) ────────────────────────────────────
