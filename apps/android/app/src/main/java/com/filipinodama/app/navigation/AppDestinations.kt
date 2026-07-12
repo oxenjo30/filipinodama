@@ -50,4 +50,14 @@ object AppDestinations {
 
     /** Live Match Browser — mobile-screen-inventory.md SCREEN 22 ("Watch Live"). */
     const val LIVE_MATCH_BROWSER = "play/live"
+
+    // Phase 5 (economy surfaces): reached from Home hub cards / Store /
+    // Profile quick-links per mobile-screen-inventory.md §2 SCREENs 11, 13,
+    // 23, 24, 33. All are non-tab screens with an explicit back target
+    // (Home), matching the "explicit back target per screen" convention.
+    const val INVENTORY = "economy/inventory"
+    const val ORDERS = "economy/orders"
+    const val DAILY_REWARD = "economy/daily-reward"
+    const val QUESTS = "economy/quests"
+    const val SEASON = "economy/season"
 }

@@ -42,6 +42,18 @@ object AuthRepository {
 
     fun isOnboarded(): Boolean = ApiClient.secureStore.getBoolean(SecureStore.KEY_ONBOARDED)
 
+    /**
+     * Replaces the cached session user in-place (e.g. after
+     * [com.filipinodama.app.data.economy.EconomyRepository] applies a fresh
+     * server-confirmed gold/diamonds balance from a purchase or claim). A
+     * no-op when nobody is signed in, so a stray call after logout can't
+     * resurrect a session.
+     */
+    fun patchUser(user: AuthUser) {
+        if (_state.value.user == null) return
+        _state.value = _state.value.copy(user = user)
+    }
+
     fun setOnboarded() {
         ApiClient.secureStore.putBoolean(SecureStore.KEY_ONBOARDED, true)
     }

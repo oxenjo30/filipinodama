@@ -34,6 +34,11 @@ import com.filipinodama.app.ui.screens.game.OfflineGameScreen
 import com.filipinodama.app.ui.screens.game.OnlineMatchScreen
 import com.filipinodama.app.ui.screens.rooms.LiveMatchBrowserScreen
 import com.filipinodama.app.ui.screens.rooms.PrivateRoomScreen
+import com.filipinodama.app.ui.screens.economy.DailyRewardsScreen
+import com.filipinodama.app.ui.screens.economy.InventoryScreen
+import com.filipinodama.app.ui.screens.economy.OrdersScreen
+import com.filipinodama.app.ui.screens.economy.QuestsScreen
+import com.filipinodama.app.ui.screens.economy.SeasonScreen
 
 /**
  * NAVIGATION NOTES (see tasks/handoffv3-audit/mobile-screen-inventory.md,
@@ -173,10 +178,45 @@ fun AppNavHost() {
                 )
             }
 
-            composable(AppDestinations.HOME) { HomeScreen() }
-            composable(AppDestinations.STORE) { StoreScreen() }
+            composable(AppDestinations.HOME) {
+                HomeScreen(
+                    onQuickMatch = { navController.navigate(AppDestinations.matchmaking("CASUAL")) },
+                    onDailyReward = { navController.navigate(AppDestinations.DAILY_REWARD) },
+                    onQuests = { navController.navigate(AppDestinations.QUESTS) },
+                    onSeason = { navController.navigate(AppDestinations.SEASON) },
+                    onResumeMatch = { mode ->
+                        navController.navigate(AppDestinations.onlineMatch(mode)) {
+                            popUpTo(AppDestinations.HOME)
+                        }
+                    }
+                )
+            }
+            composable(AppDestinations.STORE) {
+                StoreScreen(onOpenInventory = { navController.navigate(AppDestinations.INVENTORY) })
+            }
             composable(AppDestinations.GUILD) { GuildScreen() }
             composable(AppDestinations.PROFILE) { ProfileScreen() }
+
+            // ---- Phase 5: economy surfaces ----
+            composable(AppDestinations.INVENTORY) {
+                InventoryScreen(onBrowseStore = {
+                    navController.navigate(AppDestinations.STORE) { popUpTo(AppDestinations.HOME) }
+                })
+            }
+            composable(AppDestinations.ORDERS) {
+                OrdersScreen(onBrowseStore = {
+                    navController.navigate(AppDestinations.STORE) { popUpTo(AppDestinations.HOME) }
+                })
+            }
+            composable(AppDestinations.DAILY_REWARD) {
+                DailyRewardsScreen(onBack = { navController.popBackStack() })
+            }
+            composable(AppDestinations.QUESTS) {
+                QuestsScreen(onBack = { navController.popBackStack() })
+            }
+            composable(AppDestinations.SEASON) {
+                SeasonScreen(onBack = { navController.popBackStack() })
+            }
 
             // ---- Phase 3: gameplay core (Play tab) ----
             // Play tab -> Mode Select directly (go('mode') in the prototype).
