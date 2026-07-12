@@ -205,6 +205,13 @@ export async function authRoutes(app: FastifyInstance) {
       // Real-money diamond top-up availability (default OFF → gold-only store).
       // Drives whether the client shows the buy-diamonds UI / nav diamond pill.
       diamondTopUp: features.payments,
+      // Public OAuth client ID, shared verbatim with every client (web + Android)
+      // per the owner's shared-credentials directive — no mobile-specific keys.
+      // Client IDs are public identifiers (not secrets; this is the same value
+      // Google's ID token `aud` claim already contains), so exposing it here is
+      // safe. null when the feature is off, so callers don't have to also check
+      // `google` before trusting this value.
+      googleClientId: features.googleOAuth ? env.GOOGLE_CLIENT_ID : null,
     });
   });
 }

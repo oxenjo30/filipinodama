@@ -112,7 +112,12 @@ data class ProvidersResponse(
     val google: Boolean = false,
     val facebook: Boolean = false,
     val emailDelivery: Boolean = false,
-    val diamondTopUp: Boolean = false
+    val diamondTopUp: Boolean = false,
+    // Public Google OAuth client ID, shared verbatim from the server (same value
+    // the web client's redirect flow and the server's GOOGLE_CLIENT_ID env var
+    // already use) — no Android-specific client ID. null when Google sign-in is
+    // off server-side. See GoogleSignInHelper.resolveClientId().
+    val googleClientId: String? = null
 )
 
 /**

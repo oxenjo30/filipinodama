@@ -24,10 +24,18 @@ import com.google.android.libraries.identity.googleid.GoogleIdTokenParsingExcept
  * callback (see AuthRepository.googleSignIn / apps/server/src/auth/oauth.ts
  * verifyGoogleIdToken + findOrCreateOAuthUser).
  *
- * `serverClientId` MUST be the WEB OAuth client ID — the same one the
+ * The server client ID MUST be the WEB OAuth client ID — the same one the
  * server's GOOGLE_CLIENT_ID env var already validates token audience
- * against — NOT a separate Android-specific client ID. See
- * apps/android/README.md for the required Google Cloud Console step (an
+ * against — NOT a separate Android-specific client ID. Per the owner's
+ * shared-credentials directive (web and mobile share API credentials, no
+ * mobile-specific keys/config), this is now resolved from the SERVER at
+ * runtime via GET /api/auth/providers' `googleClientId` field
+ * (AuthRepository.providers), not from Android-side BuildConfig — see
+ * [resolveClientId]. `BuildConfig.GOOGLE_SERVER_CLIENT_ID` survives only as
+ * a local-dev override for pointing a debug build at a different client ID
+ * than whatever the server currently returns; it is never required.
+ *
+ * See apps/android/README.md for the required Google Cloud Console step (an
  * ANDROID OAuth client registered with this app's package name + debug
  * SHA-1, in the SAME Google Cloud project as the web client) that this
  * depends on; until that registration exists, credential retrieval below
@@ -44,15 +52,46 @@ object GoogleSignInHelper {
     }
 
     /**
+     * Resolves which Google OAuth client ID to hand Credential Manager, or
+     * null if none is available. Resolution order:
+     *  1. `serverClientId` (the server's `providers.googleClientId`, from GET
+     *     /api/auth/providers) — the shared web/server credential, per the
+     *     owner's directive that web and mobile must never carry separate
+     *     keys.
+     *  2. `localOverride` ([BuildConfig.GOOGLE_SERVER_CLIENT_ID]) ONLY when
+     *     the server value is null/blank AND the override is non-blank —
+     *     keeps a local-dev override possible (e.g. pointing at a different
+     *     client ID than whatever a shared dev server currently returns)
+     *     without it ever being required for normal operation.
+     *  3. null — "not configured" is the honest state; never fabricate a
+     *     value.
+     *
+     * `localOverride` is a parameter (rather than reading [BuildConfig]
+     * directly) so this stays a pure function callable from a plain JVM unit
+     * test without a build-variant-specific BuildConfig value in play.
+     */
+    fun resolveClientId(serverClientId: String?, localOverride: String = BuildConfig.GOOGLE_SERVER_CLIENT_ID): String? {
+        if (!serverClientId.isNullOrBlank()) return serverClientId
+        if (localOverride.isNotBlank()) return localOverride
+        return null
+    }
+
+    /**
      * Launches the Credential Manager bottom sheet and resolves to the
      * Google ID token, or an honest failure message — never a fabricated
      * success. Distinguishes a user-cancelled picker ([Result.Cancelled], no
      * error banner needed) from a genuine "no Google account on this device"
      * / "not configured" failure (surfaced to the caller like any other auth
      * error, per the web's "surface the real error, never invent copy" rule).
+     *
+     * `serverClientId` is the caller's current best-known value of
+     * `providers.googleClientId` (AuthRepository.providers) — the caller is
+     * responsible for having refreshed providers if stale/absent before
+     * invoking this, same as it already does for the `providers.google` gate.
      */
-    suspend fun requestIdToken(context: Context): Result {
-        if (BuildConfig.GOOGLE_SERVER_CLIENT_ID.isBlank()) {
+    suspend fun requestIdToken(context: Context, serverClientId: String?): Result {
+        val clientId = resolveClientId(serverClientId)
+        if (clientId == null) {
             return Result.Failure(
                 "Google sign-in is not configured yet. See apps/android/README.md."
             )
@@ -60,7 +99,7 @@ object GoogleSignInHelper {
 
         val googleIdOption = GetGoogleIdOption.Builder()
             .setFilterByAuthorizedAccounts(false)
-            .setServerClientId(BuildConfig.GOOGLE_SERVER_CLIENT_ID)
+            .setServerClientId(clientId)
             .setAutoSelectEnabled(false)
             .build()
 

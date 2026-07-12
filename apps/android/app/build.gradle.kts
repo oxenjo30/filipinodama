@@ -18,16 +18,21 @@ android {
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
-        // Google Sign-In (Credential Manager) server client ID — this MUST be the
-        // WEB OAuth client ID (the same one the server's GOOGLE_CLIENT_ID env var
-        // already verifies token audience against), NOT a separate Android client
-        // ID. Client IDs are not secrets, but this is still left unconfigured by
-        // default so no project-specific value is hardcoded in source control.
-        // Supply it via a Gradle property (gradle.properties, not checked in) or
-        // an environment variable:
+        // Google Sign-In (Credential Manager) server client ID — OPTIONAL local-dev
+        // override only. Per the owner's shared-credentials directive (web and
+        // mobile share API credentials, no mobile-specific keys/config), the app
+        // resolves this from the SERVER at runtime via GET /api/auth/providers'
+        // `googleClientId` field (see GoogleSignInHelper.resolveClientId) — the
+        // same WEB OAuth client ID the server's GOOGLE_CLIENT_ID env var already
+        // verifies token audience against. This BuildConfig field is used ONLY as
+        // a fallback when the server value is unavailable (e.g. pointing a debug
+        // build at a different client ID than whatever a shared dev server
+        // currently returns); it is never required for normal operation. Supply
+        // it via a Gradle property (gradle.properties, not checked in) or an
+        // environment variable if you need the override:
         //   GOOGLE_SERVER_CLIENT_ID=xxxxxxxx.apps.googleusercontent.com
-        // See apps/android/README.md for the full Google Cloud Console setup step
-        // (Android OAuth client + debug SHA-1) this depends on.
+        // See apps/android/README.md for the Google Cloud Console app-registration
+        // step (Android OAuth client + debug SHA-1) Google sign-in still depends on.
         val googleServerClientId = (project.findProperty("GOOGLE_SERVER_CLIENT_ID") as String?)
             ?: System.getenv("GOOGLE_SERVER_CLIENT_ID")
             ?: ""

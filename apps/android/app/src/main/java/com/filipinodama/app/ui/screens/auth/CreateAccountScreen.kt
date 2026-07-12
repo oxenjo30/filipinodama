@@ -83,7 +83,7 @@ fun CreateAccountScreen(
         error = null
         googleBusy = true
         scope.launch {
-            val credentialResult = GoogleSignInHelper.requestIdToken(context)
+            val credentialResult = GoogleSignInHelper.requestIdToken(context, providers.googleClientId)
             when (val outcome = resolveCredentialResult(credentialResult)) {
                 is GoogleSignInOutcome.Cancelled -> { /* user backed out — no error, no navigation */ }
                 is GoogleSignInOutcome.Error -> error = outcome.message

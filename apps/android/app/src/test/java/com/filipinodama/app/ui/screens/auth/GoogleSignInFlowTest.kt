@@ -14,8 +14,13 @@ import org.junit.Test
 /**
  * Unit tests for the Google Sign-In button's pure decision logic
  * (GoogleSignInFlow.kt), covering:
- *  - [googleButtonEnabled] — gated ONLY on providers.google, matching
- *    AuthPage.tsx's `disabled={!googleOn}` exactly.
+ *  - [googleButtonEnabled] — gated on providers.google AND a resolvable
+ *    client ID (see GoogleSignInHelper.resolveClientId), matching
+ *    AuthPage.tsx's `disabled={!googleOn}` plus the Android-only
+ *    runtime-client-ID requirement — the app now resolves the Google OAuth
+ *    client ID from the SERVER (providers.googleClientId) at runtime rather
+ *    than a hardcoded Android BuildConfig value, per the owner's
+ *    shared-web/mobile-credentials directive.
  *  - [resolveCredentialResult] / [resolveServerAuthResult] — the two-step
  *    token-flow state machine (Credential Manager result -> optional server
  *    round-trip -> terminal UI outcome), covering the honest failure states
@@ -28,18 +33,87 @@ class GoogleSignInFlowTest {
     // ---- googleButtonEnabled ----
 
     @Test
-    fun `button enabled only when providers google is true`() {
-        assertTrue(googleButtonEnabled(ProvidersResponse(google = true)))
-        assertFalse(googleButtonEnabled(ProvidersResponse(google = false)))
+    fun `button enabled when providers google is true and server supplies a client ID`() {
+        assertTrue(googleButtonEnabled(ProvidersResponse(google = true, googleClientId = "server-client-id.apps.googleusercontent.com")))
+    }
+
+    @Test
+    fun `button disabled when providers google is false, even with a client ID present`() {
+        assertFalse(googleButtonEnabled(ProvidersResponse(google = false, googleClientId = "server-client-id.apps.googleusercontent.com")))
+    }
+
+    @Test
+    fun `button disabled when providers google is true but the server has no client ID and there is no local override`() {
+        // GoogleSignInHelper.resolveClientId's default parameter reads the
+        // real BuildConfig.GOOGLE_SERVER_CLIENT_ID, which is unset (blank) in
+        // this repo's default build — so with no server value either, no
+        // client ID is resolvable and the button must stay disabled rather
+        // than lie about being ready.
+        assertFalse(googleButtonEnabled(ProvidersResponse(google = true, googleClientId = null)))
     }
 
     @Test
     fun `button gating ignores every other provider flag`() {
         val allElseOn = ProvidersResponse(
             email = true, guest = true, google = false, facebook = true,
-            emailDelivery = true, diamondTopUp = true
+            emailDelivery = true, diamondTopUp = true,
+            googleClientId = "server-client-id.apps.googleusercontent.com"
         )
         assertFalse(googleButtonEnabled(allElseOn))
+    }
+
+    // ---- GoogleSignInHelper.resolveClientId — the resolution order itself ----
+
+    @Test
+    fun `resolveClientId prefers the server value when present`() {
+        assertEquals(
+            "server-client-id.apps.googleusercontent.com",
+            GoogleSignInHelper.resolveClientId(
+                serverClientId = "server-client-id.apps.googleusercontent.com",
+                localOverride = "local-override-client-id.apps.googleusercontent.com"
+            )
+        )
+    }
+
+    @Test
+    fun `resolveClientId falls back to the local override only when the server value is null`() {
+        assertEquals(
+            "local-override-client-id.apps.googleusercontent.com",
+            GoogleSignInHelper.resolveClientId(
+                serverClientId = null,
+                localOverride = "local-override-client-id.apps.googleusercontent.com"
+            )
+        )
+    }
+
+    @Test
+    fun `resolveClientId falls back to the local override when the server value is blank`() {
+        assertEquals(
+            "local-override-client-id.apps.googleusercontent.com",
+            GoogleSignInHelper.resolveClientId(
+                serverClientId = "",
+                localOverride = "local-override-client-id.apps.googleusercontent.com"
+            )
+        )
+    }
+
+    @Test
+    fun `resolveClientId returns null (honest not-configured) when both server and local override are absent`() {
+        assertNull(GoogleSignInHelper.resolveClientId(serverClientId = null, localOverride = ""))
+    }
+
+    @Test
+    fun `resolveClientId never uses the local override when the server already supplied a value`() {
+        // Confirms the server value truly wins outright rather than merely
+        // being tried first among equals — the shared-credentials directive
+        // means the server is authoritative whenever it has an answer.
+        assertEquals(
+            "server-client-id.apps.googleusercontent.com",
+            GoogleSignInHelper.resolveClientId(
+                serverClientId = "server-client-id.apps.googleusercontent.com",
+                localOverride = "should-never-be-used.apps.googleusercontent.com"
+            )
+        )
     }
 
     // ---- resolveCredentialResult ----

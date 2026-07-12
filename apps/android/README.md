@@ -78,52 +78,65 @@ Google-signed ID token that `POST /api/auth/oauth/google/token` verifies
 server-side (same `GOOGLE_CLIENT_ID` env var, same find-or-create-user logic
 as the web's OAuth redirect flow — see `apps/server/src/auth/oauth.ts`).
 
-**This does not work out of the box.** Until the console step below is done,
-tapping "Continue with Google" fails at credential retrieval on-device (or is
-disabled if `GOOGLE_SERVER_CLIENT_ID` is unset — see below), even though the
-client and server code paths are fully wired.
+**No Android-side client-ID configuration is needed.** Per the owner's
+shared-credentials directive — web and mobile share API credentials, no
+mobile-specific keys/config — the app fetches the Google OAuth client ID from
+the server at runtime (`GET /api/auth/providers` → `googleClientId`, the same
+value already configured server-side as `GOOGLE_CLIENT_ID`) rather than
+reading it from an Android `BuildConfig` value. `GoogleSignInHelper.resolveClientId()`
+prefers that server value; only a genuinely absent server value falls back to
+an optional local-dev override (see "Optional: local-dev client-ID override"
+below), and if neither is available the button is disabled with an honest
+"Google sign-in is not configured yet" state — never a fabricated success.
 
-### 1. Get the debug keystore's SHA-1 fingerprint
+**This still does not work out of the box.** The one remaining item is
+registering this app's package + signing signature in Google Cloud Console —
+an **app registration, NOT a new key/secret** — so Credential Manager can
+issue a credential for this app at all. Until that registration exists,
+tapping "Continue with Google" fails at credential retrieval on-device even
+though the client and server code paths are fully wired.
 
-```sh
-keytool -list -v -keystore %USERPROFILE%\.android\debug.keystore -alias androiddebugkey -storepass android
-```
-
-(macOS/Linux: `~/.android/debug.keystore` instead of `%USERPROFILE%\.android\debug.keystore`.)
-Copy the `SHA1:` value from the output.
-
-### 2. Register an Android OAuth client in Google Cloud Console
+### Register this app's signature in the existing Google Cloud project
 
 In the **same Google Cloud project as the existing web OAuth client**
-(the one behind the server's `GOOGLE_CLIENT_ID`/`GOOGLE_CLIENT_SECRET`):
+(the one behind the server's `GOOGLE_CLIENT_ID`/`GOOGLE_CLIENT_SECRET` —
+do **not** create a new project or a new client secret):
 
-1. Go to **APIs & Services → Credentials → Create Credentials → OAuth client ID**.
-2. Application type: **Android**.
-3. Package name: `com.filipinodama.app`.
-4. SHA-1 certificate fingerprint: the value from step 1 (debug). Add the
-   **release** signing key's SHA-1 here too once a real release keystore
+1. Get the debug keystore's SHA-1 fingerprint:
+   ```sh
+   keytool -list -v -keystore %USERPROFILE%\.android\debug.keystore -alias androiddebugkey -storepass android
+   ```
+   (macOS/Linux: `~/.android/debug.keystore` instead of
+   `%USERPROFILE%\.android\debug.keystore`.) Copy the `SHA1:` value from the
+   output. For this build, that value is:
+   ```
+   F7:0D:21:15:EB:C0:2E:AD:39:B4:33:D3:90:B5:8E:CA:F5:7B:DA:5B
+   ```
+2. Go to **APIs & Services → Credentials → Create Credentials → OAuth client ID**.
+3. Application type: **Android**.
+4. Package name: `com.filipinodama.app`.
+5. SHA-1 certificate fingerprint: the value from step 1 (debug, above). Add
+   the **release** signing key's SHA-1 here too once a real release keystore
    exists (see "Release / AAB" above — release builds are unsigned today).
-5. Save. (No client secret is issued for Android clients — Credential
-   Manager authenticates via the signed APK + this registration instead.)
+6. Save. (No client secret is issued for Android clients — Credential
+   Manager authenticates via the signed APK + this registration instead, and
+   nothing here is a mobile-specific credential the app itself holds.)
 
-This Android client registration is what lets Credential Manager return a
-real Google credential for this app's package/signature. It does **not**
-replace the web client ID — the app authenticates *against* the existing web
-client ID (next step), the Android registration just authorizes this app's
-package+signature to participate.
+This registration is what lets Credential Manager return a real Google
+credential for this app's package/signature. It does **not** create or
+replace any client ID — the app authenticates *against* the existing shared
+web client ID, which it now reads from the server (see above); this step
+only authorizes this app's package+signature to participate in that same
+OAuth client's flows.
 
-### 3. Configure `GOOGLE_SERVER_CLIENT_ID`
+### Optional: local-dev client-ID override
 
-`GetGoogleIdOption.serverClientId` (in `GoogleSignInHelper.kt`) must be set to
-the **WEB** OAuth client ID — the same one already configured as the server's
-`GOOGLE_CLIENT_ID` — NOT the Android client ID created in step 2. This is by
-design: Google's ID token audience (`aud`) is the *server-verifying* client,
-so it must match what `apps/server/src/config/env.ts`'s `GOOGLE_CLIENT_ID`
-expects, or the server's audience check rejects the token (401
-`OAUTH_AUDIENCE_MISMATCH`).
-
-Client IDs are not secrets, but no project-specific value is hardcoded in
-source control — supply it via a Gradle property or environment variable:
+`GoogleSignInHelper.resolveClientId()` falls back to
+`BuildConfig.GOOGLE_SERVER_CLIENT_ID` ONLY when the server's
+`providers.googleClientId` is null/blank — e.g. pointing a debug build at a
+different client ID than whatever a shared dev server currently returns.
+This is never required for normal operation; leave it unset unless you have
+a specific reason to override the server value locally:
 
 ```properties
 # apps/android/local.properties (gitignored) or a global gradle.properties
@@ -136,18 +149,14 @@ or
 GOOGLE_SERVER_CLIENT_ID=xxxxxxxxxxxx.apps.googleusercontent.com ./gradlew assembleDebug
 ```
 
-With it unset (the default), `BuildConfig.GOOGLE_SERVER_CLIENT_ID` is `""`
-and `GoogleSignInHelper` returns an honest "Google sign-in is not configured
-yet" failure instead of attempting a credential request.
-
 ### Unverified state
 
-As of this change, steps 1–3 above have **not** been performed by an
-operator with Google Cloud Console access — only the code paths (server
-endpoint, Android UI, Credential Manager wiring) are built and tested. Once
-the console registration exists and `GOOGLE_SERVER_CLIENT_ID` is supplied,
-on-device credential retrieval should be manually verified on an emulator or
-device with a Google account signed in.
+As of this change, the console registration step above has **not** been
+performed by an operator with Google Cloud Console access — only the code
+paths (server endpoint + `googleClientId` field, Android runtime resolution,
+Credential Manager wiring) are built and tested. Once the registration
+exists, on-device credential retrieval should be manually verified on an
+emulator or device with a Google account signed in.
 
 ## Fonts
 

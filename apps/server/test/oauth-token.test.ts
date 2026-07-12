@@ -161,12 +161,68 @@ describe("POST /api/auth/oauth/google/token — route (feature OFF, this environ
     await app.close();
   });
 
-  it("GET /api/auth/providers → google:false in this environment", async () => {
+  it("GET /api/auth/providers → google:false and googleClientId:null in this environment", async () => {
     const app = await buildTestApp();
     const res = await app.inject({ method: "GET", url: "/api/auth/providers" });
     expect(res.statusCode).toBe(200);
     expect(res.json().data.google).toBe(false);
+    expect(res.json().data.googleClientId).toBeNull();
     await app.close();
+  });
+});
+
+/**
+ * GET /api/auth/providers — googleClientId derivation, feature ON.
+ *
+ * The route derives `googleClientId` as `features.googleOAuth ?
+ * env.GOOGLE_CLIENT_ID : null` (apps/server/src/auth/routes.ts). We can't
+ * flip `features.googleOAuth` to true for a real app-boot/HTTP test in this
+ * file (see the header comment above: `env`/`features` are parsed once from
+ * `.env.test` at import time, and this repo's `.env.test` ships with no
+ * Google credentials — the same constraint that keeps the rest of this file
+ * testing the "off" state against a real server). Rebuilding the *entire*
+ * app (DB client, rate limiter, every route module) against a mutated env
+ * via `vi.resetModules()` would be heavy and fragile, since most of those
+ * modules also import `config/env.js` at their own module scope.
+ *
+ * Instead, this isolates exactly the derivation the route performs: reset
+ * the module registry, set `GOOGLE_CLIENT_ID`/`GOOGLE_CLIENT_SECRET` in
+ * `process.env`, and re-import the *single* `config/env.js` module fresh —
+ * proving `features.googleOAuth` flips true and the exact expression the
+ * route uses evaluates to the real client ID, byte for byte.
+ */
+describe("GET /api/auth/providers — googleClientId derivation, feature ON", () => {
+  const ORIGINAL_ENV = { ...process.env };
+
+  afterEach(() => {
+    process.env = { ...ORIGINAL_ENV };
+    vi.resetModules();
+  });
+
+  it("features.googleOAuth flips true and googleClientId resolves to env.GOOGLE_CLIENT_ID when both Google vars are set", async () => {
+    vi.resetModules();
+    process.env.GOOGLE_CLIENT_ID = "test-web-client-id.apps.googleusercontent.com";
+    process.env.GOOGLE_CLIENT_SECRET = "test-client-secret";
+
+    const fresh = await import("../src/config/env.js");
+    expect(fresh.features.googleOAuth).toBe(true);
+
+    // The exact expression apps/server/src/auth/routes.ts uses for the
+    // providers response's googleClientId field.
+    const googleClientId = fresh.features.googleOAuth ? fresh.env.GOOGLE_CLIENT_ID : null;
+    expect(googleClientId).toBe("test-web-client-id.apps.googleusercontent.com");
+  });
+
+  it("googleClientId stays null when only GOOGLE_CLIENT_ID is set (no secret ⇒ feature still off)", async () => {
+    vi.resetModules();
+    process.env.GOOGLE_CLIENT_ID = "test-web-client-id.apps.googleusercontent.com";
+    delete process.env.GOOGLE_CLIENT_SECRET;
+
+    const fresh = await import("../src/config/env.js");
+    expect(fresh.features.googleOAuth).toBe(false);
+
+    const googleClientId = fresh.features.googleOAuth ? fresh.env.GOOGLE_CLIENT_ID : null;
+    expect(googleClientId).toBeNull();
   });
 });
 
