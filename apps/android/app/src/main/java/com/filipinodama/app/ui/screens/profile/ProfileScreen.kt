@@ -77,7 +77,8 @@ import kotlinx.coroutines.launch
 fun ProfileScreen(
     onSignedOut: () -> Unit = {},
     onOpenReplay: (String) -> Unit = {},
-    onOpenFriends: () -> Unit = {}
+    onOpenFriends: () -> Unit = {},
+    onOpenSettings: () -> Unit = {}
 ) {
     val authState by AuthRepository.state.collectAsState()
     val me = authState.user
@@ -165,12 +166,11 @@ fun ProfileScreen(
         ) {
             ProfileActionChip("Edit Profile", modifier = androidx.compose.ui.Modifier.weight(1f)) { editOpen = true }
             ProfileActionChip("👥 Friends", modifier = androidx.compose.ui.Modifier.weight(1f), onClick = onOpenFriends)
-            ProfileActionChip("Sign Out", modifier = androidx.compose.ui.Modifier.weight(1f)) {
-                scope.launch {
-                    AuthRepository.logout()
-                    onSignedOut()
-                }
-            }
+            // Sign Out now lives inside Settings (mobile-screen-inventory.md
+            // SCREEN 10 Settings-tab row 19), alongside Delete Account/legal/
+            // contact-support — this chip routes there instead of signing out
+            // directly, matching the inventory's Settings-owns-Sign-Out shape.
+            ProfileActionChip("⚙ Settings", modifier = androidx.compose.ui.Modifier.weight(1f), onClick = onOpenSettings)
         }
 
         // ── tabs ──

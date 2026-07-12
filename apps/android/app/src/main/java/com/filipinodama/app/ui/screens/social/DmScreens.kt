@@ -147,8 +147,10 @@ fun DmThreadScreen(userId: String, onBack: () -> Unit) {
     val scope = rememberCoroutineScope()
     var draft by remember { mutableStateOf("") }
     var reportTarget by remember { mutableStateOf<Pair<String, String>?>(null) } // id to body
+    // Phase 7 retry affordance: bump to re-run the thread-open call below.
+    var retryTick by remember { mutableStateOf(0) }
 
-    LaunchedEffect(userId) {
+    LaunchedEffect(userId, retryTick) {
         DmRepository.openThread(userId)
     }
 
@@ -187,7 +189,15 @@ fun DmThreadScreen(userId: String, onBack: () -> Unit) {
             when {
                 dmState.loadingThread && dmState.messages.isEmpty() -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator(color = Gold) }
                 dmState.error != null && dmState.messages.isEmpty() -> Box(Modifier.fillMaxSize().padding(24.dp), contentAlignment = Alignment.Center) {
-                    Text(dmState.error!!, color = Ink2, style = MaterialTheme.typography.bodyMedium, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Text(dmState.error!!, color = Ink2, style = MaterialTheme.typography.bodyMedium, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
+                        Text(
+                            "Retry",
+                            color = GoldLt,
+                            style = MaterialTheme.typography.labelLarge,
+                            modifier = Modifier.padding(top = 12.dp).clickable { retryTick++ }
+                        )
+                    }
                 }
                 dmState.messages.isEmpty() -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                     Text("No messages yet.\nSay hello 👋", color = Ink2, style = MaterialTheme.typography.bodyMedium, textAlign = androidx.compose.ui.text.style.TextAlign.Center)

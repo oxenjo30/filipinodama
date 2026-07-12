@@ -224,8 +224,11 @@ private fun EmptyInventoryState(onBrowseStore: () -> Unit) {
 fun OrdersScreen(onBrowseStore: () -> Unit = {}) {
     var receipts by remember { mutableStateOf<List<ReceiptDto>?>(null) }
     var error by remember { mutableStateOf<String?>(null) }
+    // Phase 7 retry affordance: bump to re-run the load effect below.
+    var retryTick by remember { mutableStateOf(0) }
 
-    LaunchedEffect(Unit) {
+    LaunchedEffect(retryTick) {
+        error = null
         when (val result = EconomyRepository.orders()) {
             is EconomyResult.Success -> receipts = result.data.receipts
             is EconomyResult.Failure -> error = result.message
@@ -238,7 +241,15 @@ fun OrdersScreen(onBrowseStore: () -> Unit = {}) {
 
         when {
             error != null -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                Text(error ?: "Could not load your orders.", color = Ink2, style = MaterialTheme.typography.bodyMedium)
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Text(error ?: "Could not load your orders.", color = Ink2, style = MaterialTheme.typography.bodyMedium)
+                    Text(
+                        "Retry",
+                        color = GoldLt,
+                        style = MaterialTheme.typography.labelLarge,
+                        modifier = Modifier.padding(top = 12.dp).clickable { retryTick++ }
+                    )
+                }
             }
             receipts == null -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator(color = Gold) }
             receipts!!.isEmpty() -> Column(

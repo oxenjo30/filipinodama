@@ -85,4 +85,16 @@ object AppDestinations {
     const val DM_LIST = "social/messages"
     const val DM_THREAD = "social/messages/{userId}"
     fun dmThread(userId: String) = "social/messages/$userId"
+
+    // Phase 7 (settings, legal, delete account, system states): Settings is
+    // reached from Profile's quick-links (mobile-screen-inventory.md SCREEN
+    // 10 "Settings tab" rows folded into a dedicated screen — Android's
+    // ProfileScreen has no tab switcher yet, see SettingsScreen.kt kdoc).
+    // Legal takes an initial document key so About/Legal rows deep-link
+    // straight to the tapped document (Terms/Privacy/etc.), matching
+    // apps/web's separate /terms /privacy /community /anti-cheat /data
+    // routes collapsed into one screen with an in-screen tab switch.
+    const val SETTINGS = "profile/settings"
+    const val LEGAL = "profile/legal/{doc}"
+    fun legal(doc: String) = "profile/legal/$doc"
 }

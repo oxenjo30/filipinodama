@@ -71,7 +71,15 @@ fun SeasonScreen(onBack: () -> Unit = {}) {
 
         when {
             error != null -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                Text(error ?: "", color = Ink2, style = MaterialTheme.typography.bodyMedium)
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Text(error ?: "", color = Ink2, style = MaterialTheme.typography.bodyMedium)
+                    Text(
+                        "Retry",
+                        color = GoldLt,
+                        style = MaterialTheme.typography.labelLarge,
+                        modifier = Modifier.padding(top = 12.dp).clickable { scope.launch { load() } }
+                    )
+                }
             }
             data == null -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator(color = Gold) }
             else -> {

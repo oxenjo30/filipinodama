@@ -1,11 +1,25 @@
 package com.filipinodama.app.navigation
 
 import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Scaffold
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.navigation.NavDestination.Companion.hierarchy
 import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.NavType
@@ -14,9 +28,13 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
+import com.filipinodama.app.data.config.ConfigRepository
+import com.filipinodama.app.data.config.MaintenanceState
 import com.filipinodama.app.data.match.GameRepository
 import com.filipinodama.app.data.match.MatchRepository
 import com.filipinodama.app.data.rooms.RoomRepository
+import com.filipinodama.app.data.system.ConnectivityObserver
+import com.filipinodama.app.data.system.offlineBannerVisible
 import com.filipinodama.app.ui.screens.HomeScreen
 import com.filipinodama.app.ui.screens.OnboardingScreen
 import com.filipinodama.app.ui.screens.profile.ProfileScreen
@@ -41,12 +59,17 @@ import com.filipinodama.app.ui.screens.economy.SeasonScreen
 import com.filipinodama.app.ui.screens.leaderboard.LeaderboardScreen
 import com.filipinodama.app.ui.screens.profile.PublicProfileScreen
 import com.filipinodama.app.ui.screens.profile.ReplayViewerScreen
+import com.filipinodama.app.ui.screens.settings.LegalScreen
+import com.filipinodama.app.ui.screens.settings.SettingsScreen
+import com.filipinodama.app.ui.screens.system.MaintenanceScreen
+import com.filipinodama.app.ui.screens.system.OfflineBanner
 import com.filipinodama.app.data.AuthRepository
 import com.filipinodama.app.ui.screens.social.DmConversationListScreen
 import com.filipinodama.app.ui.screens.social.DmThreadScreen
 import com.filipinodama.app.ui.screens.social.FriendsScreen
 import com.filipinodama.app.ui.screens.social.GuildHallScreen
 import com.filipinodama.app.ui.screens.social.NotificationsScreen
+import kotlinx.coroutines.launch
 
 /**
  * NAVIGATION NOTES (see tasks/handoffv3-audit/mobile-screen-inventory.md,
@@ -116,13 +139,67 @@ fun AppNavHost() {
         }
     }
 
-    Scaffold(
-        bottomBar = {
-            if (showTabBar) {
-                BottomTabBar(navController)
+    // ── System states (Phase 7): maintenance gate + offline banner ──
+    //
+    // Maintenance takeover (SYSTEM_STATES.md z-index 380, highest full-screen
+    // layer): re-checked on app start AND on every return to foreground
+    // (ON_RESUME), matching the task spec's "app start + on foreground" gate
+    // and apps/web AppLayout.tsx's own "purely additive, re-fetched" pattern
+    // for the same GET /api/config/public endpoint. Blocks the ENTIRE app
+    // (not just a dismissible banner like web's desktop nav banner) per
+    // mobile-screen-inventory.md SCREEN 1 being a full-screen `sc-if` gate.
+    val maintenance by ConfigRepository.maintenance.collectAsState()
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    val lifecycleOwner = LocalLifecycleOwner.current
+
+    LaunchedEffect(Unit) { ConfigRepository.refresh() }
+
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) {
+                scope.launch { ConfigRepository.refresh() }
             }
         }
-    ) { innerPadding ->
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
+
+    // Offline strip (SYSTEM_STATES.md z-index 400 — "coexists above
+    // everything", including the maintenance takeover). Pure boolean derived
+    // from ConnectivityManager via ConnectivityObserver -> offlineBannerVisible.
+    var isOnline by remember { mutableStateOf(true) }
+    DisposableEffect(context) {
+        var job: kotlinx.coroutines.Job? = null
+        job = scope.launch {
+            ConnectivityObserver.observe(context).collect { online -> isOnline = online }
+        }
+        onDispose { job?.cancel() }
+    }
+
+    if (maintenance is MaintenanceState.Active) {
+        val message = (maintenance as MaintenanceState.Active).message
+        Column(modifier = Modifier.fillMaxSize()) {
+            OfflineBanner(visible = offlineBannerVisible(isOnline))
+            Box(modifier = Modifier.fillMaxSize()) {
+                MaintenanceScreen(
+                    message = message,
+                    onCheckAgain = { scope.launch { ConfigRepository.refresh() } }
+                )
+            }
+        }
+        return
+    }
+
+    Column(modifier = Modifier.fillMaxSize()) {
+        OfflineBanner(visible = offlineBannerVisible(isOnline))
+        Scaffold(
+            bottomBar = {
+                if (showTabBar) {
+                    BottomTabBar(navController)
+                }
+            }
+        ) { innerPadding ->
         NavHost(
             navController = navController,
             startDestination = AppDestinations.SPLASH,
@@ -213,8 +290,26 @@ fun AppNavHost() {
                         goClearingStack(AppDestinations.LOGIN)
                     },
                     onOpenReplay = { matchId -> navController.navigate(AppDestinations.replay(matchId)) },
-                    onOpenFriends = { navController.navigate(AppDestinations.FRIENDS) }
+                    onOpenFriends = { navController.navigate(AppDestinations.FRIENDS) },
+                    onOpenSettings = { navController.navigate(AppDestinations.SETTINGS) }
                 )
+            }
+
+            // ---- Phase 7: settings, legal, delete account, system states ----
+            composable(AppDestinations.SETTINGS) {
+                SettingsScreen(
+                    onBack = { navController.popBackStack() },
+                    onSignedOut = { goClearingStack(AppDestinations.LOGIN) },
+                    onOpenInventory = { navController.navigate(AppDestinations.INVENTORY) },
+                    onOpenLegal = { doc -> navController.navigate(AppDestinations.legal(doc)) }
+                )
+            }
+            composable(
+                route = AppDestinations.LEGAL,
+                arguments = listOf(navArgument("doc") { type = NavType.StringType })
+            ) { backStackEntry ->
+                val doc = backStackEntry.arguments?.getString("doc") ?: "terms"
+                LegalScreen(initialKey = doc, onBack = { navController.popBackStack() })
             }
 
             // ---- Phase 6b: friends + DM, guilds, notifications, report flow ----
@@ -428,6 +523,7 @@ fun AppNavHost() {
                     }
                 )
             }
+        }
         }
     }
 }

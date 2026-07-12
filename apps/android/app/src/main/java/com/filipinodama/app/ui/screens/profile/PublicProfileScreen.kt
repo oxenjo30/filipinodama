@@ -87,8 +87,10 @@ fun PublicProfileScreen(
     var friendBusy by remember { mutableStateOf(false) }
     var reportOpen by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
+    // Phase 7 retry affordance: bump to re-run both load effects below.
+    var retryTick by remember { mutableStateOf(0) }
 
-    LaunchedEffect(userId) {
+    LaunchedEffect(userId, retryTick) {
         user = null
         notFound = false
         error = false
@@ -104,7 +106,7 @@ fun PublicProfileScreen(
         }
     }
 
-    LaunchedEffect(userId) {
+    LaunchedEffect(userId, retryTick) {
         extras = null
         when (val result = ProfileRepository.profileExtras(userId)) {
             is ProfileResult.Success -> extras = result.data
@@ -123,7 +125,15 @@ fun PublicProfileScreen(
                 }
             }
             error -> Box(Modifier.fillMaxSize().padding(40.dp), contentAlignment = Alignment.Center) {
-                Text("Couldn't load this profile.", color = Ink2, style = MaterialTheme.typography.bodyMedium)
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Text("Couldn't load this profile.", color = Ink2, style = MaterialTheme.typography.bodyMedium)
+                    Text(
+                        "Retry",
+                        color = GoldLt,
+                        style = MaterialTheme.typography.labelLarge,
+                        modifier = Modifier.padding(top = 12.dp).clickable { retryTick++ }
+                    )
+                }
             }
             user == null -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator(color = Gold) }
             else -> {

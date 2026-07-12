@@ -70,8 +70,10 @@ fun ReplayViewerScreen(matchId: String, onBack: () -> Unit) {
     var ply by remember { mutableStateOf(0) }
     var playing by remember { mutableStateOf(false) }
     var speed by remember { mutableStateOf(1) }
+    // Phase 7 retry affordance: bump to re-run the load effect below.
+    var retryTick by remember { mutableStateOf(0) }
 
-    LaunchedEffect(matchId) {
+    LaunchedEffect(matchId, retryTick) {
         match = null
         states = null
         loadError = null
@@ -122,7 +124,15 @@ fun ReplayViewerScreen(matchId: String, onBack: () -> Unit) {
         val st = states
         when {
             loadError != null -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                Text(loadError ?: "Could not load this replay.", color = Ink2, style = MaterialTheme.typography.bodyMedium)
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Text(loadError ?: "Could not load this replay.", color = Ink2, style = MaterialTheme.typography.bodyMedium)
+                    Text(
+                        "Retry",
+                        color = GoldLt,
+                        style = MaterialTheme.typography.labelLarge,
+                        modifier = Modifier.padding(top = 12.dp).clickable { retryTick++ }
+                    )
+                }
             }
             m == null || st == null -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 CircularProgressIndicator(color = Gold)

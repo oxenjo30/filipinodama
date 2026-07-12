@@ -90,8 +90,12 @@ fun StoreScreen(onOpenInventory: () -> Unit = {}) {
     var owned by remember { mutableStateOf<Set<String>>(emptySet()) }
     var tab by remember { mutableStateOf("All") }
     var buyFlow by remember { mutableStateOf<BuyFlowState>(BuyFlowState.Idle) }
+    // Phase 7 retry affordance: bump to re-run the catalog load below.
+    var retryTick by remember { mutableStateOf(0) }
 
-    LaunchedEffect(Unit) {
+    LaunchedEffect(retryTick) {
+        items = null
+        loadError = false
         when (val result = EconomyRepository.storeItems()) {
             is EconomyResult.Success -> items = result.data.items
             is EconomyResult.Failure -> {
@@ -184,7 +188,7 @@ fun StoreScreen(onOpenInventory: () -> Unit = {}) {
                 items == null -> Box(Modifier.fillMaxWidth().padding(vertical = 40.dp), contentAlignment = Alignment.Center) {
                     CircularProgressIndicator(color = Gold)
                 }
-                grid.isEmpty() -> EmptyStoreState(loadError)
+                grid.isEmpty() -> EmptyStoreState(loadError, onRetry = { retryTick++ })
                 else -> {
                     LazyVerticalGrid(
                         columns = GridCells.Fixed(2),
@@ -268,13 +272,23 @@ private fun CategoryChip(label: String, selected: Boolean, onClick: () -> Unit) 
 }
 
 @Composable
-private fun EmptyStoreState(loadError: Boolean) {
+private fun EmptyStoreState(loadError: Boolean, onRetry: () -> Unit = {}) {
     Box(Modifier.fillMaxWidth().padding(vertical = 40.dp), contentAlignment = Alignment.Center) {
-        Text(
-            if (loadError) "The store is unavailable right now — please try again soon." else "No items in this category yet — check back soon.",
-            color = Ink2,
-            style = MaterialTheme.typography.bodyMedium
-        )
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            Text(
+                if (loadError) "The store is unavailable right now — please try again soon." else "No items in this category yet — check back soon.",
+                color = Ink2,
+                style = MaterialTheme.typography.bodyMedium
+            )
+            if (loadError) {
+                Text(
+                    "Retry",
+                    color = GoldLt,
+                    style = MaterialTheme.typography.labelLarge,
+                    modifier = Modifier.padding(top = 12.dp).clickable(onClick = onRetry)
+                )
+            }
+        }
     }
 }
 
