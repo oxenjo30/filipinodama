@@ -118,6 +118,15 @@ data class AuthUser(
     val gold: Int = 0,
     val diamonds: Int = 0,
     val rankTier: String? = null,
+    // Match record (Phase 6a) — publicUser() (apps/server/src/auth/service.ts)
+    // includes these on every /api/auth/me response; ProfilePage.tsx reads
+    // them directly off useAuthStore().me for its stat tiles/achievements.
+    // Declared here (were previously silently dropped by ignoreUnknownKeys)
+    // rather than re-derived from a second endpoint.
+    val wins: Int = 0,
+    val losses: Int = 0,
+    val draws: Int = 0,
+    val streak: Int = 0,
     // Equipped cosmetics (Phase 5) — publicUser() carries the equipped item
     // IDS for board/skin/frame, and the equipped AVATAR's assetKey on
     // avatarUrl (the server persists an avatar equip as its assetKey — see

@@ -31,8 +31,10 @@ import com.filipinodama.app.data.economy.ActiveMatchDto
 import com.filipinodama.app.data.economy.EconomyRepository
 import com.filipinodama.app.data.economy.EconomyResult
 import com.filipinodama.app.data.economy.QuestDto
+import com.filipinodama.app.data.engine.RankTiers
 import com.filipinodama.app.data.match.MatchRepository
 import com.filipinodama.app.data.match.PublicUserDto
+import com.filipinodama.app.ui.screens.profile.AvatarView
 import com.filipinodama.app.ui.theme.Gold
 import com.filipinodama.app.ui.theme.GoldLt
 import com.filipinodama.app.ui.theme.Ink
@@ -41,6 +43,12 @@ import com.filipinodama.app.ui.theme.Panel
 
 /**
  * Home hub — mobile-screen-inventory.md SCREEN 5. Rows built this phase:
+ *   0. Identity header (Phase 6a) — avatar+frame, name, tier badge "DATU III"
+ *      per mobile-screen-inventory.md SCREEN 5 row 1 ("whole block tappable
+ *      -> go.leaderboard"). Tier is derived from RankTiers.forTrophies(me.trophies)
+ *      (a Kotlin port of @dama/shared rankTierFor), the SAME real trophies
+ *      value AuthRepository already caches — this IS the leaderboard's real
+ *      documented entry point from Home, not a new affordance.
  *   1. Currency header (gold + diamonds from AuthRepository, refreshed via
  *      GET /api/auth/me on Splash and patched live after any economy action).
  *   2. Continue Playing resume card (GET /api/matches/active) — tap resumes
@@ -65,7 +73,8 @@ fun HomeScreen(
     onDailyReward: () -> Unit = {},
     onQuests: () -> Unit = {},
     onSeason: () -> Unit = {},
-    onResumeMatch: (mode: String) -> Unit = {}
+    onResumeMatch: (mode: String) -> Unit = {},
+    onOpenLeaderboard: () -> Unit = {}
 ) {
     val authState by AuthRepository.state.collectAsState()
     val me = authState.user
@@ -100,6 +109,17 @@ fun HomeScreen(
             .padding(20.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
+        if (me != null) {
+            IdentityHeader(
+                displayName = me.displayName,
+                tag = me.tag,
+                trophies = me.trophies,
+                avatarUrl = me.avatarUrl,
+                frameId = me.frameId,
+                onClick = onOpenLeaderboard
+            )
+        }
+
         CurrencyHeader(gold = me?.gold ?: 0, diamonds = me?.diamonds ?: 0)
 
         if (loadingActive) {
@@ -145,6 +165,40 @@ fun HomeScreen(
         }
 
         SeasonPassBanner(onClick = onSeason)
+    }
+}
+
+/**
+ * Identity header — mobile-screen-inventory.md SCREEN 5 row 1: "avatar (+
+ * equipped frame overlay if any) + online-dot, name, tier badge... whole
+ * block tappable -> go.leaderboard". This IS the leaderboard's real Home
+ * entry point (confirmed against the inventory doc's NAVIGATION MODEL
+ * section: "From Home hub: ... leaderboard (tap identity)").
+ */
+@Composable
+private fun IdentityHeader(
+    displayName: String,
+    tag: String,
+    trophies: Int,
+    avatarUrl: String?,
+    frameId: String?,
+    onClick: () -> Unit
+) {
+    val tier = RankTiers.forTrophies(trophies)
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .background(Panel, RoundedCornerShape(14.dp))
+            .padding(14.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        AvatarView(avatarUrl = avatarUrl, frameId = frameId, size = 44.dp)
+        Column(modifier = Modifier.weight(1f).padding(start = 12.dp)) {
+            Text(displayName, color = androidx.compose.ui.graphics.Color.White, style = MaterialTheme.typography.titleMedium, maxLines = 1)
+            Text("${tier.label} · 🏆 $trophies", color = GoldLt, style = MaterialTheme.typography.labelSmall, modifier = Modifier.padding(top = 2.dp))
+        }
+        Text("›", color = Gold, style = MaterialTheme.typography.titleMedium)
     }
 }
 

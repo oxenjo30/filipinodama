@@ -20,7 +20,7 @@ import com.filipinodama.app.data.rooms.RoomRepository
 import com.filipinodama.app.ui.screens.GuildScreen
 import com.filipinodama.app.ui.screens.HomeScreen
 import com.filipinodama.app.ui.screens.OnboardingScreen
-import com.filipinodama.app.ui.screens.ProfileScreen
+import com.filipinodama.app.ui.screens.profile.ProfileScreen
 import com.filipinodama.app.ui.screens.SplashDestination
 import com.filipinodama.app.ui.screens.SplashScreen
 import com.filipinodama.app.ui.screens.StoreScreen
@@ -39,6 +39,9 @@ import com.filipinodama.app.ui.screens.economy.InventoryScreen
 import com.filipinodama.app.ui.screens.economy.OrdersScreen
 import com.filipinodama.app.ui.screens.economy.QuestsScreen
 import com.filipinodama.app.ui.screens.economy.SeasonScreen
+import com.filipinodama.app.ui.screens.leaderboard.LeaderboardScreen
+import com.filipinodama.app.ui.screens.profile.PublicProfileScreen
+import com.filipinodama.app.ui.screens.profile.ReplayViewerScreen
 
 /**
  * NAVIGATION NOTES (see tasks/handoffv3-audit/mobile-screen-inventory.md,
@@ -188,14 +191,49 @@ fun AppNavHost() {
                         navController.navigate(AppDestinations.onlineMatch(mode)) {
                             popUpTo(AppDestinations.HOME)
                         }
-                    }
+                    },
+                    onOpenLeaderboard = { navController.navigate(AppDestinations.LEADERBOARD) }
                 )
             }
             composable(AppDestinations.STORE) {
                 StoreScreen(onOpenInventory = { navController.navigate(AppDestinations.INVENTORY) })
             }
             composable(AppDestinations.GUILD) { GuildScreen() }
-            composable(AppDestinations.PROFILE) { ProfileScreen() }
+            composable(AppDestinations.PROFILE) {
+                ProfileScreen(
+                    onSignedOut = {
+                        goClearingStack(AppDestinations.LOGIN)
+                    },
+                    onOpenReplay = { matchId -> navController.navigate(AppDestinations.replay(matchId)) }
+                )
+            }
+
+            // ---- Phase 6a: profile + social (replay viewer, public profiles, leaderboard) ----
+            composable(
+                route = AppDestinations.REPLAY,
+                arguments = listOf(navArgument("matchId") { type = NavType.StringType })
+            ) { backStackEntry ->
+                val matchId = backStackEntry.arguments?.getString("matchId") ?: ""
+                ReplayViewerScreen(matchId = matchId, onBack = { navController.popBackStack() })
+            }
+
+            composable(
+                route = AppDestinations.PUBLIC_PROFILE,
+                arguments = listOf(navArgument("userId") { type = NavType.StringType })
+            ) { backStackEntry ->
+                val userId = backStackEntry.arguments?.getString("userId") ?: ""
+                PublicProfileScreen(
+                    userId = userId,
+                    onOpenReplay = { matchId -> navController.navigate(AppDestinations.replay(matchId)) }
+                )
+            }
+
+            composable(AppDestinations.LEADERBOARD) {
+                LeaderboardScreen(
+                    onOpenPublicProfile = { userId -> navController.navigate(AppDestinations.publicProfile(userId)) },
+                    onBack = { navController.popBackStack() }
+                )
+            }
 
             // ---- Phase 5: economy surfaces ----
             composable(AppDestinations.INVENTORY) {

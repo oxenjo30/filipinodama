@@ -60,4 +60,15 @@ object AppDestinations {
     const val DAILY_REWARD = "economy/daily-reward"
     const val QUESTS = "economy/quests"
     const val SEASON = "economy/season"
+
+    // Phase 6a (profile + social): match history replay, public player
+    // profiles, leaderboard — reached from Profile tab / leaderboard rows /
+    // Home hub identity header (mobile-screen-inventory.md SCREENs 10, 25,
+    // 28 + the Replay Viewer overlay). All are non-tab screens with an
+    // explicit back target, matching the Phase 5 economy-surface convention.
+    const val REPLAY = "profile/replay/{matchId}"
+    fun replay(matchId: String) = "profile/replay/$matchId"
+    const val PUBLIC_PROFILE = "profile/public/{userId}"
+    fun publicProfile(userId: String) = "profile/public/$userId"
+    const val LEADERBOARD = "social/leaderboard"
 }
