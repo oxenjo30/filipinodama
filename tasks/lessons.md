@@ -1,5 +1,14 @@
 # Lessons
 
+## 2026-07-12 - Commit landed on the wrong branch (concurrent session switched HEAD mid-task)
+
+- Mistake: Created + checked out `feat/monetization-dark`, worked for ~1h, then committed — and the commit landed on `feat/native-android-scaffold` because a concurrent session had switched the repo's checked-out branch (and added its own commit) in the meantime.
+- Cause: This repo is worked by multiple sessions on ONE shared checkout. `git branch --show-current` verified at task START is stale by commit time; nothing re-verifies HEAD at the moment of `git commit`.
+- Rule:
+  1. Re-verify `git branch --show-current` in the SAME command chain as the commit (`git branch --show-current; git commit …` and check the `[branch hash]` line git prints), not minutes earlier.
+  2. If the commit lands on the wrong branch and the intended branch points at the commit's parent: fix non-destructively with `git branch -f <intended> <commit>` (pure fast-forward) + `git checkout <intended>` + `git branch -f <wrong-branch> <commit>^` (restore its exact prior tip). Never rebase/cherry-pick — that duplicates the commit and diverges from the shared working tree.
+  3. For real isolation from concurrent sessions, use a `git worktree` (existing 2026-07-10 lesson) — a shared checkout's HEAD is never yours alone.
+
 ## 2026-07-11 - Test passed locally, failed in CI (hidden dependency on seeded DB data)
 
 - Mistake: `emote-defaults.test.ts` asserted `grantDefaults` equips free emotes, but it depended on free-emote StoreItem rows EXISTING in the DB. Passed locally (my DB had store items from prior manual seeds); failed in CI with `expected 0 to be greater than 0`.
