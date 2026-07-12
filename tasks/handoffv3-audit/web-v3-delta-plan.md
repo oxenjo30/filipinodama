@@ -75,11 +75,33 @@ roomState broadcasts.
 - Row 35 wallet persistence: gold/diamonds/inventory are server-authoritative DB + ledger.
   COVERED.
 
-## Cluster W8 — Payment-adjacent (rows 36,37) — BLOCKED-POLICY / minor
-- Row 36 (fdr.topupReceipts → order history, "App Store · Apple Pay"): real-money top-up is
-  DISABLED (gold-only economy; PayMongo dormant; Apple/Google IAP removed per HANDOFF_STATUS).
-  Do NOT implement receipt sync until owner confirms monetization. Tracked as intentionally
-  blocked.
+## Cluster W8 — Payment-adjacent (rows 36,37) — row 36 IMPLEMENTED-DARK / row 37 minor
+- Row 36 (fdr.topupReceipts → order history, "App Store · Apple Pay"): OWNER DECISION
+  (2026-07-12) — build the full diamond top-up feature but ship it DARK (hidden) behind the
+  existing `DIAMOND_TOPUP_ENABLED` env master switch, pending legal clearance. Status: fully
+  built (feat/monetization-dark branch), not a fabricated "App Store · Apple Pay" — the real
+  PayMongo methods ("GCash / Maya / Card") are used throughout:
+    - Server gate: `features.payments = DIAMOND_TOPUP_ENABLED && PayMongo keys present`
+      (config/env.ts). `/payments/checkout` throws notConfigured and `/payments/packs`
+      reports `enabled:false` when off (modules/payments.ts). `/auth/providers` exposes
+      `diamondTopUp: features.payments`; `/config/public` additionally exposes
+      `DIAMOND_TOPUP_ENABLED` (modules/admin-config.ts) for unauthenticated callers.
+    - Web gate: `providers.diamondTopUp` (from GET /api/auth/providers) hides the Store's
+      "Currency" category button + TopUpModal trigger (StorePage.tsx), and the AppLayout
+      diamond balance pill + top-up "+" button in both desktop and mobile nav
+      (AppLayout.tsx). While dark, none of this renders — today's player experience is
+      unchanged.
+    - TopUpModal.tsx: full v3 "Get Diamonds" modal — live packs from GET
+      /api/payments/packs, checkout → POST /api/payments/checkout → redirect to the
+      PayMongo URL, live balance display.
+    - Purchase History: OrdersPage.tsx + GET /api/orders (modules/store.ts) merge Order +
+      settled Payment rows into one receipt list, honest method label "GCash / Maya /
+      Card" (never a fabricated storefront). Renders from real data unconditionally, so a
+      past purchaser always sees their history even while the feature is dark for everyone
+      else — this is intentional (real receipts are never hidden).
+  To go live: flip `DIAMOND_TOPUP_ENABLED=true` in Railway + swap `PAYMONGO_WEBHOOK_SECRET`
+  to the LIVE secret. No other switch exists (env is the sole master by design). See
+  modules/payments.ts header comment for the full runbook.
 - Row 37 (cross-tab profile sync): production refetches /me on route changes + socket keeps
   session live; add a lightweight storage/broadcast sync only if a real gap shows in testing.
 

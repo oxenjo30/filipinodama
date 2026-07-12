@@ -12,6 +12,31 @@ import { applyLedger, applyLedgerTx } from "../economy/ledger.js";
  * signature-verified webhook, on the single event `checkout_session.payment.paid`
  * (we deliberately ignore `payment.paid` to avoid double-crediting). Amounts are
  * PHP centavos. If PayMongo keys are absent, checkout returns notConfigured.
+ *
+ * ── Monetization dark-launch (2026-07-12) ──
+ * The full diamond top-up feature (this module, the web Store "Currency" tab +
+ * TopUpModal, the AppLayout diamond pill/top-up button, and Purchase History
+ * top-up receipts in GET /api/orders) is built and production-ready, but ships
+ * DARK: hidden from every player until the owner clears it for legal reasons.
+ *
+ * The single master switch is `DIAMOND_TOPUP_ENABLED` (config/env.ts), combined
+ * with the presence of PayMongo keys into `features.payments`:
+ *   features.payments = DIAMOND_TOPUP_ENABLED && PAYMONGO_SECRET_KEY && PAYMONGO_WEBHOOK_SECRET
+ * `/payments/checkout` throws notConfigured and `/payments/packs` reports
+ * `enabled:false` whenever `features.payments` is false — this is enforced HERE,
+ * server-side, not by the client hiding a button. The client mirrors the same
+ * gate for UX (GET /api/auth/providers → `diamondTopUp`, and GET
+ * /api/config/public → `DIAMOND_TOPUP_ENABLED`), so the "Get Diamonds" UI never
+ * even renders while dark, but the server-side gate is what actually protects it.
+ *
+ * To go live: in Railway, set `DIAMOND_TOPUP_ENABLED=true` AND swap
+ * `PAYMONGO_WEBHOOK_SECRET` to PayMongo's LIVE webhook secret (Test and Live
+ * webhooks are separate — see the paymongo-webhook-modes lesson; a mode mismatch
+ * silently drops every credit). No other switch exists by design — there is no
+ * admin runtime toggle. The webhook's crediting/verification logic never changes
+ * and needs no redeploy-time edits; it starts firing for real the moment the env
+ * flag flips. The admin dashboard/refunds/gateways panels already read live
+ * Payment rows, so they light up automatically once real payments start flowing.
  */
 
 export const DIAMOND_PACKS = [

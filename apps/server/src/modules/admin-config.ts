@@ -22,6 +22,14 @@ import { env } from "../config/env.js";
  * the web client can proactively hide the daily-login UI when it's off,
  * instead of only finding out via a failed POST /api/rewards/daily-login
  * (which stays the authoritative server-side gate either way).
+ *
+ * DIAMOND_TOPUP_ENABLED is added to the /config/public response OUTSIDE the
+ * Config-row query (it's env-governed, never a row — see LOCKED_KEYS) so it
+ * can't be listed in PUBLIC_CONFIG_KEYS. The authoritative server-side gate
+ * for the whole payments feature is `features.payments` in config/env.ts
+ * (checked in modules/payments.ts on every checkout/packs call); this is a
+ * read-only mirror for any unauthenticated caller that wants the flag without
+ * hitting the authenticated GET /api/auth/providers `diamondTopUp` field.
  */
 
 const LOCKED_KEYS = new Set(["DIAMOND_TOPUP_ENABLED"]);          // env-governed, never a writable row
@@ -66,6 +74,12 @@ export async function adminConfigRoutes(app: FastifyInstance) {
     const rows = await prisma.config.findMany({ where: { key: { in: [...PUBLIC_CONFIG_KEYS] } }, select: { key: true, value: true } });
     const out: Record<string, string> = {};
     for (const r of rows) out[r.key] = r.value;
+    // DIAMOND_TOPUP_ENABLED is env-governed (never a Config row — see LOCKED_KEYS
+    // above), so it can't come from the rows query; surface it here the same way
+    // GET /admin/config surfaces it to admins. The web client already reads the
+    // equivalent gate from GET /api/auth/providers (`diamondTopUp`); this key is
+    // additive so any other unauthenticated surface can read the master switch too.
+    out.DIAMOND_TOPUP_ENABLED = String(env.DIAMOND_TOPUP_ENABLED);
     return ok(out);
   });
 }

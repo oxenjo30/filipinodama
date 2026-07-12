@@ -43,7 +43,7 @@ describe("admin-config", () => {
     await app.close();
   });
 
-  it("GET /api/config/public returns ONLY the allow-list keys", async () => {
+  it("GET /api/config/public returns ONLY the allow-list keys (+ the always-present env-governed DIAMOND_TOPUP_ENABLED)", async () => {
     const app = await buildTestApp();
     await prisma.config.createMany({ data: [
       { key: "MAINTENANCE_BANNER", value: "true", type: "bool", category: "flag", label: "m" },
@@ -54,7 +54,9 @@ describe("admin-config", () => {
     const res = await app.inject({ method: "GET", url: "/api/config/public" });
     expect(res.statusCode).toBe(200);
     const keys = Object.keys(res.json().data);
-    expect(keys.sort()).toEqual(["DAILY_LOGIN_ENABLED", "MAINTENANCE_BANNER", "MAINTENANCE_TEXT"]);
+    // DIAMOND_TOPUP_ENABLED is env-governed (never a Config row, see payments-dark.test.ts)
+    // so it's always present here regardless of the rows seeded above.
+    expect(keys.sort()).toEqual(["DAILY_LOGIN_ENABLED", "DIAMOND_TOPUP_ENABLED", "MAINTENANCE_BANNER", "MAINTENANCE_TEXT"]);
     expect(keys).not.toContain("SOME_OTHER_FLAG");
     await app.close();
   });
