@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import { api } from "../lib/api";
 import { useAuth } from "../lib/auth";
 import { useAdminMutation } from "../lib/ui";
@@ -63,6 +64,18 @@ export function GuildsPage() {
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
   const [selId, setSelId] = useState<string | null>(null);
+  // Deep-link from the header global search (handoffv3 row 16): a guild
+  // result routes to `?open=<id>`, which opens this same detail drawer.
+  // Consumed once on mount, then stripped from the URL.
+  const [searchParams, setSearchParams] = useSearchParams();
+  useEffect(() => {
+    const openId = searchParams.get("open");
+    if (openId) {
+      setSelId(openId);
+      setSearchParams((p) => { p.delete("open"); return p; }, { replace: true });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const load = (query: string) => {
     setLoading(true);

@@ -362,3 +362,96 @@ h1.page { font: 800 24px var(--serif); color: var(--gold-lt); margin: 4px 0 20px
   border: 1px solid rgba(194, 73, 90, .25); border-radius: 9px;
   font: 500 13px var(--sans); color: #e3b9c1; font-style: italic;
 }
+
+/* === v3 delta A3 — header global search + account menu + sign-out (handoffv3 rows 16-18) === */
+
+/* fd-hide-sm: mockup's "hidden on small screens" marker on the search box, the
+   VIEWING AS control, and the account-chip name/role text — matches the
+   existing sidebar/topbar collapse breakpoint used nowhere else yet, so this
+   introduces the convention the diff calls for. */
+@media (max-width: 860px) {
+  .fd-hide-sm { display: none !important; }
+}
+
+/* ── global search box + results dropdown ── */
+.gs-wrap { position: relative; margin-right: 8px; }
+.gs-input { width: 250px; }
+.gs-dropdown {
+  position: absolute; top: 44px; left: 0; width: 340px; max-height: 60vh; overflow-y: auto;
+  z-index: 40; background: #1b1030; border: 1px solid rgba(232, 184, 75, .3); border-radius: 12px;
+  box-shadow: 0 20px 50px rgba(0, 0, 0, .6); padding: 6px;
+}
+.gs-row {
+  width: 100%; text-align: left; display: flex; align-items: center; gap: 10px; padding: 9px 10px;
+  border: none; background: transparent; border-radius: 8px; cursor: pointer; color: inherit;
+}
+.gs-row-badge {
+  flex: none; width: 26px; height: 26px; border-radius: 7px; display: flex; align-items: center;
+  justify-content: center; font: 800 10px var(--sans); color: #fff;
+}
+.gs-row-label { display: block; font: 700 12px var(--sans); color: #efe7fb; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.gs-row-sub { display: block; font: 500 10px var(--sans); color: var(--dim); }
+.gs-row-kind { font: 700 9px var(--sans); letter-spacing: .5px; text-transform: uppercase; color: #c99a2e; flex: none; }
+.gs-empty { padding: 20px; text-align: center; font: 600 12px var(--sans); color: var(--dim); }
+
+/* ── account chip → dropdown menu ── */
+.acct-wrap { position: relative; }
+.acct-chip {
+  display: flex; align-items: center; gap: 9px; padding: 5px 12px 5px 6px; background: var(--panel);
+  border: 1px solid rgba(232, 184, 75, .16); border-radius: 100px; cursor: pointer;
+}
+.acct-caret { font: 700 9px var(--sans); color: var(--dim); margin-left: 2px; }
+.acct-menu {
+  position: absolute; top: calc(100% + 8px); right: 0; width: 240px; background: #1b1030;
+  border: 1px solid rgba(232, 184, 75, .2); border-radius: 14px; box-shadow: 0 18px 40px rgba(0, 0, 0, .5);
+  z-index: 60; overflow: hidden; animation: adfade .18s ease;
+}
+.acct-menu-head { padding: 14px 16px; border-bottom: 1px solid rgba(232, 184, 75, .1); }
+.acct-menu-name { font: 700 13px var(--sans); color: var(--ink-2); }
+.acct-menu-email { font: 600 11px var(--sans); color: var(--dim); margin-top: 3px; }
+.acct-menu-role {
+  display: inline-block; margin-top: 8px; font: 700 9px var(--sans); letter-spacing: .5px; padding: 3px 9px;
+  border-radius: 100px; color: var(--gold-lt); background: rgba(232, 184, 75, .12); border: 1px solid rgba(232, 184, 75, .3);
+}
+.acct-menu-items { padding: 6px; }
+.acct-menu-item {
+  width: 100%; text-align: left; display: flex; align-items: center; gap: 10px; padding: 10px 12px;
+  background: transparent; border: none; border-radius: 9px; color: var(--ink-2); font: 600 12px var(--sans); cursor: pointer;
+}
+.acct-menu-item:hover { background: rgba(232, 184, 75, .07); }
+.acct-menu-item.danger { color: var(--red-lt); }
+.acct-menu-backdrop { position: fixed; inset: 0; z-index: 55; background: transparent; border: none; padding: 0; cursor: default; }
+
+/* ── sign-out interstitial ── */
+.signout-screen {
+  position: fixed; inset: 0; z-index: 200;
+  background: radial-gradient(900px 560px at 50% -10%, rgba(74, 45, 122, .5), transparent 60%), #0c0518;
+  display: flex; align-items: center; justify-content: center; padding: 24px; animation: adfade .3s ease;
+}
+.signout-card { width: 100%; max-width: 420px; text-align: center; }
+.signout-mark {
+  width: 60px; height: 60px; border-radius: 15px; margin: 0 auto;
+  background: linear-gradient(150deg, #f5d783, #c99a2e); display: flex; align-items: center; justify-content: center;
+  font: 900 30px var(--serif); color: #3a2405;
+}
+.signout-name { font: 800 14px var(--serif); color: var(--gold-lt); letter-spacing: .5px; margin-top: 16px; }
+.signout-sub { font: 700 9px var(--sans); letter-spacing: 2.5px; color: var(--dim); margin-top: 4px; }
+.signout-check {
+  margin: 34px auto 0; width: 52px; height: 52px; border-radius: 50%;
+  background: rgba(75, 214, 160, .12); border: 1px solid rgba(75, 214, 160, .35);
+  display: flex; align-items: center; justify-content: center; font-size: 24px; color: var(--green-lt);
+}
+.signout-title { font: 800 22px var(--serif); color: var(--ink); margin-top: 18px; }
+.signout-body { font: 500 13px var(--sans); color: var(--dim); margin-top: 8px; line-height: 1.6; }
+.signout-pill {
+  margin-top: 22px; display: inline-flex; align-items: center; gap: 9px; padding: 8px 14px;
+  background: #160a2b; border: 1px solid rgba(232, 184, 75, .14); border-radius: 100px;
+}
+.signout-pill-av {
+  width: 26px; height: 26px; border-radius: 50%; background: linear-gradient(150deg, #4a2d7a, #2a1848);
+  border: 1px solid rgba(232, 184, 75, .4); display: flex; align-items: center; justify-content: center;
+  font: 800 11px var(--sans); color: var(--gold-lt);
+}
+.signout-pill-name { font: 700 11px var(--sans); color: var(--ink-2); line-height: 1; text-align: left; }
+.signout-pill-email { font: 600 9px var(--sans); color: var(--dim); margin-top: 2px; text-align: left; }
+.signout-footer { font: 600 10px var(--mono); color: var(--dim-2); margin-top: 26px; }

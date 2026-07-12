@@ -11,7 +11,7 @@ import { api, ApiError } from "./api";
 export type AdminRole = "SUPPORT" | "MODERATOR" | "ECONOMY" | "SUPERADMIN";
 const RANK: Record<AdminRole, number> = { SUPPORT: 1, MODERATOR: 2, ECONOMY: 3, SUPERADMIN: 4 };
 
-export type AdminMe = { id: string; username: string; displayName: string; tag: string; adminRole: AdminRole; avatarUrl: string | null };
+export type AdminMe = { id: string; username: string; displayName: string; tag: string; email: string | null; adminRole: AdminRole; avatarUrl: string | null };
 
 type AuthState =
   | { status: "loading" }

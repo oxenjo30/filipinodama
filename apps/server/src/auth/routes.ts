@@ -5,6 +5,7 @@ import { prisma } from "../db/client.js";
 import { ok, ApiError, fail } from "../lib/errors.js";
 import { features } from "../config/env.js";
 import { attachUser, requireAuth } from "./guards.js";
+import { audit } from "../lib/audit.js";
 import { signAccess, COOKIE, cookieOpts, clearCookieOpts, ttlToMs } from "./tokens.js";
 import { env } from "../config/env.js";
 import * as svc from "./service.js";
@@ -78,7 +79,17 @@ export async function authRoutes(app: FastifyInstance) {
   });
 
   // POST /api/auth/logout
-  app.post("/logout", async (req, reply) => {
+  //
+  // Shared by every session (player + admin) — this IS the "Sign out" the admin
+  // v3 header account menu calls (⎋ Sign out → real session end, per the
+  // handoff's acctSignOut()). If the signed-out account is an admin, write the
+  // session.signout audit row here (not client-side — the client can't be
+  // trusted to self-report). attachUser is safe on an anonymous caller too (it
+  // does not reject), so this never blocks a normal player logout.
+  app.post("/logout", { preHandler: attachUser }, async (req, reply) => {
+    if (req.userId && req.adminRole) {
+      await audit(prisma, { actorId: req.userId, action: "session.signout", targetType: "user", targetId: req.userId });
+    }
     await svc.endSession(prisma, (req.cookies as any)?.[COOKIE.refresh]);
     reply.clearCookie(COOKIE.access, clearCookieOpts()).clearCookie(COOKIE.refresh, clearCookieOpts());
     return ok({ loggedOut: true });

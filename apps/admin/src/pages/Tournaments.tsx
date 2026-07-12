@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import { api } from "../lib/api";
 import { useAdminMutation } from "../lib/ui";
 
@@ -128,6 +129,18 @@ export function TournamentsPage() {
   const [creating, setCreating] = useState(false);
   const [editing, setEditing] = useState<Tournament | null>(null);
   const [viewingId, setViewingId] = useState<string | null>(null);
+  // Deep-link from the header global search (handoffv3 row 16): a cup result
+  // routes to `?open=<id>`, which opens the same BracketDrawer a row's "View"
+  // action does. Consumed once on mount, then stripped from the URL.
+  const [searchParams, setSearchParams] = useSearchParams();
+  useEffect(() => {
+    const openId = searchParams.get("open");
+    if (openId) {
+      setViewingId(openId);
+      setSearchParams((p) => { p.delete("open"); return p; }, { replace: true });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const load = () => {
     setLoading(true);

@@ -93,7 +93,7 @@ export async function adminRoutes(app: FastifyInstance) {
   app.get("/admin/me", { preHandler: requireAdmin("SUPPORT") }, async (req) => {
     const u = await prisma.user.findUnique({
       where: { id: req.userId! },
-      select: { id: true, username: true, displayName: true, tag: true, adminRole: true, avatarUrl: true },
+      select: { id: true, username: true, displayName: true, tag: true, email: true, adminRole: true, avatarUrl: true },
     });
     if (!u) throw err.notFound("NO_USER", "Admin user not found");
     return ok(u);

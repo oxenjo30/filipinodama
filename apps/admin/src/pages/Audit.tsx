@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import { api } from "../lib/api";
 
 type Row = {
@@ -16,21 +17,35 @@ export function AuditPage() {
   const [rows, setRows] = useState<Row[]>([]);
   const [action, setAction] = useState("");
   const [loading, setLoading] = useState(true);
+  // "My activity log" (account menu, handoffv3 row 17) deep-links here with
+  // `?actor=<adminId>` — filter to just that admin's own audit rows.
+  const [searchParams, setSearchParams] = useSearchParams();
+  const actor = searchParams.get("actor") ?? "";
 
   const load = () => {
     setLoading(true);
+    const qs = new URLSearchParams({ limit: "100" });
+    if (action) qs.set("action", action);
+    if (actor) qs.set("actor", actor);
     api
-      .get<{ items: Row[] }>(`/api/admin/audit?limit=100${action ? `&action=${encodeURIComponent(action)}` : ""}`)
+      .get<{ items: Row[] }>(`/api/admin/audit?${qs}`)
       .then((d) => setRows(d.items))
       .catch(() => setRows([]))
       .finally(() => setLoading(false));
   };
-  useEffect(load, [action]);
+  useEffect(load, [action, actor]);
+
+  const clearActor = () => setSearchParams((p) => { p.delete("actor"); return p; }, { replace: true });
 
   return (
     <>
       <div className="row" style={{ marginBottom: 14 }}>
         <input className="input" style={{ maxWidth: 280 }} placeholder="Filter by action (e.g. user.ban)" value={action} onChange={(e) => setAction(e.target.value)} />
+        {actor && (
+          <button className="chip on" onClick={clearActor} title="Clear the my-activity filter">
+            My activity ✕
+          </button>
+        )}
         <button className="btn" onClick={load}>Refresh</button>
       </div>
       <div className="panel">

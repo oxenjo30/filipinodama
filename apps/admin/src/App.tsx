@@ -1,6 +1,8 @@
-import { useState } from "react";
-import { NavLink, Navigate, Route, Routes, useLocation } from "react-router-dom";
+import { useEffect, useRef, useState } from "react";
+import { NavLink, Navigate, Route, Routes, useLocation, useNavigate } from "react-router-dom";
 import { useAuth, type AdminRole } from "./lib/auth";
+import { api } from "./lib/api";
+import { useToast } from "./lib/ui";
 import { Login } from "./pages/Login";
 import { Overview } from "./pages/Overview";
 import { Analytics } from "./pages/Analytics";
@@ -72,14 +74,244 @@ const TITLES: Record<string, [string, string]> = {
 const ROLE_LABEL: Record<AdminRole, string> = { SUPPORT: "Support", MODERATOR: "Moderator", ECONOMY: "Economy admin", SUPERADMIN: "Superadmin" };
 const RANK: Record<AdminRole, number> = { SUPPORT: 1, MODERATOR: 2, ECONOMY: 3, SUPERADMIN: 4 };
 
+// ── Header global search (handoffv3 row 16) ─────────────────────────────────
+type SearchPlayer = { id: string; displayName: string; tag: string; trophies: number; rankTier: string };
+type SearchGuild = { id: string; name: string; tag: string; members: number };
+type SearchCup = { id: string; name: string; format: string; status: string };
+type SearchResults = { players: SearchPlayer[]; guilds: SearchGuild[]; cups: SearchCup[] };
+
+/**
+ * Deep-link convention for search results: navigate to the section route with
+ * `?open=<id>` — Players/Guilds/Tournaments all already have a per-record
+ * detail view (drawer) keyed by id, so each page reads `?open=` once on mount
+ * and opens that same drawer, then strips the param from the URL.
+ */
+function GlobalSearch() {
+  const navigate = useNavigate();
+  const [q, setQ] = useState("");
+  const [results, setResults] = useState<SearchResults | null>(null);
+  const [open, setOpen] = useState(false);
+  const wrapRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const query = q.trim();
+    if (query.length < 2) {
+      setResults(null);
+      return;
+    }
+    const t = setTimeout(() => {
+      api
+        .get<SearchResults>(`/api/admin/search?q=${encodeURIComponent(query)}`)
+        .then(setResults)
+        .catch(() => setResults({ players: [], guilds: [], cups: [] }));
+    }, 250);
+    return () => clearTimeout(t);
+  }, [q]);
+
+  useEffect(() => {
+    if (!open) return;
+    const onDown = (e: MouseEvent) => {
+      if (wrapRef.current && !wrapRef.current.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener("mousedown", onDown);
+    return () => document.removeEventListener("mousedown", onDown);
+  }, [open]);
+
+  const go = (path: string) => {
+    setOpen(false);
+    setQ("");
+    setResults(null);
+    navigate(path);
+  };
+
+  const hasQuery = q.trim().length > 0;
+  const hasResults = !!results && (results.players.length > 0 || results.guilds.length > 0 || results.cups.length > 0);
+
+  return (
+    <div className="gs-wrap fd-hide-sm" ref={wrapRef}>
+      <input
+        className="input gs-input"
+        placeholder="Search players, guilds, cups…"
+        value={q}
+        onChange={(e) => { setQ(e.target.value); setOpen(true); }}
+        onFocus={() => setOpen(true)}
+      />
+      {open && hasQuery && (
+        <div className="gs-dropdown">
+          {hasResults ? (
+            <>
+              {results!.players.map((p) => (
+                <button key={`p-${p.id}`} className="gs-row abtn" onClick={() => go(`/players?open=${p.id}`)}>
+                  <span className="gs-row-badge" style={{ background: "#4a2d7a" }}>{(p.displayName || "?").slice(0, 2).toUpperCase()}</span>
+                  <span style={{ flex: 1, minWidth: 0 }}>
+                    <span className="gs-row-label">{p.displayName} {p.tag}</span>
+                    <span className="gs-row-sub">{p.rankTier} · {p.trophies.toLocaleString()} trophies</span>
+                  </span>
+                  <span className="gs-row-kind">Player</span>
+                </button>
+              ))}
+              {results!.guilds.map((g) => (
+                <button key={`g-${g.id}`} className="gs-row abtn" onClick={() => go(`/guilds?open=${g.id}`)}>
+                  <span className="gs-row-badge" style={{ background: "#2f6f5b" }}>G</span>
+                  <span style={{ flex: 1, minWidth: 0 }}>
+                    <span className="gs-row-label">{g.name}</span>
+                    <span className="gs-row-sub">[{g.tag}]</span>
+                  </span>
+                  <span className="gs-row-kind">Guild</span>
+                </button>
+              ))}
+              {results!.cups.map((t) => (
+                <button key={`t-${t.id}`} className="gs-row abtn" onClick={() => go(`/tournaments?open=${t.id}`)}>
+                  <span className="gs-row-badge" style={{ background: "#7a4bbf" }}>T</span>
+                  <span style={{ flex: 1, minWidth: 0 }}>
+                    <span className="gs-row-label">{t.name}</span>
+                    <span className="gs-row-sub">{t.format}</span>
+                  </span>
+                  <span className="gs-row-kind">Cup</span>
+                </button>
+              ))}
+            </>
+          ) : (
+            <div className="gs-empty">No matches</div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Account chip → dropdown menu + sign-out interstitial (handoffv3 rows 17-18) ──
+function AccountMenu({
+  me, realRole, onSignedOut,
+}: {
+  me: { id: string; displayName: string; email: string | null; username: string };
+  realRole: AdminRole;
+  onSignedOut: () => void;
+}) {
+  const navigate = useNavigate();
+  const auth = useAuth();
+  const toast = useToast();
+  const [open, setOpen] = useState(false);
+  const initials = (me.displayName || me.username).slice(0, 2).toUpperCase();
+
+  const manage = () => {
+    setOpen(false);
+    if (realRole === "SUPERADMIN") {
+      navigate("/admins");
+      toast("ok", "Opened admin & role management.");
+    } else {
+      toast("err", "Account settings are managed by your Superadmin.");
+    }
+  };
+  const activity = () => {
+    setOpen(false);
+    // Prototype routes to Settings → Config with the same copy; production has
+    // a real per-actor audit filter (actorId, SUPERADMIN-only endpoint), so
+    // route there instead — an improvement over the mockup's generic settings
+    // tab, per the delta plan. Non-SUPERADMIN admins land on /audit too but
+    // the server 403s the fetch; the page's existing empty/error state covers it.
+    navigate(`/audit?actor=${encodeURIComponent(me.id)}`);
+    toast("ok", "Your actions appear in the audit log.");
+  };
+  const signOut = () => {
+    setOpen(false);
+    onSignedOut();
+    // logout() ends the real session server-side (writes the session.signout
+    // audit row there — see auth/routes.ts) and flips auth to "anon"; the
+    // sign-out screen is rendered as an overlay ON TOP of the (about to
+    // unmount) shell so it's visible during that transition.
+    void auth.logout();
+  };
+
+  return (
+    <div className="acct-wrap">
+      <button className="abtn acct-chip" onClick={() => setOpen((o) => !o)}>
+        <div className="userchip av" style={{ width: 30, height: 30 }}>{initials}</div>
+        <div className="fd-hide-sm" style={{ textAlign: "left" }}>
+          <div style={{ font: "700 12px var(--sans)", color: "var(--ink-2)", lineHeight: 1 }}>{me.displayName}</div>
+          <div style={{ font: "600 10px var(--sans)", color: "var(--dim)", marginTop: 2 }}>{ROLE_LABEL[realRole]}</div>
+        </div>
+        <span className="acct-caret">▾</span>
+      </button>
+      {open && (
+        <>
+          <button aria-label="Close menu" className="acct-menu-backdrop" onClick={() => setOpen(false)} />
+          <div className="acct-menu">
+            <div className="acct-menu-head">
+              <div className="acct-menu-name">{me.displayName}</div>
+              <div className="acct-menu-email">{me.email ?? me.username}</div>
+              <div className="acct-menu-role">{ROLE_LABEL[realRole]}</div>
+            </div>
+            <div className="acct-menu-items">
+              <button className="acct-menu-item" onClick={manage}>⚙ Manage account</button>
+              <button className="acct-menu-item" onClick={activity}>🕑 My activity log</button>
+              <button className="acct-menu-item danger" onClick={signOut}>⎋ Sign out</button>
+            </div>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+/**
+ * Full-screen sign-out interstitial (handoffv3 row 18), 1:1 with the mockup.
+ * Adaptation note: the prototype shows this as an in-app `signedOut` state
+ * with "Sign back in"/"Switch account" both re-entering the SAME session
+ * (`signBackIn()` just flips state back). The real app can't do that — logout()
+ * clears the session cookie server-side, so both buttons route to the real
+ * admin login screen instead (there is no "switch account" concept without a
+ * second stored session, so both buttons share the same honest behavior).
+ */
+function SignOutScreen({ me, signOutTime }: { me: { displayName: string; email: string | null; username: string }; signOutTime: string }) {
+  const initials = (me.displayName || me.username).slice(0, 2).toUpperCase();
+  const goToLogin = () => {
+    // auth.logout() already flipped state to "anon"; a reload is the simplest
+    // reliable way back to a clean Login screen from this overlay.
+    window.location.assign("/");
+  };
+  return (
+    <div className="signout-screen">
+      <div className="signout-card">
+        <div className="signout-mark">D</div>
+        <div className="signout-name">FilipinoDama</div>
+        <div className="signout-sub">ADMIN CONSOLE</div>
+
+        <div className="signout-check">✓</div>
+        <div className="signout-title">You've been signed out</div>
+        <div className="signout-body">Your session on this device has ended. Your work is saved and every action stays in the audit log.</div>
+
+        <div className="signout-pill">
+          <div className="signout-pill-av">{initials}</div>
+          <div>
+            <div className="signout-pill-name">{me.displayName}</div>
+            <div className="signout-pill-email">{me.email ?? me.username}</div>
+          </div>
+        </div>
+
+        <button className="abtn" style={{ display: "block", width: "100%", marginTop: 26, padding: 14, borderRadius: 11, border: "1px solid rgba(217,145,31,.5)", color: "#3a2405", background: "linear-gradient(150deg,#f5d783,#c99a2e)", font: "800 13px var(--sans)", letterSpacing: ".4px", cursor: "pointer" }} onClick={goToLogin}>Sign back in</button>
+        <button className="abtn" style={{ display: "block", width: "100%", marginTop: 10, padding: 13, borderRadius: 11, border: "1px solid rgba(232,184,75,.16)", color: "#c9b8e8", background: "transparent", font: "700 12px var(--sans)", cursor: "pointer" }} onClick={goToLogin}>Switch account</button>
+
+        <div className="signout-footer">Session ended · {signOutTime}</div>
+      </div>
+    </div>
+  );
+}
+
 export function App() {
   const auth = useAuth();
   const loc = useLocation();
   // "Viewing as" preview role — a SUPERADMIN can preview lower-role views. This
   // only affects what the CLIENT shows; the server still enforces the real gate.
   const [viewAs, setViewAs] = useState<AdminRole | null>(null);
+  // Sign-out interstitial (handoffv3 row 18) — set just before logout() clears
+  // the session, so the overlay renders while auth flips from "ok" to "anon"
+  // (see AccountMenu.signOut). Captured here (not in AccountMenu) so it can
+  // render ON TOP of the whole shell, matching the mockup's full-screen overlay.
+  const [signOutInfo, setSignOutInfo] = useState<{ me: { displayName: string; email: string | null; username: string }; time: string } | null>(null);
 
   if (auth.status === "loading") return <Center>Loading console…</Center>;
+  if (signOutInfo) return <SignOutScreen me={signOutInfo.me} signOutTime={signOutInfo.time} />;
   if (auth.status === "anon") return <Login />;
   if (auth.status === "forbidden")
     return (
@@ -93,11 +325,10 @@ export function App() {
       </Center>
     );
 
-  const { me, logout } = auth;
+  const { me } = auth;
   const realRole = me.adminRole;
   const effRole = viewAs ?? realRole; // the role used for client gating
   const can = (min: AdminRole) => RANK[effRole] >= RANK[min];
-  const initials = (me.displayName || me.username).slice(0, 2).toUpperCase();
   const [eyebrow, title] = TITLES[loc.pathname] ?? ["Admin", "Console"];
 
   const grouped = GROUPS.map((g) => ({ g, items: NAV.filter((n) => n[3] === g && can(n[4])) })).filter((x) => x.items.length);
@@ -150,9 +381,11 @@ export function App() {
               <div className="title">{title}</div>
             </div>
             <div style={{ flex: 1 }} />
+            {/* Global search — handoffv3 row 16 (players/guilds/cups, ≤6/4/4). */}
+            <GlobalSearch />
             {/* Viewing-as — SUPERADMIN can preview lower-role views (client-only). */}
             {realRole === "SUPERADMIN" && (
-              <div className="viewingas">
+              <div className="viewingas fd-hide-sm">
                 <span>VIEWING AS</span>
                 <select className="select" style={{ width: "auto", padding: "7px 10px", color: "var(--gold-lt)", font: "700 11px var(--sans)" }}
                   value={effRole} onChange={(e) => setViewAs(e.target.value === realRole ? null : (e.target.value as AdminRole))}>
@@ -163,14 +396,12 @@ export function App() {
                 </select>
               </div>
             )}
-            <div className="userchip">
-              <div className="av">{initials}</div>
-              <div>
-                <div style={{ font: "700 12px var(--sans)", color: "var(--ink-2)", lineHeight: 1 }}>{me.displayName}</div>
-                <div style={{ font: "600 10px var(--sans)", color: "var(--dim)", marginTop: 2 }}>{ROLE_LABEL[realRole]}</div>
-              </div>
-            </div>
-            <button className="btn" onClick={() => logout()}>Sign out</button>
+            {/* Account chip → dropdown menu + real sign-out — handoffv3 row 17. */}
+            <AccountMenu
+              me={me}
+              realRole={realRole}
+              onSignedOut={() => setSignOutInfo({ me, time: new Date().toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", hour12: false }) })}
+            />
           </div>
         </header>
 
