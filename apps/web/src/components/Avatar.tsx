@@ -106,6 +106,12 @@ export function Avatar({
           alt=""
           aria-hidden
           draggable={false}
+          onError={(e) => {
+            // A frame is decoration; if its art 404s (unknown/legacy frame id),
+            // hide the overlay rather than leave a broken square around the
+            // portrait. The avatar underneath still renders.
+            e.currentTarget.style.display = "none";
+          }}
           style={{
             position: "absolute",
             inset: `-${Math.round(size * 0.16)}px`,

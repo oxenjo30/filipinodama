@@ -73,27 +73,35 @@ export const AVATARS = {
 export type AvatarKey = keyof typeof AVATARS;
 
 export function avatar(key: AvatarKey | (string & {})): string {
+  // Every player MUST render an avatar. Anything we can't confidently map to a
+  // real asset falls back to the `champion` default rather than an optimistic
+  // maybe-404 URL — so a blank/unknown/legacy avatarUrl (a real cause of broken
+  // leaderboard portraits) can never leave an empty ring. This is the guarantee,
+  // not the <img onError> in Avatar.tsx — that is only the last resort.
+  if (!key || typeof key !== "string") return AVATARS.champion;
   if (key in AVATARS) return AVATARS[key as AvatarKey];
-  // Full path / uploaded URL → pass straight through.
+  // Full path / uploaded URL → pass straight through (an uploaded portrait, or a
+  // value that already resolves to a served file).
   if (key.startsWith("/") || key.startsWith("http")) return key;
   // The server persists an equipped avatar as the store item's assetKey, which
   // is already a folder-relative path like "avatars/lakan.png". Naively
   // prefixing "avatars/" would double it → /assets/avatars/avatars/lakan.png
-  // (404, blank avatar). Normalize: if the value already points into avatars/
-  // (or carries an extension), just resolve it under BASE; otherwise treat it
-  // as a bare key and add the avatars/ folder.
+  // (404, blank avatar). Normalize a value that clearly points into the avatars
+  // folder or an assets path; resolve it under BASE.
   if (key.startsWith("assets/")) return `/${key}`;
-  if (key.includes("/") || /\.\w+$/.test(key)) {
-    const rel = key.replace(/^avatars\//, "");
-    return `${BASE}/avatars/${rel}`;
-  }
+  if (key.startsWith("avatars/")) return `${BASE}/${key}`;
+  // A value carrying an image extension but NOT already namespaced under avatars/
+  // is ambiguous — a store-item id like "av.rajah", a renamed/legacy key, or a
+  // stray filename. We can't trust it points at a real /assets/avatars file, so
+  // default rather than build a broken URL. (Known-good extensioned values are
+  // handled by the two branches above.)
+  if (/\.\w+$/.test(key) || key.includes("/")) return AVATARS.champion;
   // Bare key (no folder, no extension) → the file is `<key>.png`. This is the
   // documented contract (avatarUrl stores the bare key; see AvatarPickerModal):
   // a starter avatar like "katipunero" is persisted as its item id and MUST
   // resolve to /assets/avatars/katipunero.png. Forgetting the extension here
   // produced /assets/avatars/katipunero (404 → broken avatar for every account
-  // on a default starter, e.g. guests). Empty string → fall back to champion.
-  if (!key) return AVATARS.champion;
+  // on a default starter, e.g. guests).
   return `${BASE}/avatars/${key}.png`;
 }
 
