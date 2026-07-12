@@ -35,7 +35,12 @@ function validate(type: string, value: string): boolean {
 
 export async function adminConfigRoutes(app: FastifyInstance) {
   app.get("/admin/config", { preHandler: requireAdmin("SUPERADMIN") }, async () => {
-    const rows = await prisma.config.findMany({ orderBy: [{ category: "asc" }, { key: "asc" }] });
+    // type:"json" rows (DAILY_REWARDS_LADDER, PAYMENT_GATEWAYS, …) have their own
+    // dedicated editors with real validation. Excluding them here keeps the generic
+    // Config panel from rendering a raw JSON blob in a tiny text input — a stray
+    // save there would corrupt the JSON and silently revert the feature to its
+    // defaults on next read (the readers fall back on parse failure).
+    const rows = await prisma.config.findMany({ where: { type: { not: "json" } }, orderBy: [{ category: "asc" }, { key: "asc" }] });
     // surface the locked diamond-topup value from ENV (never a row), for display only
     const locked = { key: "DIAMOND_TOPUP_ENABLED", value: String(env.DIAMOND_TOPUP_ENABLED), type: "bool", category: "flag", label: "Diamond top-up (locked)", locked: true };
     return ok({ items: rows.map((r) => ({ ...r, locked: LOCKED_KEYS.has(r.key) })), locked: [locked] });
@@ -46,6 +51,9 @@ export async function adminConfigRoutes(app: FastifyInstance) {
     const { value, reason } = z.object({ value: z.string(), reason: z.string().trim().min(1).max(500) }).parse(req.body);
     const row = await prisma.config.findUnique({ where: { key: req.params.key } });
     if (!row) throw err.notFound("NO_CONFIG", "Unknown config key");
+    // json rows are managed exclusively by their dedicated, schema-validated
+    // editors (daily-rewards ladder, payment gateways) — never the generic form.
+    if (row.type === "json") throw err.forbidden("DEDICATED_EDITOR", "This value is managed by its dedicated editor");
     if (!validate(row.type, value)) throw err.badRequest("BAD_VALUE", `Invalid ${row.type} value`);
     await prisma.config.update({ where: { key: req.params.key }, data: { value } });
     invalidateConfig(req.params.key);

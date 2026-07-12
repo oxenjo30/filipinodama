@@ -88,7 +88,14 @@ export async function authRoutes(app: FastifyInstance) {
   // does not reject), so this never blocks a normal player logout.
   app.post("/logout", { preHandler: attachUser }, async (req, reply) => {
     if (req.userId && req.adminRole) {
-      await audit(prisma, { actorId: req.userId, action: "session.signout", targetType: "user", targetId: req.userId });
+      // Best-effort: an audit-insert failure must NEVER block the sign-out —
+      // otherwise the route 500s before endSession/clearCookie and the "signed
+      // out" admin still holds valid server-side cookies.
+      try {
+        await audit(prisma, { actorId: req.userId, action: "session.signout", targetType: "user", targetId: req.userId });
+      } catch {
+        req.log?.warn?.("session.signout audit write failed (logout proceeds)");
+      }
     }
     await svc.endSession(prisma, (req.cookies as any)?.[COOKIE.refresh]);
     reply.clearCookie(COOKIE.access, clearCookieOpts()).clearCookie(COOKIE.refresh, clearCookieOpts());
