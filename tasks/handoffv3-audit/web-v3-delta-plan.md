@@ -88,3 +88,11 @@ roomState broadcasts.
 4. W5 (viewers + rooms-in-live, server work) → 5. W3 (device badge, tiny) →
 6. W6 + W7 verifications → W8 documented-blocked.
 Each cluster: implement → typecheck/build → tests where server logic changed → commit.
+
+## OWNER DIRECTIVE (2026-07-12) — Damath is WEB-ONLY
+The Damath game mode (damath-* realtime modules, DamathRoomPage/damath matchmaking, DAMATH
+match mode) stays exactly as it is in the web app and goes NO further:
+- Do NOT include Damath in the native Android app (no screens, no nav entries, no API surface).
+- Do NOT touch/refactor Damath code in the v3 web/admin delta work.
+- If any handoff row or future task appears to pull Damath into mobile/admin scope, it is
+  overridden by this directive — leave it web-only and flag it instead of building.
