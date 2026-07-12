@@ -3,7 +3,7 @@ import { EV, DEFAULT_SETTINGS, type GameSettings } from "@dama/shared";
 import type { MatchMode as PrismaMatchMode } from "@prisma/client";
 import { prisma } from "../db/client.js";
 import { isMuted } from "../lib/mute.js";
-import { createLiveMatch, onMatchEnd } from "./match.js";
+import { createLiveMatch, onMatchEnd, addSpectatorSocket, removeSpectatorSocket, spectatorCount } from "./match.js";
 import { allow } from "./rate-limit.js";
 
 /**
@@ -140,8 +140,14 @@ function removeMember(io: IOServer, userId: string) {
   // membership. The room is reclaimed when the match ENDS (see clearRoomForMatch,
   // wired into match settlement) or on server restart.
   if (room.matchId) {
-    if (room.guest?.userId === userId) room.guest = null;
-    else room.spectators.delete(userId);
+    if (room.guest?.userId === userId) {
+      room.guest = null;
+    } else {
+      room.spectators.delete(userId);
+      // Drop this user's sockets from the real spectator count too (harmless
+      // no-op for the host/guest, who were never added to it).
+      if (member) for (const sid of member.sockets) removeSpectatorSocket(io, room.matchId, userId, sid);
+    }
     // Host leaving the room page after start is normal (they're now in the match);
     // the room lives on for spectators. Nothing else to do — never touch the match.
     return;
@@ -175,6 +181,46 @@ export function clearRoomForMatch(matchId: string): void {
     rooms.delete(code);
     return;
   }
+}
+
+/** A room surfaced as a synthetic "Live Matches" entry — see /api/matches/live.
+ *  Carries userIds (not the full profile) so the REST layer can batch-fetch
+ *  each member's live username/trophies alongside the room-cached name/avatar/tag. */
+export type OpenRoom = {
+  code: string;
+  mode: PrismaMatchMode;
+  matchId: string | null;
+  host: { userId: string; displayName: string; avatarUrl: string | null; tag: string };
+  guest: { userId: string; displayName: string; avatarUrl: string | null; tag: string } | null;
+  viewers: number;
+};
+
+/**
+ * Rooms worth surfacing at the top of the public Live Matches list: a room is
+ * spectatable the moment it has a real match running (matchId set — roomSpectate
+ * has no gating flag today, so any live room match can already be watched by
+ * code) OR an unstarted lobby that has both a host AND a guest seated (about to
+ * play — visible so a viewer can catch the very start once it goes live).
+ * A lobby with only a host (nobody to watch yet) is never listed. Viewer counts
+ * are the REAL spectator total tracked in match.ts (0 for an unstarted lobby,
+ * since there is no match room yet to spectate).
+ */
+export function listOpenRooms(): OpenRoom[] {
+  const out: OpenRoom[] = [];
+  for (const room of rooms.values()) {
+    if (!room.matchId && !room.guest) continue; // nothing to watch yet
+    out.push({
+      code: room.code,
+      mode: room.mode,
+      matchId: room.matchId,
+      host: { userId: room.host.userId, displayName: room.host.name, avatarUrl: room.host.avatarUrl, tag: room.host.tag },
+      guest: room.guest
+        ? { userId: room.guest.userId, displayName: room.guest.name, avatarUrl: room.guest.avatarUrl, tag: room.guest.tag }
+        : null,
+      viewers: room.matchId ? spectatorCount(room.matchId) : 0,
+    });
+  }
+  return out;
 }
 
 /**
@@ -275,9 +321,11 @@ export function registerRooms(io: IOServer, socket: Socket) {
     }
     // Late spectator: if a match is already live in this room, join this socket to
     // the match channel and tell it to open the board read-only. The client then
-    // resyncs to pull the current board state.
+    // resyncs to pull the current board state. This socket also counts toward the
+    // match's REAL spectator total (same counter the by-id /watch path feeds).
     if (room.matchId) {
       void socket.join(room.matchId);
+      addSpectatorSocket(io, room.matchId, userId, socket.id);
       socket.emit(EV.roomStart, { matchId: room.matchId, yourColor: null });
     }
     emitState(io, room);
@@ -342,9 +390,13 @@ export function registerRooms(io: IOServer, socket: Socket) {
       // Spectators watch READ-ONLY: join their sockets to the match room so they
       // receive matchMoved/matchState, and tell them to open the board with
       // yourColor:null. They can never move — the match move handlers gate on
-      // colorOf(), and a spectator has no color.
+      // colorOf(), and a spectator has no color. Each socket also joins the real
+      // spectator count for this match.
       for (const spec of room.spectators.values()) {
-        for (const sid of spec.sockets) io.sockets.sockets.get(sid)?.join(match.id);
+        for (const sid of spec.sockets) {
+          io.sockets.sockets.get(sid)?.join(match.id);
+          addSpectatorSocket(io, match.id, spec.userId, sid);
+        }
         io.to(`presence:${spec.userId}`).emit(EV.roomStart, { matchId: match.id, yourColor: null });
       }
       emitState(io, room); // spectators see matchId now

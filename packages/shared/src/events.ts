@@ -45,6 +45,8 @@ export const EV = {
   // spectating
   spectateJoin: "spectate:join",
   spectateLeave: "spectate:leave",
+  /** server → match room: real spectator count changed (payload {matchId, viewers}) */
+  spectateCount: "spectate:count",
 
   // chat
   chatSend: "chat:send",

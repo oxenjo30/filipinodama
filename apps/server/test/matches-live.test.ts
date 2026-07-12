@@ -50,6 +50,9 @@ describe("GET /api/matches/live", () => {
     expect(typeof item.red.trophies).toBe("number");
     expect(item.blue.username).toBeTruthy();
     expect(item.moveCount).toBe(1);
+    // Real spectator count — nobody is watching in this test, so it's exactly 0
+    // (never a fabricated/minimum/omitted value).
+    expect(item.viewers).toBe(0);
     await app.close();
   });
 

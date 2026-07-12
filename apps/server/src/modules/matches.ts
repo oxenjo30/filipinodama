@@ -5,6 +5,8 @@ import type { MatchMode, Prisma } from "@prisma/client";
 import { prisma } from "../db/client.js";
 import { ok, err } from "../lib/errors.js";
 import { requireAuth } from "../auth/guards.js";
+import { spectatorCount } from "../realtime/match.js";
+import { listOpenRooms } from "../realtime/rooms.js";
 
 const matchQuerySchema = z.object({
   userId: z.string().optional(),
@@ -152,10 +154,22 @@ export async function matchRoutes(app: FastifyInstance) {
   // the Watch / Spectate page. "Watchable" mirrors /matches/active's own-match
   // rules (not ended, recent, no bot seat) but is NOT scoped to the caller — it's
   // every live match anyone could spectate. Ordered newest-first, capped so the
-  // grid stays small. Viewer counts aren't tracked anywhere in the realtime layer
-  // yet, so we never fabricate one — the client omits the 👁 badge instead.
+  // grid stays small.
+  //
+  // Two additions layered on top of the plain match rows:
+  //   • viewers — the REAL spectator count from the realtime layer (match.ts),
+  //     never fabricated/seeded. 0 is a legitimate value (no one is watching).
+  //   • open private rooms — a room that's spectatable (live match, or an
+  //     unstarted lobby with a guest already seated) is unshifted to the TOP of
+  //     `items` as a synthetic entry (id "room-<code>") so a shareable room can
+  //     be discovered without the code. A room's own match (once started) is a
+  //     normal Match row too — excluded from the plain listing below so it
+  //     isn't shown twice.
   app.get("/matches/live", { preHandler: requireAuth }, async (_req) => {
     const STALE_MS = 6 * 60 * 60 * 1000; // 6h — matches this old are effectively dead/orphaned
+    const openRooms = listOpenRooms();
+    const roomMatchIds = new Set(openRooms.map((r) => r.matchId).filter((id): id is string => !!id));
+
     const rows = await prisma.match.findMany({
       where: {
         endedAt: null,
@@ -166,12 +180,61 @@ export async function matchRoutes(app: FastifyInstance) {
         // `isNot` (null passes) rather than `is`, matching /matches/active.
         red: { isNot: { isBot: true } },
         blue: { isNot: { isBot: true } },
+        ...(roomMatchIds.size > 0 ? { id: { notIn: [...roomMatchIds] } } : {}),
       },
       orderBy: { startedAt: "desc" },
       take: 30,
       include: { red: playerSelect, blue: playerSelect },
     });
-    const items = rows.map(serializeMatch);
+    const matchItems = rows.map((m) => ({ ...serializeMatch(m), viewers: spectatorCount(m.id) }));
+
+    // Started rooms need their real moveCount + startedAt — a lightweight
+    // second lookup (excluded from `rows` above so it's never double-fetched
+    // with the full player includes it doesn't need here).
+    const startedRoomIds = [...roomMatchIds];
+    const startedRoomMatches = startedRoomIds.length
+      ? await prisma.match.findMany({
+          where: { id: { in: startedRoomIds } },
+          select: { id: true, moves: true, startedAt: true },
+        })
+      : [];
+    const roomMatchById = new Map(startedRoomMatches.map((m) => [m.id, m]));
+
+    // Room host/guest cache real displayName/avatar/tag but not username/trophies
+    // (never fetched for the lobby UI) — batch-fetch those so a room card's
+    // players carry the same real fields as a normal match card.
+    const roomUserIds = [...new Set(openRooms.flatMap((r) => [r.host.userId, ...(r.guest ? [r.guest.userId] : [])]))];
+    const roomUsers = roomUserIds.length
+      ? await prisma.user.findMany({ where: { id: { in: roomUserIds } }, select: { id: true, username: true, trophies: true } })
+      : [];
+    const roomUserById = new Map(roomUsers.map((u) => [u.id, u]));
+    const roomPlayer = (m: { userId: string; displayName: string; avatarUrl: string | null; tag: string }) => ({
+      id: m.userId,
+      username: roomUserById.get(m.userId)?.username ?? m.displayName,
+      displayName: m.displayName,
+      tag: m.tag,
+      avatarUrl: m.avatarUrl,
+      trophies: roomUserById.get(m.userId)?.trophies ?? 0,
+    });
+
+    // Synthetic room entries — always unshifted to the top (listOpenRooms()'s
+    // natural insertion order is fine; there are only ever a handful at once).
+    const roomItems = openRooms.map((r) => {
+      const rm = r.matchId ? roomMatchById.get(r.matchId) : undefined;
+      return {
+        id: `room-${r.code}`,
+        room: true as const,
+        code: r.code,
+        mode: r.mode,
+        red: roomPlayer(r.host),
+        blue: r.guest ? roomPlayer(r.guest) : null,
+        moveCount: Array.isArray(rm?.moves) ? rm.moves.length : 0,
+        startedAt: rm?.startedAt ?? new Date(),
+        viewers: r.viewers,
+      };
+    });
+
+    const items = [...roomItems, ...matchItems];
     return ok({ items, liveCount: items.length });
   });
 

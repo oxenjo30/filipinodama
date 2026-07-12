@@ -80,7 +80,7 @@ export function OnlineMatchPage() {
   const {
     status, matchId, myColor, opponent, state,
     selected, moveTargets, captureTargets, mustCapture, end, error,
-    connectionLost, chat, offeredByMe, offeredByOpponent, rematchDeclined,
+    connectionLost, chat, offeredByMe, offeredByOpponent, rematchDeclined, viewers,
     joinQueue, leaveQueue, resync, spectate, onSquareClick, resign, reset,
     sendChat: sendMatchChat, sendEmote, offerRematch, acceptRematch, declineRematch,
   } = useOnlineStore();
@@ -468,6 +468,15 @@ export function OnlineMatchPage() {
             {isSpectating ? "Spectating" : mode === "RANKED" ? "Ranked Match" : "Quick Match"}
           </div>
           <div style={{ font: "500 11px Inter", color: "var(--ink2)" }}>Live · Online</div>
+          {/* Real live spectator count — spectator view only (players keep the
+              plain "Live · Online" line). Sourced from EV.spectateCount via
+              onlineStore; null until the first count arrives, so nothing flashes
+              a fake 0 before the server has actually said so. */}
+          {isSpectating && viewers !== null && (
+            <div style={{ font: "600 11px Inter", color: "var(--ink2)", marginTop: 4 }}>
+              👁 {viewers.toLocaleString()} watching
+            </div>
+          )}
         </div>
 
         {/* Resign / Leave — on mobile these sink below the board (fd-game-left order),

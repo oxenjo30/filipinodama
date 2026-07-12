@@ -8,15 +8,17 @@ import { api } from "../../lib/api";
  *
  * DATA: GET /api/matches/live → { items, liveCount }. Every field on a card is
  * real: both players + their live trophies, the mode the match is being played
- * in, and the running move count. Viewer counts are NOT tracked anywhere in the
- * realtime layer yet, so the server never sends a fabricated number — the 👁
- * badge is simply omitted on a card that has none (never show 0 or a made-up
- * count).
+ * in, and the running move count. `viewers` is the REAL spectator count tracked
+ * server-side (never seeded/bumped) — 0 is shown like any other real count.
  *
- * "Watch →" / clicking a card navigates into the existing online-match view in
- * read-only spectator mode (/play/online?spectate=<id>), which reuses the same
- * server-authoritative socket flow real players use — nothing here talks to the
- * realtime layer directly.
+ * Two kinds of items share the grid:
+ *   • a plain live Match — "Watch →" navigates into the read-only spectator view
+ *     at /play/online?spectate=<matchId>.
+ *   • a synthetic open-room entry (`room: true`, id "room-<code>") — an active
+ *     private room (live match, or a lobby with a guest already seated) that
+ *     anyone can drop in on. "Watch →" navigates to /rooms?code=<code>&spectate=1
+ *     instead, which resolves the room by code and joins as a spectator.
+ * Both reuse the same card layout; only the click target differs.
  */
 
 type LiveMatchMode = "AI" | "CASUAL" | "RANKED" | "PRIVATE" | "LOCAL" | "DAMATH";
@@ -37,8 +39,12 @@ type LiveMatchItem = {
   blue: LivePlayer;
   moveCount: number;
   startedAt: string;
-  /** Optional real spectator count — absent/undefined means "unknown", never 0-as-fake. */
+  /** Real spectator count — always present now; 0 is a legitimate value. */
   viewers?: number;
+  /** Present + true only for a synthetic open-room entry. */
+  room?: boolean;
+  /** Room code — only present when room is true; drives the /rooms navigation. */
+  code?: string;
 };
 
 /** Mode → display tag + color. Only real MatchMode values — never an invented
@@ -56,11 +62,11 @@ function playerName(p: LivePlayer): string {
   return p?.displayName || p?.username || "Player";
 }
 
-function LiveMatchCard({ m, onWatch }: { m: LiveMatchItem; onWatch: (id: string) => void }) {
+function LiveMatchCard({ m, onWatch }: { m: LiveMatchItem; onWatch: (m: LiveMatchItem) => void }) {
   const meta = MODE_META[m.mode] ?? { label: m.mode, color: "var(--ink2)" };
   return (
     <button
-      onClick={() => onWatch(m.id)}
+      onClick={() => onWatch(m)}
       className="frame"
       style={{
         textAlign: "left",
@@ -74,10 +80,18 @@ function LiveMatchCard({ m, onWatch }: { m: LiveMatchItem; onWatch: (id: string)
       }}
     >
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
-        <span style={{ font: "800 10px Inter", letterSpacing: ".6px", textTransform: "uppercase", color: meta.color }}>
-          {meta.label}
+        <span style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <span style={{ font: "800 10px Inter", letterSpacing: ".6px", textTransform: "uppercase", color: meta.color }}>
+            {meta.label}
+          </span>
+          {m.room && (
+            <span style={{ font: "700 9px Inter", letterSpacing: ".4px", textTransform: "uppercase", color: "var(--gold)" }}>
+              🔑 Room
+            </span>
+          )}
         </span>
-        {typeof m.viewers === "number" && m.viewers > 0 && (
+        {/* Real spectator count — 0 is a legitimate value and is shown like any other. */}
+        {typeof m.viewers === "number" && (
           <span style={{ font: "600 11px Inter", color: "var(--ink2)" }}>👁 {m.viewers.toLocaleString()}</span>
         )}
       </div>
@@ -127,7 +141,13 @@ export function WatchPage() {
     void load();
   }, [load]);
 
-  const onWatch = useCallback((id: string) => navigate(`/play/online?spectate=${id}`), [navigate]);
+  const onWatch = useCallback(
+    (m: LiveMatchItem) =>
+      m.room && m.code
+        ? navigate(`/rooms?code=${m.code}&spectate=1`)
+        : navigate(`/play/online?spectate=${m.id}`),
+    [navigate],
+  );
 
   const loading = items === null;
 

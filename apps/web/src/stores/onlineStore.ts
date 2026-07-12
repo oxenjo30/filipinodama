@@ -84,6 +84,12 @@ export type OnlineStore = {
   offeredByOpponent: boolean;
   rematchDeclined: boolean;
 
+  /** Real live spectator count for the current match (EV.spectateCount), or
+   *  null before the first count has arrived. Updated for BOTH players and
+   *  spectators (the server broadcasts to the whole match room), but only the
+   *  spectator view renders it — see OnlineMatchPage. Reset on reset(). */
+  viewers: number | null;
+
   joinQueue: (mode: "CASUAL" | "RANKED", colorPref?: "red" | "blue" | "either") => Promise<void>;
   leaveQueue: () => void;
   /** Re-attach to the current matchId (used when arriving already in a match:
@@ -257,6 +263,14 @@ export const useOnlineStore = create<OnlineStore>((set, get) => {
       },
     );
 
+    // ── Real spectator count for the current match — server broadcasts to the
+    // whole match room (both players AND spectators) whenever it changes. Only
+    // applied if it's for the match we're currently in (guards a stale event
+    // arriving just after we've moved on to a different match). ──
+    s.on(EV.spectateCount, (p: { matchId: string; viewers: number }) => {
+      set((st) => (st.matchId && p.matchId === st.matchId ? { viewers: p.viewers } : {}));
+    });
+
     // ── Rematch: opponent offered a rematch of the just-ended match. ──
     s.on(EV.matchRematchOffer, (p: { fromMatchId: string; by: string }) => {
       set((st) => (st.matchId && p.fromMatchId !== st.matchId ? {} : { offeredByOpponent: true, rematchDeclined: false }));
@@ -328,6 +342,7 @@ export const useOnlineStore = create<OnlineStore>((set, get) => {
     offeredByMe: false,
     offeredByOpponent: false,
     rematchDeclined: false,
+    viewers: null,
 
     joinQueue: async (mode, colorPref = "either") => {
       set({ status: "searching", error: null, end: null });
@@ -379,6 +394,7 @@ export const useOnlineStore = create<OnlineStore>((set, get) => {
         offeredByMe: false,
         offeredByOpponent: false,
         rematchDeclined: false,
+        viewers: null,
       });
       try {
         await connectSocket();
@@ -445,6 +461,7 @@ export const useOnlineStore = create<OnlineStore>((set, get) => {
         offeredByMe: false,
         offeredByOpponent: false,
         rematchDeclined: false,
+        viewers: null,
       });
     },
 

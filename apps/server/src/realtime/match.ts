@@ -46,6 +46,67 @@ type LiveMatch = {
 const live: Map<string, LiveMatch> = new Map();
 
 /**
+ * Real spectator counts — matchId -> userId -> set of that user's socket ids
+ * watching THIS match. Mirrors presence.ts's online-socket-set pattern
+ * (multi-tab safe: a user with two tabs open on the same match still counts
+ * once, and only drops when their LAST socket for that match is gone). Never
+ * seeded, never bumped artificially — the count is exactly the number of
+ * distinct users currently joined to the match's spectator room.
+ */
+const spectators: Map<string, Map<string, Set<string>>> = new Map();
+
+/** The real number of distinct users currently spectating `matchId`. */
+export function spectatorCount(matchId: string): number {
+  return spectators.get(matchId)?.size ?? 0;
+}
+
+/** Broadcast the current count to everyone in the match room (players + spectators). */
+function broadcastSpectatorCount(io: IOServer, matchId: string): void {
+  io.to(matchId).emit(EV.spectateCount, { matchId, viewers: spectatorCount(matchId) });
+}
+
+/**
+ * Register one socket as watching `matchId`. Exported so both the by-id
+ * spectate path in this module (EV.spectateJoin) and the by-room-code path
+ * (rooms.ts roomSpectate, when a late spectator joins a room whose match is
+ * already live) count toward the same real total — a viewer is a viewer
+ * regardless of which door they came in.
+ */
+export function addSpectatorSocket(io: IOServer, matchId: string, userId: string, socketId: string): void {
+  let byUser = spectators.get(matchId);
+  if (!byUser) {
+    byUser = new Map();
+    spectators.set(matchId, byUser);
+  }
+  const wasWatching = byUser.has(userId);
+  const set = byUser.get(userId) ?? new Set<string>();
+  set.add(socketId);
+  byUser.set(userId, set);
+  if (!wasWatching) broadcastSpectatorCount(io, matchId);
+}
+
+/** Remove one socket from a match's spectator set; only changes the count if
+ *  that was the user's LAST socket watching this match. */
+export function removeSpectatorSocket(io: IOServer, matchId: string, userId: string, socketId: string): void {
+  const byUser = spectators.get(matchId);
+  const set = byUser?.get(userId);
+  if (!set) return;
+  set.delete(socketId);
+  if (set.size === 0) {
+    byUser!.delete(userId);
+    if (byUser!.size === 0) spectators.delete(matchId);
+    broadcastSpectatorCount(io, matchId);
+  }
+}
+
+/** Drop ALL spectator tracking for a match (called on settlement/cleanup so a
+ *  finished match never leaks a stale entry). No broadcast — the match room is
+ *  going away (matchEnded already told everyone). */
+function clearSpectators(matchId: string): void {
+  spectators.delete(matchId);
+}
+
+/**
  * Optional hooks fired once a match has fully SETTLED (result persisted + ledger
  * applied + matchEnded broadcast). Registered by other realtime modules that
  * keep state tied to a match's lifetime — e.g. rooms.ts keeps a private room
@@ -121,6 +182,7 @@ rematchSweep.unref?.();
  */
 export function endLiveMatch(matchId: string): void {
   live.delete(matchId);
+  clearSpectators(matchId);
 }
 
 /**
@@ -485,6 +547,7 @@ async function settleMatch(io: IOServer, lm: LiveMatch): Promise<void> {
   }
 
   live.delete(lm.matchId);
+  clearSpectators(lm.matchId);
 
   // Notify lifetime-bound listeners (e.g. rooms.ts reclaims a private room kept
   // alive for spectators). Best-effort — a throwing hook must not break anything.
@@ -639,6 +702,7 @@ export function registerMatch(io: IOServer, socket: Socket) {
       return;
     }
     void socket.join(matchId);
+    addSpectatorSocket(io, matchId, userId, socket.id);
     socket.emit(EV.matchState, {
       matchId,
       state: lm.state,
@@ -655,6 +719,7 @@ export function registerMatch(io: IOServer, socket: Socket) {
     const lm = live.get(matchId);
     if (lm && colorOf(lm, userId)) return;
     void socket.leave(matchId);
+    removeSpectatorSocket(io, matchId, userId, socket.id);
   });
 
   // ── In-match quick chat / emote — relay to the match room (persisted lightly
@@ -736,6 +801,17 @@ export function registerMatch(io: IOServer, socket: Socket) {
     rematchOffers.delete(matchId);
     const other = userId === offer.redId ? offer.blueId : offer.redId;
     io.to(`presence:${other}`).emit(EV.matchRematchDecline, { fromMatchId: matchId, by: userId });
+  });
+
+  // ── Spectator cleanup — unlike the abandon-forfeit timer below (players get a
+  // reconnect grace window), a dropped spectator socket is removed immediately:
+  // there's no "forfeit" concept for watching, just an accurate live count. Scans
+  // every match this socket was registered under (a spectator's socket id is only
+  // ever added via addSpectatorSocket, so this is cheap in practice).
+  socket.on("disconnect", () => {
+    for (const matchId of [...spectators.keys()]) {
+      removeSpectatorSocket(io, matchId, userId, socket.id);
+    }
   });
 
   // ── Abandonment forfeit ── if this was the user's LAST socket, arm a timer on
