@@ -32,6 +32,7 @@ import { adminTicketsRoutes } from "./modules/admin-tickets.js";
 import { adminTournamentsRoutes } from "./modules/admin-tournaments.js";
 import { leaderboardRoutes } from "./modules/leaderboard.js";
 import { matchRoutes } from "./modules/matches.js";
+import { roomRoutes } from "./modules/rooms.js";
 import { learnRoutes } from "./modules/learn.js";
 import { notificationRoutes } from "./modules/notifications.js";
 import { paymentRoutes } from "./modules/payments.js";
@@ -124,6 +125,7 @@ export async function buildApp(): Promise<FastifyInstance> {
   await app.register(adminTournamentsRoutes, { prefix: "/api" });
   await app.register(leaderboardRoutes, { prefix: "/api" });
   await app.register(matchRoutes, { prefix: "/api" });
+  await app.register(roomRoutes, { prefix: "/api" });
   await app.register(learnRoutes, { prefix: "/api" });
   await app.register(notificationRoutes, { prefix: "/api" });
   await app.register(paymentRoutes, { prefix: "/api" });

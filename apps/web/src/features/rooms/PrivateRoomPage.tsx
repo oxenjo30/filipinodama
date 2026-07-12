@@ -196,6 +196,35 @@ export function PrivateRoomPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [me, queryCode, querySpectate]);
 
+  // ── Resume an active room on a bare /rooms visit (no ?code) ──
+  // A player who reloads, closes the tab, or navigates back to /rooms without a
+  // share link should land back in the room they're still a member of, instead
+  // of the create/join chooser. GET /api/rooms/mine reads the server's real
+  // in-memory room membership — never a client-guessed or stale link. Runs only
+  // when the ?code effect above is NOT going to handle entry, so the two never
+  // race; a ref guards against double-fires (StrictMode / re-renders).
+  const resumedRef = useRef(false);
+  useEffect(() => {
+    if (resumedRef.current) return;
+    if (queryCode) return; // the ?code effect owns this case
+    if (inRoom) return;
+    if (!me) return;
+    resumedRef.current = true;
+    void (async () => {
+      try {
+        const res = await api.get<{ code: string | null }>("/api/rooms/mine");
+        if (res.code) {
+          await join(res.code);
+          showToast("Rejoined your synced room — picking up where you left off.");
+        }
+      } catch {
+        // No active room, or a transient fetch failure — stay on the chooser.
+        resumedRef.current = false;
+      }
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [me, queryCode, inRoom]);
+
   // ── Navigate into the online match once the host starts (EV.roomStart) ──
   useEffect(() => {
     if (startedMatchId) {

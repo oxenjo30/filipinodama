@@ -167,6 +167,24 @@ function removeMember(io: IOServer, userId: string) {
 }
 
 /**
+ * The room code a user currently belongs to (host, guest, or spectator), or
+ * null if they're not in one. Backs GET /api/rooms/mine so the Private Room
+ * page can resume an in-progress room on a fresh visit (no ?code needed) —
+ * e.g. after a reload or navigating back from another tab.
+ *
+ * No extra recency/TTL gate is needed here: rooms are already ephemeral by
+ * construction (see the module doc comment above) — an unstarted lobby is
+ * torn down the instant its host leaves, and a started room is reclaimed the
+ * moment its match ends (clearRoomForMatch). So `userRoom` only ever points
+ * at a room that is genuinely still active right now.
+ */
+export function myRoomCode(userId: string): string | null {
+  const code = userRoom.get(userId);
+  if (!code) return null;
+  return rooms.has(code) ? code : null;
+}
+
+/**
  * Reclaim the room that hosted `matchId` once its match has ended. Called from
  * match settlement so a room kept alive for spectating during play doesn't leak
  * after the game is over. No-op if no room maps to this match (matchmade games,
