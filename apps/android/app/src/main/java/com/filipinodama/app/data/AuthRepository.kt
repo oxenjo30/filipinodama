@@ -15,8 +15,12 @@ import kotlinx.coroutines.flow.asStateFlow
  *  - cache the last-known /api/auth/me user in memory (avoids re-fetching on
  *    every screen; SplashScreen is the only place that calls [refreshMe] on
  *    cold start).
- *  - own the auth actions (login/register/guest/logout/forgotPassword),
- *    always going through [AuthApi] so envelope errors surface consistently.
+ *  - own the auth actions (login/register/guest/logout/forgotPassword/
+ *    googleSignIn), always going through [AuthApi] so envelope errors surface
+ *    consistently.
+ *  - cache GET /api/auth/providers (mirrors the web's authStore.providers) so
+ *    the Login/Create Account screens can gate the Google button exactly like
+ *    AuthPage.tsx gates it on `providers.google`.
  *  - own the onboarded flag, persisted in [SecureStore] as the native
  *    equivalent of the web client's localStorage `fdr.onboarded` marker.
  *
@@ -31,6 +35,9 @@ object AuthRepository {
 
     private val _state = MutableStateFlow(AuthSessionState())
     val state: StateFlow<AuthSessionState> = _state.asStateFlow()
+
+    private val _providers = MutableStateFlow(ProvidersResponse())
+    val providers: StateFlow<ProvidersResponse> = _providers.asStateFlow()
 
     /** True once a just-registered, non-guest account should see onboarding. */
     var justRegistered: Boolean = false
@@ -112,6 +119,43 @@ object AuthRepository {
         }.fold(
             onSuccess = { user ->
                 ApiClient.secureStore.putBoolean(SecureStore.KEY_IS_GUEST, true)
+                _state.value = _state.value.copy(user = user, checked = true)
+                AuthResult.Success(user)
+            },
+            onFailure = { toResult(it) }
+        )
+    }
+
+    /**
+     * Refreshes the cached provider-availability flags (mirrors the web's
+     * authStore.refreshProviders()). Silently keeps the previous/default
+     * values on failure, same as web ("keep defaults") — a transient network
+     * blip here should not permanently hide the Google button behind a stale
+     * false.
+     */
+    suspend fun refreshProviders() {
+        runCatching { authApi.providers() }
+            .onSuccess { envelope -> if (envelope.ok && envelope.data != null) _providers.value = envelope.data }
+    }
+
+    /**
+     * Native Google Sign-In (Credential Manager). Exchanges the ID token
+     * Credential Manager returned for our session via
+     * POST /api/auth/oauth/google/token (server verifies it, then runs the
+     * exact same find-or-create-user logic as the web's OAuth redirect
+     * callback). Deliberately mirrors the web client's OAuth semantics: an
+     * OAuth sign-in NEVER sets [justRegistered] — on web, `justRegistered` is
+     * set only by `register()` (email/password); a Google sign-in (whether it
+     * creates a brand-new account server-side or logs into an existing one)
+     * always routes like a normal login, never triggers the onboarding tour.
+     * See apps/web/src/stores/authStore.ts / OnboardingFlow.tsx.
+     */
+    suspend fun googleSignIn(idToken: String): AuthResult {
+        return runCatching {
+            val envelope = authApi.googleToken(GoogleTokenRequest(idToken = idToken))
+            unwrap(envelope) { it.user }
+        }.fold(
+            onSuccess = { user ->
                 _state.value = _state.value.copy(user = user, checked = true)
                 AuthResult.Success(user)
             },

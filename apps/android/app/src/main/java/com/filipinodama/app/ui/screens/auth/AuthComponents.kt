@@ -201,3 +201,77 @@ fun AuthBackButton(onClick: () -> Unit) {
         )
     }
 }
+
+/**
+ * "or continue with" divider — matches the web's exact copy
+ * (AuthPage.tsx, between the email form and the Google button).
+ */
+@Composable
+fun AuthOrDivider() {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 20.dp)
+    ) {
+        Box(
+            modifier = Modifier
+                .weight(1f)
+                .height(1.dp)
+                .background(Gold.copy(alpha = 0.16f))
+        )
+        Text(text = "or continue with", color = Ink2, style = MaterialTheme.typography.labelMedium)
+        Box(
+            modifier = Modifier
+                .weight(1f)
+                .height(1.dp)
+                .background(Gold.copy(alpha = 0.16f))
+        )
+    }
+}
+
+/**
+ * "Continue with Google" button — mirrors AuthPage.tsx's Google button
+ * exactly: bordered pill, gold "G" glyph + label, disabled (45% opacity,
+ * not-allowed) when Google sign-in isn't configured server-side
+ * (providers.google == false). A tap while disabled surfaces the same
+ * "Google sign-in is not configured yet." message the web shows, rather
+ * than doing nothing silently.
+ */
+@Composable
+fun AuthGoogleButton(
+    enabled: Boolean,
+    onClick: () -> Unit,
+    onDisabledClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    loading: Boolean = false
+) {
+    Box(
+        modifier = modifier
+            .fillMaxWidth()
+            .height(50.dp)
+            .clickable(enabled = !loading, onClick = { if (enabled) onClick() else onDisabledClick() })
+            .background(Color.Black.copy(alpha = 0.3f), RoundedCornerShape(11.dp))
+            .border(1.dp, Gold.copy(alpha = 0.22f), RoundedCornerShape(11.dp))
+            .then(if (!enabled) Modifier.background(Color.Black.copy(alpha = 0.15f), RoundedCornerShape(11.dp)) else Modifier),
+        contentAlignment = Alignment.Center
+    ) {
+        if (loading) {
+            CircularProgressIndicator(modifier = Modifier.size(20.dp), color = GoldLt, strokeWidth = 2.dp)
+        } else {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(9.dp)) {
+                Text(
+                    text = "G",
+                    color = Gold.copy(alpha = if (enabled) 1f else 0.45f),
+                    style = MaterialTheme.typography.titleMedium
+                )
+                Text(
+                    text = "Continue with Google",
+                    color = Color(0xFFEFE7FB).copy(alpha = if (enabled) 1f else 0.45f),
+                    style = MaterialTheme.typography.titleSmall
+                )
+            }
+        }
+    }
+}

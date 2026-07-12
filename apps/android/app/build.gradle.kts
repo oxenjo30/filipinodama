@@ -17,6 +17,21 @@ android {
         versionName = "0.1.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+
+        // Google Sign-In (Credential Manager) server client ID — this MUST be the
+        // WEB OAuth client ID (the same one the server's GOOGLE_CLIENT_ID env var
+        // already verifies token audience against), NOT a separate Android client
+        // ID. Client IDs are not secrets, but this is still left unconfigured by
+        // default so no project-specific value is hardcoded in source control.
+        // Supply it via a Gradle property (gradle.properties, not checked in) or
+        // an environment variable:
+        //   GOOGLE_SERVER_CLIENT_ID=xxxxxxxx.apps.googleusercontent.com
+        // See apps/android/README.md for the full Google Cloud Console setup step
+        // (Android OAuth client + debug SHA-1) this depends on.
+        val googleServerClientId = (project.findProperty("GOOGLE_SERVER_CLIENT_ID") as String?)
+            ?: System.getenv("GOOGLE_SERVER_CLIENT_ID")
+            ?: ""
+        buildConfigField("String", "GOOGLE_SERVER_CLIENT_ID", "\"$googleServerClientId\"")
     }
 
     buildTypes {
@@ -83,6 +98,13 @@ dependencies {
     implementation(libs.socketio.client)
 
     implementation(libs.coil.compose)
+
+    // Sign-in with Google (Credential Manager) — native auth, mirrors the web's
+    // Google OAuth. serverClientId is the WEB client ID (see GOOGLE_SERVER_CLIENT_ID
+    // above); credentials-play-services-auth backs GetGoogleIdOption on-device.
+    implementation(libs.androidx.credentials)
+    implementation(libs.androidx.credentials.play.services.auth)
+    implementation(libs.googleid)
 
     // Test-only — never shipped in the app APK. MockWebServer pre-approved
     // for exercising RefreshAuthenticator / AuthApi against a real (fake)

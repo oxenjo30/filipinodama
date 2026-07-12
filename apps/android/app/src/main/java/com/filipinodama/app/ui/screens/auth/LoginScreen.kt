@@ -17,6 +17,8 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -28,10 +30,12 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import com.filipinodama.app.R
 import com.filipinodama.app.data.AuthRepository
 import com.filipinodama.app.data.AuthResult
+import com.filipinodama.app.data.GoogleSignInHelper
 import com.filipinodama.app.ui.theme.Bg
 import com.filipinodama.app.ui.theme.Gold
 import com.filipinodama.app.ui.theme.GoldLt
@@ -57,7 +61,39 @@ fun LoginScreen(
     var password by remember { mutableStateOf("") }
     var error by remember { mutableStateOf<String?>(null) }
     var busy by remember { mutableStateOf(false) }
+    var googleBusy by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
+    val context = LocalContext.current
+    val providers by AuthRepository.providers.collectAsState()
+
+    // Mirrors the web's authStore.bootstrap() -> refreshProviders() call: fetch
+    // provider availability once when the auth shell is entered, so the Google
+    // button reflects the real GET /api/auth/providers state (not a stale
+    // default) instead of assuming it's always on.
+    LaunchedEffect(Unit) { AuthRepository.refreshProviders() }
+
+    fun signInWithGoogle() {
+        error = null
+        googleBusy = true
+        scope.launch {
+            val credentialResult = GoogleSignInHelper.requestIdToken(context)
+            when (val outcome = resolveCredentialResult(credentialResult)) {
+                is GoogleSignInOutcome.Cancelled -> { /* user backed out — no error, no navigation */ }
+                is GoogleSignInOutcome.Error -> error = outcome.message
+                is GoogleSignInOutcome.SignedIn -> onLoginSuccess()
+                null -> {
+                    // Credential Manager succeeded — exchange the ID token with our server.
+                    val idToken = (credentialResult as GoogleSignInHelper.Result.Success).idToken
+                    when (val serverOutcome = resolveServerAuthResult(AuthRepository.googleSignIn(idToken))) {
+                        is GoogleSignInOutcome.SignedIn -> onLoginSuccess()
+                        is GoogleSignInOutcome.Error -> error = serverOutcome.message
+                        is GoogleSignInOutcome.Cancelled -> { /* unreachable from a server result */ }
+                    }
+                }
+            }
+            googleBusy = false
+        }
+    }
 
     fun submit() {
         val cleanEmail = email.trim().lowercase()
@@ -172,12 +208,21 @@ fun LoginScreen(
             )
         }
 
-        OrDivider()
+        AuthOrDivider()
+
+        AuthGoogleButton(
+            enabled = googleButtonEnabled(providers) && !busy,
+            loading = googleBusy,
+            onClick = { signInWithGoogle() },
+            onDisabledClick = { error = "Google sign-in is not configured yet." }
+        )
+
+        Box(modifier = Modifier.height(12.dp))
 
         AuthSecondaryButton(
             text = "Continue as Guest",
             onClick = { playAsGuest() },
-            enabled = !busy
+            enabled = !busy && !googleBusy
         )
 
         Text(
@@ -198,32 +243,6 @@ fun LoginScreen(
             style = MaterialTheme.typography.bodySmall,
             textAlign = TextAlign.Center,
             modifier = Modifier.padding(top = 24.dp)
-        )
-    }
-}
-
-/** Thin "or" divider row between the primary form and the guest CTA. */
-@Composable
-private fun OrDivider() {
-    Row(
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(12.dp),
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(vertical = 20.dp)
-    ) {
-        Box(
-            modifier = Modifier
-                .weight(1f)
-                .height(1.dp)
-                .background(Gold.copy(alpha = 0.16f))
-        )
-        Text(text = "or", color = Ink2, style = MaterialTheme.typography.labelMedium)
-        Box(
-            modifier = Modifier
-                .weight(1f)
-                .height(1.dp)
-                .background(Gold.copy(alpha = 0.16f))
         )
     }
 }

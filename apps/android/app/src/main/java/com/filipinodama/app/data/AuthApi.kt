@@ -40,7 +40,24 @@ interface AuthApi {
 
     @GET("api/auth/providers")
     suspend fun providers(): ApiEnvelope<ProvidersResponse>
+
+    /**
+     * Native Google Sign-In (Credential Manager) — exchanges a Google-issued ID
+     * token for our own session, matching apps/server/src/auth/routes.ts
+     * POST /api/auth/oauth/google/token exactly. The server verifies the token
+     * (audience/issuer/expiry/email_verified) then runs the SAME
+     * find-or-create-user logic as the web's redirect-flow callback, so a
+     * device that has already signed in on web with the same Google account
+     * lands on the identical account here.
+     */
+    @POST("api/auth/oauth/google/token")
+    suspend fun googleToken(@Body request: GoogleTokenRequest): ApiEnvelope<AuthUserResponse>
 }
+
+@Serializable
+data class GoogleTokenRequest(
+    val idToken: String
+)
 
 @Serializable
 data class LoginRequest(

@@ -14,6 +14,8 @@ import androidx.compose.material3.CheckboxDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -21,10 +23,12 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import com.filipinodama.app.data.AuthRepository
 import com.filipinodama.app.data.AuthResult
+import com.filipinodama.app.data.GoogleSignInHelper
 import com.filipinodama.app.ui.theme.Bg
 import com.filipinodama.app.ui.theme.Gold
 import com.filipinodama.app.ui.theme.GoldLt
@@ -52,17 +56,57 @@ fun CreateAccountScreen(
     var agreed by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
     var busy by remember { mutableStateOf(false) }
+    var googleBusy by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
+    val context = LocalContext.current
+    val providers by AuthRepository.providers.collectAsState()
+
+    // Same provider-availability fetch as LoginScreen (mirrors the web's
+    // authStore.refreshProviders()); harmless to call again if the user
+    // arrived here via LoginScreen's "Create Account" link — GET
+    // /api/auth/providers is idempotent and cheap.
+    LaunchedEffect(Unit) { AuthRepository.refreshProviders() }
+
+    /**
+     * Accepting Terms is required before ANY account-creating action here,
+     * including Google — mirrors AuthPage.tsx's requireTerms() gate, which
+     * `startOAuth("google")` calls first, before ever redirecting to Google.
+     */
+    fun requireTerms(): Boolean {
+        if (agreed) return true
+        error = "Please accept the Terms & Conditions to continue."
+        return false
+    }
+
+    fun signInWithGoogle() {
+        if (!requireTerms()) return
+        error = null
+        googleBusy = true
+        scope.launch {
+            val credentialResult = GoogleSignInHelper.requestIdToken(context)
+            when (val outcome = resolveCredentialResult(credentialResult)) {
+                is GoogleSignInOutcome.Cancelled -> { /* user backed out — no error, no navigation */ }
+                is GoogleSignInOutcome.Error -> error = outcome.message
+                is GoogleSignInOutcome.SignedIn -> onAccountCreated()
+                null -> {
+                    val idToken = (credentialResult as GoogleSignInHelper.Result.Success).idToken
+                    when (val serverOutcome = resolveServerAuthResult(AuthRepository.googleSignIn(idToken))) {
+                        is GoogleSignInOutcome.SignedIn -> onAccountCreated()
+                        is GoogleSignInOutcome.Error -> error = serverOutcome.message
+                        is GoogleSignInOutcome.Cancelled -> { /* unreachable from a server result */ }
+                    }
+                }
+            }
+            googleBusy = false
+        }
+    }
 
     fun submit() {
         val cleanUsername = username.trim()
         val cleanEmail = email.trim().lowercase()
         val cleanPass = password.trim()
 
-        if (!agreed) {
-            error = "Please accept the Terms & Conditions to continue."
-            return
-        }
+        if (!requireTerms()) return
         if (cleanUsername.isEmpty()) {
             error = "Please enter a display name."
             return
@@ -164,13 +208,25 @@ fun CreateAccountScreen(
                 loading = busy,
                 modifier = Modifier.padding(top = 4.dp)
             )
+        }
 
-            // Terms & Conditions acceptance — required for account creation,
-            // matching AuthPage.tsx's requireTerms() gate exactly.
+        AuthOrDivider()
+
+        AuthGoogleButton(
+            enabled = googleButtonEnabled(providers) && !busy,
+            loading = googleBusy,
+            onClick = { signInWithGoogle() },
+            onDisabledClick = { error = "Google sign-in is not configured yet." }
+        )
+
+        Column(modifier = Modifier.fillMaxWidth()) {
+            // Terms & Conditions acceptance — required for account creation via
+            // EITHER path (email form or Google), matching AuthPage.tsx's
+            // requireTerms() gate, which startOAuth("google") calls first too.
             Row(
                 verticalAlignment = Alignment.Top,
                 horizontalArrangement = Arrangement.spacedBy(9.dp),
-                modifier = Modifier.padding(top = 6.dp)
+                modifier = Modifier.padding(top = 18.dp)
             ) {
                 Checkbox(
                     checked = agreed,
@@ -178,7 +234,7 @@ fun CreateAccountScreen(
                         agreed = it
                         if (it) error = null
                     },
-                    enabled = !busy,
+                    enabled = !busy && !googleBusy,
                     colors = CheckboxDefaults.colors(checkedColor = Gold, uncheckedColor = Ink2)
                 )
                 Text(

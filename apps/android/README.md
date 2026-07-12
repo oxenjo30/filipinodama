@@ -67,6 +67,85 @@ emulator. To hit a local dev server from a real phone/tablet, override
 before committing; this value is not meant to be a permanent per-developer
 setting in Phase 1.
 
+## Google Sign-In setup (owner action required)
+
+Native Google Sign-In uses Android's **Credential Manager** (`androidx.credentials`
++ `com.google.android.libraries.identity.googleid`), which hands the app a
+Google-signed ID token that `POST /api/auth/oauth/google/token` verifies
+server-side (same `GOOGLE_CLIENT_ID` env var, same find-or-create-user logic
+as the web's OAuth redirect flow — see `apps/server/src/auth/oauth.ts`).
+
+**This does not work out of the box.** Until the console step below is done,
+tapping "Continue with Google" fails at credential retrieval on-device (or is
+disabled if `GOOGLE_SERVER_CLIENT_ID` is unset — see below), even though the
+client and server code paths are fully wired.
+
+### 1. Get the debug keystore's SHA-1 fingerprint
+
+```sh
+keytool -list -v -keystore %USERPROFILE%\.android\debug.keystore -alias androiddebugkey -storepass android
+```
+
+(macOS/Linux: `~/.android/debug.keystore` instead of `%USERPROFILE%\.android\debug.keystore`.)
+Copy the `SHA1:` value from the output.
+
+### 2. Register an Android OAuth client in Google Cloud Console
+
+In the **same Google Cloud project as the existing web OAuth client**
+(the one behind the server's `GOOGLE_CLIENT_ID`/`GOOGLE_CLIENT_SECRET`):
+
+1. Go to **APIs & Services → Credentials → Create Credentials → OAuth client ID**.
+2. Application type: **Android**.
+3. Package name: `com.filipinodama.app`.
+4. SHA-1 certificate fingerprint: the value from step 1 (debug). Add the
+   **release** signing key's SHA-1 here too once a real release keystore
+   exists (see "Release / AAB" above — release builds are unsigned today).
+5. Save. (No client secret is issued for Android clients — Credential
+   Manager authenticates via the signed APK + this registration instead.)
+
+This Android client registration is what lets Credential Manager return a
+real Google credential for this app's package/signature. It does **not**
+replace the web client ID — the app authenticates *against* the existing web
+client ID (next step), the Android registration just authorizes this app's
+package+signature to participate.
+
+### 3. Configure `GOOGLE_SERVER_CLIENT_ID`
+
+`GetGoogleIdOption.serverClientId` (in `GoogleSignInHelper.kt`) must be set to
+the **WEB** OAuth client ID — the same one already configured as the server's
+`GOOGLE_CLIENT_ID` — NOT the Android client ID created in step 2. This is by
+design: Google's ID token audience (`aud`) is the *server-verifying* client,
+so it must match what `apps/server/src/config/env.ts`'s `GOOGLE_CLIENT_ID`
+expects, or the server's audience check rejects the token (401
+`OAUTH_AUDIENCE_MISMATCH`).
+
+Client IDs are not secrets, but no project-specific value is hardcoded in
+source control — supply it via a Gradle property or environment variable:
+
+```properties
+# apps/android/local.properties (gitignored) or a global gradle.properties
+GOOGLE_SERVER_CLIENT_ID=xxxxxxxxxxxx.apps.googleusercontent.com
+```
+
+or
+
+```sh
+GOOGLE_SERVER_CLIENT_ID=xxxxxxxxxxxx.apps.googleusercontent.com ./gradlew assembleDebug
+```
+
+With it unset (the default), `BuildConfig.GOOGLE_SERVER_CLIENT_ID` is `""`
+and `GoogleSignInHelper` returns an honest "Google sign-in is not configured
+yet" failure instead of attempting a credential request.
+
+### Unverified state
+
+As of this change, steps 1–3 above have **not** been performed by an
+operator with Google Cloud Console access — only the code paths (server
+endpoint, Android UI, Credential Manager wiring) are built and tested. Once
+the console registration exists and `GOOGLE_SERVER_CLIENT_ID` is supplied,
+on-device credential retrieval should be manually verified on an emulator or
+device with a Google account signed in.
+
 ## Fonts
 
 Self-hosted OFL 1.1 fonts (Cinzel, Inter, JetBrains Mono) live in
