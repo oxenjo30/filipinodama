@@ -31,6 +31,7 @@ import { adminAnalyticsRoutes } from "./modules/admin-analytics.js";
 import { adminTicketsRoutes } from "./modules/admin-tickets.js";
 import { adminSearchRoutes } from "./modules/admin-search.js";
 import { adminFinancialsRoutes } from "./modules/admin-financials.js";
+import { adminGatewaysRoutes } from "./modules/admin-gateways.js";
 import { adminTournamentsRoutes } from "./modules/admin-tournaments.js";
 import { leaderboardRoutes } from "./modules/leaderboard.js";
 import { matchRoutes } from "./modules/matches.js";
@@ -127,6 +128,7 @@ export async function buildApp(): Promise<FastifyInstance> {
   await app.register(adminTournamentsRoutes, { prefix: "/api" });
   await app.register(adminSearchRoutes, { prefix: "/api" });
   await app.register(adminFinancialsRoutes, { prefix: "/api" });
+  await app.register(adminGatewaysRoutes, { prefix: "/api" });
   await app.register(leaderboardRoutes, { prefix: "/api" });
   await app.register(matchRoutes, { prefix: "/api" });
   await app.register(roomRoutes, { prefix: "/api" });

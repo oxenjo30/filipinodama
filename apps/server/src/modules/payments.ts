@@ -14,7 +14,7 @@ import { applyLedger, applyLedgerTx } from "../economy/ledger.js";
  * PHP centavos. If PayMongo keys are absent, checkout returns notConfigured.
  */
 
-const DIAMOND_PACKS = [
+export const DIAMOND_PACKS = [
   { id: "pack_diamonds_80", diamonds: 80, bonus: 0, priceCents: 4900, label: "Pouch" },
   { id: "pack_diamonds_250", diamonds: 250, bonus: 20, priceCents: 14900, label: "Sack" },
   { id: "pack_diamonds_550", diamonds: 550, bonus: 70, priceCents: 29900, label: "Chest" },
