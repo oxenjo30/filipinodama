@@ -59,6 +59,84 @@ const guildInclude = {
   guildMember: { include: { guild: { select: { id: true, name: true, tag: true } } } },
 } as const;
 
+const playerNameSelect = { select: { id: true, displayName: true, tag: true } } as const;
+
+/** Algebraic square label, e.g. {r:2,c:1} -> "b3" (matches ReplayModal's notation). */
+const squareLabel = (sq: { r: number; c: number } | undefined | null): string | null => {
+  if (!sq || typeof sq.r !== "number" || typeof sq.c !== "number") return null;
+  const file = "abcdefgh"[sq.c];
+  if (!file) return null;
+  return `${file}${8 - sq.r}`;
+};
+
+/** First-move label for one match's moves[] (server-stored Move[] JSON), e.g. "b3 -> c4". */
+function firstMoveLabel(moves: unknown): string | null {
+  if (!Array.isArray(moves) || moves.length === 0) return null;
+  const first = moves[0] as { from?: { r: number; c: number }; path?: { r: number; c: number }[] } | undefined;
+  const from = squareLabel(first?.from);
+  const to = squareLabel(first?.path?.[first.path.length - 1]);
+  if (!from || !to) return null;
+  return `${from} → ${to}`;
+}
+
+/**
+ * Derives "favorite move" + "favorite openings" from a player's last 30 finished
+ * matches: the most frequent first-move square-pair, mapped to a friendly label.
+ * NEVER fabricated — both are omitted/empty when there isn't enough real data.
+ */
+async function computeOpeningStats(userId: string): Promise<{ favoriteMove: string | null; openings: { label: string; pct: number }[] }> {
+  const matches = await prisma.match.findMany({
+    where: { OR: [{ redId: userId }, { blueId: userId }], endedAt: { not: null } },
+    orderBy: { endedAt: "desc" },
+    take: 30,
+    select: { moves: true },
+  });
+
+  const counts = new Map<string, number>();
+  let total = 0;
+  for (const m of matches) {
+    const label = firstMoveLabel(m.moves);
+    if (!label) continue;
+    counts.set(label, (counts.get(label) ?? 0) + 1);
+    total += 1;
+  }
+  if (total === 0) return { favoriteMove: null, openings: [] };
+
+  const ranked = [...counts.entries()].sort((a, b) => b[1] - a[1]);
+  const favoriteMove = ranked[0][0];
+  const openings = ranked.slice(0, 3).map(([label, count]) => ({
+    label,
+    pct: Math.round((count / total) * 100),
+  }));
+  return { favoriteMove, openings };
+}
+
+/** Recent finished matches for the public "Match Replays" list — real data, capped to 5. */
+async function recentMatchesFor(userId: string) {
+  const rows = await prisma.match.findMany({
+    where: { OR: [{ redId: userId }, { blueId: userId }], endedAt: { not: null } },
+    orderBy: { endedAt: "desc" },
+    take: 5,
+    include: { red: playerNameSelect, blue: playerNameSelect },
+  });
+  return rows.map((m) => {
+    const iAmRed = m.redId === userId;
+    const opponent = iAmRed ? m.blue : m.red;
+    const trophyDelta = iAmRed ? m.redTrophyDelta : m.blueTrophyDelta;
+    const result: "win" | "loss" | "draw" =
+      m.winner === "draw" || m.winner === null ? "draw" : (m.winner === "red") === iAmRed ? "win" : "loss";
+    return {
+      id: m.id,
+      opponentName: opponent?.displayName ?? (m.mode === "AI" || m.mode === "LOCAL" ? "Computer" : "Opponent"),
+      result,
+      mode: m.mode,
+      trophyDelta: trophyDelta ?? null,
+      endedAt: m.endedAt,
+      hasReplay: Array.isArray(m.moves) && m.moves.length > 0,
+    };
+  });
+}
+
 const ledgerQuerySchema = z.object({
   currency: z.enum(["GOLD", "DIAMONDS", "TROPHIES"]).optional(),
   cursor: z.string().optional(),
@@ -122,6 +200,29 @@ export async function userRoutes(app: FastifyInstance) {
     }
 
     return ok({ user: { ...publicProfile(user), isBot: user.isBot, relationship, requestId } });
+  });
+
+  // GET /api/users/:id/profile-extras — public profile enrichment (v3 delta):
+  // favorite move + favorite openings (derived from the player's last 30 finished
+  // matches' first move), recent match replays (≤5), and badges. Guild is already
+  // on the base /users/:id payload. Every field is real-data-or-empty — nothing
+  // here is generated/fabricated; a player with no finished matches gets nulls
+  // and empty arrays, never placeholder content.
+  app.get<{ Params: { id: string } }>("/users/:id/profile-extras", { preHandler: requireAuth }, async (req) => {
+    const user = await prisma.user.findFirst({
+      where: { id: req.params.id, deletedAt: null },
+      select: { id: true },
+    });
+    if (!user) throw err.notFound("USER_NOT_FOUND", "User not found");
+
+    const [{ favoriteMove, openings }, recentMatches] = await Promise.all([
+      computeOpeningStats(user.id),
+      recentMatchesFor(user.id),
+    ]);
+
+    // No achievements/badges backend exists yet — an honest empty list, not
+    // fabricated chips (see tasks/lessons.md-style rule: never invent data).
+    return ok({ favoriteMove, openings, recentMatches, badges: [] as string[] });
   });
 
   // GET /api/users/search?q= — global player search (topbar 🔍). Case-insensitive
