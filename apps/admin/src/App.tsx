@@ -19,6 +19,7 @@ import { Phase2 } from "./pages/Phase2";
 import { Admins } from "./pages/Admins";
 import { Settings } from "./pages/Settings";
 import { Campaigns } from "./pages/Campaigns";
+import { Financials } from "./pages/Financials";
 
 /**
  * Admin shell — reproduces the approved FilipinoDama Admin.dc.html layout: the
@@ -39,7 +40,7 @@ const NAV: Nav[] = [
   ["/support", "Support", "#5fd08a", "Players & safety", "SUPPORT"],
   ["/matches", "Anti-cheat", "#d98a3a", "Players & safety", "MODERATOR"],
   ["/economy", "Store & economy", "#f0cf72", "Economy", "ECONOMY"],
-  ["/financials", "Financials", "#4bd6a0", "Economy", "ECONOMY", true],
+  ["/financials", "Financials", "#4bd6a0", "Economy", "ECONOMY"],
   ["/fraud", "Fraud & AML", "#ff7a7a", "Economy", "ECONOMY", true],
   ["/liveops", "Live ops", "#4fd0c0", "Engagement", "ECONOMY"],
   ["/tournaments", "Tournaments", "#e0a24a", "Engagement", "ECONOMY"],
@@ -424,8 +425,8 @@ export function App() {
             <Route path="/campaigns" element={<Campaigns />} />
             <Route path="/settings" element={<Settings />} />
             <Route path="/admins" element={<Admins />} />
-            {/* Phase-2 stubs */}
-            <Route path="/financials" element={<Phase2 title="Financials" note="Blocked — real-money top-up is disabled for legal compliance." />} />
+            <Route path="/financials" element={<Financials />} />
+            {/* Phase-2 stub */}
             <Route path="/fraud" element={<Phase2 title="Fraud & AML" note="Payment-driven risk engine (blocked on payments)." />} />
             <Route path="*" element={<Navigate to="/overview" replace />} />
           </Routes>
