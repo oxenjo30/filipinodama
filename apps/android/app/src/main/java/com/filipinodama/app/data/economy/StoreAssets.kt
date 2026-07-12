@@ -119,3 +119,44 @@ fun storeItemDiscountPct(item: StoreItemDto): Int {
     if (base <= 0) return 0
     return ((1.0 - price.toDouble() / base.toDouble()) * 100).toInt()
 }
+
+// ── Equip mapping + equipped-state derivation ──
+
+/**
+ * Maps a purchasable item to the equip PATCH body. Slots carry the ITEM ID —
+ * the server validates each id against InventoryItem.itemId and persists it
+ * to User.equippedBoard/equippedSkin/frameId (an avatar id is resolved
+ * server-side to its assetKey on User.avatarUrl). Sending an assetKey here
+ * would 403 NOT_OWNED. Emotes/bundles/season pass aren't equippable via this
+ * route (emotes use PATCH /users/me/equip-emote — a later phase).
+ */
+fun equipRequestFor(item: StoreItemDto): EquipRequest? = when (item.type) {
+    "BOARD" -> EquipRequest(board = item.id)
+    "SKIN" -> EquipRequest(skin = item.id)
+    "FRAME" -> EquipRequest(frame = item.id)
+    "AVATAR" -> EquipRequest(avatar = item.id)
+    else -> null
+}
+
+/**
+ * Is this owned item currently equipped, per the REAL account fields —
+ * mirroring apps/web InventoryPage.tsx's isEquipped() exactly: board/skin/
+ * frame compare the equipped item ID; avatar compares the equipped assetKey
+ * (avatar equips persist to User.avatarUrl as an assetKey — the endsWith
+ * branch tolerates the "/assets/…" path form updateProfileSchema also
+ * accepts). NOT derived from InventoryItem.equipped, which the equip route
+ * never updates.
+ */
+fun isItemEquipped(
+    item: StoreItemDto,
+    equippedBoard: String?,
+    equippedSkin: String?,
+    frameId: String?,
+    avatarUrl: String?
+): Boolean = when (item.type) {
+    "BOARD" -> equippedBoard == item.id
+    "SKIN" -> equippedSkin == item.id
+    "FRAME" -> frameId == item.id
+    "AVATAR" -> avatarUrl != null && (avatarUrl == item.assetKey || avatarUrl.endsWith("/${item.assetKey}"))
+    else -> false
+}

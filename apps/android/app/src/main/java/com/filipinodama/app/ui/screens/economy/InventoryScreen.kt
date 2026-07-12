@@ -22,56 +22,68 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
+import com.filipinodama.app.data.AuthRepository
 import com.filipinodama.app.data.economy.EconomyRepository
 import com.filipinodama.app.data.economy.EconomyResult
 import com.filipinodama.app.data.economy.ReceiptDto
 import com.filipinodama.app.data.economy.STORE_TYPE_META
 import com.filipinodama.app.data.economy.StoreItemDto
+import com.filipinodama.app.data.economy.equipRequestFor
+import com.filipinodama.app.data.economy.isItemEquipped
 import com.filipinodama.app.data.economy.storeThumbFor
 import com.filipinodama.app.ui.theme.Gold
 import com.filipinodama.app.ui.theme.GoldLt
 import com.filipinodama.app.ui.theme.Ink
 import com.filipinodama.app.ui.theme.Ink2
 import com.filipinodama.app.ui.theme.Panel
+import kotlinx.coroutines.launch
 
 /**
  * Inventory — mobile-screen-inventory.md SCREEN 11. Owned-items grid grouped
  * by category, each with an Equip/Equipped action, mirroring StoreScreen's
- * item-card visuals. "Owned" is derived from GET /api/store/items (catalog)
- * cross-referenced with the purchase receipts from GET /api/orders (the only
- * ownership signal exposed by this server build over REST — there is no
- * dedicated GET /inventory route). This mirrors the honest approach: an item
- * only counts as owned when a real Order line names it.
+ * item-card visuals.
+ *
+ * "Owned" comes from GET /api/users/me/export → inventory[] keyed by itemId —
+ * the same (and only) REST ownership source apps/web StorePage/InventoryPage
+ * use. This INCLUDES granted items with no Order rows (free starter
+ * cosmetics), which an order-history derivation would wrongly render as
+ * un-owned. Equipped state derives from the real account fields
+ * (me.equippedBoard/equippedSkin/frameId/avatarUrl) via [isItemEquipped],
+ * exactly like web — never from a client-side tap set.
  */
 @Composable
 fun InventoryScreen(onBrowseStore: () -> Unit = {}) {
+    val authState by AuthRepository.state.collectAsState()
+    val me = authState.user
+    val scope = rememberCoroutineScope()
     var groups by remember { mutableStateOf<Map<String, List<StoreItemDto>>?>(null) } // null = loading
-    var equippedIds by remember { mutableStateOf<Set<String>>(emptySet()) }
 
-    LaunchedEffect(Unit) {
+    LaunchedEffect(me?.id) {
         val itemsResult = EconomyRepository.storeItems()
-        val ordersResult = EconomyRepository.orders()
+        val inventoryResult = EconomyRepository.ownedInventory()
 
         val allItems = (itemsResult as? EconomyResult.Success)?.data?.items ?: emptyList()
-        val receipts = (ordersResult as? EconomyResult.Success)?.data?.receipts ?: emptyList()
+        val ownedIds = (inventoryResult as? EconomyResult.Success)
+            ?.data?.inventory?.map { it.itemId }?.toSet() ?: emptySet()
 
-        val ownedNames = receipts
-            .filter { it.kind == "item" }
-            .flatMap { it.items }
-            .map { it.name }
-            .toSet()
-
-        val ownedItems = allItems.filter { it.name in ownedNames }
+        val ownedItems = allItems.filter { it.id in ownedIds }
         groups = ownedItems.groupBy { it.type }
     }
+
+    // Count of owned items currently equipped per the real account fields.
+    val equippedCount = groups?.values?.flatten()?.count {
+        isItemEquipped(it, me?.equippedBoard, me?.equippedSkin, me?.frameId, me?.avatarUrl)
+    } ?: 0
 
     Column(modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
         Row(
@@ -94,7 +106,7 @@ fun InventoryScreen(onBrowseStore: () -> Unit = {}) {
                     val itemsOwned = g.values.sumOf { it.size }
                     Row(horizontalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.padding(bottom = 16.dp)) {
                         StatTile(label = "Items Owned", value = itemsOwned.toString(), modifier = Modifier.weight(1f))
-                        StatTile(label = "Equipped", value = equippedIds.size.toString(), modifier = Modifier.weight(1f))
+                        StatTile(label = "Equipped", value = equippedCount.toString(), modifier = Modifier.weight(1f))
                     }
                     g.forEach { (type, items) ->
                         Text(
@@ -112,8 +124,16 @@ fun InventoryScreen(onBrowseStore: () -> Unit = {}) {
                             items(items) { item ->
                                 InventoryItemCard(
                                     item = item,
-                                    equipped = item.id in equippedIds,
-                                    onEquip = { equippedIds = equippedIds + item.id }
+                                    // Real account-field equipped state; the equip
+                                    // PATCH patches AuthRepository so this
+                                    // recomposes when the server confirms.
+                                    equipped = isItemEquipped(item, me?.equippedBoard, me?.equippedSkin, me?.frameId, me?.avatarUrl),
+                                    onEquip = {
+                                        scope.launch {
+                                            val request = equipRequestFor(item)
+                                            if (request != null) EconomyRepository.equip(request)
+                                        }
+                                    }
                                 )
                             }
                         }

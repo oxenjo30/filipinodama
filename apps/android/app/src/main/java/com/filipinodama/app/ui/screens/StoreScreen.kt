@@ -45,6 +45,8 @@ import com.filipinodama.app.data.economy.STORE_TYPE_META
 import com.filipinodama.app.data.economy.STORE_TYPE_ORDER
 import com.filipinodama.app.data.economy.StoreItemDto
 import com.filipinodama.app.data.economy.StoreThumb
+import com.filipinodama.app.data.economy.equipRequestFor
+import com.filipinodama.app.data.economy.isItemEquipped
 import com.filipinodama.app.data.economy.storeItemCurrency
 import com.filipinodama.app.data.economy.storeItemDiscountPct
 import com.filipinodama.app.data.economy.storeItemIsDeal
@@ -86,7 +88,6 @@ fun StoreScreen(onOpenInventory: () -> Unit = {}) {
     var items by remember { mutableStateOf<List<StoreItemDto>?>(null) } // null = loading
     var loadError by remember { mutableStateOf(false) }
     var owned by remember { mutableStateOf<Set<String>>(emptySet()) }
-    var equipped by remember { mutableStateOf<Set<String>>(emptySet()) }
     var tab by remember { mutableStateOf("All") }
     var buyFlow by remember { mutableStateOf<BuyFlowState>(BuyFlowState.Idle) }
 
@@ -97,6 +98,21 @@ fun StoreScreen(onOpenInventory: () -> Unit = {}) {
                 items = emptyList()
                 loadError = true
             }
+        }
+    }
+
+    // Real ownership: the export's InventoryItem rows keyed by itemId (the
+    // same source web's StorePage uses) — INCLUDES granted starter items that
+    // have no Order rows. Reloaded when the account changes; on failure owned
+    // stays empty so nothing is falsely marked owned.
+    LaunchedEffect(me?.id) {
+        if (me == null) {
+            owned = emptySet()
+            return@LaunchedEffect
+        }
+        when (val result = EconomyRepository.ownedInventory()) {
+            is EconomyResult.Success -> owned = result.data.inventory.map { it.itemId }.toSet()
+            is EconomyResult.Failure -> { /* leave owned as-is — never falsely mark owned */ }
         }
     }
 
@@ -180,15 +196,17 @@ fun StoreScreen(onOpenInventory: () -> Unit = {}) {
                             StoreItemCard(
                                 item = item,
                                 owned = item.id in owned,
-                                equipped = item.id in equipped,
+                                // Equipped derives from the REAL account fields
+                                // (me.equippedBoard/equippedSkin/frameId/avatarUrl),
+                                // like web's InventoryPage — the successful equip
+                                // PATCH patches these via EconomyRepository.equip,
+                                // so this recomposes reactively.
+                                equipped = isItemEquipped(item, me?.equippedBoard, me?.equippedSkin, me?.frameId, me?.avatarUrl),
                                 onPreviewOrBuy = { buyFlow = BuyFlow.startConfirm(item) },
                                 onEquip = {
                                     scope.launch {
                                         val request = equipRequestFor(item)
-                                        if (request != null) {
-                                            EconomyRepository.equip(request)
-                                            equipped = equipped + item.id
-                                        }
+                                        if (request != null) EconomyRepository.equip(request)
                                     }
                                 }
                             )
@@ -223,15 +241,6 @@ fun StoreScreen(onOpenInventory: () -> Unit = {}) {
         is BuyFlowState.Error -> PurchaseErrorOverlay(message = state.message, onDismiss = { buyFlow = BuyFlow.dismiss() })
         BuyFlowState.Idle -> {}
     }
-}
-
-/** Maps a purchasable item to the equip PATCH shape (board/skin/frame/avatar slots only — emotes/bundles/season pass aren't equippable this way). */
-private fun equipRequestFor(item: StoreItemDto): com.filipinodama.app.data.economy.EquipRequest? = when (item.type) {
-    "BOARD" -> com.filipinodama.app.data.economy.EquipRequest(board = item.assetKey)
-    "SKIN" -> com.filipinodama.app.data.economy.EquipRequest(skin = item.assetKey)
-    "FRAME" -> com.filipinodama.app.data.economy.EquipRequest(frame = item.assetKey)
-    "AVATAR" -> com.filipinodama.app.data.economy.EquipRequest(avatar = item.assetKey)
-    else -> null
 }
 
 @Composable

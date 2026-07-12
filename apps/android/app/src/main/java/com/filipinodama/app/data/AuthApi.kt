@@ -117,5 +117,16 @@ data class AuthUser(
     val trophies: Int = 0,
     val gold: Int = 0,
     val diamonds: Int = 0,
-    val rankTier: String? = null
+    val rankTier: String? = null,
+    // Equipped cosmetics (Phase 5) — publicUser() carries the equipped item
+    // IDS for board/skin/frame, and the equipped AVATAR's assetKey on
+    // avatarUrl (the server persists an avatar equip as its assetKey — see
+    // apps/server/src/modules/users.ts PATCH /users/me/equip). Equipped state
+    // in the Store/Inventory UIs derives from these account fields, exactly
+    // like apps/web InventoryPage.tsx — NOT from InventoryItem.equipped,
+    // which the equip route never touches.
+    val avatarUrl: String? = null,
+    val frameId: String? = null,
+    val equippedBoard: String? = null,
+    val equippedSkin: String? = null
 )

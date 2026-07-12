@@ -180,4 +180,46 @@ class EconomyDtoSerializationTest {
         val dto = json.decodeFromString<ActiveMatchResponse>("""{"match":null}""")
         assertNull(dto.match)
     }
+
+    @Test
+    fun `users me export decodes only the inventory array ignoring the rest of the GDPR dump`() {
+        // Real export shape (apps/server/src/modules/users.ts GET /users/me/export):
+        // inventory is raw prisma.inventoryItem rows; account/ledger/orders/... are
+        // present but ignored via ignoreUnknownKeys. The "classic" row below is a
+        // GRANTED starter (no matching order anywhere) — ownership must still see it.
+        val raw = """
+            {"exportedAt":"2026-07-12T00:00:00.000Z",
+             "account":{"id":"u1","username":"datu","gold":800,"diamonds":50},
+             "ledger":[{"id":"l1","userId":"u1","currency":"GOLD","amount":-500}],
+             "inventory":[
+               {"id":"inv1","userId":"u1","itemId":"classic","equipped":false,"acquiredAt":"2026-06-01T00:00:00.000Z"},
+               {"id":"inv2","userId":"u1","itemId":"board-ebony","equipped":false,"acquiredAt":"2026-07-01T00:00:00.000Z"}
+             ],
+             "orders":[{"id":"o1","userId":"u1","items":[{"name":"Imperial Ebony Board","price":500}],"currency":"GOLD","total":500,"status":"completed","createdAt":"2026-07-01T00:00:00.000Z"}],
+             "payments":[],"friendships":[],"friendRequests":{"sent":[],"received":[]},
+             "guildMembership":null,"questProgress":[],"seasonProgress":[],"notifications":[],"matches":[]}
+        """.trimIndent()
+
+        val dto = json.decodeFromString<UserExportResponse>(raw)
+
+        assertEquals(2, dto.inventory.size)
+        assertEquals("classic", dto.inventory[0].itemId)
+        assertEquals("board-ebony", dto.inventory[1].itemId)
+    }
+
+    @Test
+    fun `equip response decodes the returned publicProfile equipped fields`() {
+        val raw = """
+            {"user":{"id":"u1","username":"datu","displayName":"Datu Rico","tag":"#0001",
+              "equippedBoard":"board-ebony","equippedSkin":"skin-crimson","frameId":null,
+              "avatarUrl":"avatars/sovereign.png","trophies":1340}}
+        """.trimIndent()
+
+        val dto = json.decodeFromString<EquipResponse>(raw)
+
+        assertEquals("board-ebony", dto.user.equippedBoard)
+        assertEquals("skin-crimson", dto.user.equippedSkin)
+        assertNull(dto.user.frameId)
+        assertEquals("avatars/sovereign.png", dto.user.avatarUrl)
+    }
 }

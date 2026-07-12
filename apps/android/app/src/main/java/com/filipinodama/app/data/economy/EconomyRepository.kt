@@ -45,16 +45,46 @@ object EconomyRepository {
         return result
     }
 
-    suspend fun equip(request: EquipRequest): EconomyResult<Unit> =
-        call { api.equip(request) }
+    /**
+     * PATCH /users/me/equip with the owned item's ID (the server validates it
+     * against InventoryItem.itemId; a SKIN id in the board slot 400s). On
+     * success the server returns the fresh publicProfile — mirror its
+     * equipped fields into the cached session user so every screen's
+     * equipped-state derivation (see [isItemEquipped] in StoreAssets.kt)
+     * updates reactively, exactly like apps/web InventoryPage.tsx patching
+     * the auth store with the returned equipped ids.
+     */
+    suspend fun equip(request: EquipRequest): EconomyResult<EquipResponse> {
+        val result = call { api.equip(request) }
+        if (result is EconomyResult.Success) {
+            val current = AuthRepository.state.value.user
+            if (current != null) {
+                val u = result.data.user
+                AuthRepository.patchUser(
+                    current.copy(
+                        equippedBoard = u.equippedBoard,
+                        equippedSkin = u.equippedSkin,
+                        frameId = u.frameId,
+                        avatarUrl = u.avatarUrl
+                    )
+                )
+            }
+        }
+        return result
+    }
 
-    // ── Inventory / owned items — sourced from purchase history is not
-    // enough (owned != purchased-this-session); the app derives "owned" from
-    // GET /store/items (catalog) + a purchase's InventoryItem, matching the
-    // web client's use of the GDPR export for ownership. We expose orders()
-    // only; inventory ownership is tracked client-side per StoreScreen after
-    // each successful purchase (see StoreScreen kdoc) since there is no
-    // dedicated GET /inventory REST route in this server build.
+    // ── Inventory / owned items ──
+
+    /**
+     * The authed user's real InventoryItem rows via GET /users/me/export —
+     * the same (and only) REST ownership source the web client uses
+     * (StorePage.tsx / InventoryPage.tsx). Ownership MUST key on itemId from
+     * these rows, never on order history: granted items (free starter
+     * cosmetics) have inventory rows but NO Order rows and would otherwise
+     * falsely render as un-owned.
+     */
+    suspend fun ownedInventory(): EconomyResult<UserExportResponse> =
+        call { api.export() }
 
     // ── Orders / purchase history ──
 

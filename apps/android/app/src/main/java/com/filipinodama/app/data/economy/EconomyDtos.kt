@@ -104,7 +104,25 @@ data class OrdersResponse(
     val receipts: List<ReceiptDto> = emptyList()
 )
 
+// ── Owned inventory (apps/server/src/modules/users.ts GET /users/me/export) ──
+// The GDPR export is the ONLY REST read that exposes the user's InventoryItem
+// rows — the same source apps/web StorePage/InventoryPage use for ownership
+// (setOwned(new Set(data.inventory.map(i => i.itemId)))). Ownership is keyed
+// by itemId and INCLUDES granted items that have no Order rows (e.g. free
+// starter cosmetics granted at signup), which a purchase-history-based
+// derivation would miss. Only `inventory` is declared here; the rest of the
+// export payload (account/ledger/orders/matches/...) is ignored via
+// ignoreUnknownKeys.
+
+@Serializable
+data class UserExportResponse(
+    val inventory: List<InventoryItemDto> = emptyList()
+)
+
 // ── Equip (apps/server/src/modules/users.ts PATCH /users/me/equip) ──
+// Each slot takes the owned item's ID (validated against InventoryItem.itemId
+// server-side); the server itself resolves an avatar item id to its assetKey
+// before persisting to User.avatarUrl.
 
 @Serializable
 data class EquipRequest(
@@ -112,6 +130,20 @@ data class EquipRequest(
     val skin: String? = null,
     val frame: String? = null,
     val avatar: String? = null
+)
+
+/** The slice of the equip PATCH's returned publicProfile() we mirror into the session user. */
+@Serializable
+data class EquippedUserDto(
+    val equippedBoard: String? = null,
+    val equippedSkin: String? = null,
+    val frameId: String? = null,
+    val avatarUrl: String? = null
+)
+
+@Serializable
+data class EquipResponse(
+    val user: EquippedUserDto
 )
 
 // ── Daily login rewards (apps/server/src/modules/rewards.ts) ──

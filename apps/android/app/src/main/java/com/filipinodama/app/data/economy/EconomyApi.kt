@@ -24,8 +24,17 @@ interface EconomyApi {
     @GET("api/orders")
     suspend fun orders(): ApiEnvelope<OrdersResponse>
 
+    /**
+     * GDPR export — used ONLY for its `inventory` array (the sole REST read of
+     * the user's InventoryItem rows), mirroring apps/web StorePage.tsx /
+     * InventoryPage.tsx. Ownership is keyed by inventory itemId, never derived
+     * from order history (granted starter items have no Order rows).
+     */
+    @GET("api/users/me/export")
+    suspend fun export(): ApiEnvelope<UserExportResponse>
+
     @PATCH("api/users/me/equip")
-    suspend fun equip(@Body request: EquipRequest): ApiEnvelope<Unit>
+    suspend fun equip(@Body request: EquipRequest): ApiEnvelope<EquipResponse>
 
     @GET("api/rewards/daily-login")
     suspend fun dailyLoginStatus(): ApiEnvelope<DailyLoginStatusResponse>
