@@ -16,6 +16,13 @@ type GuildRow = {
   createdAt: string;
 };
 
+type JoinRequestRow = {
+  id: string;
+  createdAt: string;
+  player: { id: string; username: string; tag: string; displayName: string };
+  guild: { id: string; name: string; tag: string };
+};
+
 type RosterMember = {
   userId: string;
   username: string;
@@ -64,6 +71,7 @@ export function GuildsPage() {
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
   const [selId, setSelId] = useState<string | null>(null);
+  const [apps, setApps] = useState<JoinRequestRow[]>([]);
   // Deep-link from the header global search (handoffv3 row 16): a guild
   // result routes to `?open=<id>`, which opens this same detail drawer.
   // Consumed once on mount, then stripped from the URL.
@@ -95,6 +103,41 @@ export function GuildsPage() {
     return () => clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [q, sort]);
+
+  // Join requests inbox (handoffv3 row 24) — panel above the table, hidden
+  // when empty (hasGuildApps semantics). Loaded once on mount + refetched
+  // after every approve/reject.
+  const loadApps = () => {
+    api
+      .get<{ items: JoinRequestRow[] }>("/api/admin/guilds/requests")
+      .then((d) => setApps(d.items))
+      .catch(() => setApps([]));
+  };
+  useEffect(loadApps, []);
+
+  const approveApp = (a: JoinRequestRow) =>
+    mutate({
+      title: `Approve ${a.player.username}'s request`,
+      body: `Add ${a.player.username} to ${a.guild.name}?`,
+      requireReason: true,
+      confirmLabel: "Approve",
+      method: "POST",
+      path: `/api/admin/guilds/requests/${a.id}/approve`,
+      successMsg: `${a.player.username} added to ${a.guild.name}.`,
+      onDone: () => { loadApps(); load(q); },
+    });
+
+  const rejectApp = (a: JoinRequestRow) =>
+    mutate({
+      title: `Reject ${a.player.username}'s request`,
+      requireReason: true,
+      danger: true,
+      confirmLabel: "Reject",
+      method: "POST",
+      path: `/api/admin/guilds/requests/${a.id}/reject`,
+      successMsg: `Request from ${a.player.username} rejected.`,
+      onDone: loadApps,
+    });
 
   /** Row-level rename — same PATCH the drawer's Edit form uses, just a focused one-field prompt (mockup's inline "Rename" action). */
   const rename = (g: GuildRow) =>
@@ -128,6 +171,34 @@ export function GuildsPage() {
 
   return (
     <>
+      {apps.length > 0 && (
+        <div className="panel" style={{ marginBottom: 16, overflow: "hidden" }}>
+          <div className="card-header">
+            <span className="t">Join requests</span>
+            <span className="sub">Players applying to join a guild from the app.</span>
+          </div>
+          <div style={{ padding: 10 }}>
+            {apps.map((a) => (
+              <div key={a.id} className="arow" style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 6px", borderRadius: 8 }}>
+                <div className="fd-avatar sm">{a.player.username.slice(0, 2).toUpperCase()}</div>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontWeight: 600, fontSize: 12.5 }}>
+                    {a.player.username} <span className="dim mono" style={{ fontSize: 11 }}>{a.player.tag}</span>
+                  </div>
+                  <div className="dim" style={{ fontSize: 12 }}>
+                    wants to join <b style={{ color: "var(--ink-2)" }}>{a.guild.name}</b>
+                  </div>
+                </div>
+                <div style={{ display: "flex", gap: 6 }}>
+                  <button className="abtn btn-ghost btn-ghost-sm" disabled={!can("MODERATOR")} onClick={() => approveApp(a)}>Approve</button>
+                  <button className="abtn btn-danger btn-danger-sm" disabled={!can("MODERATOR")} onClick={() => rejectApp(a)}>Reject</button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
       <div className="row" style={{ marginBottom: 12 }}>
         <input
           className="input"
@@ -175,6 +246,7 @@ export function GuildsPage() {
                     <td className="num">{g.minTrophies.toLocaleString()}</td>
                     <td onClick={(e) => e.stopPropagation()}>
                       <div style={{ display: "flex", gap: 6, justifyContent: "center" }}>
+                        <button className="abtn btn-ghost btn-ghost-sm" onClick={() => setSelId(g.id)}>View</button>
                         <button className="abtn btn-ghost btn-ghost-sm" disabled={!can("MODERATOR")} onClick={() => rename(g)}>Rename</button>
                         <button className="abtn btn-danger btn-danger-sm" disabled={!can("MODERATOR")} onClick={() => disbandRow(g)}>Disband</button>
                       </div>
@@ -192,9 +264,19 @@ export function GuildsPage() {
   );
 }
 
+// Role-colored per handoffv3 row 26: Leader gold / Officer purple / Member muted.
+const ROLE_COLOR: Record<RosterMember["role"], string> = {
+  LEADER: "var(--gold-lt)",
+  OFFICER: "#b98cff",
+  MEMBER: "var(--dim)",
+};
 function RoleBadge({ role }: { role: RosterMember["role"] }) {
-  const cls = role === "LEADER" ? "st-active" : role === "OFFICER" ? "st-muted" : "st-deleted";
-  return <span className={`badge-st ${cls}`}>{role.toLowerCase()}</span>;
+  return <span style={{ fontWeight: 700, fontSize: 11.5, letterSpacing: 0.4, textTransform: "capitalize", color: ROLE_COLOR[role] }}>{role.toLowerCase()}</span>;
+}
+
+/** True if joined within the last 7 days (mockup's "New" pill on recent joiners). */
+function isNewJoin(joinedAt: string): boolean {
+  return Date.now() - new Date(joinedAt).getTime() < 7 * 24 * 60 * 60 * 1000;
 }
 
 // ── Detail drawer — roster + moderation ───────────────────────────────────────
@@ -266,7 +348,7 @@ function GuildDrawer({ id, onClose, onChanged }: { id: string; onClose: () => vo
       confirmLabel: "Kick",
       method: "DELETE",
       path: `/api/admin/guilds/${id}/kick/${m.userId}`,
-      successMsg: "Member removed.",
+      successMsg: `${m.username} removed from the guild.`,
       onDone: after,
     });
 
@@ -294,7 +376,7 @@ function GuildDrawer({ id, onClose, onChanged }: { id: string; onClose: () => vo
 
             <div className="kpi" style={{ margin: "18px 0" }}>
               <div className="card"><div className="v mono">{d.memberCount.toLocaleString()}</div><div className="l">Members</div></div>
-              <div className="card"><div className="v mono">{d.weeklyPoints.toLocaleString()}</div><div className="l">Weekly points</div></div>
+              <div className="card"><div className="v mono">{d.weeklyPoints.toLocaleString()}</div><div className="l">Weekly pts</div></div>
               <div className="card"><div className="v mono">{d.minTrophies.toLocaleString()}</div><div className="l">Min trophies</div></div>
               <div className="card"><div className="v mono">{d.pendingRequests.toLocaleString()}</div><div className="l">Pending requests</div></div>
             </div>
@@ -313,7 +395,7 @@ function GuildDrawer({ id, onClose, onChanged }: { id: string; onClose: () => vo
             </div>
 
             {/* Member roster */}
-            <div style={{ fontWeight: 700, margin: "22px 0 8px" }}>Member roster</div>
+            <div style={{ fontWeight: 700, margin: "22px 0 8px", letterSpacing: 0.5 }}>MEMBERS</div>
             <div className="panel" style={{ overflow: "hidden" }}>
               <div style={{ overflowX: "auto" }}>
                 <table className="tbl">
@@ -336,7 +418,12 @@ function GuildDrawer({ id, onClose, onChanged }: { id: string; onClose: () => vo
                             <div style={{ display: "flex", alignItems: "center", gap: 9 }}>
                               <div className="fd-avatar sm">{m.username.slice(0, 2).toUpperCase()}</div>
                               <div>
-                                <div style={{ fontWeight: 600 }}>{m.username} <span className="dim mono" style={{ fontSize: 12 }}>{m.tag}</span></div>
+                                <div style={{ fontWeight: 600 }}>
+                                  {m.username} <span className="dim mono" style={{ fontSize: 12 }}>{m.tag}</span>
+                                  {isNewJoin(m.joinedAt) && (
+                                    <span className="badge-st st-active" style={{ marginLeft: 6, fontSize: 8.5 }}>New</span>
+                                  )}
+                                </div>
                                 <div className="dim" style={{ fontSize: 12 }}>{m.trophies.toLocaleString()} 🏆</div>
                               </div>
                             </div>
@@ -346,7 +433,7 @@ function GuildDrawer({ id, onClose, onChanged }: { id: string; onClose: () => vo
                           <td className="mono dim">{new Date(m.joinedAt).toLocaleDateString()}</td>
                           {can("MODERATOR") && (
                             <td>
-                              {m.role !== "LEADER" && <button className="abtn btn-danger btn-danger-sm" onClick={() => kick(m)}>Kick</button>}
+                              {m.role !== "LEADER" && <button className="abtn btn-danger btn-danger-sm" title="Kick" onClick={() => kick(m)}>✕</button>}
                             </td>
                           )}
                         </tr>

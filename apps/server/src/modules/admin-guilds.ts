@@ -248,13 +248,133 @@ export async function adminGuildsRoutes(app: FastifyInstance) {
       await prisma.guildMember.delete({ where: { id: member.id } });
       await audit(prisma, {
         actorId: req.userId!,
-        action: "guild.kick",
+        action: "guild.member.kick",
         targetType: "guild",
         targetId: req.params.id,
         before: { userId: req.params.userId, username: member.user.username, role: member.role, weeklyContribution: member.weeklyContribution },
         reason,
       });
       return ok({ kicked: true });
+    },
+  );
+
+  // ── Join requests inbox — pending requests across ALL guilds (v3 delta A5, ──
+  // handoffv2-diff row 24). Capped at 50 newest so the panel stays small; the
+  // per-guild inbox (GET /guilds/:id/requests) already exists player-side for
+  // officers — this is the cross-guild admin view.
+  //
+  // GuildJoinRequest.userId is a plain scalar (no Prisma relation to User —
+  // see schema.prisma), so the applicant is fetched with a separate batched
+  // lookup, same as guilds.ts's GET /guilds/:id/requests does.
+  app.get("/admin/guilds/requests", { preHandler: requireAdmin("SUPPORT") }, async () => {
+    const requests = await prisma.guildJoinRequest.findMany({
+      where: { status: "pending" },
+      orderBy: { createdAt: "desc" },
+      take: 50,
+      select: {
+        id: true,
+        createdAt: true,
+        userId: true,
+        guild: { select: { id: true, name: true, tag: true } },
+      },
+    });
+    const users = await prisma.user.findMany({
+      where: { id: { in: requests.map((r) => r.userId) } },
+      select: { id: true, username: true, tag: true, displayName: true },
+    });
+    const byId = new Map(users.map((u) => [u.id, u]));
+
+    return ok({
+      items: requests
+        .map((r) => {
+          const u = byId.get(r.userId);
+          if (!u) return null;
+          return {
+            id: r.id,
+            createdAt: r.createdAt,
+            player: { id: u.id, username: u.username, tag: u.tag, displayName: u.displayName },
+            guild: { id: r.guild.id, name: r.guild.name, tag: r.guild.tag },
+          };
+        })
+        .filter((x): x is NonNullable<typeof x> => x !== null),
+    });
+  });
+
+  // ── Approve a join request (MODERATOR) — mirrors the player-side officer ────
+  // accept flow (guilds.ts POST /guilds/:id/requests/:rid/accept): marks the
+  // request accepted + creates the membership in one transaction. Audited as
+  // guild.join.approve per the handoff diff.
+  app.post<{ Params: { rid: string } }>(
+    "/admin/guilds/requests/:rid/approve",
+    { preHandler: requireAdmin("MODERATOR") },
+    async (req) => {
+      const { reason } = z.object({ reason: z.string().trim().min(1, "reason required").max(500) }).parse(req.body);
+      const request = await prisma.guildJoinRequest.findUnique({
+        where: { id: req.params.rid },
+        include: { guild: { select: { id: true, name: true, tag: true } } },
+      });
+      if (!request) throw err.notFound("NO_REQUEST", "Join request not found");
+      if (request.status !== "pending") throw err.conflict("NOT_PENDING", "Request is no longer pending");
+
+      const applicant = await prisma.user.findUnique({ where: { id: request.userId }, select: { username: true, tag: true } });
+      if (!applicant) throw err.notFound("NO_USER", "Applicant account no longer exists");
+
+      const already = await prisma.guildMember.findUnique({ where: { userId: request.userId } });
+      if (already) {
+        await prisma.guildJoinRequest.update({ where: { id: request.id }, data: { status: "declined" } });
+        throw err.conflict("USER_IN_GUILD", "Player already belongs to a guild");
+      }
+
+      await prisma.$transaction([
+        prisma.guildJoinRequest.update({ where: { id: request.id }, data: { status: "accepted" } }),
+        prisma.guildMember.create({ data: { userId: request.userId, guildId: request.guildId, role: "MEMBER" } }),
+      ]);
+      await prisma.notification.create({
+        data: {
+          userId: request.userId,
+          type: "guild_join_accepted",
+          title: "Guild join request accepted",
+          data: { guildId: request.guildId },
+        },
+      });
+
+      await audit(prisma, {
+        actorId: req.userId!,
+        action: "guild.join.approve",
+        targetType: "guild",
+        targetId: request.guildId,
+        before: { requestId: request.id, userId: request.userId, username: applicant.username },
+        after: { guild: request.guild.name },
+        reason,
+      });
+      return ok({ approved: true, guild: request.guild.name, player: applicant.username });
+    },
+  );
+
+  // ── Reject a join request (MODERATOR) — marks the request only, no ──────────
+  // membership change (mirrors the player-side decline flow). Audited as
+  // guild.join.reject per the handoff diff.
+  app.post<{ Params: { rid: string } }>(
+    "/admin/guilds/requests/:rid/reject",
+    { preHandler: requireAdmin("MODERATOR") },
+    async (req) => {
+      const { reason } = z.object({ reason: z.string().trim().min(1, "reason required").max(500) }).parse(req.body);
+      const request = await prisma.guildJoinRequest.findUnique({ where: { id: req.params.rid } });
+      if (!request) throw err.notFound("NO_REQUEST", "Join request not found");
+      if (request.status !== "pending") throw err.conflict("NOT_PENDING", "Request is no longer pending");
+
+      const applicant = await prisma.user.findUnique({ where: { id: request.userId }, select: { username: true, tag: true } });
+
+      await prisma.guildJoinRequest.update({ where: { id: request.id }, data: { status: "declined" } });
+      await audit(prisma, {
+        actorId: req.userId!,
+        action: "guild.join.reject",
+        targetType: "guild",
+        targetId: request.guildId,
+        before: { requestId: request.id, userId: request.userId, username: applicant?.username },
+        reason,
+      });
+      return ok({ rejected: true, player: applicant?.username ?? "Unknown player" });
     },
   );
 }
