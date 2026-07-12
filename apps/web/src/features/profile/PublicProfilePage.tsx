@@ -107,7 +107,12 @@ export function PublicProfilePage() {
     api
       .get<ProfileExtras>(`/api/users/${id}/profile-extras`)
       .then((res) => { if (alive) setExtras(res); })
-      .catch(() => { /* honest empty state below covers a failed/absent fetch */ });
+      .catch(() => {
+        // A failed/unauthorized fetch (e.g. a logged-out viewer — the endpoint
+        // needs a session) must NOT leave `extras` null forever: null renders the
+        // Match Replays panel's "Loading…" state. Fall to honest empties instead.
+        if (alive) setExtras({ favoriteMove: null, openings: [], recentMatches: [], badges: [] });
+      });
     return () => { alive = false; };
   }, [id]);
 
