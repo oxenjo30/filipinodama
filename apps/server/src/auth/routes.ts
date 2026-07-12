@@ -9,11 +9,21 @@ import { audit } from "../lib/audit.js";
 import { signAccess, COOKIE, cookieOpts, clearCookieOpts, ttlToMs } from "./tokens.js";
 import { env } from "../config/env.js";
 import * as svc from "./service.js";
-import { type OAuthProvider, isConfigured, makeState, consumeState, authUrl, fetchProfile, findOrCreateOAuthUser } from "./oauth.js";
+import {
+  type OAuthProvider,
+  isConfigured,
+  makeState,
+  consumeState,
+  authUrl,
+  fetchProfile,
+  findOrCreateOAuthUser,
+  verifyGoogleIdToken,
+} from "./oauth.js";
 
 const verifySchema = z.object({ token: z.string().min(1) });
 const forgotSchema = z.object({ email: z.string().email() });
 const resetSchema = z.object({ token: z.string().min(1), password: z.string().min(8).max(72) });
+const googleTokenSchema = z.object({ idToken: z.string().min(1) });
 
 const accessMs = ttlToMs(env.JWT_ACCESS_TTL);
 const refreshMs = ttlToMs(env.JWT_REFRESH_TTL);
@@ -168,6 +178,20 @@ export async function authRoutes(app: FastifyInstance) {
       }
     },
   );
+
+  // POST /api/auth/oauth/google/token — native (Android Credential Manager) Google
+  // sign-in. The client already holds a Google-issued ID token (no redirect/code
+  // exchange needed); we verify it server-side, then run the SAME
+  // find-or-create-user logic as the web redirect callback and issue the SAME
+  // session cookies. Rate-limited like the other credential-adjacent auth routes.
+  app.post("/oauth/google/token", strictLimit(10, "5 minutes"), async (req, reply) => {
+    if (!isConfigured("google")) throw new ApiError(503, "NOT_CONFIGURED", "Google sign-in is not configured yet");
+    const { idToken } = googleTokenSchema.parse(req.body);
+    const profile = await verifyGoogleIdToken(idToken);
+    const user = await findOrCreateOAuthUser("google", profile);
+    await issueSession(reply, req, user);
+    return ok({ user: svc.publicUser(user) });
+  });
 
   // expose which login methods are live so the client can enable/disable buttons
   app.get("/providers", async (req) => {
