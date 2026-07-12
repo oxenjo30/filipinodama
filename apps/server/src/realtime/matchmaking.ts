@@ -4,6 +4,10 @@ import type { MatchMode as PrismaMatchMode } from "@prisma/client";
 import { prisma } from "../db/client.js";
 import { createLiveMatch, maybePlayBotMove } from "./match.js";
 
+/** Mirrors ClientDevice from ./index.ts (kept as a plain union here to avoid an
+ *  import cycle — index.ts registers this module). */
+type ClientDevice = "mobile" | "web" | "tablet";
+
 /**
  * How long a player waits for a REAL human before we fill the match with a
  * highly-skilled bot. Gives humans a fair chance to queue up first; only falls
@@ -208,15 +212,21 @@ async function tryMatch(io: IOServer, mode: QueueMode): Promise<void> {
 
     const colorOf = (uid: string): PieceColor => (uid === redId ? "red" : "blue");
 
+    // Opponent's real device (v3 delta, Row 4-6: "Playing on {device}" on the
+    // Match Found reveal), captured from their handshake User-Agent at connect
+    // time (see classifyDevice in ./index.ts). Default to "web" if somehow unset.
+    const deviceA = (sa.data.device as ClientDevice | undefined) ?? "web";
+    const deviceB = (sb.data.device as ClientDevice | undefined) ?? "web";
+
     sa.emit(EV.mmFound, {
       matchId,
-      opponent: ub,
+      opponent: ub ? { ...ub, device: deviceB } : ub,
       yourColor: colorOf(a.userId),
       settings,
     });
     sb.emit(EV.mmFound, {
       matchId,
-      opponent: ua,
+      opponent: ua ? { ...ua, device: deviceA } : ua,
       yourColor: colorOf(b.userId),
       settings,
     });
@@ -296,9 +306,15 @@ async function startBotMatch(io: IOServer, userId: string, socketId: string, mod
   await socket.join(matchId);
 
   const opponent = await publicUser(bot.id);
+  // Bots are deliberately presented as real opponents (existing owner-approved
+  // disguise design — no "BOT" label anywhere). Riding that same design here:
+  // give the bot a plausible device at random rather than a fixed/obviously
+  // synthetic value, so the "Playing on {device}" reveal reads the same as a
+  // real human opponent's.
+  const botDevice: ClientDevice = Math.random() < 0.5 ? "mobile" : "web";
   socket.emit(EV.mmFound, {
     matchId,
-    opponent,
+    opponent: opponent ? { ...opponent, device: botDevice } : opponent,
     yourColor: humanIsRed ? "red" : "blue",
     settings,
   });

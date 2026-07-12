@@ -39,6 +39,21 @@ function accessTokenFromCookieHeader(header: string | undefined): string | undef
 }
 
 /**
+ * Classify the connecting client's device from its handshake User-Agent, so
+ * matchmaking can show "Playing on {device}" for an opponent (v3 delta, Row
+ * 4-6). This is the honest source today — a future native Android app will
+ * send an explicit hint (e.g. `socket.handshake.auth.device`) that should take
+ * priority once it exists; UA sniffing is the fallback until then.
+ */
+export type ClientDevice = "mobile" | "web" | "tablet";
+export function classifyDevice(userAgent: string | undefined): ClientDevice {
+  const ua = userAgent ?? "";
+  if (/ipad|tablet/i.test(ua)) return "tablet";
+  if (/mobi|android|iphone/i.test(ua)) return "mobile";
+  return "web";
+}
+
+/**
  * Resolve + verify the authed user id from the handshake, then confirm the
  * account is still live (not deleted, not currently banned). A valid JWT alone
  * is not enough — a ban/delete after connect-time must keep the user out of
@@ -79,6 +94,7 @@ export function registerRealtime(io: IOServer) {
           return;
         }
         socket.data.userId = userId;
+        socket.data.device = classifyDevice(socket.handshake.headers["user-agent"]);
         next();
       })
       .catch(() => next(new Error("unauthorized")));

@@ -25,6 +25,9 @@ type Opponent = {
   skin?: string | null;
   /** opponent's equipped profile-frame item id (null = no frame) */
   frameId?: string | null;
+  /** opponent's real device, UA-derived server-side (v3 delta Row 4-6). Drives
+   *  the "Playing on {device}" line on the Match Found reveal. */
+  device?: "mobile" | "web" | "tablet";
 } | null;
 
 export type MMStatus = "idle" | "searching" | "found" | "playing" | "ended";

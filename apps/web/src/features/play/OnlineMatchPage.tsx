@@ -26,6 +26,14 @@ const TIPS = [
   "Advance in connected pairs so a lone piece is never left undefended.",
 ];
 
+/** Opponent device → display label + icon for the Match Found reveal (v3 delta
+ *  Row 4-6). Unknown/missing device defaults to "web". */
+const DEVICE_MAP: Record<"mobile" | "web" | "tablet", [label: string, icon: string]> = {
+  mobile: ["Mobile", "📱"],
+  web: ["Web", "💻"],
+  tablet: ["Tablet", "▤"],
+};
+
 /** Board square → algebraic coordinate (col letter + row number, 8×8). */
 function coord(sq: Square): string {
   return `${String.fromCharCode(97 + sq.c)}${8 - sq.r}`;
@@ -386,6 +394,14 @@ export function OnlineMatchPage() {
                   <div style={{ font: "800 18px Cinzel,serif", color: "#ff8fae" }}>{opponent.displayName}</div>
                   <div style={{ font: "600 12px Inter", color: "var(--ink)" }}>🏆 {opponent.trophies.toLocaleString()}</div>
                   <TierChip tier={oppTier} color="#ff9fb4" border="rgba(168,55,68,.4)" />
+                  {(() => {
+                    const [label, icon] = DEVICE_MAP[opponent.device ?? "web"];
+                    return (
+                      <div style={{ marginTop: 6, font: "500 11px Inter", color: "var(--ink2)" }}>
+                        {icon} Playing on {label}
+                      </div>
+                    );
+                  })()}
                 </>
               ) : (
                 <>
