@@ -39,6 +39,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.compose.runtime.collectAsState
 import com.filipinodama.app.BuildConfig
 import com.filipinodama.app.data.AuthRepository
 import com.filipinodama.app.data.engine.GameSettings
@@ -47,11 +48,18 @@ import com.filipinodama.app.data.rooms.RoomMemberDto
 import com.filipinodama.app.data.rooms.RoomRepository
 import com.filipinodama.app.data.rooms.RoomUiState
 import com.filipinodama.app.data.rooms.isValidRoomCode
+import com.filipinodama.app.data.social.DmRepository
+import com.filipinodama.app.data.social.FriendUserDto
+import com.filipinodama.app.data.social.FriendsRepository
+import com.filipinodama.app.data.social.PresenceRepository
+import com.filipinodama.app.data.social.SocialResult
 import com.filipinodama.app.ui.screens.game.GameButton
 import com.filipinodama.app.ui.screens.game.GameButtonVariant
 import com.filipinodama.app.ui.screens.game.GameFrameCard
+import com.filipinodama.app.ui.screens.profile.AvatarView
 import com.filipinodama.app.ui.theme.Gold
 import com.filipinodama.app.ui.theme.GoldLt
+import com.filipinodama.app.ui.theme.Green
 import com.filipinodama.app.ui.theme.Ink
 import com.filipinodama.app.ui.theme.Ink2
 import com.filipinodama.app.ui.theme.Panel
@@ -63,13 +71,14 @@ import kotlinx.coroutines.launch
  * roomIsHost / roomIsJoin / roomIsJoining flags exactly, driven off
  * [RoomRepository.state] (server-owned — nothing here is fabricated).
  *
- * Web reference: apps/web/src/features/rooms/PrivateRoomPage.tsx. Deferred
- * this phase (report explicitly, not silently dropped): the "Invite Friends"
- * card (row 13) — Android has no friends system yet (no FriendsApi exists in
- * this codebase), so there is nothing real to back that list without
- * fabricating data, which is against the "server-authoritative, no fake
- * data" rule. Deep-link join-by-code and the room chat / share / host
- * controls / spectate rows are all fully wired below.
+ * Web reference: apps/web/src/features/rooms/PrivateRoomPage.tsx. The
+ * "Invite Friends" card (row 13, deferred in Phase 4 pending a friends
+ * system) is now wired (Phase 6b): real friends from FriendsRepository, each
+ * row's "Invite" button DMs the room link via DmRepository.send — the same
+ * real, persisted DM channel the Friends/Messages screens use, matching the
+ * inventory's "share the room link to a friend via DM" spec. Deep-link
+ * join-by-code and the room chat / share / host controls / spectate rows are
+ * all fully wired below.
  */
 @Composable
 fun PrivateRoomScreen(
@@ -358,6 +367,10 @@ private fun HostOrGuestLobby(
             item { SettingsCard(settings = ui.settings, onSettings = onSettings) }
         }
 
+        if (isHost) {
+            item { InviteFriendsCard(roomUrl = roomUrl) }
+        }
+
         item {
             SpectatorsCard(spectators = ui.spectators, isHost = isHost, onKick = onKick, roomUrl = roomUrl, clipboard = clipboard, onOpenSpectate = onSpectateSelf)
         }
@@ -553,6 +566,61 @@ private fun SpectatorsCard(
             }
             Row(modifier = Modifier.fillMaxWidth().padding(top = 12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 GameButton("👁 Copy Spectate Link", onClick = { clipboard.setText(AnnotatedString(roomUrl)) }, variant = GameButtonVariant.PURPLE, modifier = Modifier.weight(1f))
+            }
+        }
+    }
+}
+
+/**
+ * Invite Friends card — mobile-screen-inventory.md SCREEN 20 row 13
+ * (`sc-for roomFriends` — avatar+status, name, invite button -> `fr.invite`).
+ * Real friends from FriendsRepository, live presence dots via
+ * PresenceRepository (same store as FriendsScreen). "Invite" DMs the real
+ * room share link through DmRepository.send — persisted, real chat, not a
+ * fabricated invite mechanism.
+ */
+@Composable
+private fun InviteFriendsCard(roomUrl: String) {
+    val scope = rememberCoroutineScope()
+    val onlineSet by PresenceRepository.online.collectAsState()
+    var friends by remember { mutableStateOf<List<FriendUserDto>?>(null) }
+    var sentIds by remember { mutableStateOf(setOf<String>()) }
+
+    LaunchedEffect(Unit) {
+        PresenceRepository.start()
+        when (val result = FriendsRepository.friends()) {
+            is SocialResult.Success -> friends = result.data.friends
+            is SocialResult.Failure -> friends = emptyList()
+        }
+    }
+
+    GameFrameCard {
+        Column {
+            Text("Invite Friends", color = Ink2, style = MaterialTheme.typography.labelSmall)
+            when {
+                friends == null -> Text("Loading…", color = Ink2, style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(top = 10.dp))
+                friends!!.isEmpty() -> Text("Add friends to invite them to your room.", color = Ink2, style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(top = 10.dp))
+                else -> Column(modifier = Modifier.padding(top = 10.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    friends!!.forEach { f ->
+                        val sent = sentIds.contains(f.id)
+                        Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                            Box {
+                                AvatarView(avatarUrl = f.avatarUrl, frameId = f.frameId, size = 36.dp)
+                                Box(
+                                    modifier = Modifier.align(Alignment.BottomEnd).size(10.dp)
+                                        .background(if (onlineSet.contains(f.id)) Green else Ink2, CircleShape)
+                                )
+                            }
+                            Text(f.displayName, color = Color.White, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f).padding(start = 10.dp))
+                            SmallActionChip(if (sent) "Sent ✓" else "Invite") {
+                                if (!sent) {
+                                    sentIds = sentIds + f.id
+                                    scope.launch { DmRepository.send(f.id, "Join my FilipinoDama room: $roomUrl") }
+                                }
+                            }
+                        }
+                    }
+                }
             }
         }
     }

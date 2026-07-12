@@ -58,14 +58,18 @@ import com.filipinodama.app.ui.theme.Panel
  *   4. Daily Reward strip -> onDailyReward.
  *   5. Daily Quests mini-list (top 2 from GET /api/quests) -> onQuests.
  *   6. Season Pass banner -> onSeason.
+ *   7. Notification bell (badge count) -> onOpenNotifications (Phase 6b —
+ *      mobile-screen-inventory.md SCREEN 5 row 4: "Notification bell (badge
+ *      count {{notifBadge}}) → openNotif"). Real unread count from
+ *      NotificationsRepository, placed beside the identity header per the
+ *      inventory's top-bar grouping.
  *
  * DEFERRED (not in this phase's scope — no server-authoritative source and/or
  * out of the Phase 5 task list): tournaments strip, live-events admin section,
  * "Watch Live" strip (Phase 4 already ships a dedicated Live Match Browser
  * reachable from Mode Select; duplicating the entry point here isn't part of
- * this task's row list), search/notifications icons (Profile/Notifications
- * screens are a later phase). Honest omission, not a silent drop — Profile
- * tab already exists as a placeholder and nothing here fakes those rows.
+ * this task's row list), search icon (global player search is a later phase).
+ * Honest omission, not a silent drop.
  */
 @Composable
 fun HomeScreen(
@@ -74,7 +78,8 @@ fun HomeScreen(
     onQuests: () -> Unit = {},
     onSeason: () -> Unit = {},
     onResumeMatch: (mode: String) -> Unit = {},
-    onOpenLeaderboard: () -> Unit = {}
+    onOpenLeaderboard: () -> Unit = {},
+    onOpenNotifications: () -> Unit = {}
 ) {
     val authState by AuthRepository.state.collectAsState()
     val me = authState.user
@@ -82,6 +87,7 @@ fun HomeScreen(
     var activeMatch by remember { mutableStateOf<ActiveMatchDto?>(null) }
     var loadingActive by remember { mutableStateOf(true) }
     var homeQuests by remember { mutableStateOf<List<QuestDto>>(emptyList()) }
+    var unreadNotifs by remember { mutableStateOf(0) }
 
     LaunchedEffect(me?.id) {
         if (me == null) {
@@ -99,6 +105,13 @@ fun HomeScreen(
             is EconomyResult.Success -> homeQuests = q.data.daily.take(2)
             is EconomyResult.Failure -> homeQuests = emptyList()
         }
+
+        com.filipinodama.app.data.social.NotificationsRepository.load()
+    }
+
+    val notifState by com.filipinodama.app.data.social.NotificationsRepository.state.collectAsState()
+    LaunchedEffect(notifState.data?.unreadCount) {
+        unreadNotifs = notifState.data?.unreadCount ?: 0
     }
 
     Column(
@@ -110,14 +123,18 @@ fun HomeScreen(
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
         if (me != null) {
-            IdentityHeader(
-                displayName = me.displayName,
-                tag = me.tag,
-                trophies = me.trophies,
-                avatarUrl = me.avatarUrl,
-                frameId = me.frameId,
-                onClick = onOpenLeaderboard
-            )
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                IdentityHeader(
+                    displayName = me.displayName,
+                    tag = me.tag,
+                    trophies = me.trophies,
+                    avatarUrl = me.avatarUrl,
+                    frameId = me.frameId,
+                    onClick = onOpenLeaderboard,
+                    modifier = Modifier.weight(1f)
+                )
+                NotificationBell(unreadCount = unreadNotifs, onClick = onOpenNotifications)
+            }
         }
 
         CurrencyHeader(gold = me?.gold ?: 0, diamonds = me?.diamonds ?: 0)
@@ -182,12 +199,12 @@ private fun IdentityHeader(
     trophies: Int,
     avatarUrl: String?,
     frameId: String?,
-    onClick: () -> Unit
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
 ) {
     val tier = RankTiers.forTrophies(trophies)
     Row(
-        modifier = Modifier
-            .fillMaxWidth()
+        modifier = modifier
             .clickable(onClick = onClick)
             .background(Panel, RoundedCornerShape(14.dp))
             .padding(14.dp),
@@ -199,6 +216,30 @@ private fun IdentityHeader(
             Text("${tier.label} · 🏆 $trophies", color = GoldLt, style = MaterialTheme.typography.labelSmall, modifier = Modifier.padding(top = 2.dp))
         }
         Text("›", color = Gold, style = MaterialTheme.typography.titleMedium)
+    }
+}
+
+/** Notification bell with a real unread badge — mobile-screen-inventory.md SCREEN 5 row 4. */
+@Composable
+private fun NotificationBell(unreadCount: Int, onClick: () -> Unit) {
+    Box(
+        modifier = Modifier
+            .clickable(onClick = onClick)
+            .background(Panel, RoundedCornerShape(12.dp))
+            .padding(12.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        Text("🔔", style = MaterialTheme.typography.titleMedium)
+        if (unreadCount > 0) {
+            Box(
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .background(androidx.compose.ui.graphics.Color(0xFFA8202F), androidx.compose.foundation.shape.CircleShape)
+                    .padding(horizontal = 5.dp, vertical = 1.dp)
+            ) {
+                Text(if (unreadCount > 9) "9+" else unreadCount.toString(), color = androidx.compose.ui.graphics.Color.White, style = MaterialTheme.typography.labelSmall)
+            }
+        }
     }
 }
 

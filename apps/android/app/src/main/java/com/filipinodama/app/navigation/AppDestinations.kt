@@ -71,4 +71,18 @@ object AppDestinations {
     const val PUBLIC_PROFILE = "profile/public/{userId}"
     fun publicProfile(userId: String) = "profile/public/$userId"
     const val LEADERBOARD = "social/leaderboard"
+
+    // Phase 6b (friends + DM, guilds, notifications): mobile-screen-inventory.md
+    // SCREENs 26 (Friends), 27 (Add Friend — folded into Friends' own modal, no
+    // separate destination needed since it's a bottom sheet not a screen push),
+    // 12 (Notifications). DM (MessagesPage.tsx port) has no dedicated inventory
+    // screen number (reached from Friends' 💬 button / Public Profile's Message
+    // button in the real web client), so its routes are named to match that
+    // real entry point. Guild replaces the placeholder GUILD tab route above —
+    // no new route constant needed there.
+    const val FRIENDS = "social/friends"
+    const val NOTIFICATIONS = "social/notifications"
+    const val DM_LIST = "social/messages"
+    const val DM_THREAD = "social/messages/{userId}"
+    fun dmThread(userId: String) = "social/messages/$userId"
 }
