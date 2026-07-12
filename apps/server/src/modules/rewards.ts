@@ -4,20 +4,23 @@ import { ok, err } from "../lib/errors.js";
 import { applyLedgerTx } from "../economy/ledger.js";
 import { requireAuth } from "../auth/guards.js";
 import { getBool } from "../lib/config-service.js";
+import { getDailyRewardsLadder, rowGold, rowGems, DEFAULT_LADDER } from "../lib/daily-rewards.js";
 
 /**
  * Daily Login Bonus — server-authoritative (a client localStorage streak, as in
- * the prototype, is trivially farmable). Gold grows across a 7-day track, then
- * cycles. Claim once per UTC day; miss a day → streak resets to day 1.
+ * the prototype, is trivially farmable). Reward VALUES come from the
+ * admin-configurable ladder (apps/server/src/lib/daily-rewards.ts) — falls back
+ * to DEFAULT_LADDER (this file's original hardcoded gold track) when no admin
+ * config has been saved, so behavior is unchanged until an admin edits it in
+ * Live Ops → Daily login rewards. Claim once per UTC day; miss a day → streak
+ * resets to day 1. The claim-day/streak LOGIC below is untouched — only the
+ * reward amounts are now sourced from config.
  *
  *   GET  /api/rewards/daily-login  → status (day, claimedToday, track, streak)
  *   POST /api/rewards/daily-login  → claim today's bonus (idempotent per day)
  */
 
-// The 7-day reward curve (gold), ported from the prototype's _loginRewards().
-// Gold-only economy, so no diamonds here.
-const LOGIN_REWARDS = [100, 150, 200, 300, 400, 500, 1000] as const;
-const CYCLE = LOGIN_REWARDS.length; // 7
+const CYCLE = DEFAULT_LADDER.length; // 7
 
 /** UTC day key "YYYY-MM-DD" for a date (bonuses roll over at 00:00 UTC, matching quests). */
 function dayKey(d: Date): string {
@@ -68,11 +71,15 @@ export async function rewardRoutes(app: FastifyInstance) {
 
     const now = new Date();
     const { day, claimedToday } = computeLogin(user.lastLoginBonusAt, user.loginStreak, now);
+    const ladder = await getDailyRewardsLadder();
+    const rewardRow = ladder[day - 1];
     return ok({
       day, // 1..7 — the day the player is on today
       claimedToday, // already collected today's bonus?
-      rewardToday: LOGIN_REWARDS[day - 1], // gold for `day`
-      track: [...LOGIN_REWARDS], // the full 7-day curve for the modal
+      rewardToday: rowGold(rewardRow), // gold for `day` (back-compat field name)
+      rewardGemsToday: rowGems(rewardRow), // diamonds for `day` (0 on gold-only days)
+      track: ladder.map((r) => rowGold(r)), // gold curve, back-compat shape for the modal
+      trackFull: ladder, // full row objects (type/amt or chest gold+gem) for richer UI
       streak: user.loginStreak, // last recorded streak (0 if never)
     });
   });
@@ -85,8 +92,9 @@ export async function rewardRoutes(app: FastifyInstance) {
     const userId = req.userId!;
     const now = new Date();
     const todayStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+    const ladder = await getDailyRewardsLadder();
 
-    let result: { day: number; gold: number; goldBalance: number };
+    let result: { day: number; gold: number; gems: number; goldBalance: number; gemsBalance: number };
     try {
       result = await prisma.$transaction(async (tx) => {
         const user = await tx.user.findUnique({
@@ -109,10 +117,12 @@ export async function rewardRoutes(app: FastifyInstance) {
         });
         if (flip.count === 0) throw new Error("ALREADY_CLAIMED");
 
-        const gold = LOGIN_REWARDS[day - 1];
+        const row = ladder[day - 1];
+        const gold = rowGold(row);
+        const gems = rowGems(row);
         // refId is the UTC day key so the ledger unique-constraint also guards
         // against a second credit for the same calendar day.
-        const goldBalance = await applyLedgerTx(tx, {
+        let goldBalance = await applyLedgerTx(tx, {
           userId,
           currency: "GOLD",
           amount: gold,
@@ -120,7 +130,27 @@ export async function rewardRoutes(app: FastifyInstance) {
           refType: "daily_login",
           refId: dayKey(now),
         });
-        return { day, gold, goldBalance };
+        let gemsBalance = -1;
+        if (gems > 0) {
+          // Earned diamonds — allowed under the gold-only economy (earn-only,
+          // not purchasable). Separate ledger row so gold/diamonds each keep
+          // their own idempotency ref under the same currency+refType+refId key.
+          gemsBalance = await applyLedgerTx(tx, {
+            userId,
+            currency: "DIAMONDS",
+            amount: gems,
+            reason: "login_bonus",
+            refType: "daily_login",
+            refId: dayKey(now),
+          });
+        }
+        if (gold === 0 && gems === 0) {
+          // Both zero (an admin saved a 0/0 row) — nothing to credit, but the
+          // claim itself (streak flip) already happened above; read balance.
+          const u = await tx.user.findUniqueOrThrow({ where: { id: userId }, select: { gold: true } });
+          goldBalance = u.gold;
+        }
+        return { day, gold, gems, goldBalance, gemsBalance };
       });
     } catch (e) {
       if (e instanceof Error && e.message === "ALREADY_CLAIMED") {
@@ -136,7 +166,9 @@ export async function rewardRoutes(app: FastifyInstance) {
       claimed: true,
       day: result.day,
       rewardGold: result.gold,
+      rewardGems: result.gems,
       goldBalance: result.goldBalance,
+      gemsBalance: result.gemsBalance >= 0 ? result.gemsBalance : undefined,
       streak: result.day,
     });
   });

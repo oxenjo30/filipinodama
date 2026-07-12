@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { api } from "../lib/api";
-import { useAdminMutation } from "../lib/ui";
+import { useAdminMutation, useToast } from "../lib/ui";
+import { useAuth } from "../lib/auth";
 
 type Season = {
   id: string;
@@ -14,6 +15,11 @@ type Season = {
   status: "upcoming" | "active" | "ended";
   participants: number;
 };
+
+type DailyRewardRow =
+  | { type: "gold"; amt: number }
+  | { type: "gem"; amt: number }
+  | { type: "chest"; gold: number; gem: number };
 
 type QuestTrigger = { event: string } | null;
 
@@ -162,6 +168,8 @@ export function LiveOpsPage() {
       <SeasonBanner seasons={seasons} activeSeason={activeSeason} onDone={loadSeasons} />
 
       <QuestsPanel quests={quests} loading={loadingQ} onDone={loadQuests} />
+
+      <DailyRewardsCard />
 
       <EventsPanel events={events} loading={loadingE} onDone={loadEvents} />
 
@@ -589,6 +597,179 @@ function QuestForm({ quest, onClose, onDone }: { quest?: Quest; onClose: () => v
           <button className="abtn btn-gold-pill" disabled={!valid} onClick={submit}>{isEdit ? "Save quest" : "Create quest"}</button>
         </div>
       </div>
+    </div>
+  );
+}
+
+// ── Daily login rewards (v3 delta A6 — handoffv3-audit rows 27-28) ─────────────
+// 7-day claim ladder editor, above the Scheduled events card. Reads/writes the
+// REAL server config that /api/rewards/daily-login reads (apps/server/src/lib/
+// daily-rewards.ts) — saving here changes what players actually get. Days 1-6
+// are Gold/Diamonds + amount; Day 7 is always the "Grand chest" (gold + gem).
+
+const DAY_LABELS = ["Day 1", "Day 2", "Day 3", "Day 4", "Day 5", "Day 6", "Day 7"];
+
+function emptyRow(idx: number): DailyRewardRow {
+  return idx === 6 ? { type: "chest", gold: 0, gem: 0 } : { type: "gold", amt: 0 };
+}
+
+function DailyRewardsCard() {
+  const { can } = useAuth();
+  const isSuperadmin = can("SUPERADMIN");
+  const toast = useToast();
+  const mutate = useAdminMutation();
+
+  const [ladder, setLadder] = useState<DailyRewardRow[] | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  const load = () => {
+    setLoading(true);
+    api
+      .get<{ ladder: DailyRewardRow[] }>("/api/admin/liveops/daily-rewards")
+      .then((d) => setLadder(d.ladder))
+      .catch(() => setLadder(Array.from({ length: 7 }, (_, i) => emptyRow(i))))
+      .finally(() => setLoading(false));
+  };
+  useEffect(load, []);
+
+  const updateRow = (idx: number, next: DailyRewardRow) => {
+    setLadder((rows) => {
+      if (!rows) return rows;
+      const copy = rows.slice();
+      copy[idx] = next;
+      return copy;
+    });
+  };
+
+  const save = () => {
+    if (!isSuperadmin) {
+      toast("err", "Only SUPERADMIN can edit rewards.");
+      return;
+    }
+    if (!ladder) return;
+    mutate({
+      title: "Save daily login rewards ladder",
+      body: "7-day ladder · pushed live to all clients on save. Audited.",
+      requireReason: true,
+      confirmLabel: "Save ladder",
+      method: "POST",
+      path: "/api/admin/liveops/daily-rewards",
+      payload: { ladder },
+      successMsg: "Daily reward ladder published.",
+      onDone: load,
+    });
+  };
+
+  return (
+    <div className="panel" style={{ padding: 18, marginBottom: 14 }}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 10 }}>
+        <div>
+          <div style={{ font: "700 14px var(--sans)", color: "var(--ink-2)" }}>Daily login rewards</div>
+          <div style={{ font: "500 11.5px var(--sans)", color: "var(--dim)", marginTop: 2 }}>
+            7-day claim ladder · pushed live to all clients on save.
+          </div>
+        </div>
+        <button className="abtn btn-gold-pill sm" disabled={loading || !ladder} onClick={save}>
+          Save ladder
+        </button>
+      </div>
+
+      <div style={{ marginTop: 14, display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(150px,1fr))", gap: 10 }}>
+        {loading || !ladder ? (
+          <div className="dim" style={{ gridColumn: "1/-1", textAlign: "center", padding: 24 }}>Loading…</div>
+        ) : (
+          ladder.map((row, idx) => (
+            <DailyRewardRowEditor key={idx} idx={idx} row={row} onChange={(next) => updateRow(idx, next)} />
+          ))
+        )}
+      </div>
+    </div>
+  );
+}
+
+function DailyRewardRowEditor({
+  idx,
+  row,
+  onChange,
+}: {
+  idx: number;
+  row: DailyRewardRow;
+  onChange: (next: DailyRewardRow) => void;
+}) {
+  const isChest = row.type === "chest";
+
+  return (
+    <div style={{ padding: "11px 12px", background: "var(--bg-2)", borderRadius: 9, border: "1px solid rgba(232,184,75,.14)" }}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
+        <span style={{ font: "700 10.5px var(--sans)", letterSpacing: ".4px", color: "var(--dim)", textTransform: "uppercase" }}>
+          {DAY_LABELS[idx]}
+        </span>
+        {isChest && (
+          <span
+            style={{
+              font: "700 9.5px var(--sans)",
+              color: "var(--gold-lt)",
+              background: "rgba(232,184,75,.14)",
+              border: "1px solid rgba(232,184,75,.3)",
+              borderRadius: 999,
+              padding: "2px 8px",
+            }}
+          >
+            Grand chest
+          </span>
+        )}
+      </div>
+
+      {isChest ? (
+        <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+          <label style={{ display: "flex", alignItems: "center", gap: 6, font: "600 11.5px var(--sans)", color: "var(--ink)" }}>
+            🪙
+            <input
+              className="input"
+              type="number"
+              min={0}
+              max={100000}
+              value={row.gold}
+              onChange={(e) => onChange({ type: "chest", gold: Number(e.target.value), gem: row.gem })}
+              style={{ flex: 1 }}
+            />
+          </label>
+          <label style={{ display: "flex", alignItems: "center", gap: 6, font: "600 11.5px var(--sans)", color: "var(--ink)" }}>
+            💎
+            <input
+              className="input"
+              type="number"
+              min={0}
+              max={1000}
+              value={row.gem}
+              onChange={(e) => onChange({ type: "chest", gold: row.gold, gem: Number(e.target.value) })}
+              style={{ flex: 1 }}
+            />
+          </label>
+        </div>
+      ) : (
+        <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+          <select
+            className="select"
+            value={row.type}
+            onChange={(e) => {
+              const type = e.target.value as "gold" | "gem";
+              onChange({ type, amt: row.amt });
+            }}
+          >
+            <option value="gold">Gold 🪙</option>
+            <option value="gem">Diamonds 💎</option>
+          </select>
+          <input
+            className="input"
+            type="number"
+            min={0}
+            max={row.type === "gold" ? 100000 : 1000}
+            value={row.amt}
+            onChange={(e) => onChange({ type: row.type, amt: Number(e.target.value) })}
+          />
+        </div>
+      )}
     </div>
   );
 }

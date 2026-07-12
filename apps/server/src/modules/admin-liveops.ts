@@ -4,7 +4,9 @@ import { prisma } from "../db/client.js";
 import { ok, err } from "../lib/errors.js";
 import { requireAdmin } from "../auth/guards.js";
 import { audit } from "../lib/audit.js";
+import { invalidateConfig } from "../lib/config-service.js";
 import { questTriggerSchema } from "../lib/quest-trigger.js";
+import { CONFIG_KEY as DAILY_REWARDS_KEY, DEFAULT_LADDER, getDailyRewardsLadder, ladderSchema } from "../lib/daily-rewards.js";
 
 /**
  * Live ops (Seasons + Quests) — /api/admin/liveops/*. Reads/authors the existing
@@ -307,4 +309,45 @@ export async function adminLiveOpsRoutes(app: FastifyInstance) {
     });
     return ok({ id: after.id, active: after.active });
   });
+
+  // ── Daily login rewards ladder (v3 delta A6) ───────────────────────────────
+  // GET is SUPPORT (read-only, matches the read tier used elsewhere on this
+  // page); the SAVE is SUPERADMIN-only per the handoff spec (row 27: "Only
+  // SUPERADMIN can edit rewards."), stricter than requireAdmin("ECONOMY")
+  // used by seasons/quests writes on this same page.
+  app.get("/admin/liveops/daily-rewards", { preHandler: requireAdmin("SUPPORT") }, async () => {
+    const ladder = await getDailyRewardsLadder();
+    return ok({ ladder });
+  });
+
+  app.post("/admin/liveops/daily-rewards", { preHandler: requireAdmin("SUPERADMIN") }, async (req) => {
+    const body = z.object({ ladder: ladderSchema, reason: reasonField }).parse(req.body);
+    const before = await getDailyRewardsLadder();
+    await prisma.config.upsert({
+      where: { key: DAILY_REWARDS_KEY },
+      create: {
+        key: DAILY_REWARDS_KEY,
+        value: JSON.stringify(body.ladder),
+        type: "json",
+        category: "economy",
+        label: "Daily login rewards — 7-day ladder",
+      },
+      update: { value: JSON.stringify(body.ladder) },
+    });
+    invalidateConfig(DAILY_REWARDS_KEY);
+    await audit(prisma, {
+      actorId: req.userId!,
+      action: "economy.dailyRewards",
+      targetType: "config",
+      targetId: DAILY_REWARDS_KEY,
+      before: { ladder: before },
+      after: { ladder: body.ladder },
+      reason: body.reason,
+    });
+    return ok({ ladder: body.ladder });
+  });
 }
+
+// Re-exported for tests/other modules that want the production-seeded default
+// without reaching into lib/daily-rewards directly.
+export { DEFAULT_LADDER as DAILY_REWARDS_DEFAULT_LADDER };
