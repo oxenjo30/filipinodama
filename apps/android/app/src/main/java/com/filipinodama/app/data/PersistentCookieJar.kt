@@ -1,0 +1,114 @@
+package com.filipinodama.app.data
+
+import kotlinx.serialization.Serializable
+import kotlinx.serialization.encodeToString
+import kotlinx.serialization.json.Json
+import okhttp3.Cookie
+import okhttp3.CookieJar
+import okhttp3.HttpUrl
+
+/**
+ * OkHttp CookieJar that persists cookies into SecureStore so the httpOnly
+ * `fd_access` (~15min JWT) and `fd_refresh` (rotation) cookies from
+ * API_SPEC.md survive process death. App code never reads these values
+ * directly — OkHttp replays them automatically on each request, exactly
+ * like a browser would with httpOnly cookies.
+ *
+ * Implementation: an in-memory `Map<host, List<SerializableCookie>>`,
+ * mirrored to a single JSON blob in EncryptedSharedPreferences on every
+ * `saveFromResponse`. Kept intentionally simple for Phase 1 — no per-cookie
+ * expiry sweep beyond what OkHttp's own Cookie.expiresAt already encodes.
+ */
+class PersistentCookieJar(private val secureStore: SecureStore) : CookieJar {
+
+    private val json = Json { ignoreUnknownKeys = true }
+
+    private val memoryCache: MutableMap<String, MutableList<SerializableCookie>> by lazy {
+        loadFromStore().toMutableMap()
+    }
+
+    override fun saveFromResponse(url: HttpUrl, cookies: List<Cookie>) {
+        if (cookies.isEmpty()) return
+        val host = url.host
+        val existing = memoryCache.getOrPut(host) { mutableListOf() }
+
+        cookies.forEach { newCookie ->
+            existing.removeAll { it.name == newCookie.name && it.path == newCookie.path }
+            existing.add(SerializableCookie.fromCookie(newCookie))
+        }
+
+        persist()
+    }
+
+    override fun loadForRequest(url: HttpUrl): List<Cookie> {
+        val host = url.host
+        val now = System.currentTimeMillis()
+        val stored = memoryCache[host] ?: return emptyList()
+
+        val (valid, expired) = stored.partition { it.expiresAt > now }
+        if (expired.isNotEmpty()) {
+            memoryCache[host] = valid.toMutableList()
+            persist()
+        }
+
+        return valid.mapNotNull { it.toCookie(host) }
+    }
+
+    private fun persist() {
+        val blob = json.encodeToString(memoryCache as Map<String, List<SerializableCookie>>)
+        secureStore.putString(SecureStore.KEY_COOKIE_JAR_BLOB, blob)
+    }
+
+    private fun loadFromStore(): Map<String, MutableList<SerializableCookie>> {
+        val blob = secureStore.getString(SecureStore.KEY_COOKIE_JAR_BLOB) ?: return emptyMap()
+        return try {
+            json.decodeFromString<Map<String, List<SerializableCookie>>>(blob)
+                .mapValues { it.value.toMutableList() }
+        } catch (_: Exception) {
+            emptyMap()
+        }
+    }
+}
+
+@Serializable
+private data class SerializableCookie(
+    val name: String,
+    val value: String,
+    val domain: String,
+    val path: String,
+    val expiresAt: Long,
+    val secure: Boolean,
+    val httpOnly: Boolean,
+    val hostOnly: Boolean
+) {
+    fun toCookie(requestHost: String): Cookie? {
+        return try {
+            Cookie.Builder()
+                .name(name)
+                .value(value)
+                .expiresAt(expiresAt)
+                .path(path)
+                .apply {
+                    if (hostOnly) hostOnlyDomain(domain) else domain(domain)
+                    if (secure) secure()
+                    if (httpOnly) httpOnly()
+                }
+                .build()
+        } catch (_: Exception) {
+            null
+        }
+    }
+
+    companion object {
+        fun fromCookie(cookie: Cookie): SerializableCookie = SerializableCookie(
+            name = cookie.name,
+            value = cookie.value,
+            domain = cookie.domain,
+            path = cookie.path,
+            expiresAt = cookie.expiresAt,
+            secure = cookie.secure,
+            httpOnly = cookie.httpOnly,
+            hostOnly = cookie.hostOnly
+        )
+    }
+}

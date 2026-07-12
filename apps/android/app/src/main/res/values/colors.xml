@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Mirrors ui.theme.Color.kt Bg / Gold tokens for use in XML-only contexts
+         (launch theme, adaptive icon background) before Compose takes over. -->
+    <color name="bg">#160B28</color>
+    <color name="gold">#E8B84B</color>
+</resources>

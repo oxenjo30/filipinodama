@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Minimal NoActionBar base theme. The real UI is 100% Jetpack Compose;
+         this theme only governs the window/launch chrome before Compose takes over. -->
+    <style name="Theme.FilipinoDama" parent="android:Theme.Material.NoActionBar">
+        <item name="android:statusBarColor">@color/bg</item>
+        <item name="android:windowBackground">@color/bg</item>
+    </style>
+</resources>

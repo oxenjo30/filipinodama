@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Placeholder monogram (a gold "FD" initial mark), not final brand art.
+     Real launcher icon assets will be swapped in a later phase. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <path
+        android:pathData="M40,34 L40,74 L48,74 L48,58 L64,58 L64,50 L48,50 L48,42 L68,42 L68,34 Z"
+        android:fillColor="#E8B84B" />
+</vector>
