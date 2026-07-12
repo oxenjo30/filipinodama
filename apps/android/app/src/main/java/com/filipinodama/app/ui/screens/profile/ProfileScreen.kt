@@ -58,7 +58,9 @@ import kotlinx.coroutines.launch
  * avatar-picker via PATCH /api/users/me.
  *
  * Rows built: identity header (avatar+frame, name+tag, tier+trophies),
- * Edit/Friends/Inventory quick actions, tab switcher (Overview/History),
+ * Edit/Friends/Inventory quick actions (Friends wired Phase 6b — real unread
+ * DM badge via DmRepository.unreadTotal(), matching FriendsPage.tsx's own
+ * unread-badge convention), tab switcher (Overview/History),
  * Overview: stat tiles, rank tier ladder, trophy history list;
  * History: match list (tap -> replay), sign-out.
  *
@@ -67,14 +69,16 @@ import kotlinx.coroutines.launch
  * (wins/streak/trophies thresholds) — ported inline below rather than a
  * separate module since web's AchievementsGrid has no dedicated server
  * endpoint either. Guild card / Purchase History / Discover Guilds / Contact
- * Support / My Reports quick-links (Overview tab rows 10-15) are Guild/
- * Support surfaces outside this phase's Profile+Replay+Leaderboard scope —
- * honestly omitted, not faked.
+ * Support / My Reports quick-links (Overview tab rows 10-15) are Support
+ * surfaces outside this phase's scope — honestly omitted, not faked (Guild
+ * itself is now wired as the GUILD tab, see GuildHallScreen.kt).
  */
 @Composable
 fun ProfileScreen(
     onSignedOut: () -> Unit = {},
-    onOpenReplay: (String) -> Unit = {}
+    onOpenReplay: (String) -> Unit = {},
+    onOpenFriends: () -> Unit = {},
+    onOpenSettings: () -> Unit = {}
 ) {
     val authState by AuthRepository.state.collectAsState()
     val me = authState.user
@@ -161,12 +165,12 @@ fun ProfileScreen(
             horizontalArrangement = Arrangement.spacedBy(10.dp)
         ) {
             ProfileActionChip("Edit Profile", modifier = androidx.compose.ui.Modifier.weight(1f)) { editOpen = true }
-            ProfileActionChip("Sign Out", modifier = androidx.compose.ui.Modifier.weight(1f)) {
-                scope.launch {
-                    AuthRepository.logout()
-                    onSignedOut()
-                }
-            }
+            ProfileActionChip("👥 Friends", modifier = androidx.compose.ui.Modifier.weight(1f), onClick = onOpenFriends)
+            // Sign Out now lives inside Settings (mobile-screen-inventory.md
+            // SCREEN 10 Settings-tab row 19), alongside Delete Account/legal/
+            // contact-support — this chip routes there instead of signing out
+            // directly, matching the inventory's Settings-owns-Sign-Out shape.
+            ProfileActionChip("⚙ Settings", modifier = androidx.compose.ui.Modifier.weight(1f), onClick = onOpenSettings)
         }
 
         // ── tabs ──

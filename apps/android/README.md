@@ -1,4 +1,4 @@
-# FilipinoDama — Native Android (Phase 1 scaffold)
+# FilipinoDama — Native Android
 
 Kotlin + Jetpack Compose native Android client. Separate Gradle toolchain —
 zero impact on the pnpm/Node apps (`apps/web`, `apps/admin`, `apps/server`)
@@ -6,7 +6,10 @@ elsewhere in this repo.
 
 Phase 1 scope: project scaffold, royal dark theme, 5-tab bottom navigation
 shell with placeholder screens, and network/storage plumbing (API client,
-secure cookie storage, socket stub). No game screens, no feature logic yet.
+secure cookie storage, socket stub). Phases 2-7 build out auth, gameplay,
+economy, profile/social, and — this phase — Settings, legal pages, delete
+account, and system states (maintenance/offline/error). Damath stays
+web-only and is never added here (owner directive).
 
 ## Build
 
@@ -182,6 +185,44 @@ apps/android/
 ├── NOTICE.md                    # font licenses
 └── README.md                    # this file
 ```
+
+## Push notifications (future work)
+
+Phase 7 adds push-READINESS only — no live push. What's already in place:
+
+- A `NotificationChannel` (`match_and_social`) is created idempotently on
+  every app start (`PushNotifications.ensureChannel`, called from
+  `MainActivity.onCreate`).
+- The Android 13+ (API 33+) runtime `POST_NOTIFICATIONS` permission is
+  requested from the Settings screen's "Push Notifications" toggle
+  (declared in `AndroidManifest.xml`; requested via
+  `ActivityResultContracts.RequestPermission()` in `SettingsScreen.kt`).
+- `PushNotifications.onPushTokenReady(token: String)` is a documented,
+  intentionally empty stub — the hand-off point for a future FCM device
+  token, once Firebase is added.
+
+To actually enable push later, the owner needs to:
+
+1. Create a Firebase project and add an Android app to it (package
+   `com.filipinodama.app`), then download `google-services.json` into
+   `apps/android/app/`.
+2. Add the Firebase BoM + `firebase-messaging-ktx` to
+   `app/build.gradle.kts` and the Google Services Gradle plugin to the root
+   `build.gradle.kts` — NOT done in this phase, by design (no Firebase
+   dependency was added without the owner's project/config in hand).
+3. Implement a `FirebaseMessagingService` that posts into the existing
+   `PushNotifications.CHANNEL_ID` channel, and call
+   `PushNotifications.onPushTokenReady(token)` from
+   `onNewToken`/`FirebaseMessaging.getInstance().token`.
+4. Add a server-side endpoint to receive + store the device token per user
+   (none exists yet — `apps/server` has no push-token table/route), and a
+   send path (e.g. via Firebase Admin SDK) for match invites, friend
+   requests, guild activity, and support replies — the same events the
+   in-app Notifications screen already surfaces.
+5. Re-verify the `POST_NOTIFICATIONS` request flow still gates correctly
+   once real notifications are posted (today nothing is posted, so the
+   permission simply unlocks the OS-level toggle with no functional effect
+   yet).
 
 ## Known Phase 1 limitations (by design, not oversight)
 

@@ -71,4 +71,30 @@ object AppDestinations {
     const val PUBLIC_PROFILE = "profile/public/{userId}"
     fun publicProfile(userId: String) = "profile/public/$userId"
     const val LEADERBOARD = "social/leaderboard"
+
+    // Phase 6b (friends + DM, guilds, notifications): mobile-screen-inventory.md
+    // SCREENs 26 (Friends), 27 (Add Friend — folded into Friends' own modal, no
+    // separate destination needed since it's a bottom sheet not a screen push),
+    // 12 (Notifications). DM (MessagesPage.tsx port) has no dedicated inventory
+    // screen number (reached from Friends' 💬 button / Public Profile's Message
+    // button in the real web client), so its routes are named to match that
+    // real entry point. Guild replaces the placeholder GUILD tab route above —
+    // no new route constant needed there.
+    const val FRIENDS = "social/friends"
+    const val NOTIFICATIONS = "social/notifications"
+    const val DM_LIST = "social/messages"
+    const val DM_THREAD = "social/messages/{userId}"
+    fun dmThread(userId: String) = "social/messages/$userId"
+
+    // Phase 7 (settings, legal, delete account, system states): Settings is
+    // reached from Profile's quick-links (mobile-screen-inventory.md SCREEN
+    // 10 "Settings tab" rows folded into a dedicated screen — Android's
+    // ProfileScreen has no tab switcher yet, see SettingsScreen.kt kdoc).
+    // Legal takes an initial document key so About/Legal rows deep-link
+    // straight to the tapped document (Terms/Privacy/etc.), matching
+    // apps/web's separate /terms /privacy /community /anti-cheat /data
+    // routes collapsed into one screen with an in-screen tab switch.
+    const val SETTINGS = "profile/settings"
+    const val LEGAL = "profile/legal/{doc}"
+    fun legal(doc: String) = "profile/legal/$doc"
 }

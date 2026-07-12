@@ -16,6 +16,7 @@ import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.ui.graphics.Color
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -24,6 +25,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -33,6 +35,9 @@ import com.filipinodama.app.data.profile.ProfileRepository
 import com.filipinodama.app.data.profile.ProfileResult
 import com.filipinodama.app.data.profile.PublicUserProfileDto
 import com.filipinodama.app.data.profile.RecentMatchDto
+import com.filipinodama.app.data.social.FriendsRepository
+import com.filipinodama.app.data.social.SocialResult
+import com.filipinodama.app.ui.screens.social.ReportPlayerDialog
 import com.filipinodama.app.ui.theme.Gold
 import com.filipinodama.app.ui.theme.GoldLt
 import com.filipinodama.app.ui.theme.Green
@@ -40,6 +45,7 @@ import com.filipinodama.app.ui.theme.Ink
 import com.filipinodama.app.ui.theme.Ink2
 import com.filipinodama.app.ui.theme.Panel
 import com.filipinodama.app.ui.theme.Red
+import kotlinx.coroutines.launch
 
 /**
  * PublicProfileScreen — mobile-screen-inventory.md SCREEN 28, reached from
@@ -56,31 +62,51 @@ import com.filipinodama.app.ui.theme.Red
  * server always returns [] per users.ts kdoc, no fabricated achievements),
  * Favorite Openings progress bars.
  *
- * DEFERRED: Add Friend / Message / Report actions — these are Friends/
- * Moderation surfaces outside this phase's Profile+Replay+Leaderboard scope
- * (no Friends screen exists in this phase to navigate to/from), honestly
- * omitted rather than wired to a dead target.
+ * Add Friend / Message / Report actions (Phase 6b): wired below via
+ * FriendButton (state-aware — self/friends/request-sent/request-received/
+ * none, mirroring apps/web FriendButton.tsx exactly off the real
+ * `relationship`/`requestId` fields users.ts already returns), a Message
+ * button (only shown once friends, mirroring the web FriendsPage.tsx 💬
+ * button gating — DMs require a confirmed friendship server-side), and
+ * ReportPlayerDialog (context="profile").
  */
 @Composable
-fun PublicProfileScreen(userId: String, onOpenReplay: (String) -> Unit) {
+fun PublicProfileScreen(
+    userId: String,
+    onOpenReplay: (String) -> Unit,
+    onOpenChat: (String) -> Unit = {},
+    signedIn: Boolean = true,
+    onRequireSignIn: () -> Unit = {}
+) {
     var user by remember { mutableStateOf<PublicUserProfileDto?>(null) }
     var notFound by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf(false) }
     var extras by remember { mutableStateOf<ProfileExtrasResponse?>(null) }
+    var relationship by remember { mutableStateOf("none") }
+    var requestId by remember { mutableStateOf<String?>(null) }
+    var friendBusy by remember { mutableStateOf(false) }
+    var reportOpen by remember { mutableStateOf(false) }
+    val scope = rememberCoroutineScope()
+    // Phase 7 retry affordance: bump to re-run both load effects below.
+    var retryTick by remember { mutableStateOf(0) }
 
-    LaunchedEffect(userId) {
+    LaunchedEffect(userId, retryTick) {
         user = null
         notFound = false
         error = false
         when (val result = ProfileRepository.publicUser(userId)) {
-            is ProfileResult.Success -> user = result.data.user
+            is ProfileResult.Success -> {
+                user = result.data.user
+                relationship = result.data.user.relationship
+                requestId = result.data.user.requestId
+            }
             is ProfileResult.Failure -> {
                 if (result.code == "USER_NOT_FOUND") notFound = true else error = true
             }
         }
     }
 
-    LaunchedEffect(userId) {
+    LaunchedEffect(userId, retryTick) {
         extras = null
         when (val result = ProfileRepository.profileExtras(userId)) {
             is ProfileResult.Success -> extras = result.data
@@ -99,7 +125,15 @@ fun PublicProfileScreen(userId: String, onOpenReplay: (String) -> Unit) {
                 }
             }
             error -> Box(Modifier.fillMaxSize().padding(40.dp), contentAlignment = Alignment.Center) {
-                Text("Couldn't load this profile.", color = Ink2, style = MaterialTheme.typography.bodyMedium)
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Text("Couldn't load this profile.", color = Ink2, style = MaterialTheme.typography.bodyMedium)
+                    Text(
+                        "Retry",
+                        color = GoldLt,
+                        style = MaterialTheme.typography.labelLarge,
+                        modifier = Modifier.padding(top = 12.dp).clickable { retryTick++ }
+                    )
+                }
             }
             user == null -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator(color = Gold) }
             else -> {
@@ -113,6 +147,61 @@ fun PublicProfileScreen(userId: String, onOpenReplay: (String) -> Unit) {
                         Text(u.displayName, color = androidx.compose.ui.graphics.Color.White, style = MaterialTheme.typography.headlineSmall)
                         Text(u.tag, color = Ink2, style = MaterialTheme.typography.labelMedium)
                         Text(u.tier.label, color = Gold, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(top = 4.dp))
+                    }
+                }
+
+                // ── Add Friend / Message / Report (Phase 6b) ──
+                // Mirrors apps/web FriendButton.tsx state machine exactly: self/bot
+                // render nothing, friends/request-sent are disabled labels,
+                // request-received accepts via the SAME requestId the server gave
+                // us, none sends a fresh request. Message only shows once friends
+                // (DMs require a confirmed friendship, matching FriendsPage.tsx's
+                // 💬 gating). Report is always available (server enforces
+                // self-report/guest guards).
+                if (relationship != "self" && !u.isBot) {
+                    Row(modifier = Modifier.fillMaxWidth().padding(start = 20.dp, top = 0.dp, end = 20.dp, bottom = 16.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                        FriendActionButton(
+                            relationship = relationship,
+                            busy = friendBusy,
+                            signedIn = signedIn,
+                            modifier = Modifier.weight(1f),
+                            onClick = {
+                                if (!signedIn) {
+                                    onRequireSignIn()
+                                } else {
+                                    friendBusy = true
+                                    scope.launch {
+                                        val result = if (relationship == "request-received" && requestId != null) {
+                                            FriendsRepository.acceptRequest(requestId!!)
+                                        } else {
+                                            FriendsRepository.sendRequest(userId)
+                                        }
+                                        when (result) {
+                                            is SocialResult.Success -> {
+                                                relationship = if (result.data.status == "accepted") "friends" else "request-sent"
+                                            }
+                                            is SocialResult.Failure -> {}
+                                        }
+                                        friendBusy = false
+                                    }
+                                }
+                            }
+                        )
+                        if (relationship == "friends") {
+                            Box(
+                                modifier = Modifier.weight(1f)
+                                    .clickable { onOpenChat(userId) }
+                                    .background(Panel, RoundedCornerShape(10.dp))
+                                    .padding(vertical = 13.dp),
+                                contentAlignment = Alignment.Center
+                            ) { Text("💬 Message", color = GoldLt, style = MaterialTheme.typography.labelLarge) }
+                        }
+                        Box(
+                            modifier = Modifier
+                                .clickable { reportOpen = true }
+                                .background(Panel, RoundedCornerShape(10.dp))
+                                .padding(horizontal = 16.dp, vertical = 13.dp)
+                        ) { Text("⚑", color = Ink2, style = MaterialTheme.typography.labelLarge) }
                     }
                 }
 
@@ -219,10 +308,45 @@ fun PublicProfileScreen(userId: String, onOpenReplay: (String) -> Unit) {
                         }
                     }
                 }
+
+                if (reportOpen) {
+                    ReportPlayerDialog(
+                        accusedId = userId,
+                        context = "profile",
+                        onClose = { reportOpen = false }
+                    )
+                }
             }
         }
     }
 }
+
+/**
+ * FriendActionButton — state-aware friend action, a Compose port of
+ * apps/web FriendButton.tsx: friends/request-sent render as disabled labels,
+ * request-received shows "Accept Request", none/signed-out show "Add Friend".
+ */
+@Composable
+private fun FriendActionButton(relationship: String, busy: Boolean, signedIn: Boolean, modifier: Modifier = Modifier, onClick: () -> Unit) {
+    val (label, bg, fg, enabled) = when {
+        !signedIn -> FriendButtonStyle("＋ Add Friend", Gold.copy(alpha = 0.16f), GoldLt, true)
+        relationship == "friends" -> FriendButtonStyle("Friends ✓", Green.copy(alpha = 0.15f), Color(0xFF8CE0AD), false)
+        relationship == "request-sent" -> FriendButtonStyle("Request Sent", Color.Black.copy(alpha = 0.3f), Ink2, false)
+        relationship == "request-received" -> FriendButtonStyle("Accept Request", Green.copy(alpha = 0.18f), Green, true)
+        else -> FriendButtonStyle("＋ Add Friend", Gold.copy(alpha = 0.16f), GoldLt, true)
+    }
+    Box(
+        modifier = modifier
+            .clickable(enabled = enabled && !busy, onClick = onClick)
+            .background(bg, RoundedCornerShape(10.dp))
+            .padding(vertical = 13.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        Text(if (busy) "…" else label, color = fg, style = MaterialTheme.typography.labelLarge)
+    }
+}
+
+private data class FriendButtonStyle(val label: String, val bg: Color, val fg: Color, val enabled: Boolean)
 
 @Composable
 private fun RecentMatchRow(m: RecentMatchDto, onOpenReplay: (String) -> Unit) {

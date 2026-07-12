@@ -55,8 +55,10 @@ fun DailyRewardsScreen(onBack: () -> Unit = {}) {
     var claiming by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
     var justClaimed by remember { mutableStateOf<com.filipinodama.app.data.economy.DailyLoginClaimResponse?>(null) }
+    // Phase 7 retry affordance: bump to re-run the initial load below.
+    var retryTick by remember { mutableStateOf(0) }
 
-    LaunchedEffect(Unit) {
+    LaunchedEffect(retryTick) {
         when (val result = EconomyRepository.dailyLoginStatus()) {
             is EconomyResult.Success -> status = result.data
             is EconomyResult.Failure -> error = result.message
@@ -89,7 +91,19 @@ fun DailyRewardsScreen(onBack: () -> Unit = {}) {
         )
 
         when {
-            error != null -> Text(error ?: "", color = Ink2, style = MaterialTheme.typography.bodyMedium)
+            // Only the INITIAL load failing (status still null) gets a full
+            // retry affordance here — a claim() failure with status already
+            // loaded is surfaced inline near the claim button below instead,
+            // where its own re-tap already IS the retry action.
+            error != null && status == null -> Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.fillMaxWidth().padding(top = 20.dp)) {
+                Text(error ?: "", color = Ink2, style = MaterialTheme.typography.bodyMedium)
+                Text(
+                    "Retry",
+                    color = GoldLt,
+                    style = MaterialTheme.typography.labelLarge,
+                    modifier = Modifier.padding(top = 12.dp).clickable { error = null; retryTick++ }
+                )
+            }
             status == null -> Box(Modifier.fillMaxWidth().padding(top = 40.dp), contentAlignment = Alignment.Center) { CircularProgressIndicator(color = Gold) }
             else -> {
                 val s = status!!

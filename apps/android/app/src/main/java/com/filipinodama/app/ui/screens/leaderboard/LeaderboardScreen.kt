@@ -72,6 +72,10 @@ fun LeaderboardScreen(onOpenPublicProfile: (String) -> Unit, onBack: () -> Unit 
     var loadError by remember { mutableStateOf<String?>(null) }
     var needsAuthPrompt by remember { mutableStateOf(false) }
     var season by remember { mutableStateOf<SeasonInfoDto?>(null) }
+    // Phase 7 retry affordance: incrementing this re-keys the load effect
+    // below, letting a "Retry" tap re-run the same fetch without duplicating
+    // the load logic into a separate callable.
+    var retryTick by remember { mutableStateOf(0) }
 
     // "Ends" countdown line (mobile-screen-inventory.md SCREEN 25 row 4) —
     // the real current season from GET /api/season/current (same endpoint
@@ -85,7 +89,7 @@ fun LeaderboardScreen(onOpenPublicProfile: (String) -> Unit, onBack: () -> Unit 
         }
     }
 
-    LaunchedEffect(scope, me?.id) {
+    LaunchedEffect(scope, me?.id, retryTick) {
         val requiresAuth = scope != "global" && me == null
         if (requiresAuth) {
             needsAuthPrompt = true
@@ -153,7 +157,15 @@ fun LeaderboardScreen(onOpenPublicProfile: (String) -> Unit, onBack: () -> Unit 
             }
             rows == null -> Box(Modifier.fillMaxWidth().padding(40.dp), contentAlignment = Alignment.Center) { CircularProgressIndicator(color = Gold) }
             loadError != null -> Box(Modifier.fillMaxWidth().padding(40.dp), contentAlignment = Alignment.Center) {
-                Text(loadError ?: "Couldn't load the leaderboard.", color = Ink2, style = MaterialTheme.typography.bodyMedium)
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Text(loadError ?: "Couldn't load the leaderboard.", color = Ink2, style = MaterialTheme.typography.bodyMedium)
+                    Text(
+                        "Retry",
+                        color = GoldLt,
+                        style = MaterialTheme.typography.labelLarge,
+                        modifier = Modifier.padding(top = 12.dp).clickable { retryTick++ }
+                    )
+                }
             }
             rows!!.isEmpty() -> Box(Modifier.fillMaxWidth().padding(40.dp), contentAlignment = Alignment.Center) {
                 Text(
