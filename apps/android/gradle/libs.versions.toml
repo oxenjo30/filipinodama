@@ -12,6 +12,9 @@ okhttp = "4.12.0"
 socketIoClient = "2.1.2"
 securityCrypto = "1.1.0"
 coilCompose = "2.7.0"
+junit = "4.13.2"
+kotlinxCoroutinesTest = "1.9.0"
+mockwebserver = "4.12.0"
 
 [libraries]
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
@@ -36,6 +39,10 @@ okhttp-logging-interceptor = { group = "com.squareup.okhttp3", name = "logging-i
 socketio-client = { group = "io.socket", name = "socket.io-client", version.ref = "socketIoClient" }
 
 coil-compose = { group = "io.coil-kt", name = "coil-compose", version.ref = "coilCompose" }
+
+junit = { group = "junit", name = "junit", version.ref = "junit" }
+kotlinx-coroutines-test = { group = "org.jetbrains.kotlinx", name = "kotlinx-coroutines-test", version.ref = "kotlinxCoroutinesTest" }
+okhttp-mockwebserver = { group = "com.squareup.okhttp3", name = "mockwebserver", version.ref = "mockwebserver" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }

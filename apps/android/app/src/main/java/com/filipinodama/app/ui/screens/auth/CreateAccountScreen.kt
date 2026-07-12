@@ -1,0 +1,193 @@
+package com.filipinodama.app.ui.screens.auth
+
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.Checkbox
+import androidx.compose.material3.CheckboxDefaults
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.unit.dp
+import com.filipinodama.app.data.AuthRepository
+import com.filipinodama.app.data.AuthResult
+import com.filipinodama.app.ui.theme.Bg
+import com.filipinodama.app.ui.theme.Gold
+import com.filipinodama.app.ui.theme.GoldLt
+import com.filipinodama.app.ui.theme.Ink2
+import kotlinx.coroutines.launch
+
+/**
+ * Create Account screen — mobile-screen-inventory.md §2 Screen 4 (Sign in /
+ * Auth, `signup` mode): display-name/email/password fields + explicit Terms
+ * & Conditions acceptance. The web client (AuthPage.tsx `requireTerms()`)
+ * treats accepting Terms as REQUIRED before an account can be created — this
+ * mirrors that exactly rather than making it optional.
+ *
+ * Username validation mirrors the server's registerSchema
+ * (packages/shared/src/dto.ts): 3-16 chars, [a-zA-Z0-9_] only.
+ */
+@Composable
+fun CreateAccountScreen(
+    onBack: () -> Unit,
+    onAccountCreated: () -> Unit
+) {
+    var username by remember { mutableStateOf("") }
+    var email by remember { mutableStateOf("") }
+    var password by remember { mutableStateOf("") }
+    var agreed by remember { mutableStateOf(false) }
+    var error by remember { mutableStateOf<String?>(null) }
+    var busy by remember { mutableStateOf(false) }
+    val scope = rememberCoroutineScope()
+
+    fun submit() {
+        val cleanUsername = username.trim()
+        val cleanEmail = email.trim().lowercase()
+        val cleanPass = password.trim()
+
+        if (!agreed) {
+            error = "Please accept the Terms & Conditions to continue."
+            return
+        }
+        if (cleanUsername.isEmpty()) {
+            error = "Please enter a display name."
+            return
+        }
+        if (!cleanUsername.matches(Regex("^[a-zA-Z0-9_]{3,16}$"))) {
+            error = "Display name must be 3-16 characters, letters/numbers/underscore only."
+            return
+        }
+        if (cleanEmail.isEmpty() || !cleanEmail.matches(Regex("^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$"))) {
+            error = "Please enter a valid email address."
+            return
+        }
+        if (cleanPass.length < 8) {
+            error = "Password must be at least 8 characters."
+            return
+        }
+
+        error = null
+        busy = true
+        scope.launch {
+            when (val result = AuthRepository.register(cleanEmail, cleanPass, cleanUsername)) {
+                is AuthResult.Success -> onAccountCreated()
+                is AuthResult.Failure -> error = result.message
+            }
+            busy = false
+        }
+    }
+
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Bg)
+            .verticalScroll(rememberScrollState())
+            .padding(horizontal = 28.dp, vertical = 16.dp)
+    ) {
+        AuthBackButton(onClick = onBack)
+
+        Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.fillMaxWidth()) {
+            Text(
+                text = "✦ FILIPINODAMA ROYAL ✦",
+                color = Gold,
+                style = MaterialTheme.typography.labelLarge,
+                modifier = Modifier.padding(top = 12.dp)
+            )
+            Text(
+                text = "Create your account",
+                style = MaterialTheme.typography.headlineMedium,
+                color = GoldLt,
+                modifier = Modifier.padding(top = 8.dp)
+            )
+            Text(
+                text = "Join the board and start climbing the ranks.",
+                color = Ink2,
+                style = MaterialTheme.typography.bodyMedium,
+                modifier = Modifier.padding(top = 4.dp, bottom = 28.dp)
+            )
+        }
+
+        Column(
+            modifier = Modifier.fillMaxWidth(),
+            verticalArrangement = Arrangement.spacedBy(14.dp)
+        ) {
+            Column {
+                AuthLabel("DISPLAY NAME")
+                AuthTextField(
+                    value = username,
+                    onValueChange = { username = it },
+                    placeholder = "e.g. Datu Rico",
+                    enabled = !busy
+                )
+            }
+            Column {
+                AuthLabel("EMAIL")
+                AuthTextField(
+                    value = email,
+                    onValueChange = { email = it },
+                    placeholder = "you@example.com",
+                    keyboardType = KeyboardType.Email,
+                    enabled = !busy
+                )
+            }
+            Column {
+                AuthLabel("PASSWORD")
+                AuthTextField(
+                    value = password,
+                    onValueChange = { password = it },
+                    placeholder = "••••••••",
+                    isPassword = true,
+                    enabled = !busy
+                )
+            }
+
+            error?.let { AuthErrorRow(it) }
+
+            AuthPrimaryButton(
+                text = if (busy) "Please wait…" else "Create Account",
+                onClick = { submit() },
+                enabled = !busy,
+                loading = busy,
+                modifier = Modifier.padding(top = 4.dp)
+            )
+
+            // Terms & Conditions acceptance — required for account creation,
+            // matching AuthPage.tsx's requireTerms() gate exactly.
+            Row(
+                verticalAlignment = Alignment.Top,
+                horizontalArrangement = Arrangement.spacedBy(9.dp),
+                modifier = Modifier.padding(top = 6.dp)
+            ) {
+                Checkbox(
+                    checked = agreed,
+                    onCheckedChange = {
+                        agreed = it
+                        if (it) error = null
+                    },
+                    enabled = !busy,
+                    colors = CheckboxDefaults.colors(checkedColor = Gold, uncheckedColor = Ink2)
+                )
+                Text(
+                    text = "I agree to the Terms & Conditions and Privacy Policy.",
+                    color = Ink2,
+                    style = MaterialTheme.typography.bodySmall,
+                    modifier = Modifier.padding(top = 12.dp)
+                )
+            }
+        }
+    }
+}

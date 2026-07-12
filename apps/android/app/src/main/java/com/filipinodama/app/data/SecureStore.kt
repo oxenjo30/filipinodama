@@ -45,6 +45,12 @@ class SecureStore(context: Context) {
         prefs.edit().clear().apply()
     }
 
+    fun getBoolean(key: String): Boolean = prefs.getBoolean(key, false)
+
+    fun putBoolean(key: String, value: Boolean) {
+        prefs.edit().putBoolean(key, value).apply()
+    }
+
     companion object {
         private const val PREFS_FILE_NAME = "fd_secure_prefs"
 
@@ -52,5 +58,11 @@ class SecureStore(context: Context) {
         const val KEY_COOKIE_JAR_BLOB = "cookie_jar_blob"
         const val KEY_IS_GUEST = "is_guest"
         const val KEY_LAST_USER_ID = "last_user_id"
+
+        // Phase 2: onboarding-carousel completion flag, the Android equivalent
+        // of the web client's localStorage `fdr.onboarded` marker (see
+        // apps/web/src/features/onboarding/OnboardingFlow.tsx). Persisted so a
+        // returning user is never re-shown the tour after a process restart.
+        const val KEY_ONBOARDED = "fdm_onboarded"
     }
 }

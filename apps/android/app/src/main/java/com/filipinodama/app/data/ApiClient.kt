@@ -11,10 +11,10 @@ import java.util.concurrent.TimeUnit
 
 /**
  * Builds a singleton Retrofit instance wired to BuildConfig.BASE_URL with a
- * persistent CookieJar (so fd_access / fd_refresh survive app restarts) and
- * kotlinx.serialization for JSON (de)serialization.
- *
- * Nothing in this file is wired into any UI yet — Phase 2 work.
+ * persistent CookieJar (so fd_access / fd_refresh survive app restarts),
+ * kotlinx.serialization for JSON (de)serialization, and a [RefreshAuthenticator]
+ * that transparently refreshes an expired session once before retrying a
+ * request that came back 401.
  */
 object ApiClient {
 
@@ -29,6 +29,14 @@ object ApiClient {
     @PublishedApi
     internal var retrofit: Retrofit? = null
 
+    /** Set during [init]; shared with AuthRepository (session flags, logout). */
+    lateinit var secureStore: SecureStore
+        private set
+
+    /** Set during [init]; shared with AuthRepository (logout must clear cookies). */
+    lateinit var cookieJar: PersistentCookieJar
+        private set
+
     fun init(context: Context) {
         if (retrofit != null) return
         synchronized(this) {
@@ -36,6 +44,8 @@ object ApiClient {
 
             val secureStore = SecureStore(context.applicationContext)
             val cookieJar = PersistentCookieJar(secureStore)
+            this.secureStore = secureStore
+            this.cookieJar = cookieJar
 
             val loggingInterceptor = HttpLoggingInterceptor().apply {
                 level = if (BuildConfig.DEBUG) {
@@ -47,6 +57,7 @@ object ApiClient {
 
             val okHttpClient = OkHttpClient.Builder()
                 .cookieJar(cookieJar)
+                .authenticator(RefreshAuthenticator(BuildConfig.BASE_URL, cookieJar))
                 .addInterceptor(loggingInterceptor)
                 .connectTimeout(TIMEOUT_SECONDS, TimeUnit.SECONDS)
                 .readTimeout(TIMEOUT_SECONDS, TimeUnit.SECONDS)

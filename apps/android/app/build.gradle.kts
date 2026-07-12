@@ -76,4 +76,11 @@ dependencies {
     implementation(libs.socketio.client)
 
     implementation(libs.coil.compose)
+
+    // Test-only — never shipped in the app APK. MockWebServer pre-approved
+    // for exercising RefreshAuthenticator / AuthApi against a real (fake)
+    // HTTP server rather than hand-rolled OkHttp mocks.
+    testImplementation(libs.junit)
+    testImplementation(libs.kotlinx.coroutines.test)
+    testImplementation(libs.okhttp.mockwebserver)
 }

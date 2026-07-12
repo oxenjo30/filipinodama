@@ -54,6 +54,12 @@ class PersistentCookieJar(private val secureStore: SecureStore) : CookieJar {
         return valid.mapNotNull { it.toCookie(host) }
     }
 
+    /** Wipes every persisted + in-memory cookie (used by logout). */
+    fun clearAll() {
+        memoryCache.clear()
+        secureStore.remove(SecureStore.KEY_COOKIE_JAR_BLOB)
+    }
+
     private fun persist() {
         val blob = json.encodeToString(memoryCache as Map<String, List<SerializableCookie>>)
         secureStore.putString(SecureStore.KEY_COOKIE_JAR_BLOB, blob)
