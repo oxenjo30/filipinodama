@@ -134,3 +134,9 @@
   3. Decorative overlays (frames) also need an onError that HIDES them, so a broken decoration never sits as a broken square over valid content.
   4. Verify resolver changes by simulating EVERY real value shape (null, map key, bare default-starter key, assetKey path, uploaded/remote URL, and weird/legacy values) and confirming no regression before shipping — the codebase's stored shapes are the spec.
   5. When the user reports a broken avatar that "should have a default," first check whether the existing fix is actually DEPLOYED (a failing build can leave the fix committed-but-not-live) before assuming a new code bug.
+
+## 2026-07-12 - Orchestrator: never run two git-committing subagents in ONE working tree
+
+- Mistake: I dispatched the Android-scaffold implementer while the monetization implementer was still running. Both share the single repo working tree; each created/switched branches and committed. Git branch state raced: the android commit landed on the monetization agent's branch mid-task, and the monetization commit initially landed on the android branch. Both agents recovered non-destructively, but the monetization branch permanently carries the android commit as an ancestor (harmless only because both were bound for main).
+- Cause: "no parallel implementers" discipline was applied to test-DB contention but not to GIT STATE — branch HEAD is process-global per working tree, and checkout/commit from two agents interleave.
+- Rule: (1) At most ONE git-writing subagent at a time in the shared tree — parallelize only read-only/reporting agents alongside it. (2) If parallel implementation is genuinely needed, give each agent an ISOLATED WORKTREE (Agent isolation:"worktree" / git worktree add) so each has its own HEAD. (3) Implementer briefs should include: re-verify `git branch --show-current` immediately before committing.
