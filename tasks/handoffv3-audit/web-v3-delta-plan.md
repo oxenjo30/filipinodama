@@ -55,21 +55,25 @@ Layout/placement/order copied from the v3 modal design (between Recent Form and 
   names, mode, viewers=spectator count) linking to the room spectate flow. Server endpoint
   addition + WatchPage rendering. (Production already spectates rooms via code link.)
 
-## Cluster W6 — Room resume on entry (rows 30,31,32) — VERIFY+small BUILD
-Production rooms already live server-side and survive reload (kept while match live; auto-join
-via ?code). Gap to verify: entering /rooms WITHOUT a code while you have an active room —
-prototype resumes it (<15min) with system chat "Rejoined your synced room…". If production
-doesn't auto-resume: add server "my active room" lookup (userRoom map) emitted on connect or
-via query, and PrivateRoomPage resumes it. Settings changes already broadcast via roomState.
+## Cluster W6 — Room resume on entry (rows 30,31,32) — GAP CONFIRMED 2026-07-12 → small BUILD
+Verified: PrivateRoomPage has NO resume path without ?code (grep: no matches/active|rooms/mine|
+resume hooks — only the ?code auto-join effect). BUILD: GET /api/rooms/mine (REST reads the
+in-memory userRoom/rooms maps — same pattern as listOpenRooms) returning {code}|null; on
+PrivateRoomPage mount with no ?code and a non-null mine, join(code) + system chat line
+"Rejoined your synced room — picking up where you left off." Settings-sync already covered by
+roomState broadcasts.
 
-## Cluster W7 — Already-real persistence (rows 15,16,33,34,35) — VERIFY only
-- Guild create persists (row 16): production creates real Guild rows. Verify create flow saves
-  name/desc/emblem and navigates into the guild.
-- Guild emblem picker (row 15): v3 switches to REAL image assets shared with frame picker
-  (_GEMBLEMS). Verify production guild-create emblem picker uses the real emblem images from
-  handoff assets (not CSS gradients); adapt picker if it still uses gradients/indices.
-- Frame equip persistence (rows 33-34): frameId is a DB column, rendered everywhere. VERIFY.
-- Wallet persistence (row 35): gold/diamonds/inventory are DB. VERIFY.
+## Cluster W7 — Already-real persistence (rows 15,16,33,34,35) — ✅ VERIFIED 2026-07-12
+- Row 16 guild create: real POST /api/guilds create flow with ApiError handling; payload
+  includes crestKey (GuildsPage.tsx:350,365). Guilds are DB rows. COVERED.
+- Row 15 emblem picker: production ALWAYS used real crest art — Emblem component "renders the
+  real crest art … matching the handoff — never an emoji" via guildCrest(crestKey, seed)
+  (GuildsPage.tsx:97-113); create modal binds crestKey (line 350). Production already exceeds
+  the v3 prototype change (gradients→images). COVERED.
+- Rows 33-34 frame persistence: frameId is a User DB column rendered everywhere (shipped in
+  fidelity pass; frame rendering hardened 2026-07-12). COVERED.
+- Row 35 wallet persistence: gold/diamonds/inventory are server-authoritative DB + ledger.
+  COVERED.
 
 ## Cluster W8 — Payment-adjacent (rows 36,37) — BLOCKED-POLICY / minor
 - Row 36 (fdr.topupReceipts → order history, "App Store · Apple Pay"): real-money top-up is
