@@ -81,3 +81,15 @@ fun GameFrameCard(
         content()
     }
 }
+
+/** A single labeled stat used in match/room end-summary grids (e.g. "Moves", "Red caps"). */
+@Composable
+fun ResultStat(value: Int, label: String, color: Color = Gold, modifier: Modifier = Modifier) {
+    androidx.compose.foundation.layout.Column(
+        modifier = modifier,
+        horizontalAlignment = androidx.compose.ui.Alignment.CenterHorizontally
+    ) {
+        Text(text = value.toString(), color = color, style = MaterialTheme.typography.titleLarge)
+        Text(text = label, color = com.filipinodama.app.ui.theme.Ink2, style = MaterialTheme.typography.labelSmall)
+    }
+}

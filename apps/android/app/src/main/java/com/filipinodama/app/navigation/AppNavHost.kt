@@ -16,10 +16,10 @@ import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import com.filipinodama.app.data.match.GameRepository
 import com.filipinodama.app.data.match.MatchRepository
+import com.filipinodama.app.data.rooms.RoomRepository
 import com.filipinodama.app.ui.screens.GuildScreen
 import com.filipinodama.app.ui.screens.HomeScreen
 import com.filipinodama.app.ui.screens.OnboardingScreen
-import com.filipinodama.app.ui.screens.PlaceholderScreen
 import com.filipinodama.app.ui.screens.ProfileScreen
 import com.filipinodama.app.ui.screens.SplashDestination
 import com.filipinodama.app.ui.screens.SplashScreen
@@ -32,6 +32,8 @@ import com.filipinodama.app.ui.screens.game.MatchmakingScreen
 import com.filipinodama.app.ui.screens.game.ModeSelectScreen
 import com.filipinodama.app.ui.screens.game.OfflineGameScreen
 import com.filipinodama.app.ui.screens.game.OnlineMatchScreen
+import com.filipinodama.app.ui.screens.rooms.LiveMatchBrowserScreen
+import com.filipinodama.app.ui.screens.rooms.PrivateRoomScreen
 
 /**
  * NAVIGATION NOTES (see tasks/handoffv3-audit/mobile-screen-inventory.md,
@@ -183,7 +185,8 @@ fun AppNavHost() {
                     onPlayAi = { navController.navigate(AppDestinations.AI_DIFFICULTY) },
                     onPlayCasual = { navController.navigate(AppDestinations.matchmaking("CASUAL")) },
                     onPlayRanked = { navController.navigate(AppDestinations.matchmaking("RANKED")) },
-                    onPrivateRoom = { navController.navigate(AppDestinations.PRIVATE_ROOM_PLACEHOLDER) },
+                    onPrivateRoom = { navController.navigate(AppDestinations.privateRoom()) },
+                    onWatchLive = { navController.navigate(AppDestinations.LIVE_MATCH_BROWSER) },
                     onRankedGuestBlocked = {
                         // Mirrors web's isGuest toast + stay-on-casual behavior:
                         // Android has no toast primitive yet in this scaffold, so
@@ -259,8 +262,55 @@ fun AppNavHost() {
                 )
             }
 
-            composable(AppDestinations.PRIVATE_ROOM_PLACEHOLDER) {
-                PlaceholderScreen(title = "Private Room", phaseNote = "Coming in Phase 4")
+            // ---- Phase 4: private rooms, in-match chat + emotes, spectate ----
+
+            composable(
+                route = AppDestinations.PRIVATE_ROOM,
+                arguments = listOf(
+                    navArgument("code") { type = NavType.StringType; nullable = true; defaultValue = null },
+                    navArgument("spectate") { type = NavType.StringType; nullable = true; defaultValue = null }
+                )
+            ) { backStackEntry ->
+                val code = backStackEntry.arguments?.getString("code")
+                val spectateFlag = backStackEntry.arguments?.getString("spectate") == "1"
+                BackHandler(enabled = true) {
+                    RoomRepository.leave()
+                    RoomRepository.reset()
+                    navController.popBackStack(AppDestinations.MODE_SELECT, inclusive = false)
+                }
+                PrivateRoomScreen(
+                    deepLinkCode = code,
+                    deepLinkSpectate = spectateFlag,
+                    onBack = {
+                        navController.popBackStack(AppDestinations.MODE_SELECT, inclusive = false)
+                    },
+                    onEnterMatch = {
+                        // The match/spectate state is already live in MatchRepository
+                        // (RoomRepository's EV.roomStart handler called
+                        // MatchRepository.enterFromRoom before this fires) — reuse the
+                        // same online-match screen for both a player and a spectator,
+                        // exactly like OnlineMatchScreen's myColor==null gating.
+                        navController.navigate(AppDestinations.onlineMatch("PRIVATE")) {
+                            popUpTo(AppDestinations.MODE_SELECT)
+                        }
+                    }
+                )
+            }
+
+            composable(AppDestinations.LIVE_MATCH_BROWSER) {
+                LiveMatchBrowserScreen(
+                    onWatchMatch = { matchId ->
+                        MatchRepository.spectate(matchId)
+                        navController.navigate(AppDestinations.onlineMatch("SPECTATE")) {
+                            popUpTo(AppDestinations.MODE_SELECT)
+                        }
+                    },
+                    onWatchRoom = { code ->
+                        navController.navigate(AppDestinations.privateRoom(code = code, spectate = true)) {
+                            popUpTo(AppDestinations.MODE_SELECT)
+                        }
+                    }
+                )
             }
         }
     }

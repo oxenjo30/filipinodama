@@ -1,6 +1,7 @@
 package com.filipinodama.app.ui.screens.game
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -22,8 +23,11 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.filipinodama.app.data.engine.MatchEndReasons
 import com.filipinodama.app.data.engine.PieceColors
 import com.filipinodama.app.data.match.MatchRepository
@@ -48,6 +52,8 @@ import com.filipinodama.app.ui.theme.Panel
 fun OnlineMatchScreen(mode: String, onExit: () -> Unit) {
     val ui by MatchRepository.state.collectAsState()
     var showResignConfirm by remember { mutableStateOf(false) }
+    var chatOpen by remember { mutableStateOf(false) }
+    var lastSeenChatCount by remember { mutableStateOf(0) }
 
     val gs = ui.gameState
     if (gs == null) {
@@ -58,8 +64,12 @@ fun OnlineMatchScreen(mode: String, onExit: () -> Unit) {
     }
 
     val myColor = ui.myColor
+    val isSpectating = myColor == null
     val myTurn = gs.result == null && gs.turn == myColor && ui.status == MatchStatus.PLAYING
     val flip = myColor == PieceColors.BLUE
+
+    // Unread badge: count messages that arrived since the panel was last opened.
+    val unread = if (chatOpen) 0 else (ui.chat.size - lastSeenChatCount).coerceAtLeast(0)
 
     Column(
         modifier = Modifier
@@ -69,21 +79,36 @@ fun OnlineMatchScreen(mode: String, onExit: () -> Unit) {
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
         Text(
-            text = if (mode == "RANKED") "Ranked Match" else "Quick Match",
+            text = if (isSpectating) "Spectating" else if (mode == "RANKED") "Ranked Match" else "Quick Match",
             style = MaterialTheme.typography.titleMedium,
             color = Green
         )
-        Text("Live · Online", style = MaterialTheme.typography.bodySmall, color = Ink2)
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            Text("Live · Online", style = MaterialTheme.typography.bodySmall, color = Ink2)
+            // Real live spectator count — spectator view only (mirrors
+            // OnlineMatchPage.tsx: players keep the plain "Live · Online" line).
+            if (isSpectating && ui.viewers != null) {
+                Text(
+                    text = "· 👁 ${ui.viewers}",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = GoldLt
+                )
+            }
+        }
 
         PlayerPanel(
-            name = ui.opponent?.displayName ?: "Opponent",
-            sub = "Opponent",
+            name = if (isSpectating) "Red" else ui.opponent?.displayName ?: "Opponent",
+            sub = if (isSpectating) "Red player" else "Opponent",
             active = gs.result == null && gs.turn != myColor,
             modifier = Modifier.padding(top = 12.dp)
         )
 
         TurnBanner(
-            text = if (myTurn) (if (ui.mustCapture) "⚠ You must capture" else "● Your move") else "Opponent's move…",
+            text = when {
+                isSpectating -> "${if (gs.turn == PieceColors.BLUE) "Blue" else "Red"} to move · Move ${gs.moveNumber}"
+                myTurn -> if (ui.mustCapture) "⚠ You must capture" else "● Your move"
+                else -> "Opponent's move…"
+            },
             highlight = myTurn,
             modifier = Modifier.padding(vertical = 10.dp)
         )
@@ -100,37 +125,87 @@ fun OnlineMatchScreen(mode: String, onExit: () -> Unit) {
             mustCapture = ui.mustCapture && myTurn,
             onSquareClick = { MatchRepository.onSquareClick(it) },
             flip = flip,
-            interactive = myTurn
+            interactive = myTurn && !isSpectating
         )
 
         PlayerPanel(
-            name = "You",
-            sub = "You · ${myColor ?: ""}",
-            active = myTurn,
+            name = if (isSpectating) "Blue" else "You",
+            sub = if (isSpectating) "Blue player" else "You · ${myColor ?: ""}",
+            active = if (isSpectating) gs.result == null && gs.turn == PieceColors.BLUE else myTurn,
             modifier = Modifier.padding(top = 12.dp)
         )
 
-        Row(
-            modifier = Modifier.fillMaxWidth().padding(top = 16.dp),
-            horizontalArrangement = Arrangement.spacedBy(10.dp)
-        ) {
-            GameButton(
-                text = "🏳 Resign",
-                onClick = { showResignConfirm = true },
-                variant = GameButtonVariant.RED,
-                enabled = gs.result == null,
-                modifier = Modifier.weight(1f)
+        if (isSpectating) {
+            Text(
+                text = "🔒 Spectating — you can watch but not move pieces",
+                style = MaterialTheme.typography.labelSmall,
+                color = Ink2,
+                modifier = Modifier.padding(top = 10.dp)
             )
             GameButton(
-                text = "← Leave",
+                text = "Leave Spectator View",
                 onClick = {
-                    MatchRepository.leaveQueue()
                     MatchRepository.reset()
                     onExit()
                 },
                 variant = GameButtonVariant.PURPLE,
-                modifier = Modifier.weight(1f)
+                modifier = Modifier.padding(top = 12.dp).fillMaxWidth()
             )
+        } else {
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(top = 16.dp),
+                horizontalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                GameButton(
+                    text = "🏳 Resign",
+                    onClick = { showResignConfirm = true },
+                    variant = GameButtonVariant.RED,
+                    enabled = gs.result == null,
+                    modifier = Modifier.weight(1f)
+                )
+                GameButton(
+                    text = "← Leave",
+                    onClick = {
+                        MatchRepository.leaveQueue()
+                        MatchRepository.reset()
+                        onExit()
+                    },
+                    variant = GameButtonVariant.PURPLE,
+                    modifier = Modifier.weight(1f)
+                )
+            }
+
+            // Quick Chat — hidden entirely for spectators (myColor null), mirroring
+            // apps/web/src/features/play/OnlineMatchPage.tsx: `{myColor !== null && (<MatchChat.../>)}`.
+            Column(modifier = Modifier.fillMaxWidth().padding(top = 14.dp)) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable {
+                            chatOpen = !chatOpen
+                            if (chatOpen) lastSeenChatCount = ui.chat.size
+                        },
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Text("💬 Quick Chat", color = GoldLt, style = MaterialTheme.typography.labelLarge)
+                        ChatUnreadBadge(unread)
+                    }
+                    Text(if (chatOpen) "▲" else "▼", color = Ink2, fontSize = 12.sp)
+                }
+                if (chatOpen) {
+                    MatchChat(
+                        messages = ui.chat.map { m ->
+                            MatchChatUiMsg(id = m.id, mine = m.mine, emote = m.emote, body = m.body)
+                        },
+                        onSend = { emote, body ->
+                            if (emote != null) MatchRepository.sendEmote(emote) else if (body != null) MatchRepository.sendChat(body)
+                        },
+                        modifier = Modifier.padding(top = 10.dp)
+                    )
+                }
+            }
         }
     }
 
@@ -241,8 +316,48 @@ private fun MatchEndCard(
 ) {
     val ui by MatchRepository.state.collectAsState()
     val end = ui.end ?: return
+    val isSpectating = ui.myColor == null
     val won = ui.myColor != null && end.result.winner == ui.myColor
     val draw = end.result.winner == "draw"
+
+    // Spectators get a neutral "who won" summary (mirrors the mockup's
+    // Spectate end-card + OnlineMatchPage.tsx) — no rematch/rating framing,
+    // since none of that applies to a viewer.
+    if (isSpectating) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(androidx.compose.ui.graphics.Color.Black.copy(alpha = 0.72f)),
+            contentAlignment = Alignment.Center
+        ) {
+            Column(
+                modifier = Modifier
+                    .padding(24.dp)
+                    .background(Panel, RoundedCornerShape(18.dp))
+                    .padding(24.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                Text("Match Complete", color = Gold, style = MaterialTheme.typography.labelLarge)
+                Text(
+                    text = if (end.interrupted) "Match Interrupted"
+                    else if (draw) "Draw"
+                    else "${if (end.result.winner == PieceColors.RED) "Red" else "Blue"} takes the victory!",
+                    color = GoldLt,
+                    style = MaterialTheme.typography.headlineSmall,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.padding(top = 6.dp, bottom = 16.dp)
+                )
+                Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                    ResultStat(value = ui.gameState?.history?.size ?: 0, label = "Moves")
+                }
+                Column(modifier = Modifier.padding(top = 20.dp).fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(9.dp)) {
+                    GameButton("↻ Watch Another", onFindNewMatch, variant = GameButtonVariant.RED)
+                    GameButton("Home", onHome, variant = GameButtonVariant.PURPLE)
+                }
+            }
+        }
+        return
+    }
 
     val title = when {
         end.interrupted -> "Connection Lost"

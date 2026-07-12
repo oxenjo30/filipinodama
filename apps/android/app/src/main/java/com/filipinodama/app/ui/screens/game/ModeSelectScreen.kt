@@ -48,6 +48,7 @@ fun ModeSelectScreen(
     onPlayCasual: () -> Unit,
     onPlayRanked: () -> Unit,
     onPrivateRoom: () -> Unit,
+    onWatchLive: () -> Unit,
     onRankedGuestBlocked: () -> Unit
 ) {
     val authState by AuthRepository.state.collectAsState()
@@ -104,8 +105,16 @@ fun ModeSelectScreen(
                 title = "Private Room",
                 tag = null,
                 desc = "Play with a friend using a room code.",
-                meta = "Coming soon",
+                meta = "Host or join by code",
                 onClick = onPrivateRoom
+            )
+            ModeCardRow(
+                icon = "👁",
+                title = "Watch Live",
+                tag = "LIVE",
+                desc = "Spectate top matches happening right now.",
+                meta = "Real-time, no stakes",
+                onClick = onWatchLive
             )
         }
     }

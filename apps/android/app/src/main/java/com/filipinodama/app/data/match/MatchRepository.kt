@@ -288,6 +288,52 @@ object MatchRepository {
         }
     }
 
+    /**
+     * Hand off from a private room's EV.roomStart into the match view, mirroring
+     * roomStore.ts's `s.on(EV.roomStart, ...)` handler: the server has already
+     * seeded a real match and joined our socket to its room, so this resets
+     * MatchUiState to a fresh PLAYING/spectating shell and asks the server to
+     * resync the opening state. [yourColor] null means we're a SPECTATOR
+     * (read-only); a color means we're a player.
+     */
+    fun enterFromRoom(matchId: String, yourColor: PieceColor?, opponent: PublicUserDto?) {
+        _state.value = MatchUiState(
+            status = MatchStatus.PLAYING,
+            matchId = matchId,
+            myColor = yourColor,
+            opponent = opponent
+        )
+        try {
+            ensureConnected()
+            emitPayload(EV.matchResync, MatchIdRequest(matchId))
+        } catch (_: Exception) {
+            _state.update { it.copy(error = "Could not connect. Are you logged in?") }
+        }
+    }
+
+    /**
+     * Best-effort opponent identity hint for a room-originated match, using the
+     * room's cached member fields (name/tag/avatar — no trophies/rankTier, same
+     * limitation roomStore.ts documents with a follow-up TODO). Only fills the
+     * opponent in if one hasn't already arrived some other way.
+     */
+    fun setRoomOpponentHint(userId: String, name: String, tag: String, avatarUrl: String?) {
+        _state.update { st ->
+            if (st.opponent != null) return@update st
+            st.copy(
+                opponent = PublicUserDto(
+                    id = userId,
+                    username = name,
+                    displayName = name,
+                    tag = tag,
+                    avatarUrl = avatarUrl,
+                    trophies = 0,
+                    rankTier = "squire"
+                )
+            )
+        }
+    }
+
     fun onSquareClick(square: Square) {
         val st = _state.value
         val gs = st.gameState ?: return

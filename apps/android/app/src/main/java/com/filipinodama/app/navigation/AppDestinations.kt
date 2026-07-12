@@ -31,5 +31,23 @@ object AppDestinations {
     fun matchmaking(mode: String) = "play/matchmaking/$mode"
     const val ONLINE_MATCH = "play/online/{mode}"
     fun onlineMatch(mode: String) = "play/online/$mode"
-    const val PRIVATE_ROOM_PLACEHOLDER = "play/private-room"
+    /** Spectate-by-id entry (from the Live Match Browser watching a plain match). */
+    const val SPECTATE_MATCH = "play/spectate/{matchId}"
+    fun spectateMatch(matchId: String) = "play/spectate/$matchId"
+
+    // Phase 4 (rooms + chat + spectate): Private Room lobby, optionally deep
+    // linked with a room code (?code=) and/or spectate intent (?spectate=1),
+    // mirroring apps/web's /rooms?code=X&spectate=1 URL shape.
+    const val PRIVATE_ROOM = "play/room?code={code}&spectate={spectate}"
+    fun privateRoom(code: String? = null, spectate: Boolean = false): String {
+        val base = "play/room"
+        val params = buildList {
+            if (code != null) add("code=$code")
+            if (spectate) add("spectate=1")
+        }
+        return if (params.isEmpty()) base else "$base?${params.joinToString("&")}"
+    }
+
+    /** Live Match Browser — mobile-screen-inventory.md SCREEN 22 ("Watch Live"). */
+    const val LIVE_MATCH_BROWSER = "play/live"
 }

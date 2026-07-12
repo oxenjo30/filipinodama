@@ -23,9 +23,16 @@ android {
         debug {
             // Emulator-to-host-localhost alias; see README for physical-device overrides.
             buildConfigField("String", "BASE_URL", "\"http://10.0.2.2:4000\"")
+            // Web origin for shareable room links (rooms.get scoped to the real
+            // web dev server so a debug-build share link is still openable).
+            buildConfigField("String", "WEB_ORIGIN", "\"http://10.0.2.2:5173\"")
         }
         release {
             buildConfigField("String", "BASE_URL", "\"https://api.filipinodama.com\"")
+            // Real production web origin (apps/web) — used to build cross-platform
+            // room share links (https://filipinodama.com/rooms?code=X), matching
+            // apps/web/src/features/rooms/PrivateRoomPage.tsx's window.location.origin.
+            buildConfigField("String", "WEB_ORIGIN", "\"https://filipinodama.com\"")
             isMinifyEnabled = false
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
