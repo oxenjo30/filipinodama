@@ -37,6 +37,16 @@ object ApiClient {
     lateinit var cookieJar: PersistentCookieJar
         private set
 
+    /**
+     * Set during [init]; shared with [SocketClient] so the Socket.IO handshake
+     * reuses the SAME cookie jar as REST calls — this is what makes the
+     * server's cookie-based socket auth (io.use authenticate(), which reads
+     * the httpOnly `fd_access` cookie) work without the app ever touching the
+     * raw JWT.
+     */
+    lateinit var okHttpClient: OkHttpClient
+        private set
+
     fun init(context: Context) {
         if (retrofit != null) return
         synchronized(this) {
@@ -63,6 +73,7 @@ object ApiClient {
                 .readTimeout(TIMEOUT_SECONDS, TimeUnit.SECONDS)
                 .writeTimeout(TIMEOUT_SECONDS, TimeUnit.SECONDS)
                 .build()
+            this.okHttpClient = okHttpClient
 
             val contentType = "application/json".toMediaType()
 

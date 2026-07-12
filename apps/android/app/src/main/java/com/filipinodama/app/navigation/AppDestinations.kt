@@ -16,7 +16,20 @@ object AppDestinations {
 
     const val HOME = "home"
     const val STORE = "store"
-    const val PLAY = "play"
     const val GUILD = "guild"
     const val PROFILE = "profile"
+
+    // Phase 3 (gameplay core): PLAY tab routes to Mode Select (`go('mode')` in
+    // the prototype), not a dedicated "play" screen — mobile-screen-inventory.md
+    // NAVIGATION MODEL. showTabs excludes board/matchmaking/aidiff per the same
+    // doc, so those three hide the bottom tab bar; Mode Select keeps it visible.
+    const val MODE_SELECT = "play/mode"
+    const val AI_DIFFICULTY = "play/ai-difficulty"
+    const val AI_GAME = "play/ai-game/{difficulty}"
+    fun aiGame(difficulty: String) = "play/ai-game/$difficulty"
+    const val MATCHMAKING = "play/matchmaking/{mode}"
+    fun matchmaking(mode: String) = "play/matchmaking/$mode"
+    const val ONLINE_MATCH = "play/online/{mode}"
+    fun onlineMatch(mode: String) = "play/online/$mode"
+    const val PRIVATE_ROOM_PLACEHOLDER = "play/private-room"
 }

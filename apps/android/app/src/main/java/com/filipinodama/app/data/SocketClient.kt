@@ -4,59 +4,83 @@ import com.filipinodama.app.BuildConfig
 import io.socket.client.IO
 import io.socket.client.Socket
 import java.net.URISyntaxException
+import okhttp3.OkHttpClient
 
 /**
- * Stub wrapper around the Socket.IO v4 client, matching API_SPEC.md's
- * WebSocket contract: single authenticated namespace at path `/rt`, auth
- * handshake carries the access token, Redis adapter is server-side only
- * (irrelevant to the client), presence heartbeat ~20s (irrelevant to
- * Phase 1).
+ * Wrapper around the Socket.IO v4 client, matching the server contract
+ * verified in apps/server/src/realtime/index.ts:
+ *  - single namespace at path `/rt` (not a Socket.IO custom namespace — the
+ *    Engine.IO/Socket.IO HTTP path).
+ *  - `io.use` authenticate() reads EITHER the `fd_access` httpOnly cookie OR
+ *    `handshake.auth.token`, cookie taking priority. Since the app's JWT is
+ *    httpOnly (never readable from app code, same as the web client can't
+ *    read it from JS), we authenticate via the COOKIE path: the socket's
+ *    underlying OkHttp client reuses [ApiClient]'s shared OkHttpClient
+ *    (same [PersistentCookieJar]), so the polling/handshake requests carry
+ *    `fd_access` automatically, exactly like a same-origin browser request.
+ *  - device classification (classifyDevice, index.ts) is pure User-Agent
+ *    sniffing: `/mobi|android|iphone/i` -> "mobile". We set a custom
+ *    User-Agent extraHeader containing "Android" so mmFound's opponent
+ *    device badge (and our own reported device) reads "mobile" server-side.
  *
- * Nothing here actually connects yet — .connect() is never called from
- * anywhere in Phase 1. This just proves the plumbing point exists for
- * Phase 2+ to wire up matchmaking / match / presence / chat events.
+ * Reconnection: left at socket.io-client's library defaults (reconnection
+ * enabled, unlimited attempts, exponential backoff via
+ * reconnectionDelay/reconnectionDelayMax + randomizationFactor) — mirrors
+ * the web client, which also relies on socket.io's built-in reconnection
+ * rather than any custom backoff.
  */
 object SocketClient {
 
     private const val SOCKET_PATH = "/rt"
+    private const val MOBILE_USER_AGENT = "FilipinoDama-Android/1.0 (Android)"
 
     @Volatile
     private var socket: Socket? = null
 
     /**
-     * TODO(Phase 2+): call this once the user is authenticated. [token] is
-     * passed via the `auth.token` handshake field per API_SPEC.md ("Auth
-     * handshake carries the access token"). If the server instead accepts
-     * the httpOnly cookie automatically (since OkHttp/PersistentCookieJar
-     * already attaches it on same-origin requests), [token] may be left
-     * null and the server should fall back to reading the cookie header —
-     * confirm which path the server actually expects before wiring this
-     * for real.
+     * Connects using [ApiClient]'s shared OkHttpClient (same cookie jar as REST
+     * calls — [ApiClient.init] must have already run, same precondition as
+     * [ApiClient.create]).
      */
-    fun connect(token: String? = null): Socket? {
+    fun connect(token: String? = null): Socket? = connect(ApiClient.okHttpClient, token)
+
+    /**
+     * Connects (or returns the existing live connection) using an explicit
+     * [okHttpClient] — exposed for tests that need to inject a fake client.
+     * [token] is an optional `auth.token` courtesy fallback for a future flow
+     * where an explicit token becomes available; the server tries the cookie
+     * first regardless.
+     */
+    fun connect(okHttpClient: OkHttpClient, token: String? = null): Socket? {
         val existing = socket
         if (existing != null && existing.connected()) return existing
 
-        val optionsBuilder = IO.Options.builder()
-            .setPath(SOCKET_PATH)
-            .setTransports(arrayOf("websocket"))
-
-        if (token != null) {
-            optionsBuilder.setAuth(mapOf("token" to token))
+        // SocketOptionBuilder only exposes the primitive fields declared directly
+        // on IO.Options/Manager.Options; callFactory/webSocketFactory/extraHeaders
+        // live further up the hierarchy on engine.io-client's Transport.Options and
+        // are plain public fields (no builder setters exist for them), so IO.Options
+        // is constructed directly here instead of via the fluent builder.
+        val options = IO.Options().apply {
+            path = SOCKET_PATH
+            transports = arrayOf("websocket")
+            extraHeaders = mapOf("User-Agent" to listOf(MOBILE_USER_AGENT))
+            callFactory = okHttpClient
+            webSocketFactory = okHttpClient
+            if (token != null) auth = mapOf("token" to token)
         }
 
         val newSocket = try {
-            IO.socket(BuildConfig.BASE_URL, optionsBuilder.build())
+            IO.socket(BuildConfig.BASE_URL, options)
         } catch (e: URISyntaxException) {
             return null
         }
         socket = newSocket
-
-        // TODO(Phase 2+): newSocket.connect() — intentionally NOT called in
-        // Phase 1. Also wire on(Socket.EVENT_CONNECT_ERROR, ...) and the
-        // presence:ping heartbeat (~20s) once real screens consume this.
+        newSocket.connect()
         return newSocket
     }
+
+    /** The current socket, if one has ever been created (may or may not be connected). */
+    fun current(): Socket? = socket
 
     fun disconnect() {
         socket?.disconnect()

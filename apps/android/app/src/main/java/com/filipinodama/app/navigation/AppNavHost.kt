@@ -7,14 +7,19 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.navigation.NavDestination.Companion.hierarchy
+import androidx.navigation.NavGraph.Companion.findStartDestination
+import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
+import androidx.navigation.navArgument
+import com.filipinodama.app.data.match.GameRepository
+import com.filipinodama.app.data.match.MatchRepository
 import com.filipinodama.app.ui.screens.GuildScreen
 import com.filipinodama.app.ui.screens.HomeScreen
 import com.filipinodama.app.ui.screens.OnboardingScreen
-import com.filipinodama.app.ui.screens.PlayScreen
+import com.filipinodama.app.ui.screens.PlaceholderScreen
 import com.filipinodama.app.ui.screens.ProfileScreen
 import com.filipinodama.app.ui.screens.SplashDestination
 import com.filipinodama.app.ui.screens.SplashScreen
@@ -22,6 +27,11 @@ import com.filipinodama.app.ui.screens.StoreScreen
 import com.filipinodama.app.ui.screens.auth.CreateAccountScreen
 import com.filipinodama.app.ui.screens.auth.ForgotPasswordScreen
 import com.filipinodama.app.ui.screens.auth.LoginScreen
+import com.filipinodama.app.ui.screens.game.AiDifficultyScreen
+import com.filipinodama.app.ui.screens.game.MatchmakingScreen
+import com.filipinodama.app.ui.screens.game.ModeSelectScreen
+import com.filipinodama.app.ui.screens.game.OfflineGameScreen
+import com.filipinodama.app.ui.screens.game.OnlineMatchScreen
 
 /**
  * NAVIGATION NOTES (see tasks/handoffv3-audit/mobile-screen-inventory.md,
@@ -66,10 +76,16 @@ import com.filipinodama.app.ui.screens.auth.LoginScreen
 private val tabRoutes = setOf(
     AppDestinations.HOME,
     AppDestinations.STORE,
-    AppDestinations.PLAY,
+    AppDestinations.MODE_SELECT,
     AppDestinations.GUILD,
     AppDestinations.PROFILE
 )
+
+// showTabs gate (mobile-screen-inventory.md §1): hidden on board, matchmaking,
+// aidiff. [showTabBar] below is opt-IN (only routes in [tabRoutes] show the
+// bar), so the game-flow routes (AI_DIFFICULTY, AI_GAME, MATCHMAKING,
+// ONLINE_MATCH) are hidden simply by never being added to [tabRoutes] — no
+// separate exclusion list needed.
 
 @Composable
 fun AppNavHost() {
@@ -157,9 +173,95 @@ fun AppNavHost() {
 
             composable(AppDestinations.HOME) { HomeScreen() }
             composable(AppDestinations.STORE) { StoreScreen() }
-            composable(AppDestinations.PLAY) { PlayScreen() }
             composable(AppDestinations.GUILD) { GuildScreen() }
             composable(AppDestinations.PROFILE) { ProfileScreen() }
+
+            // ---- Phase 3: gameplay core (Play tab) ----
+            // Play tab -> Mode Select directly (go('mode') in the prototype).
+            composable(AppDestinations.MODE_SELECT) {
+                ModeSelectScreen(
+                    onPlayAi = { navController.navigate(AppDestinations.AI_DIFFICULTY) },
+                    onPlayCasual = { navController.navigate(AppDestinations.matchmaking("CASUAL")) },
+                    onPlayRanked = { navController.navigate(AppDestinations.matchmaking("RANKED")) },
+                    onPrivateRoom = { navController.navigate(AppDestinations.PRIVATE_ROOM_PLACEHOLDER) },
+                    onRankedGuestBlocked = {
+                        // Mirrors web's isGuest toast + stay-on-casual behavior:
+                        // Android has no toast primitive yet in this scaffold, so
+                        // this is a no-op stay-put (the card itself already shows
+                        // "Requires a free account" as the meta line) rather than
+                        // inventing a new UI primitive out of scope for this phase.
+                    }
+                )
+            }
+
+            composable(AppDestinations.AI_DIFFICULTY) {
+                AiDifficultyScreen(
+                    onBack = { navController.popBackStack() },
+                    onStart = { difficulty -> navController.navigate(AppDestinations.aiGame(difficulty)) }
+                )
+            }
+
+            composable(
+                route = AppDestinations.AI_GAME,
+                arguments = listOf(navArgument("difficulty") { type = NavType.StringType })
+            ) { backStackEntry ->
+                val difficulty = backStackEntry.arguments?.getString("difficulty") ?: "normal"
+                OfflineGameScreen(
+                    difficulty = difficulty,
+                    onChangeDifficulty = {
+                        navController.navigate(AppDestinations.AI_DIFFICULTY) {
+                            popUpTo(AppDestinations.MODE_SELECT)
+                        }
+                    },
+                    onHome = {
+                        GameRepository.reset()
+                        navController.navigate(AppDestinations.HOME) {
+                            popUpTo(navController.graph.findStartDestination().id)
+                        }
+                    }
+                )
+            }
+
+            composable(
+                route = AppDestinations.MATCHMAKING,
+                arguments = listOf(navArgument("mode") { type = NavType.StringType })
+            ) { backStackEntry ->
+                val mode = backStackEntry.arguments?.getString("mode") ?: "CASUAL"
+                MatchmakingScreen(
+                    mode = mode,
+                    onCancel = { navController.popBackStack() },
+                    onEnteredMatch = {
+                        navController.navigate(AppDestinations.onlineMatch(mode)) {
+                            popUpTo(AppDestinations.MODE_SELECT)
+                        }
+                    }
+                )
+            }
+
+            composable(
+                route = AppDestinations.ONLINE_MATCH,
+                arguments = listOf(navArgument("mode") { type = NavType.StringType })
+            ) { backStackEntry ->
+                val mode = backStackEntry.arguments?.getString("mode") ?: "CASUAL"
+                // System/gesture back mid-match must not silently pop to whatever
+                // was underneath (mirrors the "explicit back target per screen"
+                // convention in the header doc) — route through Leave explicitly.
+                BackHandler(enabled = true) {
+                    MatchRepository.leaveQueue()
+                    MatchRepository.reset()
+                    navController.popBackStack(AppDestinations.MODE_SELECT, inclusive = false)
+                }
+                OnlineMatchScreen(
+                    mode = mode,
+                    onExit = {
+                        navController.popBackStack(AppDestinations.MODE_SELECT, inclusive = false)
+                    }
+                )
+            }
+
+            composable(AppDestinations.PRIVATE_ROOM_PLACEHOLDER) {
+                PlaceholderScreen(title = "Private Room", phaseNote = "Coming in Phase 4")
+            }
         }
     }
 }

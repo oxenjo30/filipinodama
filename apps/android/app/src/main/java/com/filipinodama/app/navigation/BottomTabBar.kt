@@ -40,10 +40,12 @@ private data class TabItem(
     val icon: ImageVector
 )
 
+// Play routes to Mode Select (go('mode') in the prototype), not a dedicated
+// "play" screen — see AppDestinations.MODE_SELECT kdoc / NAVIGATION MODEL.
 private val tabItems = listOf(
     TabItem(AppDestinations.HOME, "Home", Icons.Filled.Home),
     TabItem(AppDestinations.STORE, "Store", Icons.Filled.Store),
-    TabItem(AppDestinations.PLAY, "Play", Icons.Filled.PlayArrow),
+    TabItem(AppDestinations.MODE_SELECT, "Play", Icons.Filled.PlayArrow),
     TabItem(AppDestinations.GUILD, "Guild", Icons.Filled.Shield),
     TabItem(AppDestinations.PROFILE, "Profile", Icons.Filled.Person)
 )
@@ -56,7 +58,7 @@ fun BottomTabBar(navController: NavHostController) {
     NavigationBar(containerColor = Panel) {
         tabItems.forEach { item ->
             val selected = currentDestination?.hierarchy?.any { it.route == item.route } == true
-            val isPlayTab = item.route == AppDestinations.PLAY
+            val isPlayTab = item.route == AppDestinations.MODE_SELECT
 
             NavigationBarItem(
                 selected = selected,
