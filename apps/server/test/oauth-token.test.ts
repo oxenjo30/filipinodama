@@ -125,7 +125,15 @@ describe("verifyGoogleIdToken — token verification boundary", () => {
   });
 });
 
-describe("POST /api/auth/oauth/google/token — route (feature OFF, this environment's default)", () => {
+// This block asserts the 503-gate behavior and therefore only makes sense where the
+// feature is genuinely OFF. `config/env.ts` loads `.env` via dotenv at import time, so
+// a checkout whose dev `.env` carries real GOOGLE_CLIENT_ID/SECRET (e.g. the main
+// working copy) has features.googleOAuth === true and these assertions are meaningless
+// there — skip honestly instead of failing on an environment difference. Clean
+// environments (agent worktrees, fresh clones, CI) run the block in full.
+describe.skipIf(features.googleOAuth)(
+  "POST /api/auth/oauth/google/token — route (feature OFF: skipped where .env configures Google)",
+  () => {
   it("sanity: Google OAuth is not configured in this test environment", () => {
     expect(features.googleOAuth).toBe(false);
   });
