@@ -368,9 +368,13 @@ fun ProfileScreen(
                     }
                 }
 
-                RankTierLadder(tierNow = tierNow, trophies = me.trophies, toNextLabel = toNextLabel, nextLabel = nextTier?.label ?: "—")
-
-                TrophyHistoryCard(trophyRows = trophyRows, trophies = me.trophies)
+                // NOTE: the mockup's Overview tab (profOverview, lines 558-605) is
+                // exactly: Achievements grid → Guild card → Purchase History →
+                // Discover Guilds. It has NO rank-tier ladder and NO trophy-history
+                // list here (the rank PROGRESS BAR lives in the identity card
+                // above; the full tier ladder is not an Overview element). Those
+                // were previously rendered first and pushed the real Overview
+                // content off-screen — removed to match the mockup 1:1.
 
                 // Achievements grid — mockup lines 558-566 (4-col grid,
                 // "See all ›" header). Real 4 rules ported from
