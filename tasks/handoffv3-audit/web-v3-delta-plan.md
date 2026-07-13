@@ -196,3 +196,29 @@ a real device). The following are REAL bugs to fix:
 Method: verify on a HEALTHY emulator the agent controls (owner's emulator blocks HTTPS — the agent
 must NOT rely on the owner's AVD; create its own with working network, or a local dev server +
 local asset origin so art loads for screenshot proof).
+
+## OWNER FINDINGS ROUND 3 (2026-07-13) — Settings-as-tab, Store cart, back buttons
+1. SETTINGS is an INLINE TAB inside Profile, NOT a separate page. Built app makes the Profile
+   "Settings" tab navigate away (onOpenSettings → SettingsScreen). Mockup: profSettings renders
+   inline as the 3rd Profile tab (Overview/History/Settings) via setGroups (mockup line 5006):
+     - Gameplay: Confirm moves / Auto-promote / Move hints / Force capture
+     - Audio & Haptics: Sound effects / Music / Vibration
+     - Notifications: Match invites / Guild activity / Events & offers
+     - Support section (Contact support w/ Ticket badge, etc. per mockup 891+)
+   Each row = a toggle bound to real client settings (SettingsStore). Make the Settings TAB show
+   this inline; the standalone SettingsScreen can stay reachable elsewhere but the Profile tab
+   must render inline like the mockup.
+2. STORE top-right icon = 🛒 CART button (openCheckout, title "Cart", cart-count badge), NOT
+   Inventory (mockup line 1141). Item cards get "Add to cart" (mockup 1233). Tapping cart → the
+   cart/checkout view (mockup 1290+: empty state "Your cart is empty", item rows, checkout).
+   Wire to the real store purchase flow (single-item buy exists; cart may batch client-side then
+   purchase — inspect existing EconomyRepository; if no batch endpoint, cart drives sequential
+   real purchases OR document the gap, but the CART UI must replace the Inventory link).
+3. ACHIEVEMENTS: verify the mockup icons render (First Blood ic-trophy / Streak x10 me-target /
+   Capture King red-king / Season Vet tier-datu). red-king path may be wrong
+   (pieces/skins/crimson/red-king.png) — confirm it loads; if not, fix the asset path.
+4. BACK BUTTONS: audit EVERY screen; any screen reached by navigation that lacks the mockup's
+   ‹ back control gets one (mockup uses explicit ‹ buttons, no OS back-stack). Public profile
+   already has one; check Store/Inventory/Orders/Leaderboard/Guild/Notifications/Settings/
+   Legal/Season/DM-thread/Replay/etc. Add the shared MockupBackButton where missing, wired to
+   popBackStack.
