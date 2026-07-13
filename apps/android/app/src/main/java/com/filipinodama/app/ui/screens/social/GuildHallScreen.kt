@@ -1,6 +1,7 @@
 package com.filipinodama.app.ui.screens.social
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -32,6 +33,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
@@ -91,7 +93,6 @@ fun GuildHallScreen(onOpenProfile: (String) -> Unit) {
     var busy by remember { mutableStateOf(false) }
     var createOpen by remember { mutableStateOf(false) }
     var editOpen by remember { mutableStateOf(false) }
-    var chatOpen by remember { mutableStateOf(false) }
     var manageMember by remember { mutableStateOf<GuildMemberDto?>(null) }
     var tab by remember { mutableStateOf("roster") }
 
@@ -193,14 +194,6 @@ fun GuildHallScreen(onOpenProfile: (String) -> Unit) {
             }
         )
     }
-    if (chatOpen && detail != null) {
-        GuildChatDrawer(
-            guildId = detail!!.guild.id,
-            guildName = detail!!.guild.name,
-            crestKey = detail!!.guild.crestKey,
-            onClose = { chatOpen = false }
-        )
-    }
     if (manageMember != null && myGuildId != null) {
         ManageMemberDialog(
             member = manageMember!!,
@@ -249,66 +242,150 @@ fun GuildHallScreen(onOpenProfile: (String) -> Unit) {
             val crest = resolveGuildCrest(g.crestKey, g.id)
             val level = (g.weeklyPoints.coerceAtLeast(0) / 1000) + 1
 
-            SectionCard(title = "") {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    AsyncImage(model = crest.src, contentDescription = null, modifier = Modifier.size(72.dp))
-                    Column(modifier = Modifier.weight(1f).padding(start = 16.dp)) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text(g.name, color = GoldLt, style = MaterialTheme.typography.headlineSmall)
-                            Text(" ${g.tag}", color = Ink2, style = MaterialTheme.typography.labelMedium)
-                        }
-                        Text("Level $level · ${g.memberCount} members · ${g.weeklyPoints} pts", color = Ink2, style = MaterialTheme.typography.labelSmall, modifier = Modifier.padding(top = 4.dp))
-                    }
-                }
-                if (!g.description.isNullOrBlank()) {
-                    Text(g.description, color = Ink, style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(top = 10.dp))
-                }
-                Row(modifier = Modifier.fillMaxWidth().padding(top = 14.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    ActionChip("💬 Guild Chat", modifier = Modifier.weight(1f)) { chatOpen = true }
-                    if (canManage) ActionChip("✎ Edit", modifier = Modifier.weight(1f)) { editOpen = true }
-                }
-                Text(
-                    "Leave Guild",
-                    color = Ink2,
-                    style = MaterialTheme.typography.labelMedium,
-                    modifier = Modifier.padding(top = 14.dp).clickable(enabled = !busy) {
-                        busy = true
-                        scope.launch {
-                            GuildsRepository.removeMember(g.id, me.id)
-                            myGuildId = null
-                            detail = null
-                            requests = null
-                            loadBrowse()
-                            busy = false
-                        }
-                    }
+            // Mockup guild banner (mobile-split.txt lines 1722-1766): bg art
+            // (real me-banner.png handoff asset at .32 opacity under a purple
+            // gradient), crest, Cinzel name, "#TAG · N members", weekly-pts
+            // pill (mockup shows a season-rank pill — a computed global guild
+            // rank isn't in the detail payload, so the pill carries the REAL
+            // weeklyPoints instead of a fabricated rank), description +
+            // min-trophies pill, and the guild level bar driven by the real
+            // weeklyPoints (level = pts/1000+1, same derivation as before).
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp)
+                    .background(Color(0xFF140C26), RoundedCornerShape(22.dp))
+                    .border(1.dp, Color(0x4DE8B84B), RoundedCornerShape(22.dp))
+            ) {
+                androidx.compose.foundation.Image(
+                    painter = androidx.compose.ui.res.painterResource(com.filipinodama.app.R.drawable.me_banner),
+                    contentDescription = null,
+                    modifier = Modifier.matchParentSize().clip(RoundedCornerShape(22.dp)),
+                    contentScale = androidx.compose.ui.layout.ContentScale.Crop,
+                    alpha = 0.32f
                 )
-            }
-
-            // Weekly war meter (real weeklyPoints; no wars tab, see kdoc)
-            SectionCard(title = "Weekly Guild War") {
-                val goal = maxOf(1000, ((g.weeklyPoints + 1) / 1000 + 1) * 1000)
-                val pct = (g.weeklyPoints * 100 / goal).coerceIn(0, 100)
-                Box(modifier = Modifier.fillMaxWidth().height(12.dp).background(Color.Black.copy(alpha = 0.35f), RoundedCornerShape(100.dp))) {
-                    Box(modifier = Modifier.fillMaxWidth(pct / 100f).fillMaxSize().background(Gold, RoundedCornerShape(100.dp)))
+                Box(
+                    modifier = Modifier
+                        .matchParentSize()
+                        .background(
+                            androidx.compose.ui.graphics.Brush.linearGradient(
+                                listOf(Color(0xB33A1C4A), Color(0xF0140C26))
+                            ),
+                            RoundedCornerShape(22.dp)
+                        )
+                )
+                Column(modifier = Modifier.padding(18.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+                        AsyncImage(model = crest.src, contentDescription = null, modifier = Modifier.size(64.dp))
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(g.name, color = Color(0xFFF4ECD6), style = MaterialTheme.typography.headlineSmall)
+                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(top = 4.dp)) {
+                                Text(g.tag, color = Color(0xFFC9A4FF), style = MaterialTheme.typography.labelSmall)
+                                Box(Modifier.size(3.dp).background(Color(0xFF6F5F92), CircleShape))
+                                Text("${g.memberCount} members", color = Color(0xFF9A8BBF), style = MaterialTheme.typography.labelSmall)
+                            }
+                            Row(
+                                modifier = Modifier
+                                    .padding(top = 8.dp)
+                                    .background(Color(0x24F0CF72), RoundedCornerShape(100.dp))
+                                    .border(1.dp, Color(0x4DF0CF72), RoundedCornerShape(100.dp))
+                                    .padding(horizontal = 10.dp, vertical = 4.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(5.dp)
+                            ) {
+                                com.filipinodama.app.ui.components.CurrencyIcon(kind = CurrencyIconKind.TROPHY, size = 13.dp)
+                                Text("${g.weeklyPoints} pts", color = Color(0xFFF0CF72), style = MaterialTheme.typography.labelSmall)
+                                Text("this week", color = Color(0xFFB79A5E), style = MaterialTheme.typography.labelSmall)
+                            }
+                        }
+                    }
+                    if (!g.description.isNullOrBlank() || g.minTrophies > 0) {
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(top = 12.dp)) {
+                            Text(
+                                g.description ?: "",
+                                color = Color(0xFFB9A9DB),
+                                style = MaterialTheme.typography.bodySmall,
+                                modifier = Modifier.weight(1f)
+                            )
+                            if (g.minTrophies > 0) {
+                                Row(
+                                    modifier = Modifier
+                                        .background(Color(0x1F5A96FF), RoundedCornerShape(100.dp))
+                                        .border(1.dp, Color(0x425A96FF), RoundedCornerShape(100.dp))
+                                        .padding(horizontal = 9.dp, vertical = 4.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                ) {
+                                    com.filipinodama.app.ui.components.CurrencyIcon(kind = CurrencyIconKind.TROPHY, size = 11.dp)
+                                    Text("${g.minTrophies}+", color = Color(0xFFA9C4FF), style = MaterialTheme.typography.labelSmall)
+                                }
+                            }
+                        }
+                    }
+                    // Guild level bar.
+                    val cur = g.weeklyPoints.coerceAtLeast(0) % 1000
+                    Row(modifier = Modifier.fillMaxWidth().padding(top = 14.dp, bottom = 6.dp), horizontalArrangement = Arrangement.SpaceBetween) {
+                        Text("GUILD LVL $level", color = Color(0xFFC9A4FF), style = MaterialTheme.typography.labelSmall)
+                        Text("$cur / 1000 XP", color = Color(0xFF8B7CAE), style = MaterialTheme.typography.labelSmall)
+                    }
+                    Box(modifier = Modifier.fillMaxWidth().height(7.dp).background(Color.Black.copy(alpha = 0.45f), RoundedCornerShape(4.dp))) {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth((cur / 1000f).coerceIn(0.02f, 1f))
+                                .height(7.dp)
+                                .background(
+                                    androidx.compose.ui.graphics.Brush.horizontalGradient(listOf(Color(0xFFEFC25A), Color(0xFFC9971F))),
+                                    RoundedCornerShape(4.dp)
+                                )
+                        )
+                    }
+                    Row(modifier = Modifier.fillMaxWidth().padding(top = 12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        if (canManage) ActionChip("✦ Edit", modifier = Modifier.weight(1f)) { editOpen = true }
+                        ActionChip("Leave Guild", modifier = Modifier.weight(1f)) {
+                            if (!busy) {
+                                busy = true
+                                scope.launch {
+                                    GuildsRepository.removeMember(g.id, me.id)
+                                    myGuildId = null
+                                    detail = null
+                                    requests = null
+                                    loadBrowse()
+                                    busy = false
+                                }
+                            }
+                        }
+                    }
                 }
-                Text("${g.weeklyPoints} war points this week · $pct% to goal", color = Ink2, style = MaterialTheme.typography.labelSmall, modifier = Modifier.padding(top = 8.dp))
             }
 
-            Row(modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 8.dp)) {
-                TabButton("Roster", tab == "roster") { tab = "roster" }
+            // Tab switcher — mockup pill row (Roster / Chat; Wars honestly
+            // omitted, see the class kdoc's no-backend proof).
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(16.dp)
+                    .background(Color(0x990F0720), RoundedCornerShape(14.dp))
+                    .border(1.dp, Color(0x1FE8B84B), RoundedCornerShape(14.dp))
+                    .padding(4.dp),
+                horizontalArrangement = Arrangement.spacedBy(4.dp)
+            ) {
+                GuildTabPill("Roster", tab == "roster", Modifier.weight(1f)) { tab = "roster" }
+                GuildTabPill("Chat", tab == "chat", Modifier.weight(1f)) { tab = "chat" }
             }
 
-            SectionCard(title = "Members · ${g.memberCount}") {
-                detail!!.roster.sortedByDescending { it.weeklyContribution }.forEachIndexed { i, m ->
-                    RosterRow(
-                        rank = i + 1,
-                        member = m,
-                        mine = m.userId == me.id,
-                        manageable = canManage && m.userId != me.id && (GUILD_ROLE_RANK[myRole] ?: 0) > (GUILD_ROLE_RANK[m.role] ?: 0),
-                        onOpenProfile = { onOpenProfile(m.userId) },
-                        onManage = { manageMember = m }
-                    )
+            if (tab == "chat") {
+                GuildChatPanel(guildId = g.id, guildName = g.name)
+            } else {
+                SectionCard(title = "Members · ${g.memberCount}") {
+                    detail!!.roster.sortedByDescending { it.weeklyContribution }.forEach { m ->
+                        RosterRow(
+                            member = m,
+                            mine = m.userId == me.id,
+                            manageable = canManage && m.userId != me.id && (GUILD_ROLE_RANK[myRole] ?: 0) > (GUILD_ROLE_RANK[m.role] ?: 0),
+                            onOpenProfile = { onOpenProfile(m.userId) },
+                            onManage = { manageMember = m }
+                        )
+                    }
                 }
             }
 
@@ -437,22 +514,83 @@ private fun TabButton(label: String, active: Boolean, onClick: () -> Unit) {
 }
 
 private val ROLE_COLOR: Map<String, Color> = mapOf("LEADER" to Gold, "OFFICER" to Color(0xFFC9A6FF), "MEMBER" to Ink)
+private val ROLE_BG: Map<String, Color> = mapOf(
+    "LEADER" to Color(0x29E8B84B),
+    "OFFICER" to Color(0x29C9A4FF),
+    "MEMBER" to Color(0x14FFFFFF)
+)
 
 @Composable
-private fun RosterRow(rank: Int, member: GuildMemberDto, mine: Boolean, manageable: Boolean, onOpenProfile: () -> Unit, onManage: () -> Unit) {
-    Row(
-        modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp).clickable(onClick = onOpenProfile),
-        verticalAlignment = Alignment.CenterVertically
+private fun GuildTabPill(label: String, selected: Boolean, modifier: Modifier = Modifier, onClick: () -> Unit) {
+    Box(
+        modifier = modifier
+            .clickable(onClick = onClick)
+            .background(
+                if (selected) androidx.compose.ui.graphics.Brush.verticalGradient(listOf(Color(0xFFEFC25A), Color(0xFFC9971F)))
+                else androidx.compose.ui.graphics.Brush.verticalGradient(listOf(Color.Transparent, Color.Transparent)),
+                RoundedCornerShape(11.dp)
+            )
+            .padding(vertical = 10.dp),
+        contentAlignment = Alignment.Center
     ) {
-        Text(rank.toString(), color = Ink2, style = MaterialTheme.typography.labelMedium, modifier = Modifier.padding(end = 8.dp))
-        AvatarView(avatarUrl = member.user.avatarUrl, frameId = member.user.frameId, size = 40.dp)
-        Column(modifier = Modifier.weight(1f).padding(start = 10.dp)) {
-            Text(member.user.displayName + if (mine) " (You)" else "", color = Color.White, style = MaterialTheme.typography.bodyMedium)
-            Text(member.role, color = ROLE_COLOR[member.role] ?: Ink, style = MaterialTheme.typography.labelSmall, modifier = Modifier.padding(top = 2.dp))
+        Text(label, color = if (selected) Color(0xFF2A1608) else Color(0xFF9A8BBF), style = MaterialTheme.typography.labelMedium)
+    }
+}
+
+/**
+ * Roster row — mockup guildRoster row (mobile-split.txt lines 1777-1803):
+ * 44dp rounded-square avatar with a bottom-right presence dot (REAL
+ * member.user.presence, a server field the previous row ignored), name +
+ * role badge pill, tier crest + tier label (REAL trophies/rankTier fields,
+ * also previously ignored), trophy count in gold mono.
+ */
+@Composable
+private fun RosterRow(member: GuildMemberDto, mine: Boolean, manageable: Boolean, onOpenProfile: () -> Unit, onManage: () -> Unit) {
+    val tier = com.filipinodama.app.data.engine.RankTiers.forTrophies(member.user.trophies)
+    val online = member.user.presence == "online"
+    Row(
+        modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp).clickable(onClick = onOpenProfile),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        Box {
+            AvatarView(avatarUrl = member.user.avatarUrl, frameId = member.user.frameId, size = 44.dp, ring = false)
+            Box(
+                modifier = Modifier
+                    .align(Alignment.BottomEnd)
+                    .size(11.dp)
+                    .background(if (online) Green else Color(0xFF5A4E77), CircleShape)
+                    .border(2.dp, Color(0xFF1E1134), CircleShape)
+            )
         }
-        Text("${member.weeklyContribution} pts", color = GoldLt, style = MaterialTheme.typography.labelMedium)
+        Column(modifier = Modifier.weight(1f)) {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(7.dp)) {
+                Text(
+                    member.user.displayName + if (mine) " (You)" else "",
+                    color = Color(0xFFE6DCF5),
+                    style = MaterialTheme.typography.titleSmall,
+                    maxLines = 1
+                )
+                Box(
+                    modifier = Modifier
+                        .background(ROLE_BG[member.role] ?: Color(0x14FFFFFF), RoundedCornerShape(100.dp))
+                        .padding(horizontal = 8.dp, vertical = 2.dp)
+                ) {
+                    Text(member.role, color = ROLE_COLOR[member.role] ?: Ink, style = MaterialTheme.typography.labelSmall)
+                }
+            }
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(5.dp), modifier = Modifier.padding(top = 4.dp)) {
+                androidx.compose.foundation.Image(
+                    painter = androidx.compose.ui.res.painterResource(com.filipinodama.app.data.engine.RankTiers.drawableFor(tier.img)),
+                    contentDescription = null,
+                    modifier = Modifier.size(14.dp)
+                )
+                Text(tier.label, color = Color(0xFF9A8BBF), style = MaterialTheme.typography.labelSmall)
+            }
+        }
+        CurrencyAmount(kind = CurrencyIconKind.TROPHY, text = member.user.trophies.toString(), color = Color(0xFFF0CF72), style = MaterialTheme.typography.labelMedium)
         if (manageable) {
-            Text("⋯", color = GoldLt, style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(start = 10.dp).clickable(onClick = onManage))
+            Text("⋯", color = GoldLt, style = MaterialTheme.typography.titleMedium, modifier = Modifier.clickable(onClick = onManage))
         }
     }
 }
@@ -524,8 +662,17 @@ private fun ManageMemberDialog(member: GuildMemberDto, isLeader: Boolean, busy: 
     }
 }
 
+/**
+ * Guild chat — the mockup's CHAT TAB (mobile-split.txt lines 1806-1830),
+ * inline in the Guild screen (previously a Dialog drawer behind a "💬 Guild
+ * Chat" chip — the mockup specifies a tab, not a drawer). Bubbles: sender
+ * avatar (34dp, rounded square), role-colored name, tinted bubble,
+ * timestamp; own messages right-aligned with the gold bubble. Composer is
+ * the mockup's pill input + round gold ➤ send button. Real socket chat via
+ * [GuildChatRepository], unchanged.
+ */
 @Composable
-private fun GuildChatDrawer(guildId: String, guildName: String, crestKey: String?, onClose: () -> Unit) {
+private fun GuildChatPanel(guildId: String, guildName: String) {
     val state by GuildChatRepository.state.collectAsState()
     val scope = rememberCoroutineScope()
     var draft by remember { mutableStateOf("") }
@@ -534,66 +681,96 @@ private fun GuildChatDrawer(guildId: String, guildName: String, crestKey: String
     LaunchedEffect(guildId) {
         GuildChatRepository.open(guildId)
     }
+    androidx.compose.runtime.DisposableEffect(guildId) {
+        onDispose { GuildChatRepository.close() }
+    }
 
-    Dialog(onDismissRequest = onClose) {
-        Column(modifier = Modifier.fillMaxWidth().height(560.dp).background(Panel, RoundedCornerShape(18.dp))) {
-            Row(modifier = Modifier.fillMaxWidth().padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(guildName, color = GoldLt, style = MaterialTheme.typography.titleMedium)
-                    Text("● Guild chat", color = Green, style = MaterialTheme.typography.labelSmall)
-                }
-                Text("✕", color = Ink, style = MaterialTheme.typography.titleMedium, modifier = Modifier.clickable(onClick = onClose))
+    Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp)) {
+        when {
+            state.loading -> Box(Modifier.fillMaxWidth().padding(vertical = 30.dp), contentAlignment = Alignment.Center) { CircularProgressIndicator(color = Gold) }
+            state.messages.isEmpty() -> Box(Modifier.fillMaxWidth().padding(vertical = 30.dp), contentAlignment = Alignment.Center) {
+                Text("No messages yet.\nSay hello to your guild 👋", color = Ink2, style = MaterialTheme.typography.bodyMedium, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
             }
-            Box(modifier = Modifier.weight(1f).padding(horizontal = 16.dp)) {
-                when {
-                    state.loading -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator(color = Gold) }
-                    state.messages.isEmpty() -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                        Text("No messages yet.\nSay hello to your guild 👋", color = Ink2, style = MaterialTheme.typography.bodyMedium, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
-                    }
-                    else -> Column(modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
-                        state.messages.forEach { m ->
-                            val mine = m.author.id == me?.id
-                            Row(modifier = Modifier.fillMaxWidth().padding(vertical = 5.dp), horizontalArrangement = if (mine) Arrangement.End else Arrangement.Start) {
-                                Column(horizontalAlignment = if (mine) Alignment.End else Alignment.Start) {
-                                    if (!mine) Text(m.author.displayName, color = ROLE_COLOR[m.role] ?: Ink2, style = MaterialTheme.typography.labelSmall)
-                                    Box(
-                                        modifier = Modifier
-                                            .background(if (mine) Gold else Color.White.copy(alpha = 0.06f), RoundedCornerShape(12.dp))
-                                            .padding(horizontal = 12.dp, vertical = 8.dp)
-                                    ) {
-                                        Text(m.body, color = if (mine) Color(0xFF2A1607) else Color(0xFFEFE7FB), style = MaterialTheme.typography.bodySmall)
-                                    }
-                                }
+            else -> Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
+                state.messages.forEach { m ->
+                    val mine = m.author.id == me?.id
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = if (mine) Arrangement.End else Arrangement.Start,
+                        verticalAlignment = Alignment.Bottom
+                    ) {
+                        if (!mine) {
+                            Box(modifier = Modifier.padding(end = 10.dp).clip(RoundedCornerShape(10.dp))) {
+                                AvatarView(avatarUrl = m.author.avatarUrl, size = 34.dp, ring = false)
+                            }
+                        }
+                        Column(horizontalAlignment = if (mine) Alignment.End else Alignment.Start, modifier = Modifier.fillMaxWidth(0.74f)) {
+                            Text(
+                                if (mine) "You" else m.author.displayName,
+                                color = ROLE_COLOR[m.role] ?: Ink2,
+                                style = MaterialTheme.typography.labelSmall,
+                                modifier = Modifier.padding(bottom = 4.dp, start = 2.dp, end = 2.dp)
+                            )
+                            Box(
+                                modifier = Modifier
+                                    .background(
+                                        if (mine) androidx.compose.ui.graphics.Brush.verticalGradient(listOf(Color(0xFFEFC25A), Color(0xFFC9971F)))
+                                        else androidx.compose.ui.graphics.Brush.verticalGradient(listOf(Color(0xE61B1030), Color(0xE61B1030))),
+                                        RoundedCornerShape(14.dp)
+                                    )
+                                    .padding(horizontal = 13.dp, vertical = 10.dp)
+                            ) {
+                                Text(m.body, color = if (mine) Color(0xFF2A1608) else Color(0xFFEFE7FB), style = MaterialTheme.typography.bodySmall)
+                            }
+                        }
+                        if (mine) {
+                            Box(modifier = Modifier.padding(start = 10.dp).clip(RoundedCornerShape(10.dp))) {
+                                AvatarView(avatarUrl = me?.avatarUrl, size = 34.dp, ring = false)
                             }
                         }
                     }
                 }
             }
-            Row(modifier = Modifier.fillMaxWidth().padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
-                OutlinedTextField(
-                    value = draft, onValueChange = { draft = it },
-                    placeholder = { Text("Message your guild…", color = Ink2.copy(alpha = 0.6f)) },
+        }
+
+        // Composer — mockup pill input + round gold send.
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(top = 14.dp, bottom = 16.dp)
+                .background(Color(0xBF0F0720), RoundedCornerShape(100.dp))
+                .border(1.dp, Color(0x29E8B84B), RoundedCornerShape(100.dp))
+                .padding(start = 15.dp, end = 8.dp, top = 8.dp, bottom = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(9.dp)
+        ) {
+            Box(modifier = Modifier.weight(1f)) {
+                if (draft.isEmpty()) {
+                    Text("Message $guildName…", color = Color(0xFF6F6091), style = MaterialTheme.typography.bodySmall)
+                }
+                androidx.compose.foundation.text.BasicTextField(
+                    value = draft,
+                    onValueChange = { draft = it },
                     singleLine = true,
-                    modifier = Modifier.weight(1f),
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedTextColor = Color.White, unfocusedTextColor = Color.White,
-                        focusedBorderColor = Gold, unfocusedBorderColor = Gold.copy(alpha = 0.25f),
-                        focusedContainerColor = Color.Black.copy(alpha = 0.3f), unfocusedContainerColor = Color.Black.copy(alpha = 0.3f),
-                        cursorColor = Gold
-                    )
+                    textStyle = androidx.compose.ui.text.TextStyle(color = Color(0xFFEFE7FB), fontSize = MaterialTheme.typography.bodySmall.fontSize),
+                    cursorBrush = androidx.compose.ui.graphics.SolidColor(Gold),
+                    modifier = Modifier.fillMaxWidth()
                 )
-                Box(
-                    modifier = Modifier.padding(start = 8.dp).clickable(enabled = draft.isNotBlank() && !state.sending) {
+            }
+            Box(
+                modifier = Modifier
+                    .size(38.dp)
+                    .clickable(enabled = draft.isNotBlank() && !state.sending) {
                         val body = draft.trim(); draft = ""
                         scope.launch { GuildChatRepository.send(guildId, body) }
-                    }.background(Gold, RoundedCornerShape(10.dp)).padding(horizontal = 16.dp, vertical = 14.dp)
-                ) { Text("Send", color = Color(0xFF2A1607), style = MaterialTheme.typography.labelMedium) }
-            }
+                    }
+                    .background(
+                        androidx.compose.ui.graphics.Brush.verticalGradient(listOf(Color(0xFFEFC25A), Color(0xFFC9971F))),
+                        CircleShape
+                    ),
+                contentAlignment = Alignment.Center
+            ) { Text("➤", color = Color(0xFF2A1608), style = MaterialTheme.typography.labelLarge) }
         }
-    }
-
-    androidx.compose.runtime.DisposableEffect(guildId) {
-        onDispose { GuildChatRepository.close() }
     }
 }
 

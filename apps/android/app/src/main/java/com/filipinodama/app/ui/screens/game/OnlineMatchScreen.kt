@@ -219,13 +219,21 @@ fun OnlineMatchScreen(
             ConnectionLostBanner(modifier = Modifier.padding(bottom = 10.dp))
         }
 
+        // Vibration pref (Settings "Audio & Haptics") — real consumption of
+        // SettingsStore.haptics: light tick on each interactive board tap.
+        val hapticFeedback = androidx.compose.ui.platform.LocalHapticFeedback.current
         BoardView(
             state = gs,
             selected = ui.selected,
             moveTargets = ui.moveTargets,
             captureTargets = ui.captureTargets,
             mustCapture = ui.mustCapture && myTurn,
-            onSquareClick = { MatchRepository.onSquareClick(it) },
+            onSquareClick = {
+                if (com.filipinodama.app.data.settings.SettingsStore.instance.haptics.value) {
+                    hapticFeedback.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.TextHandleMove)
+                }
+                MatchRepository.onSquareClick(it)
+            },
             flip = flip,
             interactive = myTurn && !isSpectating
         )

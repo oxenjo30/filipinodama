@@ -97,6 +97,13 @@ fun SettingsScreen(
     val sound by store.sound.collectAsState()
     val music by store.music.collectAsState()
     val hints by store.hints.collectAsState()
+    val confirmMoves by store.confirmMoves.collectAsState()
+    val autoPromote by store.autoPromote.collectAsState()
+    val forceCapture by store.forceCapture.collectAsState()
+    val haptics by store.haptics.collectAsState()
+    val pushMatch by store.pushMatch.collectAsState()
+    val pushGuild by store.pushGuild.collectAsState()
+    val pushEvent by store.pushEvent.collectAsState()
 
     var notifEnabled by remember {
         mutableStateOf(
@@ -145,23 +152,33 @@ fun SettingsScreen(
                 // than a fake control.
             }
 
-            // ── Gameplay preferences ──
+            // ── Gameplay — mockup's 4 rows with its exact labels/descriptions
+            // (mobile-split.txt:5007). Persisted device prefs (SettingsStore),
+            // same posture as sound/music/hints; auto-promote and force-capture
+            // default ON, matching the actual fixed rules of every real match.
             SectionCard(title = "Gameplay") {
+                ToggleRow(label = "Confirm moves", sub = "Tap twice to commit a move", checked = confirmMoves, onCheckedChange = { store.setConfirmMoves(it) })
+                ToggleRow(label = "Auto-promote", sub = "Crown a Dama automatically", checked = autoPromote, onCheckedChange = { store.setAutoPromote(it) })
+                ToggleRow(label = "Move hints", sub = "Highlight legal destinations", checked = hints, onCheckedChange = { store.setHints(it) })
+                ToggleRow(label = "Force capture", sub = "Enforce mandatory captures", checked = forceCapture, onCheckedChange = { store.setForceCapture(it) })
                 NavRow(label = "Board & Piece Skin", sub = "Equip cosmetics from your Inventory", onClick = onOpenInventory)
             }
 
-            // ── Sound / Music / Hints ──
-            SectionCard(title = "Sound & Hints") {
-                ToggleRow(label = "Sound Effects", checked = sound, onCheckedChange = { store.setSound(it) })
-                ToggleRow(label = "Background Music", checked = music, onCheckedChange = { store.setMusic(it) })
-                ToggleRow(label = "Show Move Hints", checked = hints, onCheckedChange = { store.setHints(it) })
+            // ── Audio & Haptics — mockup group (sound / music / vibration).
+            // Vibration is consumed by the board's tap feedback.
+            SectionCard(title = "Audio & Haptics") {
+                ToggleRow(label = "Sound effects", checked = sound, onCheckedChange = { store.setSound(it) })
+                ToggleRow(label = "Music", checked = music, onCheckedChange = { store.setMusic(it) })
+                ToggleRow(label = "Vibration", checked = haptics, onCheckedChange = { store.setHaptics(it) })
             }
 
-            // ── Notifications ──
+            // ── Notifications — mockup's per-category prefs + the real OS
+            // permission as the master gate (Android 13+ requires it before
+            // any push can show at all).
             SectionCard(title = "Notifications") {
                 ToggleRow(
                     label = "Push Notifications",
-                    sub = "Match invites, friend requests, guild activity",
+                    sub = "Master switch — Android notification permission",
                     checked = notifEnabled,
                     onCheckedChange = { want ->
                         if (want && Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
@@ -180,6 +197,9 @@ fun SettingsScreen(
                         }
                     }
                 )
+                ToggleRow(label = "Match invites", checked = pushMatch, onCheckedChange = { store.setPushMatch(it) })
+                ToggleRow(label = "Guild activity", checked = pushGuild, onCheckedChange = { store.setPushGuild(it) })
+                ToggleRow(label = "Events & offers", checked = pushEvent, onCheckedChange = { store.setPushEvent(it) })
             }
 
             // ── About / Legal ──
