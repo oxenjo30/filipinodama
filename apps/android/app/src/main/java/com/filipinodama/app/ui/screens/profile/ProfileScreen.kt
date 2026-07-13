@@ -191,14 +191,28 @@ fun ProfileScreen(
         // avatar (60dp) + tier-badge pill bottom-right + optional frame
         // overlay, name (Cinzel), guild-line subtitle, trophy+tier line,
         // top-right "Edit" button, rank-progress bar to next tier.
-        Column(
+        Box(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(20.dp)
-                .background(Brush.linearGradient(listOf(Color(0xFF3A1C4A), Color(0xFF1A1030))), RoundedCornerShape(22.dp))
+                .clip(RoundedCornerShape(22.dp))
+                .background(Brush.linearGradient(listOf(Color(0xFF3A1C4A), Color(0xFF1A1030))))
                 .border(1.dp, Color(0x47E8B84B), RoundedCornerShape(22.dp))
-                .padding(20.dp)
         ) {
+            // Mockup identity card has the gold sun-ray banner (me-banner.png)
+            // bleeding off the right edge behind the content (overflow:hidden).
+            AsyncImage(
+                model = "${com.filipinodama.app.BuildConfig.WEB_ORIGIN}/assets/me-banner.png",
+                contentDescription = null,
+                contentScale = androidx.compose.ui.layout.ContentScale.Fit,
+                alignment = Alignment.CenterEnd,
+                modifier = Modifier
+                    .align(Alignment.CenterEnd)
+                    .fillMaxHeight()
+                    .padding(end = 4.dp)
+                    .alpha(0.9f)
+            )
+            Column(modifier = Modifier.padding(20.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Box {
                     AvatarView(
@@ -270,7 +284,8 @@ fun ProfileScreen(
                 }
                 Text(toNextLabel, color = Color(0xFF8B7CAE), style = MaterialTheme.typography.labelSmall, modifier = Modifier.padding(top = 6.dp))
             }
-        }
+            } // end identity content Column
+        } // end identity Box (with banner)
 
         // ── quick links row — mockup lines 533-536: "🎒 Inventory" (gold) +
         // "👥 Friends" (purple, unread badge) pills. Replaces the old
@@ -542,19 +557,22 @@ private fun ProfileQuickLinkCard(
 private data class AchievementDef(val name: String, val desc: String, val assetFile: String, val unlocked: (wins: Int, streak: Int, trophies: Int) -> Boolean)
 
 /**
- * Achievements grid — mockup lines 558-566 (4-col grid, "Achievements"
- * header + "See all ›" link). Rules + copy ported 1:1 from
- * apps/web/src/features/profile/AchievementsGrid.tsx (real thresholds
- * against real wins/streak/trophies — the mockup's own placeholder names
- * have no server-backed unlock data, see ProfileScreen kdoc).
+ * Achievements grid — mockup profAch (line 5019): the exact 4 tiles with the
+ * mockup's names AND icon assets (all present in handoffv3/handoff/assets):
+ *   First Blood  → ic-trophy.png   (win 1 match)
+ *   Streak x10   → me-target.png   (10-win streak)
+ *   Capture King → red-king.png    (crimson king piece art)
+ *   Season Vet   → tier-datu.png   (reach Datu tier ≈ 1100 trophies)
+ * Unlock state is REAL (derived from wins/streak/trophies) — the icons/names
+ * are copied verbatim from the mockup, not the web's computed grid.
  */
 @Composable
 private fun AchievementsGrid(wins: Int, streak: Int, trophies: Int) {
     val defs = listOf(
-        AchievementDef("First Blood", "Win your first match", "first-blood.png") { w, _, _ -> w >= 1 },
-        AchievementDef("Royal Streak", "Win 5 matches in a row", "royal-streak.png") { _, s, _ -> s >= 5 },
-        AchievementDef("Grandmaster", "Reach 1,800 rating", "grandmaster.png") { _, _, t -> t >= 1800 },
-        AchievementDef("Kingmaker", "Win 50 matches", "kingmaker.png") { w, _, _ -> w >= 50 }
+        AchievementDef("First Blood", "Win your first match", "ic-trophy.png") { w, _, _ -> w >= 1 },
+        AchievementDef("Streak x10", "Win 10 in a row", "me-target.png") { _, s, _ -> s >= 10 },
+        AchievementDef("Capture King", "Crown a king", "pieces/skins/crimson/red-king.png") { w, _, _ -> w >= 1 },
+        AchievementDef("Season Vet", "Reach Datu tier", "tier-datu.png") { _, _, t -> t >= 1100 }
     )
     Column {
         Row(modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp), horizontalArrangement = Arrangement.SpaceBetween) {
