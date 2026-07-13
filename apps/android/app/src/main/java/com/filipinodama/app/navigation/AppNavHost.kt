@@ -500,7 +500,9 @@ fun AppNavHost() {
                     mode = mode,
                     onExit = {
                         navController.popBackStack(AppDestinations.MODE_SELECT, inclusive = false)
-                    }
+                    },
+                    onWatchReplay = { matchId -> navController.navigate(AppDestinations.replay(matchId)) },
+                    onOpenSettings = { navController.navigate(AppDestinations.SETTINGS) }
                 )
             }
 

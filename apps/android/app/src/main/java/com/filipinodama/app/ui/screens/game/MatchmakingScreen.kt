@@ -1,15 +1,16 @@
 package com.filipinodama.app.ui.screens.game
 
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
@@ -18,49 +19,44 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import com.filipinodama.app.R
+import com.filipinodama.app.data.AuthRepository
+import com.filipinodama.app.data.engine.RankTiers
 import com.filipinodama.app.data.match.MatchRepository
 import com.filipinodama.app.data.match.MatchStatus
 import com.filipinodama.app.ui.components.CurrencyAmount
 import com.filipinodama.app.ui.components.CurrencyIconKind
-import com.filipinodama.app.ui.theme.Gold
-import com.filipinodama.app.ui.theme.GoldLt
-import com.filipinodama.app.ui.theme.Ink
-import com.filipinodama.app.ui.theme.Ink2
-import com.filipinodama.app.ui.theme.Panel
-import kotlinx.coroutines.delay
+import com.filipinodama.app.ui.screens.profile.AvatarView
 
 /**
- * Online matchmaking: searching state with an elapsed timer, then the
- * "Match Found!" reveal (opponent identity + device badge) for
- * [MatchRepository.MATCH_FOUND_REVEAL_MS] (~1.8s, matches web exactly)
- * before the store auto-requests matchResync and this screen hands off to
- * [OnlineMatchScreen] once state.status flips to PLAYING/ENDED.
+ * Online matchmaking — rebuilt 1:1 to the mockup's Matchmaking screen
+ * (mobile-split.txt lines 565-613):
+ *  - SEARCH state: full-bleed radial gradient, spinner ring around the
+ *    glowing logo-sun, "Finding opponent…", the cross-device caption, a rank
+ *    pill (real tier crest + tier label + ~trophies), Cancel pinned low.
+ *  - FOUND state: "MATCH FOUND!" eyebrow, VS clash (my avatar red-glow vs
+ *    opponent avatar blue-glow, real names/trophies), the cross-play device
+ *    pill (real opponent.device, same mapping as before), "Preparing the
+ *    board…" caption.
  *
- * Mirrors apps/web/src/features/play/OnlineMatchPage.tsx's matchmaking
- * section (searching/found sub-states, device badge, cancel -> mm:leave).
+ * All matchmaking logic is unchanged: joinQueue on entry, status-driven
+ * search/found sub-states, auto hand-off to [OnlineMatchScreen] when the
+ * store flips to PLAYING/ENDED (mirrors web's OnlineMatchPage timings).
  */
 @Composable
 fun MatchmakingScreen(mode: String, onCancel: () -> Unit, onEnteredMatch: () -> Unit) {
     val ui by MatchRepository.state.collectAsState()
-    var elapsedSec by remember { mutableStateOf(0) }
-
-    LaunchedEffect(ui.status) {
-        if (ui.status == MatchStatus.SEARCHING) {
-            elapsedSec = 0
-            while (true) {
-                delay(1000)
-                elapsedSec++
-            }
-        }
-    }
+    val authState by AuthRepository.state.collectAsState()
+    val me = authState.user
 
     LaunchedEffect(mode) {
         MatchRepository.joinQueue(mode)
@@ -71,118 +67,187 @@ fun MatchmakingScreen(mode: String, onCancel: () -> Unit, onEnteredMatch: () -> 
     }
 
     val found = ui.status == MatchStatus.FOUND && ui.opponent != null
-    val elapsedLabel = "%02d:%02d".format(elapsedSec / 60, elapsedSec % 60)
+    val myTier = RankTiers.forTrophies(me?.trophies ?: 0)
 
-    Column(
+    Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(MaterialTheme.colorScheme.background)
-            .padding(24.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.Center
+            // Mockup: radial-gradient(circle at 50% 40%, #2a1642, #0b0716 68%).
+            .background(Brush.radialGradient(listOf(Color(0xFF2A1642), Color(0xFF0B0716))))
     ) {
-        Text(
-            text = "✦ ONLINE MATCHMAKING ✦",
-            color = Gold,
-            style = MaterialTheme.typography.labelMedium
-        )
-        Text(
-            text = if (found) "Match Found!" else "Finding Your Match",
-            color = GoldLt,
-            style = MaterialTheme.typography.headlineMedium,
-            modifier = Modifier.padding(top = 8.dp, bottom = 4.dp)
-        )
-        Text(
-            text = if (found) "Get ready — your rival awaits." else "Finding the next available opponent…",
-            color = Ink,
-            style = MaterialTheme.typography.bodyMedium,
-            textAlign = TextAlign.Center
-        )
-
-        GameFrameCard(modifier = Modifier.padding(top = 24.dp).fillMaxWidth()) {
-            Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.fillMaxWidth()) {
+        Column(
+            modifier = Modifier.fillMaxSize().padding(34.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center
+        ) {
+            if (!found) {
+                // Spinner ring (gold top-arc) around the glowing sun logo.
+                Box(modifier = Modifier.size(130.dp), contentAlignment = Alignment.Center) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(130.dp),
+                        color = Color(0xFFE8B84B),
+                        trackColor = Color(0x33E8B84B),
+                        strokeWidth = 3.dp
+                    )
+                    Image(
+                        painter = painterResource(R.drawable.logo_sun),
+                        contentDescription = null,
+                        modifier = Modifier.size(74.dp)
+                    )
+                }
+                Text(
+                    "Finding opponent…",
+                    color = Color(0xFFF4D886),
+                    style = MaterialTheme.typography.headlineSmall.copy(fontWeight = FontWeight.ExtraBold),
+                    modifier = Modifier.padding(top = 30.dp)
+                )
+                Text(
+                    "Matching you with a player near your rank\nacross all devices",
+                    color = Color(0xFF9A8BBF),
+                    style = MaterialTheme.typography.bodyMedium,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.padding(top = 8.dp)
+                )
+                // Rank pill — real tier crest + label + trophies.
                 Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
+                    modifier = Modifier
+                        .padding(top = 20.dp)
+                        .background(Color(0x1AE8B84B), RoundedCornerShape(100.dp))
+                        .border(1.dp, Color(0x40E8B84B), RoundedCornerShape(100.dp))
+                        .padding(horizontal = 16.dp, vertical = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
-                    Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.weight(1f)) {
-                        Text("You", color = GoldLt, style = MaterialTheme.typography.titleSmall)
-                    }
-                    Box(
-                        modifier = Modifier
-                            .size(56.dp)
-                            .background(Color(0xFF0F0820).copy(alpha = 0.7f), CircleShape),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Text("VS", color = Gold, style = MaterialTheme.typography.titleMedium)
-                    }
-                    Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.weight(1f)) {
-                        if (found) {
-                            Text(ui.opponent?.displayName ?: "Opponent", color = Color(0xFFFF8FAE), style = MaterialTheme.typography.titleSmall)
-                            CurrencyAmount(
-                                kind = CurrencyIconKind.TROPHY,
-                                text = (ui.opponent?.trophies ?: 0).toString(),
-                                color = Ink,
-                                style = MaterialTheme.typography.labelSmall
-                            )
-                            val device = ui.opponent?.device ?: "web"
-                            val (icon, label) = when (device) {
-                                "mobile" -> "📱" to "Mobile"
-                                "tablet" -> "▤" to "Tablet"
-                                else -> "💻" to "Web"
-                            }
-                            Text(
-                                "$icon Playing on $label",
-                                color = Ink2,
-                                style = MaterialTheme.typography.labelSmall,
-                                modifier = Modifier.padding(top = 4.dp)
-                            )
-                        } else {
-                            CircularProgressIndicator(modifier = Modifier.size(28.dp), color = Color(0xFFA83744), strokeWidth = 2.dp)
-                            Text("Searching…", color = Ink2, style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(top = 6.dp))
+                    Image(
+                        painter = painterResource(RankTiers.drawableFor(myTier.img)),
+                        contentDescription = null,
+                        modifier = Modifier.size(18.dp)
+                    )
+                    Text(
+                        "${myTier.label} · ~${me?.trophies ?: 0}",
+                        color = Color(0xFFF4D886),
+                        style = MaterialTheme.typography.labelMedium
+                    )
+                }
+            } else {
+                Text(
+                    "MATCH FOUND!",
+                    color = Color(0xFFF4D886),
+                    style = MaterialTheme.typography.labelLarge,
+                    letterSpacing = 3.sp,
+                    modifier = Modifier.padding(bottom = 30.dp)
+                )
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(20.dp)) {
+                    // Me — red seat glow.
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Box(
+                            modifier = Modifier
+                                .border(3.dp, Color(0xB3F07878), androidx.compose.foundation.shape.CircleShape)
+                        ) {
+                            AvatarView(avatarUrl = me?.avatarUrl, size = 76.dp, frameId = me?.frameId, ring = false)
                         }
+                        Text(
+                            "You",
+                            color = Color(0xFFFFD9D9),
+                            style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.ExtraBold),
+                            modifier = Modifier.padding(top = 8.dp)
+                        )
+                        CurrencyAmount(
+                            kind = CurrencyIconKind.TROPHY,
+                            text = (me?.trophies ?: 0).toString(),
+                            color = Color(0xFFF0A0A0),
+                            style = MaterialTheme.typography.labelSmall
+                        )
+                    }
+                    // VS burst.
+                    Box(contentAlignment = Alignment.Center) {
+                        Box(
+                            modifier = Modifier
+                                .size(56.dp)
+                                .border(2.dp, Color(0xB3E8B84B), androidx.compose.foundation.shape.CircleShape)
+                        )
+                        Text(
+                            "VS",
+                            color = Color(0xFFE8B84B),
+                            style = MaterialTheme.typography.headlineMedium.copy(fontWeight = FontWeight.Black)
+                        )
+                    }
+                    // Opponent — blue seat glow.
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Box(
+                            modifier = Modifier
+                                .border(3.dp, Color(0xB35A96FF), androidx.compose.foundation.shape.CircleShape)
+                        ) {
+                            AvatarView(avatarUrl = ui.opponent?.avatarUrl, size = 76.dp, frameId = ui.opponent?.frameId, ring = false)
+                        }
+                        Text(
+                            ui.opponent?.displayName ?: "Opponent",
+                            color = Color(0xFFDBE6FF),
+                            style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.ExtraBold),
+                            modifier = Modifier.padding(top = 8.dp)
+                        )
+                        CurrencyAmount(
+                            kind = CurrencyIconKind.TROPHY,
+                            text = (ui.opponent?.trophies ?: 0).toString(),
+                            color = Color(0xFF8FB3FF),
+                            style = MaterialTheme.typography.labelSmall
+                        )
                     }
                 }
-
-                Row(
-                    modifier = Modifier.fillMaxWidth().padding(top = 22.dp),
-                    horizontalArrangement = Arrangement.SpaceEvenly
-                ) {
-                    StatCell(elapsedLabel, "Elapsed")
-                    StatCell(if (mode == "RANKED") "Ranked" else "Classic", "Mode")
+                // Cross-play pill — real device classification.
+                val device = ui.opponent?.device ?: "web"
+                val (icon, label) = when (device) {
+                    "mobile" -> "📱" to "Mobile"
+                    "tablet" -> "▤" to "Tablet"
+                    else -> "💻" to "Web"
                 }
+                Row(
+                    modifier = Modifier
+                        .padding(top = 22.dp)
+                        .background(Color(0x1F5A96FF), RoundedCornerShape(100.dp))
+                        .border(1.dp, Color(0x475A96FF), RoundedCornerShape(100.dp))
+                        .padding(horizontal = 13.dp, vertical = 6.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    Text(icon, style = MaterialTheme.typography.labelMedium)
+                    Text("Cross-play · opponent on $label", color = Color(0xFFA9C4FF), style = MaterialTheme.typography.labelMedium)
+                }
+                Text(
+                    "Preparing the board…",
+                    color = Color(0xFF9A8BBF),
+                    style = MaterialTheme.typography.labelMedium,
+                    modifier = Modifier.padding(top = 16.dp)
+                )
+            }
+
+            if (ui.error != null) {
+                Text(
+                    text = ui.error ?: "",
+                    color = Color(0xFFFF8FAE),
+                    style = MaterialTheme.typography.labelLarge,
+                    modifier = Modifier.padding(top = 16.dp)
+                )
             }
         }
 
-        if (ui.error != null) {
-            Text(
-                text = ui.error ?: "",
-                color = Color(0xFFFF8FAE),
-                style = MaterialTheme.typography.labelLarge,
-                modifier = Modifier.padding(top = 16.dp)
-            )
-        }
-
+        // Cancel — mockup pins it near the bottom, red-tint bordered.
         if (!found) {
-            GameButton(
-                text = "Cancel Search",
-                onClick = {
-                    MatchRepository.leaveQueue()
-                    MatchRepository.reset()
-                    onCancel()
-                },
-                variant = GameButtonVariant.PURPLE,
-                modifier = Modifier.padding(top = 22.dp)
-            )
+            Box(
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .padding(bottom = 56.dp)
+                    .clickable {
+                        MatchRepository.leaveQueue()
+                        MatchRepository.reset()
+                        onCancel()
+                    }
+                    .background(Color(0x1AFF5A6A), RoundedCornerShape(14.dp))
+                    .border(1.dp, Color(0x59FF5A6A), RoundedCornerShape(14.dp))
+                    .padding(horizontal = 40.dp, vertical = 14.dp)
+            ) {
+                Text("Cancel", color = Color(0xFFFF8F9C), style = MaterialTheme.typography.labelLarge)
+            }
         }
-    }
-}
-
-@Composable
-private fun StatCell(value: String, label: String) {
-    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-        Text(value, color = GoldLt, style = MaterialTheme.typography.titleMedium)
-        Text(label, color = Ink2, style = MaterialTheme.typography.labelSmall)
     }
 }
