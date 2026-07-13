@@ -60,6 +60,7 @@ import com.filipinodama.app.ui.screens.economy.QuestsScreen
 import com.filipinodama.app.ui.screens.economy.SeasonScreen
 import com.filipinodama.app.ui.screens.economy.TournamentsListScreen
 import com.filipinodama.app.ui.screens.leaderboard.LeaderboardScreen
+import com.filipinodama.app.ui.screens.profile.MatchDetailScreen
 import com.filipinodama.app.ui.screens.profile.PublicProfileScreen
 import com.filipinodama.app.ui.screens.profile.ReplayViewerScreen
 import com.filipinodama.app.ui.screens.settings.LegalScreen
@@ -326,7 +327,7 @@ fun AppNavHost() {
                     onSignedOut = {
                         goClearingStack(AppDestinations.LOGIN)
                     },
-                    onOpenReplay = { matchId -> navController.navigate(AppDestinations.replay(matchId)) },
+                    onOpenMatch = { matchId -> navController.navigate(AppDestinations.matchDetail(matchId)) },
                     onOpenFriends = { navController.navigate(AppDestinations.FRIENDS) },
                     onOpenGuild = { navController.navigate(AppDestinations.GUILD) },
                     onOpenOrders = { navController.navigate(AppDestinations.ORDERS) },
@@ -391,6 +392,23 @@ fun AppNavHost() {
                 ReplayViewerScreen(matchId = matchId, onBack = { navController.popBackStack() })
             }
 
+            // Match Detail (finding PROF-1) — the intermediate stats screen a
+            // History row / Public Profile match row opens BEFORE the full
+            // ReplayViewer. Its own "Watch replay" pushes AppDestinations.REPLAY
+            // for the same matchId; its opponent row pushes PUBLIC_PROFILE.
+            composable(
+                route = AppDestinations.MATCH_DETAIL,
+                arguments = listOf(navArgument("matchId") { type = NavType.StringType })
+            ) { backStackEntry ->
+                val matchId = backStackEntry.arguments?.getString("matchId") ?: ""
+                MatchDetailScreen(
+                    matchId = matchId,
+                    onBack = { navController.popBackStack() },
+                    onOpenProfile = { userId -> navController.navigate(AppDestinations.publicProfile(userId)) },
+                    onWatchReplay = { id -> navController.navigate(AppDestinations.replay(id)) }
+                )
+            }
+
             composable(
                 route = AppDestinations.PUBLIC_PROFILE,
                 arguments = listOf(navArgument("userId") { type = NavType.StringType })
@@ -399,7 +417,7 @@ fun AppNavHost() {
                 val signedIn = AuthRepository.state.value.user != null
                 PublicProfileScreen(
                     userId = userId,
-                    onOpenReplay = { matchId -> navController.navigate(AppDestinations.replay(matchId)) },
+                    onOpenMatch = { matchId -> navController.navigate(AppDestinations.matchDetail(matchId)) },
                     onOpenChat = { targetId -> navController.navigate(AppDestinations.dmThread(targetId)) },
                     signedIn = signedIn,
                     onRequireSignIn = { navController.navigate(AppDestinations.LOGIN) },

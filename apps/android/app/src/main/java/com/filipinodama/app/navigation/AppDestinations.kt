@@ -77,6 +77,14 @@ object AppDestinations {
     fun replay(matchId: String) = "profile/replay/$matchId"
     const val PUBLIC_PROFILE = "profile/public/{userId}"
     fun publicProfile(userId: String) = "profile/public/$userId"
+
+    // Match Detail (finding PROF-1) — mobile-screen-inventory.md SCREEN 29, the
+    // intermediate stats screen between a match-history row and the full
+    // ReplayViewerScreen board playback. Reached from Profile's History tab
+    // and Public Profile's Match Replays list; its own "Watch replay" opens
+    // [REPLAY] for the same matchId.
+    const val MATCH_DETAIL = "profile/match/{matchId}"
+    fun matchDetail(matchId: String) = "profile/match/$matchId"
     const val LEADERBOARD = "social/leaderboard"
     // Global Player Search — mockup {{ gsOpen }} overlay, the destination for
     // Home's magnifier icon. Confirmed missing (UI-fidelity sweep); built

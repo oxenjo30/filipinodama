@@ -91,7 +91,8 @@ import kotlinx.coroutines.launch
  *            shape/spacing, honest data).
  *   567-589  Guild card / Purchase History card / Discover Guilds / Create a
  *            Guild / Contact Support — real data (guild membership, orders).
- *   609-619  History tab — real match list (tap -> replay).
+ *   609-619  History tab — real match list (tap -> Match Detail, SCREEN 29,
+ *            which then opens the full ReplayViewer via "Watch replay").
  *
  * "Best Streak" in the mockup's stat tiles has NO longest-historical-streak
  * field anywhere server-side (verified: only a CURRENT win-streak column
@@ -102,7 +103,7 @@ import kotlinx.coroutines.launch
 @Composable
 fun ProfileScreen(
     onSignedOut: () -> Unit = {},
-    onOpenReplay: (String) -> Unit = {},
+    onOpenMatch: (String) -> Unit = {},
     onOpenFriends: () -> Unit = {},
     onOpenGuild: () -> Unit = {},
     onOpenOrders: () -> Unit = {},
@@ -496,7 +497,7 @@ fun ProfileScreen(
                         )
                     }
                     else -> Column {
-                        rows.forEach { m -> MatchHistoryRow(match = m, myUserId = me.id, onClick = { onOpenReplay(m.id) }) }
+                        rows.forEach { m -> MatchHistoryRow(match = m, myUserId = me.id, onClick = { onOpenMatch(m.id) }) }
                     }
                 }
             }

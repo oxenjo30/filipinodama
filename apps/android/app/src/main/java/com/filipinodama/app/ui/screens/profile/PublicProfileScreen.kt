@@ -63,7 +63,8 @@ import kotlinx.coroutines.launch
  *
  * Rows built: identity header (avatar+frame, name+tag, tier, guild),
  * stat tiles (trophies/wins/losses/win-rate), Guild + Favorite Move tiles,
- * Match Replays list (tap -> ReplayViewerScreen), Badges (honest empty —
+ * Match Replays list (tap -> Match Detail, SCREEN 29, which then opens the
+ * full ReplayViewerScreen via "Watch replay"), Badges (honest empty —
  * server always returns [] per users.ts kdoc, no fabricated achievements),
  * Favorite Openings progress bars.
  *
@@ -78,7 +79,7 @@ import kotlinx.coroutines.launch
 @Composable
 fun PublicProfileScreen(
     userId: String,
-    onOpenReplay: (String) -> Unit,
+    onOpenMatch: (String) -> Unit,
     onOpenChat: (String) -> Unit = {},
     signedIn: Boolean = true,
     onRequireSignIn: () -> Unit = {},
@@ -305,7 +306,7 @@ fun PublicProfileScreen(
                         ex == null -> Box(Modifier.fillMaxWidth().padding(20.dp), contentAlignment = Alignment.Center) { CircularProgressIndicator(color = Gold) }
                         ex.recentMatches.isEmpty() -> Text("No matches yet.", color = Ink2, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(top = 12.dp))
                         else -> Column(modifier = Modifier.padding(top = 8.dp)) {
-                            ex.recentMatches.forEach { m -> RecentMatchRow(m, onOpenReplay) }
+                            ex.recentMatches.forEach { m -> RecentMatchRow(m, onOpenMatch) }
                         }
                     }
                 }
@@ -399,7 +400,7 @@ private fun FriendActionButton(relationship: String, busy: Boolean, signedIn: Bo
 private data class FriendButtonStyle(val label: String, val bg: Color, val fg: Color, val enabled: Boolean)
 
 @Composable
-private fun RecentMatchRow(m: RecentMatchDto, onOpenReplay: (String) -> Unit) {
+private fun RecentMatchRow(m: RecentMatchDto, onOpenMatch: (String) -> Unit) {
     val color = when (m.result) {
         "win" -> Green
         "loss" -> Red
@@ -419,7 +420,7 @@ private fun RecentMatchRow(m: RecentMatchDto, onOpenReplay: (String) -> Unit) {
         Box(
             modifier = Modifier
                 .background(if (m.hasReplay) Gold else Ink2.copy(alpha = 0.2f), RoundedCornerShape(8.dp))
-                .clickable(enabled = m.hasReplay) { onOpenReplay(m.id) }
+                .clickable(enabled = m.hasReplay) { onOpenMatch(m.id) }
                 .padding(horizontal = 12.dp, vertical = 8.dp)
         ) {
             Text("▶ Replay", color = if (m.hasReplay) androidx.compose.ui.graphics.Color(0xFF1A0F2E) else Ink2, style = MaterialTheme.typography.labelSmall)
