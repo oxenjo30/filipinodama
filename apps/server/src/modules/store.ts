@@ -64,14 +64,20 @@ export async function storeRoutes(app: FastifyInstance) {
       const [user, inventory, item] = await Promise.all([
         prisma.user.findUniqueOrThrow({ where: { id: req.userId! } }),
         prisma.inventoryItem.findUnique({ where: { userId_itemId: { userId: req.userId!, itemId } } }),
-        prisma.storeItem.findUnique({ where: { id: itemId }, select: { name: true, priceGold: true, priceDiamonds: true } }),
+        prisma.storeItem.findUnique({ where: { id: itemId }, select: { name: true, priceGold: true, priceDiamonds: true, onSale: true, salePrice: true } }),
       ]);
       // Best-effort receipt email — fire-and-forget so a mail failure can never
       // fail the (already-committed) purchase. Only for real accounts with an
       // email; guests have none. `total` is the item's price in the charged
-      // currency (what was actually spent).
+      // currency (what was actually spent) — mirror purchaseItem's Daily Deals
+      // sale-price logic so the receipt matches the real charge, not the
+      // struck-through base price.
       if (user.email && !user.isGuest && item) {
-        const total = result.currency === "DIAMONDS" ? item.priceDiamonds ?? 0 : item.priceGold ?? 0;
+        const base = result.currency === "DIAMONDS" ? item.priceDiamonds ?? 0 : item.priceGold ?? 0;
+        const total =
+          item.onSale && item.salePrice != null && item.salePrice > 0 && item.salePrice < base
+            ? item.salePrice
+            : base;
         void sendEmail(
           user.email,
           "Your FilipinoDama Royal receipt",

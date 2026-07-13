@@ -121,3 +121,17 @@ match mode) stays exactly as it is in the web app and goes NO further:
 - Do NOT touch/refactor Damath code in the v3 web/admin delta work.
 - If any handoff row or future task appears to pull Damath into mobile/admin scope, it is
   overridden by this directive — leave it web-only and flag it instead of building.
+
+## OWNER DIRECTIVE (2026-07-13) — Android must USE the handoff assets, never reinvent
+"The handoff contains already the assets to be used. Use everything inside handoff assets.
+Do not reinvent." Applies to the WHOLE Android app:
+- Every visual the handoff ships art for (launcher/logo, loading screen art, board textures +
+  frame, difficulty art, currency icons ic-coin/ic-gem/ic-trophy, medals, rank-tier art,
+  event art, emotes) must render the REAL file from handoffv3/handoff/assets/ — bundled for
+  app chrome (launcher, splash, board, nav icons: offline-critical), remote-via-/assets for
+  server-driven catalogs (store items, avatars, frames, crests — already correct).
+- Compose-drawn approximations are only permitted where the approved design itself is
+  non-image (piece discs mirror the web's approved disc rendering; theme colors).
+- An ASSET-FIDELITY PASS audits every Android screen against the asset inventory right after
+  Phase 8's emulator screenshots land (screenshots = audit evidence), fixing all gaps
+  (known: launcher placeholder, board texture, loading art; audit finds the rest).
