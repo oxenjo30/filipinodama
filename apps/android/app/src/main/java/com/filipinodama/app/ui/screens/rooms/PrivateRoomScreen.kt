@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
@@ -33,6 +34,8 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.ClipboardManager
 import androidx.compose.ui.platform.LocalClipboardManager
@@ -221,94 +224,165 @@ fun PrivateRoomScreen(
 
 private enum class RoomScreenMode { CHOOSE, LOBBY, JOIN, JOINING }
 
+/**
+ * Tier-2 UI-fidelity pass (visual/color only — functionality unchanged):
+ * header now uses the shared MockupBackButton + trailing mode-friend art
+ * (mockup lines 2220-2227) instead of a bare "‹ Back" text link; choice
+ * cards use the mockup's exact per-card gradient backgrounds/borders/icon
+ * tints (violet for Host, blue for Join, rounded-SQUARE icon wrapper not a
+ * circle) and exact copy ("Generate a code and invite a friend" / "Enter a
+ * 6-character room code").
+ */
 @Composable
 private fun RoomHeader(onBack: () -> Unit) {
-    Column(modifier = Modifier.fillMaxWidth().padding(20.dp)) {
-        Text(
-            text = "‹ Back",
-            color = GoldLt,
-            style = MaterialTheme.typography.labelLarge,
-            modifier = Modifier.clickable(onClick = onBack)
-        )
+    Column(modifier = Modifier.fillMaxWidth().padding(16.dp, 20.dp)) {
+        Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
+            com.filipinodama.app.ui.components.MockupBackButton(onClick = onBack)
+            Image(painter = painterResource(id = R.drawable.mode_friend), contentDescription = null, modifier = Modifier.size(34.dp))
+        }
         Text(
             text = "✦ Play with a Friend ✦",
-            color = Gold,
+            color = Color(0xFFC79A4E),
             style = MaterialTheme.typography.labelMedium,
             modifier = Modifier.padding(top = 12.dp)
         )
         Text(
             text = "Private Room",
-            color = GoldLt,
+            color = Color(0xFFF4D886),
             style = MaterialTheme.typography.headlineMedium,
             modifier = Modifier.padding(top = 4.dp)
+        )
+        Text(
+            text = "Play a friend privately. Host a room and share the code, or join theirs.",
+            color = Color(0xFF9A8BBF),
+            style = MaterialTheme.typography.bodyMedium,
+            modifier = Modifier.padding(top = 6.dp)
         )
     }
 }
 
 @Composable
 private fun ChooseState(onCreateRoom: () -> Unit, onOpenJoin: () -> Unit) {
-    Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        RoomChoiceCard(iconRes = R.drawable.me_crown, title = "Host a Room", desc = "Create a room and share the code with a friend.", onClick = onCreateRoom)
-        RoomChoiceCard(icon = "🔑", title = "Join with Code", desc = "Enter a 6-character code to join someone's room.", onClick = onOpenJoin)
+    Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+        RoomChoiceCard(
+            iconRes = R.drawable.me_crown,
+            title = "Host a Room",
+            desc = "Generate a code and invite a friend",
+            iconTint = Color(0x24C9A4FF),
+            borderColor = Color(0x4DC9A4FF),
+            gradient = listOf(Color(0xFF33234A), Color(0xFF1A1030)),
+            chevronColor = Color(0xFFC9A4FF),
+            onClick = onCreateRoom
+        )
+        RoomChoiceCard(
+            icon = "🔑",
+            title = "Join with Code",
+            desc = "Enter a 6-character room code",
+            iconTint = Color(0x245A96FF),
+            borderColor = Color(0x475A96FF),
+            gradient = listOf(Color(0xFF1C2C3A), Color(0xFF1A1030)),
+            chevronColor = Color(0xFF5A96FF),
+            onClick = onOpenJoin
+        )
     }
 }
 
 /** [icon] emoji for a mode with no matching handoff art; [iconRes] a bundled
  *  drawable for "Host a Room" (real me-crown.png instead of the 👑 emoji). */
 @Composable
-private fun RoomChoiceCard(title: String, desc: String, onClick: () -> Unit, icon: String? = null, iconRes: Int? = null) {
+private fun RoomChoiceCard(
+    title: String,
+    desc: String,
+    onClick: () -> Unit,
+    iconTint: Color,
+    borderColor: Color,
+    gradient: List<Color>,
+    chevronColor: Color,
+    icon: String? = null,
+    iconRes: Int? = null
+) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .clickable(onClick = onClick)
-            .background(Panel, RoundedCornerShape(14.dp))
-            .border(1.dp, Gold.copy(alpha = 0.2f), RoundedCornerShape(14.dp))
-            .padding(18.dp),
+            .background(androidx.compose.ui.graphics.Brush.linearGradient(gradient), RoundedCornerShape(18.dp))
+            .border(1.dp, borderColor, RoundedCornerShape(18.dp))
+            .padding(22.dp),
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(14.dp)
+        horizontalArrangement = Arrangement.spacedBy(16.dp)
     ) {
-        Box(modifier = Modifier.size(48.dp).background(Gold.copy(alpha = 0.12f), CircleShape), contentAlignment = Alignment.Center) {
+        Box(modifier = Modifier.size(52.dp).background(iconTint, RoundedCornerShape(14.dp)), contentAlignment = Alignment.Center) {
             if (iconRes != null) {
                 Image(painter = painterResource(id = iconRes), contentDescription = null, modifier = Modifier.size(26.dp))
             } else if (icon != null) {
                 Text(icon, style = MaterialTheme.typography.titleLarge)
             }
         }
-        Column {
-            Text(title, color = GoldLt, style = MaterialTheme.typography.titleMedium)
-            Text(desc, color = Ink, style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(top = 2.dp))
+        Column(modifier = Modifier.weight(1f)) {
+            Text(title, color = Color(0xFFF4D886), style = MaterialTheme.typography.titleMedium)
+            Text(desc, color = Color(0xFF9A8BBF), style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(top = 3.dp))
         }
+        Text("›", color = chevronColor, style = MaterialTheme.typography.headlineSmall)
     }
 }
 
+/**
+ * Join-code entry — mockup lines 2433-2449: 6 individual character boxes
+ * (44x56dp, blue-tinted border) with an invisible full-bleed text field
+ * overlay for real keyboard input (mirrors the mockup's own
+ * `opacity:0` input-over-visual-boxes technique), not a plain
+ * OutlinedTextField.
+ */
 @Composable
 private fun JoinState(input: String, onInputChange: (String) -> Unit, error: String?, onSubmit: () -> Unit, onBack: () -> Unit) {
-    Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp)) {
-        Text("Enter Room Code", color = Ink, style = MaterialTheme.typography.titleSmall)
-        androidx.compose.material3.OutlinedTextField(
-            value = input,
-            onValueChange = onInputChange,
-            placeholder = { Text("ABC123", color = Ink2.copy(alpha = 0.6f)) },
-            singleLine = true,
-            modifier = Modifier.fillMaxWidth().padding(top = 10.dp),
-            colors = androidx.compose.material3.OutlinedTextFieldDefaults.colors(
-                focusedTextColor = Color.White,
-                unfocusedTextColor = Color.White,
-                focusedBorderColor = Gold,
-                unfocusedBorderColor = Gold.copy(alpha = 0.25f),
-                focusedContainerColor = Color.Black.copy(alpha = 0.3f),
-                unfocusedContainerColor = Color.Black.copy(alpha = 0.3f),
-                cursorColor = Gold
-            ),
-            shape = RoundedCornerShape(11.dp)
-        )
+    val focusRequester = remember { FocusRequester() }
+    Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+        Text("ENTER ROOM CODE", color = Color(0xFF9A8BBF), style = MaterialTheme.typography.labelMedium, modifier = Modifier.padding(top = 8.dp))
+        Box(modifier = Modifier.fillMaxWidth().padding(top = 18.dp), contentAlignment = Alignment.Center) {
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                repeat(com.filipinodama.app.data.rooms.ROOM_CODE_LENGTH) { i ->
+                    val ch = input.getOrNull(i)?.toString() ?: ""
+                    Box(
+                        modifier = Modifier.size(44.dp, 56.dp)
+                            .background(Color(0xD91B1030), RoundedCornerShape(12.dp))
+                            .border(1.dp, Color(0x4D5A96FF), RoundedCornerShape(12.dp)),
+                        contentAlignment = Alignment.Center
+                    ) { Text(ch, color = Color(0xFFCFE0FF), style = MaterialTheme.typography.headlineSmall) }
+                }
+            }
+            androidx.compose.foundation.text.BasicTextField(
+                value = input,
+                onValueChange = onInputChange,
+                singleLine = true,
+                textStyle = androidx.compose.ui.text.TextStyle(color = Color.Transparent),
+                cursorBrush = androidx.compose.ui.graphics.SolidColor(Color.Transparent),
+                modifier = Modifier.fillMaxWidth().height(56.dp).focusRequester(focusRequester)
+            )
+        }
+        LaunchedEffect(Unit) { focusRequester.requestFocus() }
         if (error != null) {
-            Text(error, color = Color(0xFFFF8FAE), style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(top = 8.dp))
+            Text(error, color = Color(0xFFFF8095), style = MaterialTheme.typography.labelMedium, modifier = Modifier.padding(top = 14.dp))
         }
-        Column(modifier = Modifier.padding(top = 20.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            GameButton("Join Room", onSubmit, enabled = isValidRoomCode(input))
-            GameButton("‹ Back", onBack, variant = GameButtonVariant.PURPLE)
-        }
+        val joinEnabled = isValidRoomCode(input)
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(top = 18.dp)
+                .clickable(enabled = joinEnabled, onClick = onSubmit)
+                .background(
+                    if (joinEnabled) androidx.compose.ui.graphics.Brush.linearGradient(listOf(Color(0xFF5A96FF), Color(0xFF3F6FDB)))
+                    else androidx.compose.ui.graphics.Brush.linearGradient(listOf(Color(0x665A96FF), Color(0x663F6FDB))),
+                    RoundedCornerShape(14.dp)
+                )
+                .padding(vertical = 15.dp),
+            contentAlignment = Alignment.Center
+        ) { Text("Join Room", color = Color.White, style = MaterialTheme.typography.titleMedium) }
+        Text(
+            "‹ Back",
+            color = Color(0xFF8F7FB8),
+            style = MaterialTheme.typography.labelLarge,
+            modifier = Modifier.padding(top = 14.dp, bottom = 8.dp).clickable(onClick = onBack)
+        )
     }
 }
 

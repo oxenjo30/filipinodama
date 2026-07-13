@@ -32,6 +32,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.filipinodama.app.R
 import com.filipinodama.app.data.AuthRepository
 import com.filipinodama.app.data.AuthResult
@@ -146,10 +147,13 @@ fun LoginScreen(
                 .background(Gold.copy(alpha = 0.12f), CircleShape)
                 .padding(8.dp)
         )
+        // Wordmark — mockup lines 161-162: "FILIPINO DAMA", Cinzel 800 12px,
+        // letter-spacing 4px, NO stars/"ROYAL" suffix (the prior build's
+        // "✦ FILIPINODAMA ROYAL ✦" doesn't match any mockup copy).
         Text(
-            text = "✦ FILIPINODAMA ROYAL ✦",
+            text = "FILIPINO DAMA",
             color = Gold,
-            style = MaterialTheme.typography.labelLarge,
+            style = MaterialTheme.typography.labelLarge.copy(letterSpacing = 4.sp),
             modifier = Modifier.padding(top = 16.dp)
         )
         Text(
@@ -159,7 +163,7 @@ fun LoginScreen(
             modifier = Modifier.padding(top = 8.dp)
         )
         Text(
-            text = "Sign in to return to the board.",
+            text = "Sign in to continue your reign.",
             color = Ink2,
             style = MaterialTheme.typography.bodyMedium,
             modifier = Modifier.padding(top = 4.dp, bottom = 28.dp)

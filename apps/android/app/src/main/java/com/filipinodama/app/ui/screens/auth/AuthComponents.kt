@@ -203,8 +203,9 @@ fun AuthBackButton(onClick: () -> Unit) {
 }
 
 /**
- * "or continue with" divider — matches the web's exact copy
- * (AuthPage.tsx, between the email form and the Google button).
+ * "or" divider — mockup lines 198-204: a bare "OR" label (not "or continue
+ * with" — that's the WEB's own AuthPage.tsx copy, which the mockup's Sign-in
+ * screen, the 1:1 source of truth here, does not use).
  */
 @Composable
 fun AuthOrDivider() {
@@ -221,7 +222,7 @@ fun AuthOrDivider() {
                 .height(1.dp)
                 .background(Gold.copy(alpha = 0.16f))
         )
-        Text(text = "or continue with", color = Ink2, style = MaterialTheme.typography.labelMedium)
+        Text(text = "or", color = Color(0xFF6F628F), style = MaterialTheme.typography.labelMedium)
         Box(
             modifier = Modifier
                 .weight(1f)

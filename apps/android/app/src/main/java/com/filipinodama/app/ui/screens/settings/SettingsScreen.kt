@@ -203,8 +203,14 @@ fun SettingsScreen(
             }
 
             // ── About / Legal ──
+            // "How to Play" / "Help & FAQ" rows — mockup Settings-tab Support
+            // group (mobile-split lines 918-925) — real copy sourced from the
+            // mockup's own infoBlocks data (LegalContent.kt "howto"/"faq"),
+            // opened through the same LegalScreen tab strip as the other docs.
             SectionCard(title = "About") {
                 SettingsInfoRow(label = "Version", value = "${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})")
+                NavRow(label = "How to Play", onClick = { onOpenLegal("howto") })
+                NavRow(label = "Help & FAQ", onClick = { onOpenLegal("faq") })
                 NavRow(label = "Terms of Service", onClick = { onOpenLegal("terms") })
                 NavRow(label = "Privacy Policy", onClick = { onOpenLegal("privacy") })
                 NavRow(label = "Community Guidelines", onClick = { onOpenLegal("community") })

@@ -396,5 +396,52 @@ val LEGAL_DOCS: Map<String, LegalDoc> = mapOf(
                 "Under the Philippine Data Privacy Act, and — for visitors from those regions — laws such as the GDPR and CCPA/CPRA, you have rights including access, correction, deletion, portability, and the right to lodge a complaint with a regulator. We honour these rights regardless of where you live."
             ))
         )
+    ),
+    // "How to Play" / "Help & FAQ" — mockup's `infoBlocks` bottom sheet
+    // (handoffv3/FilipinoDama Mobile.dc.html mockup-split lines 4864-4886),
+    // reused here as two more LegalScreen tabs since it's the same
+    // "tap a Settings row -> full-screen scrollable copy" shape as the other
+    // five docs, just without numbered sections. Copy is verbatim from the
+    // mockup — the ONLY source that defines this content; no such screen
+    // existed anywhere else in the app to source it from.
+    "howto" to LegalDoc(
+        kicker = "How to Play",
+        title = "How to Play",
+        updated = UPDATED,
+        intro = "Learn Filipino Dama in a minute.",
+        sections = listOf(
+            LegalSection("", "Goal", listOf(
+                "Capture or block all of your opponent's pieces. The last player with a legal move wins."
+            )),
+            LegalSection("", "Moving", listOf(
+                "Pieces move one step diagonally forward on the dark squares. Reach the far row to promote to a King (Dama)."
+            )),
+            LegalSection("", "Capturing", listOf(
+                "Jump diagonally over an adjacent enemy piece into the empty square beyond. Captures are mandatory — if one exists, you must take it."
+            )),
+            LegalSection("", "Chains & Kings", listOf(
+                "Keep jumping if more captures are available. Kings move and capture any distance along a diagonal."
+            ))
+        )
+    ),
+    "faq" to LegalDoc(
+        kicker = "Help & FAQ",
+        title = "Help & FAQ",
+        updated = UPDATED,
+        intro = "Answers to common questions.",
+        sections = listOf(
+            LegalSection("", "How do I earn Gold?", listOf(
+                "Win matches, complete daily quests, and claim your daily login bonus. Gold buys skins and board themes in the Store."
+            )),
+            LegalSection("", "What are Diamonds for?", listOf(
+                "Diamonds are the premium currency for exclusive skins and bundles. Top up from the Store or the wallet chip."
+            )),
+            LegalSection("", "How does ranking work?", listOf(
+                "Ranked wins award trophies that move you up the tiers. Losses cost a smaller amount — climb by winning consistently."
+            )),
+            LegalSection("", "Can I play offline?", listOf(
+                "Yes — pick Play vs AI from the mode menu to practice at Easy, Normal, or Hard."
+            ))
+        )
     )
 )

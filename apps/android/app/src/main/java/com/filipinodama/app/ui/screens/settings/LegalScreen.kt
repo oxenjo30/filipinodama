@@ -90,7 +90,9 @@ fun LegalScreen(initialKey: String, onBack: () -> Unit) {
             doc.sections.forEach { section ->
                 Column(modifier = Modifier.padding(bottom = 20.dp)) {
                     Row {
-                        Text("${section.no}  ", color = Gold, style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold)
+                        if (section.no.isNotEmpty()) {
+                            Text("${section.no}  ", color = Gold, style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold)
+                        }
                         Text(section.heading, color = androidx.compose.ui.graphics.Color.White, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
                     }
                     Column(modifier = Modifier.padding(top = 8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -103,6 +105,8 @@ fun LegalScreen(initialKey: String, onBack: () -> Unit) {
 }
 
 private val LEGAL_TABS = listOf(
+    "howto" to "How to Play",
+    "faq" to "Help & FAQ",
     "privacy" to "Privacy",
     "terms" to "Terms",
     "community" to "Community",

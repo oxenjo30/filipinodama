@@ -26,6 +26,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.filipinodama.app.data.AuthRepository
 import com.filipinodama.app.data.AuthResult
 import com.filipinodama.app.data.GoogleSignInHelper
@@ -145,10 +146,12 @@ fun CreateAccountScreen(
         AuthBackButton(onClick = onBack)
 
         Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.fillMaxWidth()) {
+            // Wordmark — mockup lines 161-162 (shared by Sign in/Create):
+            // "FILIPINO DAMA", no stars/"ROYAL" suffix.
             Text(
-                text = "✦ FILIPINODAMA ROYAL ✦",
+                text = "FILIPINO DAMA",
                 color = Gold,
-                style = MaterialTheme.typography.labelLarge,
+                style = MaterialTheme.typography.labelLarge.copy(letterSpacing = 4.sp),
                 modifier = Modifier.padding(top = 12.dp)
             )
             Text(
@@ -158,7 +161,7 @@ fun CreateAccountScreen(
                 modifier = Modifier.padding(top = 8.dp)
             )
             Text(
-                text = "Join the board and start climbing the ranks.",
+                text = "Join the kingdom and start your climb.",
                 color = Ink2,
                 style = MaterialTheme.typography.bodyMedium,
                 modifier = Modifier.padding(top = 4.dp, bottom = 28.dp)
