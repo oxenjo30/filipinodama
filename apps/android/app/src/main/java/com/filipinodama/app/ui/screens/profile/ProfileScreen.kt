@@ -106,6 +106,7 @@ fun ProfileScreen(
     onOpenMatch: (String) -> Unit = {},
     onOpenFriends: () -> Unit = {},
     onOpenGuild: () -> Unit = {},
+    onOpenDiscoverGuilds: () -> Unit = {},
     onOpenOrders: () -> Unit = {},
     onOpenInventory: () -> Unit = {},
     onOpenLegal: (String) -> Unit = {},
@@ -437,7 +438,7 @@ fun ProfileScreen(
                         subtitle = "Browse & join active orders",
                         accentBorder = Color(0x47C9A4FF),
                         iconBg = Color(0x1FC9A4FF),
-                        onClick = onOpenGuild
+                        onClick = onOpenDiscoverGuilds
                     )
                 }
                 ProfileQuickLinkCard(
