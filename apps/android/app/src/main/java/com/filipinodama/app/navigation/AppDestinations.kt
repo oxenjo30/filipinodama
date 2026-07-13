@@ -68,6 +68,12 @@ object AppDestinations {
     // TournamentsListScreen.kt kdoc).
     const val TOURNAMENTS = "economy/tournaments"
 
+    // Tournament Detail — mobile-screen-inventory.md SCREEN 9, reached from a
+    // TournamentsListScreen row tap (finding PROG-1/PROG-2 — those rows were
+    // previously dead). Explicit back target: the Tournaments list.
+    const val TOURNAMENT_DETAIL = "economy/tournaments/{id}"
+    fun tournamentDetail(id: String) = "economy/tournaments/$id"
+
     // Phase 6a (profile + social): match history replay, public player
     // profiles, leaderboard — reached from Profile tab / leaderboard rows /
     // Home hub identity header (mobile-screen-inventory.md SCREENs 10, 25,

@@ -50,13 +50,11 @@ import com.filipinodama.app.ui.theme.Panel
  *
  * Wired to the real, server-backed GET /api/tournaments (only OPEN/RUNNING
  * rows — apps/server/src/modules/tournaments.ts) via [TournamentsRepository]
- * — no fabricated data. Per-tournament detail/join/bracket (the mockup's
- * `tourdetail` screen + `openTournamentM`) is a later phase: this list is
- * the minimal real-data destination the Home card needed, not a full
- * tournament-detail rebuild (out of this task's scope).
+ * — no fabricated data. Rows navigate to [TournamentDetailScreen] (mockup's
+ * `tourdetail` screen / SCREEN 9) via [onOpenDetail].
  */
 @Composable
-fun TournamentsListScreen(onBack: () -> Unit = {}) {
+fun TournamentsListScreen(onBack: () -> Unit = {}, onOpenDetail: (String) -> Unit = {}) {
     var items by remember { mutableStateOf<List<TournamentListItemDto>?>(null) }
     var error by remember { mutableStateOf<String?>(null) }
 
@@ -94,7 +92,7 @@ fun TournamentsListScreen(onBack: () -> Unit = {}) {
                 modifier = Modifier.verticalScroll(rememberScrollState()).padding(horizontal = 20.dp),
                 verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
-                items!!.forEach { t -> TournamentRow(t) }
+                items!!.forEach { t -> TournamentRow(t, onClick = { onOpenDetail(t.id) }) }
                 Box(Modifier.padding(bottom = 20.dp))
             }
         }
@@ -103,11 +101,12 @@ fun TournamentsListScreen(onBack: () -> Unit = {}) {
 
 /** Row shape ported verbatim from the mockup's Tournaments section (split-file lines 397-412). */
 @Composable
-private fun TournamentRow(item: TournamentListItemDto) {
+private fun TournamentRow(item: TournamentListItemDto, onClick: () -> Unit) {
     val pill = TournamentDisplay.statusPill(item.status)
     Column(
         modifier = Modifier
             .fillMaxWidth()
+            .clickable(onClick = onClick)
             .background(Panel, RoundedCornerShape(16.dp))
             .padding(16.dp)
     ) {

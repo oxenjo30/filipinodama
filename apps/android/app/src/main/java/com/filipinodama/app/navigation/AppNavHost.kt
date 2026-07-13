@@ -58,6 +58,7 @@ import com.filipinodama.app.ui.screens.economy.InventoryScreen
 import com.filipinodama.app.ui.screens.economy.OrdersScreen
 import com.filipinodama.app.ui.screens.economy.QuestsScreen
 import com.filipinodama.app.ui.screens.economy.SeasonScreen
+import com.filipinodama.app.ui.screens.economy.TournamentDetailScreen
 import com.filipinodama.app.ui.screens.economy.TournamentsListScreen
 import com.filipinodama.app.ui.screens.leaderboard.LeaderboardScreen
 import com.filipinodama.app.ui.screens.profile.PublicProfileScreen
@@ -450,7 +451,22 @@ fun AppNavHost() {
                 SeasonScreen(onBack = { navController.popBackStack() })
             }
             composable(AppDestinations.TOURNAMENTS) {
-                TournamentsListScreen(onBack = { navController.popBackStack() })
+                TournamentsListScreen(
+                    onBack = { navController.popBackStack() },
+                    onOpenDetail = { id -> navController.navigate(AppDestinations.tournamentDetail(id)) }
+                )
+            }
+            composable(
+                route = AppDestinations.TOURNAMENT_DETAIL,
+                arguments = listOf(navArgument("id") { type = NavType.StringType })
+            ) { backStackEntry ->
+                val id = backStackEntry.arguments?.getString("id") ?: ""
+                TournamentDetailScreen(
+                    tournamentId = id,
+                    onBack = { navController.popBackStack() },
+                    onRequireSignIn = { navController.navigate(AppDestinations.LOGIN) },
+                    onWatchReplay = { matchId -> navController.navigate(AppDestinations.replay(matchId)) }
+                )
             }
 
             // ---- Phase 3: gameplay core (Play tab) ----
