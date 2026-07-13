@@ -199,18 +199,18 @@ fun ProfileScreen(
                 .background(Brush.linearGradient(listOf(Color(0xFF3A1C4A), Color(0xFF1A1030))))
                 .border(1.dp, Color(0x47E8B84B), RoundedCornerShape(22.dp))
         ) {
-            // Mockup identity card has the gold sun-ray banner (me-banner.png)
-            // bleeding off the right edge behind the content (overflow:hidden).
+            // Mockup identity card (line 730): the gold SUN (logo-sun.png) peeks
+            // faintly from the TOP-RIGHT corner — 130x130, opacity .12, offset
+            // right:-26/top:-26 so it bleeds off the corner (overflow:hidden).
             AsyncImage(
-                model = "${com.filipinodama.app.BuildConfig.WEB_ORIGIN}/assets/me-banner.png",
+                model = "${com.filipinodama.app.BuildConfig.WEB_ORIGIN}/assets/logo-sun.png",
                 contentDescription = null,
                 contentScale = androidx.compose.ui.layout.ContentScale.Fit,
-                alignment = Alignment.CenterEnd,
                 modifier = Modifier
-                    .align(Alignment.CenterEnd)
-                    .fillMaxHeight()
-                    .padding(end = 4.dp)
-                    .alpha(0.9f)
+                    .align(Alignment.TopEnd)
+                    .size(130.dp)
+                    .offset(x = 26.dp, y = (-26).dp)
+                    .alpha(0.12f)
             )
             Column(modifier = Modifier.padding(20.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
