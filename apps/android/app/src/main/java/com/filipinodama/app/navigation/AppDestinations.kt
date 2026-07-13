@@ -61,6 +61,13 @@ object AppDestinations {
     const val QUESTS = "economy/quests"
     const val SEASON = "economy/season"
 
+    // Tournaments list — mobile-screen-inventory.md SCREEN 5 row 7's "Tournaments"
+    // strip destination. Home's Tournaments card is real, server-backed
+    // (GET /api/tournaments); this is the minimal 1:1 list screen built from the
+    // mockup's cups-list rows (join/bracket detail is a later phase — see
+    // TournamentsListScreen.kt kdoc).
+    const val TOURNAMENTS = "economy/tournaments"
+
     // Phase 6a (profile + social): match history replay, public player
     // profiles, leaderboard — reached from Profile tab / leaderboard rows /
     // Home hub identity header (mobile-screen-inventory.md SCREENs 10, 25,

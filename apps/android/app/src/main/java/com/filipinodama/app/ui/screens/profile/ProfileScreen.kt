@@ -29,6 +29,8 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
@@ -177,10 +179,22 @@ fun ProfileScreen(
             ProfileActionChip("⚙ Settings", modifier = androidx.compose.ui.Modifier.weight(1f), onClick = onOpenSettings)
         }
 
-        // ── tabs ──
-        Row(modifier = Modifier.fillMaxWidth().padding(top = 20.dp)) {
-            ProfileTabButton("Overview", tab == "overview") { tab = "overview" }
-            ProfileTabButton("Match History", tab == "history") { tab = "history" }
+        // ── tabs — mockup's real pill-tab row (FilipinoDama Mobile.dc.html
+        // split-file lines 792-797: a rounded pill container with 4dp gap/
+        // padding, each button `flex:1` gold-gradient when active,
+        // transparent when inactive). Settings stays a separate destination
+        // by deliberate design (see ProfileScreen kdoc above), so only
+        // Overview/History are reproduced here.
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(top = 20.dp)
+                .background(Color(0xFF0F0720).copy(alpha = 0.6f), RoundedCornerShape(14.dp))
+                .padding(4.dp),
+            horizontalArrangement = Arrangement.spacedBy(4.dp)
+        ) {
+            ProfileTabButton("Overview", tab == "overview", Modifier.weight(1f)) { tab = "overview" }
+            ProfileTabButton("Match History", tab == "history", Modifier.weight(1f)) { tab = "history" }
         }
 
         if (tab == "overview") {
@@ -260,23 +274,38 @@ private fun ProfileActionChip(label: String, modifier: Modifier = Modifier, onCl
     }
 }
 
+/**
+ * Pill tab button — ROOT CAUSE FIX for the bug where the Row's second child
+ * never rendered ("Match History" silently absent, proven even with a
+ * byte-for-byte duplicate of the first child — see docs/android-golden-paths/
+ * REPORT.md follow-up section). The prior version was a `Column` with NO
+ * width constraint of its own (only an inner `Box.fillMaxWidth()` two levels
+ * down) sitting in a parent `Row` that ALSO had no `Arrangement`/weight on
+ * either child — an unconstrained-width row of unconstrained-width columns.
+ * Giving each button an explicit `Modifier.weight(1f)` (passed in from the
+ * call site, matching the mockup's own `flex:1` on every tab button) forces
+ * the Row to give each child a definite, non-ambiguous width during measure,
+ * which is both the correct mockup-fidelity fix (equal-width flex pills, not
+ * an underline tab strip) and eliminates the ambiguous/zero-width measure
+ * pass that was silently dropping the second child.
+ */
 @Composable
-private fun ProfileTabButton(label: String, active: Boolean, onClick: () -> Unit) {
-    Column(
-        modifier = Modifier.clickable(onClick = onClick).padding(horizontal = 18.dp, vertical = 12.dp),
-        horizontalAlignment = Alignment.CenterHorizontally
+private fun ProfileTabButton(label: String, active: Boolean, modifier: Modifier = Modifier, onClick: () -> Unit) {
+    Box(
+        modifier = modifier
+            .clickable(onClick = onClick)
+            .clip(RoundedCornerShape(11.dp))
+            .background(
+                if (active) Brush.verticalGradient(listOf(Color(0xFFEFC25A), Color(0xFFC9971F)))
+                else Brush.verticalGradient(listOf(Color.Transparent, Color.Transparent))
+            )
+            .padding(vertical = 11.dp),
+        contentAlignment = Alignment.Center
     ) {
         Text(
-            label.uppercase(),
-            color = if (active) GoldLt else Ink2,
-            style = MaterialTheme.typography.labelMedium
-        )
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(2.dp)
-                .background(if (active) Gold else Color.Transparent)
-                .padding(top = 4.dp)
+            label,
+            color = if (active) Color(0xFF3A2405) else Ink2,
+            style = MaterialTheme.typography.labelLarge
         )
     }
 }

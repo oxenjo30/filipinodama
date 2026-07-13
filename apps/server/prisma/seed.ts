@@ -216,10 +216,11 @@ async function main() {
   }));
   await prisma.season.upsert({
     where: { id: "S1" },
-    update: { tiers: seasonTiers },
+    update: { tiers: seasonTiers, number: 1 },
     create: {
       id: "S1",
       name: "Season 1 — Rise of the Bagani",
+      number: 1,
       startsAt: new Date(),
       endsAt: new Date(Date.now() + 60 * 864e5),
       tiers: seasonTiers,

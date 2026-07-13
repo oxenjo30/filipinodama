@@ -56,6 +56,7 @@ import com.filipinodama.app.ui.screens.economy.InventoryScreen
 import com.filipinodama.app.ui.screens.economy.OrdersScreen
 import com.filipinodama.app.ui.screens.economy.QuestsScreen
 import com.filipinodama.app.ui.screens.economy.SeasonScreen
+import com.filipinodama.app.ui.screens.economy.TournamentsListScreen
 import com.filipinodama.app.ui.screens.leaderboard.LeaderboardScreen
 import com.filipinodama.app.ui.screens.profile.PublicProfileScreen
 import com.filipinodama.app.ui.screens.profile.ReplayViewerScreen
@@ -266,16 +267,26 @@ fun AppNavHost() {
             composable(AppDestinations.HOME) {
                 HomeScreen(
                     onQuickMatch = { navController.navigate(AppDestinations.matchmaking("CASUAL")) },
+                    onRanked = { navController.navigate(AppDestinations.matchmaking("RANKED")) },
+                    onPlayAi = { navController.navigate(AppDestinations.AI_DIFFICULTY) },
+                    onPlayFriend = { navController.navigate(AppDestinations.privateRoom()) },
                     onDailyReward = { navController.navigate(AppDestinations.DAILY_REWARD) },
                     onQuests = { navController.navigate(AppDestinations.QUESTS) },
                     onSeason = { navController.navigate(AppDestinations.SEASON) },
+                    onTournaments = { navController.navigate(AppDestinations.TOURNAMENTS) },
                     onResumeMatch = { mode ->
                         navController.navigate(AppDestinations.onlineMatch(mode)) {
                             popUpTo(AppDestinations.HOME)
                         }
                     },
                     onOpenLeaderboard = { navController.navigate(AppDestinations.LEADERBOARD) },
-                    onOpenNotifications = { navController.navigate(AppDestinations.NOTIFICATIONS) }
+                    onOpenNotifications = { navController.navigate(AppDestinations.NOTIFICATIONS) },
+                    onOpenSearch = { /* global player search — later phase, no destination yet */ },
+                    // Mockup's Wallet screen (top-up/balance detail) is out of this
+                    // task's scope (no payments/top-up UI) and not in the owner's
+                    // required-elements list — the chip renders correctly (real
+                    // gold/diamonds) but its tap has no destination yet, honestly.
+                    onOpenWallet = { }
                 )
             }
             composable(AppDestinations.STORE) {
@@ -387,6 +398,9 @@ fun AppNavHost() {
             }
             composable(AppDestinations.SEASON) {
                 SeasonScreen(onBack = { navController.popBackStack() })
+            }
+            composable(AppDestinations.TOURNAMENTS) {
+                TournamentsListScreen(onBack = { navController.popBackStack() })
             }
 
             // ---- Phase 3: gameplay core (Play tab) ----

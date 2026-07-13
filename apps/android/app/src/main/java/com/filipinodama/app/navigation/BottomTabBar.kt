@@ -1,53 +1,63 @@
 package com.filipinodama.app.navigation
 
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.EmojiEvents
-import androidx.compose.material.icons.filled.Home
-import androidx.compose.material.icons.filled.Person
-import androidx.compose.material.icons.filled.PlayArrow
-import androidx.compose.material.icons.filled.Shield
-import androidx.compose.material.icons.filled.Store
-import androidx.compose.material3.Icon
-import androidx.compose.material3.NavigationBar
-import androidx.compose.material3.NavigationBarItem
-import androidx.compose.material3.NavigationBarItemDefaults
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ColorFilter
+import androidx.compose.ui.graphics.ColorMatrix
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavDestination.Companion.hierarchy
 import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.NavHostController
 import androidx.navigation.compose.currentBackStackEntryAsState
-import com.filipinodama.app.ui.theme.Bg2
-import com.filipinodama.app.ui.theme.Panel
+import com.filipinodama.app.R
 import com.filipinodama.app.ui.theme.TabActiveGold
 import com.filipinodama.app.ui.theme.TabInactiveViolet
 
 /**
- * 5-item bottom tab bar per NAVIGATION MODEL (mobile-screen-inventory.md
- * lines ~32-51): Home, Store, Play (center, visually primary), Guild,
- * Profile, in that exact order. Active = gold (#f0cf72), inactive = muted
- * violet (#6f5f92).
+ * Bottom tab bar — rebuilt 1:1 from the mockup's actual DOM/CSS
+ * (`handoffv3/FilipinoDama Mobile.dc.html`, split-file lines 3504-3514,
+ * "BOTTOM TAB BAR", + script `tabDefs`/`tabs` mapping ~lines 4081-4094).
+ *
+ * This supersedes the prior Material [androidx.compose.material3.NavigationBar]
+ * re-skin (M3 filled-indicator pill, generic vector icons, a filled gold
+ * circle behind the Play icon) — none of that exists in the mockup. The real
+ * design is a plain flex row of 5 equal-width icon+label buttons on a
+ * blurred glass strip, real handoff art (sb-modes.png / ic-chest.png /
+ * logo-sun.png / me-guild.png / sb-players.png), gold `#f0cf72` when active,
+ * muted violet `#6f5f92` + reduced opacity/grayscale when inactive, and the
+ * center Play icon always carries a gold glow drop-shadow regardless of
+ * active state (mockup script line 4092) — no filled circle badge.
  */
 private data class TabItem(
     val route: String,
     val label: String,
-    val icon: ImageVector
+    val icon: Int
 )
 
-// Play routes to Mode Select (go('mode') in the prototype), not a dedicated
-// "play" screen — see AppDestinations.MODE_SELECT kdoc / NAVIGATION MODEL.
 private val tabItems = listOf(
-    TabItem(AppDestinations.HOME, "Home", Icons.Filled.Home),
-    TabItem(AppDestinations.STORE, "Store", Icons.Filled.Store),
-    TabItem(AppDestinations.MODE_SELECT, "Play", Icons.Filled.PlayArrow),
-    TabItem(AppDestinations.GUILD, "Guild", Icons.Filled.Shield),
-    TabItem(AppDestinations.PROFILE, "Profile", Icons.Filled.Person)
+    TabItem(AppDestinations.HOME, "Home", R.drawable.sb_modes),
+    TabItem(AppDestinations.STORE, "Store", R.drawable.ic_chest),
+    TabItem(AppDestinations.MODE_SELECT, "Play", R.drawable.logo_sun),
+    TabItem(AppDestinations.GUILD, "Guild", R.drawable.me_guild),
+    TabItem(AppDestinations.PROFILE, "Profile", R.drawable.sb_players)
 )
 
 @Composable
@@ -55,52 +65,59 @@ fun BottomTabBar(navController: NavHostController) {
     val navBackStackEntry by navController.currentBackStackEntryAsState()
     val currentDestination = navBackStackEntry?.destination
 
-    NavigationBar(containerColor = Panel) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(78.dp)
+            .background(Brush.verticalGradient(listOf(Color(0xFF0F0720).copy(alpha = 0.5f), Color(0xFF120A22))))
+            .padding(horizontal = 8.dp)
+            .padding(bottom = 14.dp),
+        horizontalArrangement = Arrangement.SpaceAround,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
         tabItems.forEach { item ->
             val selected = currentDestination?.hierarchy?.any { it.route == item.route } == true
             val isPlayTab = item.route == AppDestinations.MODE_SELECT
+            val tint = if (selected) TabActiveGold else TabInactiveViolet
 
-            NavigationBarItem(
-                selected = selected,
-                onClick = {
-                    navController.navigate(item.route) {
-                        // Tabs are top-level destinations: popping to the graph's
-                        // start destination avoids stacking duplicate tab entries
-                        // while switching between them.
-                        popUpTo(navController.graph.findStartDestination().id) {
-                            saveState = true
+            Column(
+                modifier = Modifier
+                    .weight(1f)
+                    .clickable {
+                        navController.navigate(item.route) {
+                            popUpTo(navController.graph.findStartDestination().id) { saveState = true }
+                            launchSingleTop = true
+                            restoreState = true
                         }
-                        launchSingleTop = true
-                        restoreState = true
                     }
-                },
-                icon = {
-                    if (isPlayTab) {
-                        // Play is visually the center/primary item: a filled
-                        // gold circle behind the icon, always glowing regardless
-                        // of active state (matches prototype's constant gold
-                        // drop-shadow on the center Play icon).
-                        Icon(
-                            imageVector = item.icon,
-                            contentDescription = item.label,
-                            tint = Bg2,
-                            modifier = Modifier
-                                .background(TabActiveGold, CircleShape)
-                                .size(32.dp)
-                        )
-                    } else {
-                        Icon(imageVector = item.icon, contentDescription = item.label)
-                    }
-                },
-                label = { androidx.compose.material3.Text(item.label) },
-                colors = NavigationBarItemDefaults.colors(
-                    selectedIconColor = if (isPlayTab) Bg2 else TabActiveGold,
-                    selectedTextColor = TabActiveGold,
-                    unselectedIconColor = TabInactiveViolet,
-                    unselectedTextColor = TabInactiveViolet,
-                    indicatorColor = Panel
+                    .padding(vertical = 8.dp, horizontal = 6.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(4.dp)
+            ) {
+                // Inactive, non-center icons: opacity .5 + grayscale(.4), mirroring
+                // the mockup's iconStyle exactly (script line 4092). The center
+                // Play icon never grayscales/dims regardless of active state.
+                val dimInactive = !selected && !isPlayTab
+                Image(
+                    painter = painterResource(id = item.icon),
+                    contentDescription = item.label,
+                    colorFilter = if (dimInactive) ColorFilter.colorMatrix(partialGrayscale(0.4f)) else null,
+                    modifier = Modifier
+                        .size(26.dp)
+                        .alpha(if (dimInactive) 0.5f else 1f)
                 )
-            )
+                Text(item.label, color = tint, style = MaterialTheme.typography.labelSmall)
+            }
         }
     }
+}
+
+/**
+ * Partial grayscale color matrix (0f = no effect, 1f = full grayscale) — the
+ * Compose equivalent of CSS `filter:grayscale(.4)` on the inactive tab
+ * icons, since Compose has no partial-grayscale primitive built in.
+ */
+private fun partialGrayscale(amount: Float): ColorMatrix {
+    val saturation = 1f - amount
+    return ColorMatrix().apply { setToSaturation(saturation) }
 }

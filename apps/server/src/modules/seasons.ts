@@ -96,7 +96,7 @@ export async function seasonRoutes(app: FastifyInstance) {
     const passPrice = passCurrency === "DIAMONDS" ? passItem!.priceDiamonds! : passItem?.priceGold ?? 9000;
 
     return ok({
-      season: { id: season.id, name: season.name, startsAt: season.startsAt, endsAt: season.endsAt },
+      season: { id: season.id, name: season.name, number: season.number, startsAt: season.startsAt, endsAt: season.endsAt },
       hasPass: progress?.hasPass ?? false,
       passPrice,
       passCurrency,

@@ -232,6 +232,7 @@ data class SeasonTierDto(
 data class SeasonInfoDto(
     val id: String,
     val name: String,
+    val number: Int? = null,
     val startsAt: String,
     val endsAt: String
 )
