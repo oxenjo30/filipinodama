@@ -122,4 +122,9 @@ object AppDestinations {
     const val SETTINGS = "profile/settings"
     const val LEGAL = "profile/legal/{doc}"
     fun legal(doc: String) = "profile/legal/$doc"
+
+    // Achievements — mobile-screen-inventory.md SCREEN 30. Always the
+    // current user's own achievements (no :id arg), reached from Profile
+    // Overview's "See all ›" header and the achievements grid tap.
+    const val ACHIEVEMENTS = "profile/achievements"
 }
