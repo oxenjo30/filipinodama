@@ -1,6 +1,7 @@
 package com.filipinodama.app.ui.screens.social
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -48,12 +49,21 @@ import java.time.Instant
 import java.time.temporal.ChronoUnit
 
 /**
- * NotificationsScreen — mobile-screen-inventory.md SCREEN 12, a Compose port
- * of apps/web NotificationsMenu.tsx as a dedicated full screen. Rows built:
- * "Mark all read", grouped Today/Yesterday/Earlier lists (relative times),
- * swipe-to-reveal dismiss (matches `_nswDown/_nswMove/_nswUp` — reveals a red
- * delete/archive action), unread dot, friend-request Accept/Decline actions,
- * empty state.
+ * NotificationsScreen — mobile-screen-inventory.md SCREEN 12, rebuilt 1:1
+ * against handoffv3/FilipinoDama Mobile.dc.html lines 1001-1059 (Tier-2
+ * UI-fidelity pass). Header: MockupBackButton + centered "Notifications"
+ * title + always-visible "Mark all read" text action (#c9a4ff, no
+ * enabled-gating in the mockup). Empty state: 74dp icon-wrapper box
+ * (gold-tinted bg/border) around a bell glyph, "You're all caught up" title,
+ * exact body copy. Group label: uppercase, 11sp, 1.5 letter-spacing,
+ * #8b7cae. Row: 44dp icon wrapper, absolute-positioned unread dot (not an
+ * inline prefix), swipe-reveal red gradient with a trash glyph (not a text
+ * label), single generic CTA button per the mockup's `n.cta` (kept as
+ * Accept/Decline since that IS the real friend-request CTA data — the
+ * mockup's `n.cta`/`n.onCta` is a single-button field but the friend-request
+ * notification is inherently a two-action decision; Decline has no mockup
+ * counterpart so it's styled as the row's neutral/secondary action to stay
+ * visually subordinate to the single gold CTA).
  */
 @Composable
 fun NotificationsScreen(onBack: () -> Unit) {
@@ -69,17 +79,19 @@ fun NotificationsScreen(onBack: () -> Unit) {
     val isEmpty = !state.loading && !state.error && (data?.notifications?.isEmpty() ?: true)
 
     Column(modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
-        Row(modifier = Modifier.fillMaxWidth().padding(20.dp), verticalAlignment = Alignment.CenterVertically) {
-            Column(modifier = Modifier.weight(1f)) {
-                Text("‹ Back", color = GoldLt, style = MaterialTheme.typography.labelLarge, modifier = Modifier.clickable(onClick = onBack))
-                Text("Notifications", color = GoldLt, style = MaterialTheme.typography.headlineMedium, modifier = Modifier.padding(top = 10.dp))
-            }
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(12.dp, 20.dp, 12.dp, 14.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(6.dp)
+        ) {
+            com.filipinodama.app.ui.components.MockupBackButton(onClick = onBack)
+            Text("Notifications", color = Color(0xFFF4ECD6), style = MaterialTheme.typography.headlineSmall, modifier = Modifier.weight(1f))
             val unread = data?.unreadCount ?: 0
             Text(
                 "Mark all read",
-                color = if (unread > 0) Gold else Ink2,
+                color = Color(0xFFC9A4FF),
                 style = MaterialTheme.typography.labelMedium,
-                modifier = Modifier.clickable(enabled = unread > 0) { scope.launch { NotificationsRepository.markAll() } }
+                modifier = Modifier.clickable(enabled = unread > 0) { scope.launch { NotificationsRepository.markAll() } }.padding(8.dp)
             )
         }
 
@@ -91,25 +103,31 @@ fun NotificationsScreen(onBack: () -> Unit) {
                     Text("Try again", color = Gold, style = MaterialTheme.typography.labelMedium, modifier = Modifier.padding(top = 10.dp).clickable { scope.launch { NotificationsRepository.load() } })
                 }
             }
-            isEmpty -> Box(Modifier.fillMaxSize().padding(32.dp), contentAlignment = Alignment.Center) {
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text("🔔", style = MaterialTheme.typography.headlineLarge)
-                    Text("You're all caught up", color = Ink, style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(top = 10.dp))
-                    Text(
-                        "No new notifications right now. Match invites, quest updates, and guild news will show up here.",
-                        color = Ink2,
-                        style = MaterialTheme.typography.bodySmall,
-                        textAlign = androidx.compose.ui.text.style.TextAlign.Center,
-                        modifier = Modifier.padding(top = 6.dp)
-                    )
-                }
+            isEmpty -> Column(
+                modifier = Modifier.fillMaxSize().padding(horizontal = 32.dp, vertical = 80.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                Box(
+                    modifier = Modifier.size(74.dp)
+                        .background(Color(0x14E8B84B), RoundedCornerShape(20.dp))
+                        .border(1.dp, Color(0x33E8B84B), RoundedCornerShape(20.dp)),
+                    contentAlignment = Alignment.Center
+                ) { Text("🔔", style = MaterialTheme.typography.headlineSmall) }
+                Text("You're all caught up", color = Color(0xFFF4ECD6), style = MaterialTheme.typography.titleLarge, modifier = Modifier.padding(top = 12.dp))
+                Text(
+                    "No new notifications right now. Match invites, quest updates, and guild news will show up here.",
+                    color = Color(0xFF8B7CAE),
+                    style = MaterialTheme.typography.bodySmall,
+                    textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                    modifier = Modifier.padding(top = 12.dp)
+                )
             }
             data != null -> LazyColumn(modifier = Modifier.fillMaxSize()) {
                 val groups = listOf("Today" to data.groups.today, "Yesterday" to data.groups.yesterday, "Earlier" to data.groups.earlier)
                 groups.forEach { (label, items) ->
                     if (items.isNotEmpty()) {
                         item {
-                            Text(label.uppercase(), color = Ink2, style = MaterialTheme.typography.labelSmall, modifier = Modifier.padding(horizontal = 20.dp, vertical = 10.dp))
+                            Text(label.uppercase(), color = Color(0xFF8B7CAE), style = MaterialTheme.typography.labelSmall, modifier = Modifier.padding(start = 18.dp, end = 18.dp, top = 8.dp, bottom = 9.dp))
                         }
                         items(items, key = { it.id }) { n ->
                             NotificationSwipeRow(
@@ -163,7 +181,7 @@ private fun NotificationSwipeRow(
     val pending = notifIsPending(notif)
     val status = notifStatus(notif)
 
-    Box(modifier = Modifier.fillMaxWidth().height(if (pending) 130.dp else 86.dp)) {
+    Box(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.5.dp).height(if (pending) 130.dp else 86.dp)) {
         SwipeRevealRow(
             isOpen = isOpen,
             onOpenChange = onOpenChange,
@@ -171,57 +189,60 @@ private fun NotificationSwipeRow(
                 Row(modifier = Modifier.fillMaxSize(), horizontalArrangement = Arrangement.End) {
                     Box(
                         modifier = Modifier.fillMaxSize().width(132.dp)
-                            .background(Color(0xFFA8202F))
+                            .background(Color(0xFFD93B52))
                             .clickable(onClick = onDismiss),
-                        contentAlignment = Alignment.Center
-                    ) { Text("🗑 Dismiss", color = Color.White, style = MaterialTheme.typography.labelSmall) }
+                        contentAlignment = Alignment.CenterEnd
+                    ) { Text("🗑", color = Color.White, style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(end = 22.dp)) }
                 }
             },
             content = {
-                Column(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .background(if (unread) Gold.copy(alpha = 0.06f) else Panel)
-                        .clickable(onClick = onClick)
-                        .padding(horizontal = 20.dp, vertical = 12.dp)
-                ) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Box(modifier = Modifier.size(38.dp).background(Color(0x33785AB4), RoundedCornerShape(10.dp)), contentAlignment = Alignment.Center) {
-                            if (notif.type == "achievement") {
-                                com.filipinodama.app.ui.components.CurrencyIcon(kind = com.filipinodama.app.ui.components.CurrencyIconKind.TROPHY, size = 20.dp)
-                            } else {
-                                Text(iconFor(notif.type), style = MaterialTheme.typography.titleMedium)
-                            }
-                        }
-                        Column(modifier = Modifier.weight(1f).padding(start = 12.dp)) {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                if (unread) {
-                                    Box(modifier = Modifier.size(7.dp).background(Gold, CircleShape))
-                                    Box(modifier = Modifier.width(6.dp))
-                                }
-                                Text(notif.title, color = Color.White, style = MaterialTheme.typography.bodyLarge)
-                            }
-                            if (notif.body != null) {
-                                Text(notif.body, color = Ink, style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(top = 2.dp))
-                            }
-                            Text(relativeTime(notif.createdAt), color = Ink2, style = MaterialTheme.typography.labelSmall, modifier = Modifier.padding(top = 4.dp))
-                        }
+                Box(modifier = Modifier.fillMaxSize().background(if (unread) Color(0x0FE8B84B) else Color(0xFF1E1134), RoundedCornerShape(16.dp))) {
+                    if (unread) {
+                        Box(
+                            modifier = Modifier.align(Alignment.TopStart).padding(top = 16.dp, start = 6.dp)
+                                .size(7.dp).background(Color(0xFFFF5A6A), CircleShape)
+                        )
                     }
-                    if (pending) {
-                        Row(modifier = Modifier.fillMaxWidth().padding(top = 10.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            Box(
-                                modifier = Modifier.weight(1f).clickable(onClick = onAccept)
-                                    .background(Gold, RoundedCornerShape(7.dp)).padding(vertical = 9.dp),
-                                contentAlignment = Alignment.Center
-                            ) { Text("ACCEPT", color = Color(0xFF3A2405), style = MaterialTheme.typography.labelSmall) }
-                            Box(
-                                modifier = Modifier.weight(1f).clickable(onClick = onDecline)
-                                    .background(Color.Black.copy(alpha = 0.3f), RoundedCornerShape(7.dp)).padding(vertical = 9.dp),
-                                contentAlignment = Alignment.Center
-                            ) { Text("DECLINE", color = Ink, style = MaterialTheme.typography.labelSmall) }
+                    Column(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .clickable(onClick = onClick)
+                            .padding(14.dp)
+                    ) {
+                        Row(verticalAlignment = Alignment.Top) {
+                            Box(modifier = Modifier.size(44.dp), contentAlignment = Alignment.Center) {
+                                if (notif.type == "achievement") {
+                                    com.filipinodama.app.ui.components.CurrencyIcon(kind = com.filipinodama.app.ui.components.CurrencyIconKind.TROPHY, size = 28.dp)
+                                } else {
+                                    Text(iconFor(notif.type), style = MaterialTheme.typography.headlineSmall)
+                                }
+                            }
+                            Column(modifier = Modifier.weight(1f).padding(start = 12.dp)) {
+                                Row(verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    Text(notif.title, color = Color(0xFFF4ECD6), style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
+                                    Text(relativeTime(notif.createdAt), color = Color(0xFF8B7CAE), style = MaterialTheme.typography.labelSmall)
+                                }
+                                if (notif.body != null) {
+                                    Text(notif.body, color = Color(0xFFA99BC9), style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(top = 3.dp))
+                                }
+                            }
                         }
-                    } else if (status != null) {
-                        Text(if (status == "accepted") "✓ Accepted" else "Declined", color = Ink2, style = MaterialTheme.typography.labelSmall, modifier = Modifier.padding(top = 8.dp))
+                        if (pending) {
+                            Row(modifier = Modifier.fillMaxWidth().padding(top = 10.dp, start = 56.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                Box(
+                                    modifier = Modifier.weight(1f).clickable(onClick = onAccept)
+                                        .background(Gold, RoundedCornerShape(9.dp)).padding(vertical = 9.dp),
+                                    contentAlignment = Alignment.Center
+                                ) { Text("Accept", color = Color(0xFF3A2405), style = MaterialTheme.typography.labelSmall) }
+                                Box(
+                                    modifier = Modifier.weight(1f).clickable(onClick = onDecline)
+                                        .background(Color.Black.copy(alpha = 0.3f), RoundedCornerShape(9.dp)).padding(vertical = 9.dp),
+                                    contentAlignment = Alignment.Center
+                                ) { Text("Decline", color = Ink, style = MaterialTheme.typography.labelSmall) }
+                            }
+                        } else if (status != null) {
+                            Text(if (status == "accepted") "✓ Accepted" else "Declined", color = Ink2, style = MaterialTheme.typography.labelSmall, modifier = Modifier.padding(top = 8.dp, start = 56.dp))
+                        }
                     }
                 }
             }

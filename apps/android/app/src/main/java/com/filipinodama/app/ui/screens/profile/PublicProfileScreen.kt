@@ -1,6 +1,7 @@
 package com.filipinodama.app.ui.screens.profile
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -10,6 +11,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
@@ -22,6 +24,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -36,6 +39,7 @@ import com.filipinodama.app.data.profile.ProfileResult
 import com.filipinodama.app.data.profile.PublicUserProfileDto
 import com.filipinodama.app.data.profile.RecentMatchDto
 import com.filipinodama.app.data.social.FriendsRepository
+import com.filipinodama.app.data.social.PresenceRepository
 import com.filipinodama.app.data.social.SocialResult
 import com.filipinodama.app.ui.screens.social.ReportPlayerDialog
 import com.filipinodama.app.ui.theme.Gold
@@ -90,6 +94,8 @@ fun PublicProfileScreen(
     // Phase 7 retry affordance: bump to re-run both load effects below.
     var retryTick by remember { mutableStateOf(0) }
 
+    LaunchedEffect(Unit) { PresenceRepository.start() }
+
     LaunchedEffect(userId, retryTick) {
         user = null
         notFound = false
@@ -141,12 +147,36 @@ fun PublicProfileScreen(
                 val total = u.wins + u.losses + u.draws
                 val winRate = if (total > 0) (u.wins * 100 / total) else 0
 
-                Row(modifier = Modifier.fillMaxWidth().padding(20.dp), verticalAlignment = Alignment.CenterVertically) {
-                    AvatarView(avatarUrl = u.avatarUrl, frameId = u.frameId, size = 76.dp)
-                    Column(modifier = Modifier.weight(1f).padding(start = 16.dp)) {
-                        Text(u.displayName, color = androidx.compose.ui.graphics.Color.White, style = MaterialTheme.typography.headlineSmall)
-                        Text(u.tag, color = Ink2, style = MaterialTheme.typography.labelMedium)
-                        Text(u.tier.label, color = Gold, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(top = 4.dp))
+                // Online status pill — mockup lines 3090-3094 (pubStatusColor/
+                // pubStatusLabel). Only shown when `relationship == "friends"`:
+                // the server's presence:ping snapshot (apps/server/src/realtime/
+                // presence.ts line 77, `friendIds(userId)`) is FRIENDS-ONLY —
+                // PresenceRepository.isOnline() would silently report "Offline"
+                // for a genuinely-online non-friend, which is worse than not
+                // showing the pill. Avatar sized 96dp per the mockup (was 76dp).
+                Column(modifier = Modifier.fillMaxWidth().padding(20.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                    AvatarView(avatarUrl = u.avatarUrl, frameId = u.frameId, size = 96.dp)
+                    Text(u.displayName, color = Color(0xFFF4ECD6), style = MaterialTheme.typography.headlineSmall, modifier = Modifier.padding(top = 14.dp))
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(top = 5.dp)) {
+                        Text(u.tag, color = Color(0xFF8B7CAE), style = MaterialTheme.typography.labelMedium)
+                        Box(modifier = Modifier.size(3.dp).background(Color(0xFF6F5F92), androidx.compose.foundation.shape.CircleShape))
+                        Text(u.tier.label, color = Color(0xFFC9A4FF), style = MaterialTheme.typography.labelMedium)
+                    }
+                    if (relationship == "friends") {
+                        val online = PresenceRepository.online.collectAsState().value.contains(userId)
+                        val statusColor = if (online) Color(0xFF3FBF6F) else Color(0xFF8B7CAE)
+                        Box(
+                            modifier = Modifier
+                                .padding(top = 10.dp)
+                                .background(Color(0xB31B1030), RoundedCornerShape(100.dp))
+                                .border(1.dp, Color(0x33E8B84B), RoundedCornerShape(100.dp))
+                                .padding(horizontal = 13.dp, vertical = 5.dp)
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(7.dp)) {
+                                Box(modifier = Modifier.size(8.dp).background(statusColor, androidx.compose.foundation.shape.CircleShape))
+                                Text(if (online) "Online" else "Offline", color = statusColor, style = MaterialTheme.typography.labelMedium)
+                            }
+                        }
                     }
                 }
 

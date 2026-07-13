@@ -2,6 +2,7 @@ package com.filipinodama.app.ui.screens.leaderboard
 
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -26,6 +27,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.dp
 import com.filipinodama.app.R
@@ -118,22 +120,15 @@ fun LeaderboardScreen(onOpenPublicProfile: (String) -> Unit, onBack: () -> Unit 
     }
 
     Column(modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background).verticalScroll(rememberScrollState())) {
-        Row(modifier = Modifier.fillMaxWidth().padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
-            Text("‹", color = GoldLt, style = MaterialTheme.typography.headlineSmall, modifier = Modifier.clickable(onClick = onBack).padding(end = 12.dp))
-            Column {
-                Text("✦ LEADERBOARD ✦", color = Gold, style = MaterialTheme.typography.labelMedium)
-                val s = season
-                if (s != null) {
-                    Text(
-                        "⏳ ${seasonCountdownLabel(s.endsAt)}",
-                        color = Ink,
-                        style = MaterialTheme.typography.labelSmall,
-                        modifier = Modifier.padding(top = 2.dp)
-                    )
-                }
-            }
+        Row(modifier = Modifier.fillMaxWidth().padding(16.dp, 16.dp, 16.dp, 8.dp), verticalAlignment = Alignment.CenterVertically) {
+            com.filipinodama.app.ui.components.MockupBackButton(onClick = onBack)
+            Text(
+                "✦ LEADERBOARD ✦",
+                color = Color(0xFFC79A4E),
+                style = MaterialTheme.typography.labelMedium,
+                modifier = Modifier.padding(start = 10.dp)
+            )
         }
-
         // scope tabs — Global/Friends/Guild, all real
         Row(
             modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp),
@@ -141,6 +136,16 @@ fun LeaderboardScreen(onOpenPublicProfile: (String) -> Unit, onBack: () -> Unit 
         ) {
             listOf("global" to "Global", "friends" to "Friends", "guild" to "Guild").forEach { (key, label) ->
                 ScopeTab(label = label, active = scope == key, modifier = Modifier.weight(1f)) { scope = key }
+            }
+        }
+
+        // "Ends" countdown row — mockup lines 2741-2743: pulsing pink dot +
+        // lbEnds text, its own row beneath the tabs.
+        val s = season
+        if (s != null) {
+            Row(modifier = Modifier.fillMaxWidth().padding(start = 18.dp, end = 16.dp, top = 8.dp, bottom = 20.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                Box(modifier = Modifier.size(6.dp).background(Color(0xFFFF8FAE), androidx.compose.foundation.shape.CircleShape))
+                Text(seasonCountdownLabel(s.endsAt), color = Color(0xFF8B7CAE), style = MaterialTheme.typography.labelSmall)
             }
         }
 
@@ -216,15 +221,28 @@ fun LeaderboardScreen(onOpenPublicProfile: (String) -> Unit, onBack: () -> Unit 
                     }
                 }
 
-                // your rank pinned row
+                // your rank pinned row — mockup lines 2781-2791: gold-bordered
+                // gradient card, name + gold "YOU" pill badge (not a "(You)"
+                // text suffix), tier/percentile line.
                 if (me != null) {
-                    Box(modifier = Modifier.fillMaxWidth().padding(16.dp).background(Panel, RoundedCornerShape(14.dp))) {
+                    Box(
+                        modifier = Modifier.fillMaxWidth().padding(16.dp, 0.dp, 16.dp, 16.dp)
+                            .background(androidx.compose.ui.graphics.Brush.linearGradient(listOf(Color(0x29E8B84B), Color(0x1A0F0820))), RoundedCornerShape(14.dp))
+                            .border(1.dp, Color(0xFFE8B84B), RoundedCornerShape(14.dp))
+                    ) {
                         val yr = youRow
                         Row(modifier = Modifier.fillMaxWidth().padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
-                            Text(yr?.rank?.toString() ?: "—", color = GoldLt, style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(end = 12.dp))
+                            Text(yr?.rank?.toString() ?: "—", color = Color(0xFFF4D886), style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(end = 12.dp))
                             AvatarView(avatarUrl = me.avatarUrl, frameId = me.frameId, size = 34.dp)
                             Column(modifier = Modifier.weight(1f).padding(start = 10.dp)) {
-                                Text("${me.displayName} (You)", color = androidx.compose.ui.graphics.Color.White, style = MaterialTheme.typography.bodyMedium)
+                                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(7.dp)) {
+                                    Text(me.displayName, color = Color(0xFFF4D886), style = MaterialTheme.typography.bodyMedium, maxLines = 1)
+                                    Box(
+                                        modifier = Modifier
+                                            .background(androidx.compose.ui.graphics.Brush.verticalGradient(listOf(Color(0xFFF7E2A0), Color(0xFFD5A63A))), RoundedCornerShape(100.dp))
+                                            .padding(horizontal = 7.dp, vertical = 2.dp)
+                                    ) { Text("YOU", color = Color(0xFF1A0F2E), style = MaterialTheme.typography.labelSmall) }
+                                }
                                 val unrankedLabel = when (scope) {
                                     "global" -> "Unranked — play ranked matches to earn a spot"
                                     "friends" -> "Not on the friends ladder yet"
@@ -232,12 +250,13 @@ fun LeaderboardScreen(onOpenPublicProfile: (String) -> Unit, onBack: () -> Unit 
                                 }
                                 Text(
                                     yr?.rankTier?.label ?: unrankedLabel,
-                                    color = if (yr != null) androidx.compose.ui.graphics.Color(android.graphics.Color.parseColor(yr.rankTier.accent)) else Ink2,
-                                    style = MaterialTheme.typography.labelSmall
+                                    color = if (yr != null) Color(0xFFC9A4FF) else Ink2,
+                                    style = MaterialTheme.typography.labelSmall,
+                                    modifier = Modifier.padding(top = 2.dp)
                                 )
                             }
                             if (yr != null) {
-                                TrophyValue(value = yr.trophies, color = GoldLt, style = MaterialTheme.typography.labelLarge)
+                                TrophyValue(value = yr.trophies, color = Color(0xFFF4D886), style = MaterialTheme.typography.labelLarge)
                             } else {
                                 Text("—", color = Ink2, style = MaterialTheme.typography.labelLarge)
                             }
@@ -319,12 +338,16 @@ private fun RankRow(row: LbRowDto, isYou: Boolean, onClick: () -> Unit) {
         Text(row.rank.toString(), color = Ink, style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(end = 12.dp))
         AvatarView(avatarUrl = row.avatarUrl, frameId = row.frameId, size = 34.dp)
         Column(modifier = Modifier.weight(1f).padding(start = 10.dp)) {
-            Text(
-                if (isYou) "${row.displayName} (You)" else row.displayName,
-                color = androidx.compose.ui.graphics.Color.White,
-                style = MaterialTheme.typography.bodyMedium,
-                maxLines = 1
-            )
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(7.dp)) {
+                Text(row.displayName, color = androidx.compose.ui.graphics.Color.White, style = MaterialTheme.typography.bodyMedium, maxLines = 1)
+                if (isYou) {
+                    Box(
+                        modifier = Modifier
+                            .background(androidx.compose.ui.graphics.Brush.verticalGradient(listOf(Color(0xFFF7E2A0), Color(0xFFD5A63A))), RoundedCornerShape(100.dp))
+                            .padding(horizontal = 7.dp, vertical = 2.dp)
+                    ) { Text("YOU", color = Color(0xFF1A0F2E), style = MaterialTheme.typography.labelSmall) }
+                }
+            }
             Text(row.rankTier.label, color = Ink2, style = MaterialTheme.typography.labelSmall)
         }
         TrophyValue(value = row.trophies, color = GoldLt, style = MaterialTheme.typography.labelMedium)

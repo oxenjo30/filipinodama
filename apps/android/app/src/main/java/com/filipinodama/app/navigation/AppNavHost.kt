@@ -303,7 +303,9 @@ fun AppNavHost() {
                     },
                     onOpenReplay = { matchId -> navController.navigate(AppDestinations.replay(matchId)) },
                     onOpenFriends = { navController.navigate(AppDestinations.FRIENDS) },
-                    onOpenSettings = { navController.navigate(AppDestinations.SETTINGS) }
+                    onOpenSettings = { navController.navigate(AppDestinations.SETTINGS) },
+                    onOpenGuild = { navController.navigate(AppDestinations.GUILD) },
+                    onOpenOrders = { navController.navigate(AppDestinations.ORDERS) }
                 )
             }
 

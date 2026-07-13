@@ -38,6 +38,7 @@ import com.filipinodama.app.data.AuthRepository
 import com.filipinodama.app.data.economy.EconomyRepository
 import com.filipinodama.app.data.economy.EconomyResult
 import com.filipinodama.app.data.economy.ReceiptDto
+import com.filipinodama.app.data.economy.ReceiptItemDto
 import com.filipinodama.app.data.economy.STORE_TYPE_META
 import com.filipinodama.app.data.economy.STORE_TYPE_ORDER
 import com.filipinodama.app.data.economy.StoreItemDto
@@ -49,9 +50,7 @@ import com.filipinodama.app.ui.components.CurrencyAmount
 import com.filipinodama.app.ui.components.CurrencyIconKind
 import com.filipinodama.app.ui.components.MockupBackButton
 import com.filipinodama.app.ui.theme.GoldLt
-import com.filipinodama.app.ui.theme.Ink
 import com.filipinodama.app.ui.theme.Ink2
-import com.filipinodama.app.ui.theme.Panel
 import kotlinx.coroutines.launch
 
 /**
@@ -279,15 +278,28 @@ private fun EmptyInventoryState(onBrowseStore: () -> Unit) {
 }
 
 /**
- * Purchase History / Orders — mobile-screen-inventory.md SCREEN 13. Real
- * GET /api/orders rows (item purchases + settled top-ups merged, matching
- * apps/web OrdersPage.tsx). Provider label ("GCash / Maya / Card") only
- * appears for historical top-up rows if any exist — same honest rule as web;
- * Android never lets the user CREATE a new top-up row (hard policy).
+ * Purchase History / Orders — mobile-screen-inventory.md SCREEN 13, rebuilt
+ * 1:1 against handoffv3/FilipinoDama Mobile.dc.html lines 1062-1124 (Tier-2
+ * UI-fidelity pass). The mockup's `purchGroups` deriver (line 4650) buckets
+ * `purchaseLog` by calendar day ("Today" / "Yesterday" / "MMM d[, yyyy]"),
+ * each group carrying a per-currency total (gold/gem) plus item rows with a
+ * thumbnail, name, time, and price. Real GET /api/orders rows (item
+ * purchases + settled top-ups merged, matching apps/web OrdersPage.tsx) are
+ * grouped the same way here — day bucket computed from ReceiptDto.createdAt.
+ * Item thumbnails resolve itemId -> StoreItemDto via the real store catalog
+ * (EconomyRepository.storeItems()) and reuse storeThumbFor(), the same
+ * lookup Inventory/Store already use; ReceiptItemDto.itemId is a field the
+ * server already returns (Order.items JSON already stores {itemId,name,
+ * price} per apps/server/src/economy/ledger.ts) that the Android DTO simply
+ * hadn't declared yet — additive, no server change. Provider label
+ * ("GCash / Maya / Card") only appears for historical top-up rows if any
+ * exist — same honest rule as web; Android never lets the user CREATE a new
+ * top-up row (hard policy).
  */
 @Composable
 fun OrdersScreen(onBrowseStore: () -> Unit = {}, onBack: () -> Unit = {}) {
     var receipts by remember { mutableStateOf<List<ReceiptDto>?>(null) }
+    var catalog by remember { mutableStateOf<Map<String, StoreItemDto>>(emptyMap()) }
     var error by remember { mutableStateOf<String?>(null) }
     // Phase 7 retry affordance: bump to re-run the load effect below.
     var retryTick by remember { mutableStateOf(0) }
@@ -298,14 +310,19 @@ fun OrdersScreen(onBrowseStore: () -> Unit = {}, onBack: () -> Unit = {}) {
             is EconomyResult.Success -> receipts = result.data.receipts
             is EconomyResult.Failure -> error = result.message
         }
+        val itemsResult = EconomyRepository.storeItems()
+        catalog = (itemsResult as? EconomyResult.Success)?.data?.items?.associateBy { it.id } ?: emptyMap()
     }
 
-    Column(modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background).padding(20.dp)) {
-        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+    Column(modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(12.dp, 20.dp, 20.dp, 12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(6.dp)
+        ) {
             MockupBackButton(onClick = onBack)
             Text("Purchase History", color = Color(0xFFF4ECD6), style = MaterialTheme.typography.headlineSmall)
         }
-        Box(Modifier.height(16.dp))
 
         when {
             error != null -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
@@ -337,52 +354,126 @@ fun OrdersScreen(onBrowseStore: () -> Unit = {}, onBack: () -> Unit = {}) {
                     modifier = Modifier.clickable(onClick = onBrowseStore).background(Gold, RoundedCornerShape(10.dp)).padding(horizontal = 24.dp, vertical = 13.dp)
                 ) { Text("Browse Store", color = Color(0xFF2A1607), style = MaterialTheme.typography.labelLarge) }
             }
-            else -> Column(modifier = Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                receipts!!.forEach { r -> ReceiptRow(r) }
+            else -> {
+                val groups = groupReceiptsByDay(receipts!!)
+                Column(
+                    modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 16.dp),
+                    verticalArrangement = Arrangement.spacedBy(16.dp)
+                ) {
+                    groups.forEach { g -> PurchaseDayGroup(g, catalog) }
+                    Box(Modifier.height(8.dp))
+                }
             }
         }
     }
 }
 
+private data class PurchaseDayGroupData(
+    val label: String,
+    val items: List<Pair<ReceiptDto, ReceiptItemDto>>,
+    val goldTotal: Int,
+    val gemTotal: Int
+)
+
+/** Mirrors the mockup's purchGroups deriver (dayStart/dayLabel, mockup-split line 4650-4660). */
+private fun groupReceiptsByDay(receipts: List<ReceiptDto>): List<PurchaseDayGroupData> {
+    val now = java.time.LocalDate.now()
+    val zone = java.time.ZoneId.systemDefault()
+    val byDay = linkedMapOf<java.time.LocalDate, MutableList<Pair<ReceiptDto, ReceiptItemDto>>>()
+    receipts.forEach { r ->
+        val instant = try { java.time.Instant.parse(r.createdAt) } catch (_: Exception) { java.time.Instant.now() }
+        val day = instant.atZone(zone).toLocalDate()
+        val lines = if (r.items.isNotEmpty()) r.items else listOf(ReceiptItemDto(name = "Purchase", price = r.total))
+        lines.forEach { line -> byDay.getOrPut(day) { mutableListOf() }.add(r to line) }
+    }
+    return byDay.entries.sortedByDescending { it.key }.map { (day, pairs) ->
+        val label = when {
+            day == now -> "Today"
+            day == now.minusDays(1) -> "Yesterday"
+            day.year == now.year -> day.format(java.time.format.DateTimeFormatter.ofPattern("MMM d"))
+            else -> day.format(java.time.format.DateTimeFormatter.ofPattern("MMM d, yyyy"))
+        }
+        var gold = 0; var gem = 0
+        pairs.forEach { (r, line) -> if (r.currency == "DIAMONDS") gem += line.price else gold += line.price }
+        PurchaseDayGroupData(label, pairs, gold, gem)
+    }
+}
+
 @Composable
-private fun ReceiptRow(r: ReceiptDto) {
-    val isTopup = r.kind == "topup"
-    Column(modifier = Modifier.fillMaxWidth().background(Panel, RoundedCornerShape(14.dp)).padding(16.dp)) {
-        Row(horizontalArrangement = Arrangement.SpaceBetween, modifier = Modifier.fillMaxWidth()) {
-            Text("#${r.id.takeLast(8).uppercase()}", color = GoldLt, style = MaterialTheme.typography.labelLarge)
-            Text(if (isTopup) "Top-up" else "${r.items.size} item(s)", color = Ink2, style = MaterialTheme.typography.labelSmall)
-        }
-        if (isTopup) {
-            Text(
-                text = "₱${"%.2f".format(r.total / 100.0)}",
-                color = if (r.currency == "DIAMONDS") Color(0xFFFF9AA8) else Color(0xFFF2D493),
-                style = MaterialTheme.typography.titleMedium,
-                modifier = Modifier.padding(top = 6.dp)
-            )
-        } else {
-            CurrencyAmount(
-                kind = if (r.currency == "DIAMONDS") CurrencyIconKind.GEM else CurrencyIconKind.COIN,
-                text = r.total.toString(),
-                color = if (r.currency == "DIAMONDS") Color(0xFFFF9AA8) else Color(0xFFF2D493),
-                style = MaterialTheme.typography.titleMedium,
-                modifier = Modifier.padding(top = 6.dp)
-            )
-        }
-        Text("Paid with ${r.method}", color = Ink2, style = MaterialTheme.typography.labelSmall, modifier = Modifier.padding(top = 2.dp))
-        if (isTopup && (r.creditedDiamonds ?: 0) > 0) {
-            CurrencyAmount(
-                kind = CurrencyIconKind.GEM,
-                text = "${r.creditedDiamonds}",
-                prefix = "Credited ",
-                color = Color(0xFF7FE0A3),
-                style = MaterialTheme.typography.labelSmall,
-                modifier = Modifier.padding(top = 4.dp)
-            )
-        }
-        r.items.forEach { line ->
-            Row(horizontalArrangement = Arrangement.SpaceBetween, modifier = Modifier.fillMaxWidth().padding(top = 8.dp)) {
-                Text(line.name, color = Ink, style = MaterialTheme.typography.bodySmall)
+private fun PurchaseDayGroup(g: PurchaseDayGroupData, catalog: Map<String, StoreItemDto>) {
+    Column {
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 0.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(g.label.uppercase(), color = Color(0xFF8B7CAE), style = MaterialTheme.typography.labelSmall)
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                if (g.goldTotal > 0) {
+                    CurrencyAmount(kind = CurrencyIconKind.COIN, text = g.goldTotal.toString(), color = Color(0xFFF0CF72), style = MaterialTheme.typography.labelSmall)
+                }
+                if (g.gemTotal > 0) {
+                    CurrencyAmount(kind = CurrencyIconKind.GEM, text = g.gemTotal.toString(), color = Color(0xFF8FB3FF), style = MaterialTheme.typography.labelSmall)
+                }
             }
         }
+        Box(Modifier.height(9.dp))
+        Column(
+            modifier = Modifier.fillMaxWidth()
+                .background(Color(0xCC1B1030), RoundedCornerShape(16.dp))
+                .border(1.dp, Color(0x1FE8B84B), RoundedCornerShape(16.dp))
+        ) {
+            g.items.forEachIndexed { idx, (r, line) -> PurchaseItemRow(r, line, catalog, showTopBorder = idx > 0) }
+        }
+    }
+}
+
+@Composable
+private fun PurchaseItemRow(r: ReceiptDto, line: ReceiptItemDto, catalog: Map<String, StoreItemDto>, showTopBorder: Boolean) {
+    val isTopup = r.kind == "topup"
+    val catalogItem = line.itemId?.let { catalog[it] }
+    val time = try {
+        java.time.Instant.parse(r.createdAt).atZone(java.time.ZoneId.systemDefault())
+            .format(java.time.format.DateTimeFormatter.ofPattern("h:mm a"))
+    } catch (_: Exception) { "" }
+    val isDiamonds = r.currency == "DIAMONDS"
+
+    Row(
+        modifier = Modifier.fillMaxWidth()
+            .then(if (showTopBorder) Modifier.border(androidx.compose.foundation.BorderStroke(1.dp, Color(0x12E8B84B))) else Modifier)
+            .padding(horizontal = 14.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(13.dp)
+    ) {
+        Box(
+            modifier = Modifier.size(46.dp)
+                .background(
+                    androidx.compose.ui.graphics.Brush.linearGradient(listOf(Color(0xFF2A1840), Color(0xFF160B2C))),
+                    RoundedCornerShape(11.dp)
+                )
+                .border(1.dp, Color(0x29E8B84B), RoundedCornerShape(11.dp)),
+            contentAlignment = Alignment.Center
+        ) {
+            when {
+                isTopup -> Text("💎", style = MaterialTheme.typography.titleMedium)
+                catalogItem != null -> when (val thumb = storeThumbFor(catalogItem)) {
+                    is com.filipinodama.app.data.economy.StoreThumb.Image -> coil.compose.AsyncImage(model = thumb.url, contentDescription = null, modifier = Modifier.size(46.dp))
+                    is com.filipinodama.app.data.economy.StoreThumb.Portrait -> coil.compose.AsyncImage(model = thumb.url, contentDescription = null, modifier = Modifier.size(46.dp))
+                    is com.filipinodama.app.data.economy.StoreThumb.Emoji -> Text(thumb.glyph, style = MaterialTheme.typography.titleLarge)
+                    com.filipinodama.app.data.economy.StoreThumb.Disc -> Box(modifier = Modifier.size(38.dp).background(Color(0xFFA0303A), androidx.compose.foundation.shape.CircleShape))
+                }
+                else -> Text("🧾", style = MaterialTheme.typography.titleMedium)
+            }
+        }
+        Column(modifier = Modifier.weight(1f)) {
+            Text(line.name, color = Color(0xFFE6DCF5), style = MaterialTheme.typography.labelLarge, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
+            Text(time, color = Color(0xFF8B7CAE), style = MaterialTheme.typography.labelSmall, modifier = Modifier.padding(top = 2.dp))
+        }
+        CurrencyAmount(
+            kind = if (isDiamonds) CurrencyIconKind.GEM else CurrencyIconKind.COIN,
+            text = if (line.price > 0) line.price.toString() else "Free",
+            color = if (isDiamonds) Color(0xFF8FB3FF) else Color(0xFFF0CF72),
+            style = MaterialTheme.typography.labelLarge
+        )
     }
 }

@@ -41,12 +41,13 @@ import kotlinx.coroutines.launch
  * web; Player Tag is server-assigned and shown read-only (never editable via
  * the API — matches EditProfileModal.tsx's honesty about persistence).
  *
- * NOTE on the frame picker: apps/web's EditProfileModal has NO frame picker —
- * verified against its source. A FRAME item is equipped through the Store/
- * Inventory `equip` route (already built in Phase 5's InventoryScreen), not
- * through this dialog or the avatar picker. This screen therefore only opens
- * the avatar picker (matching the real web flow) rather than inventing a
- * second frame-picker surface with no web counterpart.
+ * "Change Avatar" opens [AvatarPickerDialog] — as of the Tier-2 UI-fidelity
+ * pass that dialog is the mockup's combined avatar+profile-frame sheet
+ * (`avEditShow`, mobile-split lines 1860-1932), not an avatar-only picker.
+ * apps/web's own EditProfileModal/AvatarPickerModal never built the mockup's
+ * frame half (verified against both files' source), but the mockup is the
+ * 1:1 source of truth and the equip route already supports frames — see
+ * AvatarPickerDialog's kdoc for the full rationale.
  */
 @Composable
 fun EditProfileDialog(onClose: () -> Unit, onChangeAvatar: () -> Unit) {

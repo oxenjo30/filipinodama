@@ -1,6 +1,7 @@
 package com.filipinodama.app.ui.screens.profile
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -10,6 +11,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
@@ -82,7 +84,9 @@ fun ProfileScreen(
     onSignedOut: () -> Unit = {},
     onOpenReplay: (String) -> Unit = {},
     onOpenFriends: () -> Unit = {},
-    onOpenSettings: () -> Unit = {}
+    onOpenSettings: () -> Unit = {},
+    onOpenGuild: () -> Unit = {},
+    onOpenOrders: () -> Unit = {}
 ) {
     val authState by AuthRepository.state.collectAsState()
     val me = authState.user
@@ -91,10 +95,25 @@ fun ProfileScreen(
     var tab by remember { mutableStateOf("overview") }
     var avatarPickerOpen by remember { mutableStateOf(false) }
     var editOpen by remember { mutableStateOf(false) }
+    var contactOpen by remember { mutableStateOf(false) }
 
     var trophyRows by remember { mutableStateOf<List<LedgerRowDto>?>(null) }
     var matches by remember { mutableStateOf<List<MatchRowDto>?>(null) }
     var historyFilter by remember { mutableStateOf("all") }
+    // Overview tab's Guild quick-link card — same source GuildHallScreen uses
+    // to detect membership (GET /api/users/:me.id -> user.guild), so this card
+    // reflects the real account, not a fabricated "Rank 4 - 28 members" (the
+    // mockup's own hardcoded static example — no member-count/rank field
+    // exists on PublicGuildDto, so this card shows only name+tag, honestly).
+    var myGuild by remember { mutableStateOf<com.filipinodama.app.data.profile.PublicGuildDto?>(null) }
+
+    LaunchedEffect(me?.id) {
+        if (me?.id == null) return@LaunchedEffect
+        when (val result = com.filipinodama.app.data.profile.ProfileRepository.publicUser(me.id)) {
+            is com.filipinodama.app.data.profile.ProfileResult.Success -> myGuild = result.data.user.guild
+            is com.filipinodama.app.data.profile.ProfileResult.Failure -> myGuild = null
+        }
+    }
 
     LaunchedEffect(me?.id) {
         if (me?.id == null) return@LaunchedEffect
@@ -142,6 +161,9 @@ fun ProfileScreen(
     }
     if (editOpen) {
         EditProfileDialog(onClose = { editOpen = false }, onChangeAvatar = { avatarPickerOpen = true })
+    }
+    if (contactOpen) {
+        com.filipinodama.app.ui.screens.settings.ContactSupportDialog(onClose = { contactOpen = false })
     }
 
     Column(modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background).verticalScroll(rememberScrollState())) {
@@ -227,6 +249,69 @@ fun ProfileScreen(
                 RankTierLadder(tierNow = tierNow, trophies = me.trophies, toNextLabel = toNextLabel, nextLabel = nextTier?.label ?: "—")
 
                 TrophyHistoryCard(trophyRows = trophyRows, trophies = me.trophies)
+
+                // Overview quick-link cards — mockup lines 814-850 ("avEditShow"
+                // sibling section within isProfile). "My Reports" (lines
+                // 851-868, hasMyReports) is deliberately NOT built: there is no
+                // GET endpoint returning the current user's own submitted
+                // reports anywhere in apps/server (grepped modules/reports.ts —
+                // only admin-facing list/resolve routes exist, no
+                // self-service "my reports" read), so it stays honestly
+                // omitted rather than faked.
+                val guild = myGuild
+                if (guild != null) {
+                    ProfileQuickLinkCard(
+                        iconEmoji = null,
+                        iconAssetFile = "me-guild.png",
+                        title = guild.name,
+                        subtitle = "[${guild.tag}] · Tap to open",
+                        accentBorder = Color(0x33E8B84B),
+                        onClick = onOpenGuild
+                    )
+                } else {
+                    ProfileQuickLinkCard(
+                        iconEmoji = null,
+                        iconAssetFile = "me-banner.png",
+                        title = "Discover Guilds",
+                        subtitle = "Browse & join active orders",
+                        accentBorder = Color(0x47C9A4FF),
+                        iconBg = Color(0x1FC9A4FF),
+                        onClick = onOpenGuild
+                    )
+                }
+                ProfileQuickLinkCard(
+                    iconEmoji = "🧾",
+                    iconAssetFile = null,
+                    title = "Purchase History",
+                    subtitle = "View your past orders",
+                    accentBorder = Color(0x24E8B84B),
+                    onClick = onOpenOrders
+                )
+                if (guild == null) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable(onClick = onOpenGuild)
+                            .background(Color(0x0DE8B84B), RoundedCornerShape(14.dp))
+                            .border(1.dp, Color(0x57E8B84B), RoundedCornerShape(14.dp))
+                            .padding(vertical = 13.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Text("＋", color = Color(0xFFF4D886), style = MaterialTheme.typography.titleMedium)
+                            Text("Create a Guild", color = Color(0xFFF4D886), style = MaterialTheme.typography.labelLarge)
+                        }
+                    }
+                }
+                ProfileQuickLinkCard(
+                    iconEmoji = "💬",
+                    iconAssetFile = null,
+                    title = "Contact Support",
+                    subtitle = "Report an issue or ask a question",
+                    accentBorder = Color(0x335A96FF),
+                    iconBg = Color(0x1F5A96FF),
+                    onClick = { contactOpen = true }
+                )
             }
         } else {
             Column(modifier = Modifier.padding(horizontal = 20.dp, vertical = 12.dp)) {
@@ -271,6 +356,53 @@ private fun ProfileActionChip(label: String, modifier: Modifier = Modifier, onCl
         contentAlignment = Alignment.Center
     ) {
         Text(label, color = GoldLt, style = MaterialTheme.typography.labelLarge)
+    }
+}
+
+/**
+ * Overview quick-link card — mockup lines 814-850 (Guild / Purchase History /
+ * Discover Guilds / Contact Support rows): 44dp icon box, title (Cinzel 14sp),
+ * subtitle (11sp muted), trailing chevron.
+ */
+@Composable
+private fun ProfileQuickLinkCard(
+    iconEmoji: String?,
+    iconAssetFile: String?,
+    title: String,
+    subtitle: String,
+    accentBorder: Color,
+    iconBg: Color = Color(0x1AE8B84B),
+    onClick: () -> Unit
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .background(Color(0xCC1B1030), RoundedCornerShape(16.dp))
+            .border(1.dp, accentBorder, RoundedCornerShape(16.dp))
+            .padding(16.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(14.dp)
+    ) {
+        Box(
+            modifier = Modifier.size(44.dp).background(iconBg, RoundedCornerShape(12.dp)).border(1.dp, accentBorder, RoundedCornerShape(12.dp)),
+            contentAlignment = Alignment.Center
+        ) {
+            if (iconEmoji != null) {
+                Text(iconEmoji, style = MaterialTheme.typography.titleLarge)
+            } else if (iconAssetFile != null) {
+                coil.compose.AsyncImage(
+                    model = "${com.filipinodama.app.BuildConfig.WEB_ORIGIN}/assets/$iconAssetFile",
+                    contentDescription = null,
+                    modifier = Modifier.size(28.dp)
+                )
+            }
+        }
+        Column(modifier = Modifier.weight(1f)) {
+            Text(title, color = Color(0xFFF4ECD6), style = MaterialTheme.typography.titleSmall, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
+            Text(subtitle, color = Color(0xFF9A8BBF), style = MaterialTheme.typography.labelSmall, modifier = Modifier.padding(top = 2.dp))
+        }
+        Text("›", color = Ink2, style = MaterialTheme.typography.titleLarge)
     }
 }
 

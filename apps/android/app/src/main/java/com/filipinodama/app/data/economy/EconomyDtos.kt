@@ -83,7 +83,8 @@ data class PurchaseResponse(
 @Serializable
 data class ReceiptItemDto(
     val name: String,
-    val price: Int
+    val price: Int,
+    val itemId: String? = null
 )
 
 @Serializable
