@@ -30,6 +30,8 @@ import androidx.compose.ui.unit.dp
 import com.filipinodama.app.data.ApiClient
 import com.filipinodama.app.data.rooms.LiveMatchItemDto
 import com.filipinodama.app.data.rooms.RoomsApi
+import com.filipinodama.app.ui.components.CurrencyAmount
+import com.filipinodama.app.ui.components.CurrencyIconKind
 import com.filipinodama.app.ui.screens.game.GameButton
 import com.filipinodama.app.ui.screens.game.GameButtonVariant
 import com.filipinodama.app.ui.theme.Blue
@@ -164,12 +166,12 @@ private fun LiveMatchCard(m: LiveMatchItemDto, onWatch: () -> Unit) {
         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
             Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.weight(1f)) {
                 Text(m.red?.displayName ?: "Red", color = Red, style = MaterialTheme.typography.titleSmall)
-                Text("🏆 ${m.red?.trophies ?: 0}", color = Ink2, style = MaterialTheme.typography.labelSmall)
+                CurrencyAmount(kind = CurrencyIconKind.TROPHY, text = (m.red?.trophies ?: 0).toString(), color = Ink2, style = MaterialTheme.typography.labelSmall)
             }
             Text("VS", color = Gold, style = MaterialTheme.typography.titleSmall)
             Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.weight(1f)) {
                 Text(m.blue?.displayName ?: "Blue", color = Blue, style = MaterialTheme.typography.titleSmall)
-                Text("🏆 ${m.blue?.trophies ?: 0}", color = Ink2, style = MaterialTheme.typography.labelSmall)
+                CurrencyAmount(kind = CurrencyIconKind.TROPHY, text = (m.blue?.trophies ?: 0).toString(), color = Ink2, style = MaterialTheme.typography.labelSmall)
             }
         }
         Row(

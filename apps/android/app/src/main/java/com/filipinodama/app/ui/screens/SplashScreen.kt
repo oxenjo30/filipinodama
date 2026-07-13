@@ -131,7 +131,7 @@ fun SplashScreen(onResolved: (SplashDestination) -> Unit) {
                 horizontalAlignment = Alignment.CenterHorizontally,
                 modifier = Modifier.padding(top = 140.dp)
             ) {
-                OrnateCrest(rotationDegrees = crestRotation)
+                SunEmblem(rotationDegrees = crestRotation)
                 Text(
                     text = "FILIPINO",
                     color = GoldLt,
@@ -224,42 +224,37 @@ private fun Divider(width: androidx.compose.ui.unit.Dp) {
 }
 
 
+/**
+ * The real handoff sun emblem (`logo-sun.png`, ASSETS.md "Sun logo mark"),
+ * replacing the earlier Compose-drawn gradient-blob crest per the owner
+ * directive to use handoff art verbatim rather than approximate it. A soft
+ * gold glow halo sits behind the image (kept from the original design) and
+ * the slow rotation animation carries over onto the real artwork.
+ */
 @Composable
-private fun OrnateCrest(rotationDegrees: Float) {
+private fun SunEmblem(rotationDegrees: Float) {
     Box(
         modifier = Modifier
-            .size(80.dp)
+            .size(88.dp)
             .padding(bottom = 22.dp),
         contentAlignment = Alignment.Center
     ) {
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .rotate(rotationDegrees)
                 .background(
-                    brush = Brush.sweepGradient(
-                        colors = listOf(
-                            GoldLt.copy(alpha = 0f),
-                            GoldLt.copy(alpha = 0.95f),
-                            GoldLt.copy(alpha = 0f)
-                        )
+                    brush = Brush.radialGradient(
+                        colors = listOf(GoldLt.copy(alpha = 0.35f), GoldLt.copy(alpha = 0f))
                     ),
                     shape = CircleShape
                 )
         )
-        Box(
+        Image(
+            painter = painterResource(id = R.drawable.logo_sun),
+            contentDescription = "FilipinoDama",
             modifier = Modifier
-                .size(62.dp)
-                .background(Color.Transparent, CircleShape)
-        )
-        Box(
-            modifier = Modifier
-                .size(30.dp)
-                .rotate(45f)
-                .background(
-                    brush = Brush.linearGradient(colors = listOf(GoldHi, GoldLo)),
-                    shape = RoundedCornerShape(7.dp)
-                )
+                .size(72.dp)
+                .rotate(rotationDegrees * 0.15f) // real art spins subtly, not a full blur-spin
         )
     }
 }

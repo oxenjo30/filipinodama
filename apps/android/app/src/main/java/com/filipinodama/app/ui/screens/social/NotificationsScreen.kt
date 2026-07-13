@@ -187,7 +187,11 @@ private fun NotificationSwipeRow(
                 ) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Box(modifier = Modifier.size(38.dp).background(Color(0x33785AB4), RoundedCornerShape(10.dp)), contentAlignment = Alignment.Center) {
-                            Text(iconFor(notif.type), style = MaterialTheme.typography.titleMedium)
+                            if (notif.type == "achievement") {
+                                com.filipinodama.app.ui.components.CurrencyIcon(kind = com.filipinodama.app.ui.components.CurrencyIconKind.TROPHY, size = 20.dp)
+                            } else {
+                                Text(iconFor(notif.type), style = MaterialTheme.typography.titleMedium)
+                            }
                         }
                         Column(modifier = Modifier.weight(1f).padding(start = 12.dp)) {
                             Row(verticalAlignment = Alignment.CenterVertically) {

@@ -30,6 +30,8 @@ import androidx.compose.ui.unit.dp
 import com.filipinodama.app.data.economy.EconomyRepository
 import com.filipinodama.app.data.economy.EconomyResult
 import com.filipinodama.app.data.economy.QuestDto
+import com.filipinodama.app.ui.components.CurrencyAmount
+import com.filipinodama.app.ui.components.CurrencyIconKind
 import com.filipinodama.app.ui.theme.Gold
 import com.filipinodama.app.ui.theme.GoldLt
 import com.filipinodama.app.ui.theme.Ink
@@ -154,7 +156,7 @@ private fun QuestRow(q: QuestDto, busy: Boolean, onClaim: () -> Unit) {
             }
         }
         Column(horizontalAlignment = Alignment.End) {
-            Text("+${q.rewardGold} 🪙", color = Color(0xFFF2D493), style = MaterialTheme.typography.labelMedium)
+            CurrencyAmount(kind = CurrencyIconKind.COIN, text = q.rewardGold.toString(), prefix = "+", color = Color(0xFFF2D493), style = MaterialTheme.typography.labelMedium)
             Box(Modifier.height(8.dp))
             val (label, enabled, bg, fg) = when {
                 q.claimed -> QuestButtonState("Claimed", false, Color(0xFF2F8F5B).copy(alpha = 0.16f), Color(0xFF7EE6A4))

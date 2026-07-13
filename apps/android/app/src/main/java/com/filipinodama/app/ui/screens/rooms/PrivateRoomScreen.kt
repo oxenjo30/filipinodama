@@ -1,6 +1,7 @@
 package com.filipinodama.app.ui.screens.rooms
 
 import android.content.Intent
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -37,10 +38,12 @@ import androidx.compose.ui.platform.ClipboardManager
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.runtime.collectAsState
 import com.filipinodama.app.BuildConfig
+import com.filipinodama.app.R
 import com.filipinodama.app.data.AuthRepository
 import com.filipinodama.app.data.engine.GameSettings
 import com.filipinodama.app.data.rooms.RoomError
@@ -245,13 +248,15 @@ private fun RoomHeader(onBack: () -> Unit) {
 @Composable
 private fun ChooseState(onCreateRoom: () -> Unit, onOpenJoin: () -> Unit) {
     Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        RoomChoiceCard(icon = "👑", title = "Host a Room", desc = "Create a room and share the code with a friend.", onClick = onCreateRoom)
+        RoomChoiceCard(iconRes = R.drawable.me_crown, title = "Host a Room", desc = "Create a room and share the code with a friend.", onClick = onCreateRoom)
         RoomChoiceCard(icon = "🔑", title = "Join with Code", desc = "Enter a 6-character code to join someone's room.", onClick = onOpenJoin)
     }
 }
 
+/** [icon] emoji for a mode with no matching handoff art; [iconRes] a bundled
+ *  drawable for "Host a Room" (real me-crown.png instead of the 👑 emoji). */
 @Composable
-private fun RoomChoiceCard(icon: String, title: String, desc: String, onClick: () -> Unit) {
+private fun RoomChoiceCard(title: String, desc: String, onClick: () -> Unit, icon: String? = null, iconRes: Int? = null) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -263,7 +268,11 @@ private fun RoomChoiceCard(icon: String, title: String, desc: String, onClick: (
         horizontalArrangement = Arrangement.spacedBy(14.dp)
     ) {
         Box(modifier = Modifier.size(48.dp).background(Gold.copy(alpha = 0.12f), CircleShape), contentAlignment = Alignment.Center) {
-            Text(icon, style = MaterialTheme.typography.titleLarge)
+            if (iconRes != null) {
+                Image(painter = painterResource(id = iconRes), contentDescription = null, modifier = Modifier.size(26.dp))
+            } else if (icon != null) {
+                Text(icon, style = MaterialTheme.typography.titleLarge)
+            }
         }
         Column {
             Text(title, color = GoldLt, style = MaterialTheme.typography.titleMedium)

@@ -38,6 +38,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
+import com.filipinodama.app.ui.components.CurrencyAmount
+import com.filipinodama.app.ui.components.CurrencyIconKind
 import com.filipinodama.app.data.AuthRepository
 import com.filipinodama.app.data.economy.EconomyRepository
 import com.filipinodama.app.data.economy.EconomyResult
@@ -155,8 +157,8 @@ fun StoreScreen(onOpenInventory: () -> Unit = {}) {
         ) {
             Text("Store", color = GoldLt, style = MaterialTheme.typography.headlineSmall)
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
-                BalancePill(icon = "🪙", value = me?.gold ?: 0, color = Color(0xFFF2D493))
-                BalancePill(icon = "💎", value = me?.diamonds ?: 0, color = Color(0xFFFF9AA8))
+                BalancePill(icon = CurrencyIconKind.COIN, value = me?.gold ?: 0, color = Color(0xFFF2D493))
+                BalancePill(icon = CurrencyIconKind.GEM, value = me?.diamonds ?: 0, color = Color(0xFFFF9AA8))
                 Box(
                     modifier = Modifier.clickable(onClick = onOpenInventory).background(Panel, RoundedCornerShape(100.dp)).padding(10.dp)
                 ) { Text("🎒", style = MaterialTheme.typography.labelLarge) }
@@ -248,13 +250,13 @@ fun StoreScreen(onOpenInventory: () -> Unit = {}) {
 }
 
 @Composable
-private fun BalancePill(icon: String, value: Int, color: Color) {
+private fun BalancePill(icon: CurrencyIconKind, value: Int, color: Color) {
     Row(
         modifier = Modifier.background(Panel, RoundedCornerShape(100.dp)).padding(horizontal = 12.dp, vertical = 8.dp),
         horizontalArrangement = Arrangement.spacedBy(6.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Text(icon, style = MaterialTheme.typography.labelLarge)
+        com.filipinodama.app.ui.components.CurrencyIcon(kind = icon, size = 20.dp)
         Text(value.toString(), color = color, style = MaterialTheme.typography.labelLarge)
     }
 }
@@ -378,8 +380,9 @@ private fun StoreItemCard(
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Text(
-                        text = "${if (cur == "DIAMONDS") "💎" else "🪙"} $price",
+                    CurrencyAmount(
+                        kind = if (cur == "DIAMONDS") CurrencyIconKind.GEM else CurrencyIconKind.COIN,
+                        text = price.toString(),
                         color = if (cur == "DIAMONDS") Color(0xFFFF9AA8) else Color(0xFFF2D493),
                         style = MaterialTheme.typography.labelMedium
                     )
@@ -413,9 +416,10 @@ private fun DealRow(item: StoreItemDto, owned: Boolean, onBuy: () -> Unit) {
         StoreThumbView(storeThumbFor(item), size = 52.dp)
         Column(modifier = Modifier.weight(1f)) {
             Text(item.name, color = androidx.compose.ui.graphics.Color.White, style = MaterialTheme.typography.titleSmall)
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text(
-                    "${if (cur == "DIAMONDS") "💎" else "🪙"} $price",
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                CurrencyAmount(
+                    kind = if (cur == "DIAMONDS") CurrencyIconKind.GEM else CurrencyIconKind.COIN,
+                    text = price.toString(),
                     color = if (cur == "DIAMONDS") Color(0xFFFF9AA8) else Color(0xFFF2D493),
                     style = MaterialTheme.typography.labelMedium
                 )
@@ -450,8 +454,9 @@ private fun PurchaseConfirmSheet(item: StoreItemDto, balance: Int, onCancel: () 
         ) {
             Text("Confirm Purchase", color = Gold, style = MaterialTheme.typography.labelMedium)
             Text(item.name, color = GoldLt, style = MaterialTheme.typography.titleLarge, modifier = Modifier.padding(top = 8.dp))
-            Text(
-                "${if (cur == "DIAMONDS") "💎" else "🪙"} $price",
+            CurrencyAmount(
+                kind = if (cur == "DIAMONDS") CurrencyIconKind.GEM else CurrencyIconKind.COIN,
+                text = price.toString(),
                 color = if (cur == "DIAMONDS") Color(0xFFFF9AA8) else Color(0xFFF2D493),
                 style = MaterialTheme.typography.titleMedium,
                 modifier = Modifier.padding(top = 8.dp)

@@ -1,5 +1,6 @@
 package com.filipinodama.app.ui.screens.economy
 
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -10,6 +11,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
@@ -28,12 +30,17 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.dp
 import com.filipinodama.app.data.economy.EconomyRepository
 import com.filipinodama.app.data.economy.EconomyResult
 import com.filipinodama.app.data.economy.SeasonCurrentResponse
 import com.filipinodama.app.data.economy.SeasonRewardDto
 import com.filipinodama.app.data.economy.SeasonTierDto
+import com.filipinodama.app.R
+import com.filipinodama.app.ui.components.CurrencyAmount
+import com.filipinodama.app.ui.components.CurrencyIcon
+import com.filipinodama.app.ui.components.CurrencyIconKind
 import com.filipinodama.app.ui.theme.Gold
 import com.filipinodama.app.ui.theme.GoldLt
 import com.filipinodama.app.ui.theme.Ink
@@ -114,10 +121,13 @@ fun SeasonScreen(onBack: () -> Unit = {}) {
                             }
                         )
                     } else {
-                        Box(
-                            modifier = Modifier.fillMaxWidth().background(Color(0xFF2F8F5B).copy(alpha = 0.14f), RoundedCornerShape(12.dp)).padding(14.dp)
+                        Row(
+                            modifier = Modifier.fillMaxWidth().background(Color(0xFF2F8F5B).copy(alpha = 0.14f), RoundedCornerShape(12.dp)).padding(14.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
-                            Text("👑 Royal Pass Active", color = Color(0xFF7EE6A4), style = MaterialTheme.typography.titleSmall)
+                            Image(painter = painterResource(id = R.drawable.me_crown), contentDescription = null, modifier = Modifier.size(18.dp))
+                            Text("Royal Pass Active", color = Color(0xFF7EE6A4), style = MaterialTheme.typography.titleSmall)
                         }
                     }
 
@@ -157,7 +167,6 @@ private fun endsInLabel(endsAtIso: String): String {
 
 @Composable
 private fun RoyalPassBanner(price: Int, currency: String, busy: Boolean, onUnlock: () -> Unit) {
-    val cur = if (currency == "DIAMONDS") "💎" else "🪙"
     Column(
         modifier = Modifier.fillMaxWidth().background(Panel, RoundedCornerShape(14.dp)).padding(16.dp)
     ) {
@@ -174,7 +183,17 @@ private fun RoyalPassBanner(price: Int, currency: String, busy: Boolean, onUnloc
                 .background(Gold, RoundedCornerShape(10.dp))
                 .padding(horizontal = 20.dp, vertical = 12.dp)
         ) {
-            Text(if (busy) "…" else "Unlock · $cur $price", color = Color(0xFF2A1607), style = MaterialTheme.typography.labelLarge)
+            if (busy) {
+                Text("…", color = Color(0xFF2A1607), style = MaterialTheme.typography.labelLarge)
+            } else {
+                CurrencyAmount(
+                    kind = if (currency == "DIAMONDS") CurrencyIconKind.GEM else CurrencyIconKind.COIN,
+                    text = price.toString(),
+                    prefix = "Unlock · ",
+                    color = Color(0xFF2A1607),
+                    style = MaterialTheme.typography.labelLarge
+                )
+            }
         }
     }
 }
@@ -206,21 +225,32 @@ private fun SeasonTierCard(tier: SeasonTierDto, hasPass: Boolean, busy: Boolean,
     }
 }
 
+/** Reward-cell icon: either a bundled currency icon or the crown (premium/royal reward). */
+private sealed class RewardIcon {
+    data class Currency(val kind: CurrencyIconKind) : RewardIcon()
+    object Crown : RewardIcon()
+    object Chest : RewardIcon()
+}
+
 @Composable
 private fun RewardCell(reward: SeasonRewardDto?, premium: Boolean) {
-    val (icon, label) = rewardLabel(reward, premium)
+    val (icon, label) = rewardIconAndLabel(reward, premium)
     Column(horizontalAlignment = Alignment.CenterHorizontally) {
-        Text(icon, style = MaterialTheme.typography.titleMedium)
+        when (icon) {
+            is RewardIcon.Currency -> CurrencyIcon(kind = icon.kind, size = 22.dp)
+            RewardIcon.Crown -> Image(painter = painterResource(id = R.drawable.me_crown), contentDescription = null, modifier = Modifier.size(22.dp))
+            RewardIcon.Chest -> CurrencyIcon(kind = CurrencyIconKind.CHEST, size = 22.dp)
+        }
         Text(label, color = Ink, style = MaterialTheme.typography.labelSmall)
     }
 }
 
-private fun rewardLabel(r: SeasonRewardDto?, premium: Boolean): Pair<String, String> {
-    if (r == null) return if (premium) "👑" to "Royal Reward" else "🎁" to "Reward"
-    if ((r.trophies ?: 0) > 0) return "🏆" to "${r.trophies} Trophies"
-    if ((r.diamonds ?: 0) > 0) return "💎" to "${r.diamonds} Diamonds"
-    if ((r.gold ?: 0) > 0) return "🪙" to "${r.gold} Gold"
-    return if (premium) "👑" to "Royal Reward" else "🎁" to "Reward"
+private fun rewardIconAndLabel(r: SeasonRewardDto?, premium: Boolean): Pair<RewardIcon, String> {
+    if (r == null) return if (premium) RewardIcon.Crown to "Royal Reward" else RewardIcon.Chest to "Reward"
+    if ((r.trophies ?: 0) > 0) return RewardIcon.Currency(CurrencyIconKind.TROPHY) to "${r.trophies} Trophies"
+    if ((r.diamonds ?: 0) > 0) return RewardIcon.Currency(CurrencyIconKind.GEM) to "${r.diamonds} Diamonds"
+    if ((r.gold ?: 0) > 0) return RewardIcon.Currency(CurrencyIconKind.COIN) to "${r.gold} Gold"
+    return if (premium) RewardIcon.Crown to "Royal Reward" else RewardIcon.Chest to "Reward"
 }
 
 private data class TierButtonState(val label: String, val enabled: Boolean, val background: Color, val foreground: Color)

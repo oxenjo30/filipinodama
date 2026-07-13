@@ -1,5 +1,6 @@
 package com.filipinodama.app.ui.screens.game
 
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -19,7 +20,9 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.dp
+import com.filipinodama.app.R
 import com.filipinodama.app.data.AuthRepository
 import com.filipinodama.app.data.config.ConfigRepository
 import com.filipinodama.app.ui.theme.Gold
@@ -98,7 +101,7 @@ fun ModeSelectScreen(
                 onClick = onPlayCasual
             )
             ModeCardRow(
-                icon = "🏆",
+                iconRes = R.drawable.ic_trophy,
                 title = "Ranked",
                 tag = "RANKED",
                 desc = "Climb the ladder. Trophies and gold are on the line.",
@@ -127,8 +130,22 @@ fun ModeSelectScreen(
     }
 }
 
+/**
+ * [icon] is an emoji glyph for modes with no matching handoff icon (AI/Quick/
+ * Private/Watch — robot, lightning, people, eye have no bundled art); [iconRes]
+ * is a bundled drawable for modes that DO have real handoff art (Ranked uses
+ * the real ic-trophy.png instead of the 🏆 emoji). Exactly one is non-null.
+ */
 @Composable
-private fun ModeCardRow(icon: String, title: String, tag: String?, desc: String, meta: String, onClick: () -> Unit) {
+private fun ModeCardRow(
+    title: String,
+    tag: String?,
+    desc: String,
+    meta: String,
+    onClick: () -> Unit,
+    icon: String? = null,
+    iconRes: Int? = null
+) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -145,7 +162,11 @@ private fun ModeCardRow(icon: String, title: String, tag: String?, desc: String,
                 .background(Gold.copy(alpha = 0.12f), CircleShape),
             contentAlignment = Alignment.Center
         ) {
-            Text(icon, style = MaterialTheme.typography.titleLarge)
+            if (iconRes != null) {
+                Image(painter = painterResource(id = iconRes), contentDescription = null, modifier = Modifier.size(26.dp))
+            } else if (icon != null) {
+                Text(icon, style = MaterialTheme.typography.titleLarge)
+            }
         }
         Column(modifier = Modifier.weight(1f)) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {

@@ -1,5 +1,6 @@
 package com.filipinodama.app.ui.screens.leaderboard
 
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -9,6 +10,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -24,11 +26,14 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.dp
+import com.filipinodama.app.R
 import com.filipinodama.app.data.AuthRepository
 import com.filipinodama.app.data.economy.EconomyRepository
 import com.filipinodama.app.data.economy.EconomyResult
 import com.filipinodama.app.data.economy.SeasonInfoDto
+import com.filipinodama.app.data.engine.RankTiers
 import com.filipinodama.app.data.leaderboard.LbRowDto
 import com.filipinodama.app.data.leaderboard.LeaderboardRepository
 import com.filipinodama.app.data.leaderboard.LeaderboardResult
@@ -231,11 +236,11 @@ fun LeaderboardScreen(onOpenPublicProfile: (String) -> Unit, onBack: () -> Unit 
                                     style = MaterialTheme.typography.labelSmall
                                 )
                             }
-                            Text(
-                                yr?.let { "🏆 ${it.trophies}" } ?: "—",
-                                color = if (yr != null) GoldLt else Ink2,
-                                style = MaterialTheme.typography.labelLarge
-                            )
+                            if (yr != null) {
+                                TrophyValue(value = yr.trophies, color = GoldLt, style = MaterialTheme.typography.labelLarge)
+                            } else {
+                                Text("—", color = Ink2, style = MaterialTheme.typography.labelLarge)
+                            }
                         }
                     }
                 }
@@ -277,12 +282,13 @@ private fun ScopeTab(label: String, active: Boolean, modifier: Modifier = Modifi
     }
 }
 
+/** Real podium medal art (medal-1/2/3.png, per ASSETS.md), not an emoji. */
 @Composable
 private fun PodiumCard(row: LbRowDto, onClick: () -> Unit) {
-    val medal = when (row.rank) {
-        1 -> "🥇"
-        2 -> "🥈"
-        else -> "🥉"
+    val medalRes = when (row.rank) {
+        1 -> R.drawable.medal_1
+        2 -> R.drawable.medal_2
+        else -> R.drawable.medal_3
     }
     Column(
         modifier = Modifier
@@ -292,11 +298,11 @@ private fun PodiumCard(row: LbRowDto, onClick: () -> Unit) {
             .padding(vertical = if (row.rank == 1) 20.dp else 14.dp, horizontal = 8.dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        Text(medal, style = MaterialTheme.typography.headlineSmall)
+        Image(painter = painterResource(id = medalRes), contentDescription = null, modifier = Modifier.size(28.dp))
         AvatarView(avatarUrl = row.avatarUrl, frameId = row.frameId, size = if (row.rank == 1) 64.dp else 52.dp, modifier = Modifier.padding(top = 6.dp))
         Text(row.displayName, color = GoldLt, style = MaterialTheme.typography.labelLarge, modifier = Modifier.padding(top = 8.dp), maxLines = 1)
         Text(row.rankTier.label, color = Ink, style = MaterialTheme.typography.labelSmall)
-        Text("🏆 ${row.trophies}", color = Gold, style = MaterialTheme.typography.labelMedium, modifier = Modifier.padding(top = 6.dp))
+        TrophyValue(value = row.trophies, color = Gold, style = MaterialTheme.typography.labelMedium, modifier = Modifier.padding(top = 6.dp))
     }
 }
 
@@ -321,6 +327,23 @@ private fun RankRow(row: LbRowDto, isYou: Boolean, onClick: () -> Unit) {
             )
             Text(row.rankTier.label, color = Ink2, style = MaterialTheme.typography.labelSmall)
         }
-        Text("🏆 ${row.trophies}", color = GoldLt, style = MaterialTheme.typography.labelMedium)
+        TrophyValue(value = row.trophies, color = GoldLt, style = MaterialTheme.typography.labelMedium)
     }
+}
+
+/** Trophy count with the real `ic-trophy.png` icon in place of the 🏆 emoji. */
+@Composable
+private fun TrophyValue(
+    value: Int,
+    color: androidx.compose.ui.graphics.Color,
+    style: androidx.compose.ui.text.TextStyle,
+    modifier: Modifier = Modifier
+) {
+    com.filipinodama.app.ui.components.CurrencyAmount(
+        kind = com.filipinodama.app.ui.components.CurrencyIconKind.TROPHY,
+        text = value.toString(),
+        color = color,
+        style = style,
+        modifier = modifier
+    )
 }

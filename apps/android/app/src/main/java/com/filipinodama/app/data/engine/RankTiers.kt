@@ -1,5 +1,7 @@
 package com.filipinodama.app.data.engine
 
+import com.filipinodama.app.R
+
 /**
  * Kotlin mirror of packages/shared/src/ranks.ts RANK_TIERS + rankTierFor() —
  * verbatim field-for-field port (names, floors, colors, art keys) so Android
@@ -43,5 +45,24 @@ object RankTiers {
     fun next(current: RankTier): RankTier? {
         val idx = indexOf(current.key)
         return if (idx in TIERS.indices && idx + 1 < TIERS.size) TIERS[idx + 1] else null
+    }
+
+    /**
+     * Bundled tier-crest drawable for a server-supplied `img` key (e.g.
+     * "tier-squire", "tier-star-guardian") — the real handoff art
+     * (tier-<key>.png, per ASSETS.md / apps/web tierArt()), copied verbatim
+     * into drawable-nodpi as `tier_<key>.png` (hyphens are illegal in
+     * Android resource names). Falls back to the squire crest for an
+     * unrecognized key rather than crashing or leaving a blank badge.
+     */
+    fun drawableFor(img: String): Int = when (img) {
+        "tier-squire" -> R.drawable.tier_squire
+        "tier-mandirigma" -> R.drawable.tier_mandirigma
+        "tier-kabalyero" -> R.drawable.tier_kabalyero
+        "tier-bayani" -> R.drawable.tier_bayani
+        "tier-datu" -> R.drawable.tier_datu
+        "tier-star-guardian" -> R.drawable.tier_star_guardian
+        "tier-alamat" -> R.drawable.tier_alamat
+        else -> R.drawable.tier_squire
     }
 }

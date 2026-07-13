@@ -1,5 +1,6 @@
 package com.filipinodama.app.ui.screens.game
 
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -21,13 +22,23 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.dp
+import com.filipinodama.app.R
 import com.filipinodama.app.data.engine.AiDifficulties
 import com.filipinodama.app.ui.theme.Gold
 import com.filipinodama.app.ui.theme.GoldLt
 import com.filipinodama.app.ui.theme.Ink
 
-private data class DifficultyLevel(val key: String, val label: String, val desc: String, val dots: Int)
+private data class DifficultyLevel(
+    val key: String,
+    val label: String,
+    val desc: String,
+    val dots: Int,
+    /** Real handoff difficulty crest (diff-easy/normal/hard.webp), mirrors
+     *  apps/web/src/lib/emblems.ts DIFF_EMBLEMS + AiSetupPage.tsx placement. */
+    val emblem: Int
+)
 
 /**
  * "Play vs AI" difficulty select — inventory SCREEN 18 (AI Difficulty):
@@ -40,9 +51,9 @@ fun AiDifficultyScreen(onBack: () -> Unit, onStart: (String) -> Unit) {
     var selected by remember { mutableStateOf(AiDifficulties.NORMAL) }
 
     val levels = listOf(
-        DifficultyLevel(AiDifficulties.EASY, "Easy", "A gentle opponent. Great for learning the ropes and trying new tactics.", 1),
-        DifficultyLevel(AiDifficulties.NORMAL, "Normal", "A balanced challenge that punishes loose moves. A fair, steady fight.", 2),
-        DifficultyLevel(AiDifficulties.HARD, "Hard", "A ruthless tactician that hunts every capture. Bring your best game.", 3)
+        DifficultyLevel(AiDifficulties.EASY, "Easy", "A gentle opponent. Great for learning the ropes and trying new tactics.", 1, R.drawable.diff_easy),
+        DifficultyLevel(AiDifficulties.NORMAL, "Normal", "A balanced challenge that punishes loose moves. A fair, steady fight.", 2, R.drawable.diff_normal),
+        DifficultyLevel(AiDifficulties.HARD, "Hard", "A ruthless tactician that hunts every capture. Bring your best game.", 3, R.drawable.diff_hard)
     )
 
     Column(
@@ -100,6 +111,13 @@ private fun DifficultyCard(level: DifficultyLevel, selected: Boolean, onClick: (
             .padding(18.dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
+        Image(
+            painter = painterResource(id = level.emblem),
+            contentDescription = null,
+            modifier = Modifier
+                .size(58.dp)
+                .padding(bottom = 4.dp)
+        )
         Text(level.label, color = GoldLt, style = MaterialTheme.typography.titleLarge)
         Text(
             level.desc,

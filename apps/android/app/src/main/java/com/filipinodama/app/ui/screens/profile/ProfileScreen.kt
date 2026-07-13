@@ -39,6 +39,8 @@ import com.filipinodama.app.data.profile.MatchRowDto
 import com.filipinodama.app.data.profile.ProfileRepository
 import com.filipinodama.app.data.profile.ProfileResult
 import com.filipinodama.app.data.profile.tierArtUrl
+import com.filipinodama.app.ui.components.CurrencyAmount
+import com.filipinodama.app.ui.components.CurrencyIconKind
 import com.filipinodama.app.ui.theme.Gold
 import com.filipinodama.app.ui.theme.GoldLt
 import com.filipinodama.app.ui.theme.Green
@@ -151,8 +153,10 @@ fun ProfileScreen(
             )
             Column(modifier = Modifier.weight(1f).padding(start = 16.dp)) {
                 Text("${me.displayName} ${me.tag}", color = GoldLt, style = MaterialTheme.typography.headlineSmall)
-                Text(
-                    "${tierNow.label} · 🏆 ${me.trophies}",
+                CurrencyAmount(
+                    kind = CurrencyIconKind.TROPHY,
+                    text = me.trophies.toString(),
+                    prefix = "${tierNow.label} · ",
                     color = Gold,
                     style = MaterialTheme.typography.bodyMedium,
                     modifier = Modifier.padding(top = 4.dp)
@@ -290,7 +294,7 @@ private fun RankTierLadder(
             AsyncImage(model = tierArtUrl(tierNow.img), contentDescription = null, modifier = Modifier.height(48.dp))
             Column(modifier = Modifier.padding(start = 12.dp)) {
                 Text(tierNow.label, color = GoldLt, style = MaterialTheme.typography.titleMedium)
-                Text("${tierNow.sub} · 🏆 $trophies", color = Ink2, style = MaterialTheme.typography.bodySmall)
+                CurrencyAmount(kind = CurrencyIconKind.TROPHY, text = trophies.toString(), prefix = "${tierNow.sub} · ", color = Ink2, style = MaterialTheme.typography.bodySmall)
             }
         }
         Text(
@@ -312,7 +316,7 @@ private fun RankTierLadder(
                     style = MaterialTheme.typography.bodyMedium,
                     modifier = Modifier.weight(1f)
                 )
-                Text("🏆 ${t.min}+", color = Ink, style = MaterialTheme.typography.labelSmall)
+                CurrencyAmount(kind = CurrencyIconKind.TROPHY, text = "${t.min}+", color = Ink, style = MaterialTheme.typography.labelSmall)
                 Text(
                     text = if (isCurrent) "CURRENT" else if (reached) "REACHED" else "LOCKED",
                     color = if (isCurrent) Gold else if (reached) Green else Ink2,
@@ -329,7 +333,7 @@ private fun TrophyHistoryCard(trophyRows: List<LedgerRowDto>?, trophies: Int) {
     Column(modifier = Modifier.fillMaxWidth().background(Panel, RoundedCornerShape(16.dp)).padding(20.dp)) {
         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
             Text("Trophy History", color = GoldLt, style = MaterialTheme.typography.titleMedium)
-            Text("🏆 $trophies", color = GoldLt, style = MaterialTheme.typography.titleMedium)
+            CurrencyAmount(kind = CurrencyIconKind.TROPHY, text = trophies.toString(), color = GoldLt, style = MaterialTheme.typography.titleMedium)
         }
         Text(
             "Trophies change only in Ranked — win +25, loss −5.",

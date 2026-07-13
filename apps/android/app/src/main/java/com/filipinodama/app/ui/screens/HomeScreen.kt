@@ -35,6 +35,9 @@ import com.filipinodama.app.data.engine.RankTiers
 import com.filipinodama.app.data.match.MatchRepository
 import com.filipinodama.app.data.match.PublicUserDto
 import com.filipinodama.app.ui.screens.profile.AvatarView
+import com.filipinodama.app.ui.components.CurrencyAmount
+import com.filipinodama.app.ui.components.CurrencyIcon
+import com.filipinodama.app.ui.components.CurrencyIconKind
 import com.filipinodama.app.ui.theme.Gold
 import com.filipinodama.app.ui.theme.GoldLt
 import com.filipinodama.app.ui.theme.Ink
@@ -213,7 +216,14 @@ private fun IdentityHeader(
         AvatarView(avatarUrl = avatarUrl, frameId = frameId, size = 44.dp)
         Column(modifier = Modifier.weight(1f).padding(start = 12.dp)) {
             Text(displayName, color = androidx.compose.ui.graphics.Color.White, style = MaterialTheme.typography.titleMedium, maxLines = 1)
-            Text("${tier.label} · 🏆 $trophies", color = GoldLt, style = MaterialTheme.typography.labelSmall, modifier = Modifier.padding(top = 2.dp))
+            CurrencyAmount(
+            kind = CurrencyIconKind.TROPHY,
+            text = trophies.toString(),
+            prefix = "${tier.label} · ",
+            color = GoldLt,
+            style = MaterialTheme.typography.labelSmall,
+            modifier = Modifier.padding(top = 2.dp)
+        )
         }
         Text("›", color = Gold, style = MaterialTheme.typography.titleMedium)
     }
@@ -249,13 +259,13 @@ private fun CurrencyHeader(gold: Int, diamonds: Int) {
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.spacedBy(10.dp)
     ) {
-        CurrencyChip(icon = "🪙", value = gold, color = "#F2D493".toColor(), modifier = Modifier.weight(1f))
-        CurrencyChip(icon = "💎", value = diamonds, color = "#FF9AA8".toColor(), modifier = Modifier.weight(1f))
+        CurrencyChip(icon = CurrencyIconKind.COIN, value = gold, color = "#F2D493".toColor(), modifier = Modifier.weight(1f))
+        CurrencyChip(icon = CurrencyIconKind.GEM, value = diamonds, color = "#FF9AA8".toColor(), modifier = Modifier.weight(1f))
     }
 }
 
 @Composable
-private fun CurrencyChip(icon: String, value: Int, color: androidx.compose.ui.graphics.Color, modifier: Modifier = Modifier) {
+private fun CurrencyChip(icon: CurrencyIconKind, value: Int, color: androidx.compose.ui.graphics.Color, modifier: Modifier = Modifier) {
     Row(
         modifier = modifier
             .background(Panel, RoundedCornerShape(100.dp))
@@ -263,7 +273,7 @@ private fun CurrencyChip(icon: String, value: Int, color: androidx.compose.ui.gr
         horizontalArrangement = Arrangement.spacedBy(8.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Text(icon, style = MaterialTheme.typography.titleMedium)
+        CurrencyIcon(kind = icon, size = 22.dp)
         Text(value.toString(), color = color, style = MaterialTheme.typography.titleMedium)
     }
 }
@@ -328,7 +338,7 @@ private fun DailyRewardStrip(onClick: () -> Unit) {
         horizontalArrangement = Arrangement.spacedBy(12.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Text("🎁", style = MaterialTheme.typography.titleLarge)
+        CurrencyIcon(kind = CurrencyIconKind.CHEST, size = 28.dp)
         Column(modifier = Modifier.weight(1f)) {
             Text("Daily Reward", color = GoldLt, style = MaterialTheme.typography.titleMedium)
             Text("Log in every day for escalating rewards", color = Ink2, style = MaterialTheme.typography.bodySmall)
@@ -368,7 +378,13 @@ private fun DailyQuestsCard(quests: List<QuestDto>, onClick: () -> Unit) {
                         }
                     }
                 }
-                Text("+${q.rewardGold} 🪙", color = "#F2D493".toColor(), style = MaterialTheme.typography.labelMedium)
+                CurrencyAmount(
+                    kind = CurrencyIconKind.COIN,
+                    text = "${q.rewardGold}",
+                    prefix = "+",
+                    color = "#F2D493".toColor(),
+                    style = MaterialTheme.typography.labelMedium
+                )
             }
         }
     }
@@ -385,7 +401,11 @@ private fun SeasonPassBanner(onClick: () -> Unit) {
         horizontalArrangement = Arrangement.spacedBy(12.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Text("👑", style = MaterialTheme.typography.titleLarge)
+        androidx.compose.foundation.Image(
+            painter = androidx.compose.ui.res.painterResource(id = com.filipinodama.app.R.drawable.me_crown),
+            contentDescription = null,
+            modifier = Modifier.size(28.dp)
+        )
         Column(modifier = Modifier.weight(1f)) {
             Text("Season Pass", color = GoldLt, style = MaterialTheme.typography.titleMedium)
             Text("View your reward track", color = Ink2, style = MaterialTheme.typography.bodySmall)

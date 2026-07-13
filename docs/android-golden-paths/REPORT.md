@@ -228,3 +228,116 @@ On-device re-verification of paths 7 and 11 against the merged code is folded in
 asset-fidelity pass's emulator session (next Android task). The other 9 paths — including
 server-authoritative multiplayer vs a scripted client, the store purchase exercising the
 economy fix, chat, and offline recovery — stand as PASSED on-device evidence.
+
+---
+
+## Asset-fidelity pass + paths 7/11 re-verification addendum (2026-07-13)
+
+Branch `feat/android-asset-fidelity` (base origin/main @ 74de99d). Session used a fresh
+AVD (`fd_asset_fidelity`, android-33 google_apis_playstore x86_64, emulator-5586, built
+manually via config.ini since `avdmanager`/`sdkmanager` binaries are not installed on this
+machine's SDK — the emulator/adb/platform-tools binaries were present and sufficient),
+the already-running local dev server + Docker Postgres/Redis (reused, not started by this
+session), and the debug APK built from this branch's asset-fidelity changes.
+
+### Path 11 — Maintenance mode: now PASSES
+
+Flipped `MAINTENANCE_BANNER` to `true` with custom `MAINTENANCE_TEXT` directly in the dev
+DB (`UPDATE "Config" SET value = ...`), confirmed via `GET /api/config/public`, then
+backgrounded and re-foregrounded the app (`adb shell am start`). The app immediately
+rendered `MaintenanceScreen`: "Scheduled maintenance" eyebrow, "The Kingdom is Being
+Fortified" headline, the exact custom maintenance text, a "We're working on it" status
+pill, and a "Check again" button (`77-maintenance-triggered.png`). Flipped the flag back
+to `false`, tapped "Check again", and the app cleanly resumed to a fully normal, fully
+interactive Home screen — no stuck state, no crash (`78-maintenance-cleared.png`). Flag
+confirmed reverted via a follow-up `GET /api/config/public` before ending the session.
+`ConfigRepository.kt` + `MaintenanceScreen.kt` (added in commit `1eb8626`, now present on
+this branch) work exactly as designed.
+
+### Path 7 — Profile / match history / replay: BLOCKED by a newly-discovered, pre-existing bug (not this session's regression)
+
+The Profile tab itself now renders the real screen (commit `8a66c0e`'s Phase 6a work,
+confirmed present) — identity header, Edit Profile/Friends/Settings chips, an
+Overview/Match History tab switcher, stat tiles, Rank Tiers ladder, and Trophy History
+all render and are populated with real account data (`73a-profile-overview.png` through
+`73c-profile-trophyhistory.png`). This is a major improvement over the prior session's
+finding (`47-profile.png`, the "Profile — Coming in Phase 2" stub) — that gap is closed.
+
+However, the **"Match History" tab button in `ProfileScreen.kt`'s tab row never renders
+and cannot be tapped**, so the replay viewer (`ReplayViewerScreen.kt`) is unreachable from
+the own-profile screen. This is a real, reproducible bug in `ProfileScreen.kt` lines
+180-184 (`Row { ProfileTabButton("Overview", ...); ProfileTabButton("Match History", ...) }`)
+that predates this session — `git log` confirms this file/row was last touched in commit
+`8a66c0e`, before this task's scope, and this session's asset-fidelity edits to
+`ProfileScreen.kt` touched only three unrelated `Text` calls (trophy-emoji → real icon,
+lines 155/216/293/315/332 area), never the tab row itself.
+
+Evidence gathered (all screenshots retained were cleaned up after diagnosis; findings
+summarized here since the diagnostic screenshots themselves were transient):
+- Fresh `uiautomator dump` + screenshot immediately after navigating to Profile:
+  only "OVERVIEW" text exists anywhere in the tab row's screen region; no "Match History"
+  node, at any scroll position, across 6+ independent dumps.
+  Row bounds `[0,651][1080,777]`, "OVERVIEW" text bounds `[456,692][624,731]` (roughly
+  screen-center, not left-packed as the plain `Row` source implies it should be).
+- Pixel-sampled the region to the right of "OVERVIEW" (x=650-900, y=710) directly against
+  the raw screenshot: uniform background color (`#160B28`) — ruling out an
+  invisible-but-present low-contrast text color.
+- Rebuilt with `Arrangement.spacedBy(4.dp)` added to the Row — no change.
+- Rebuilt with the button's label shortened to `"History"` then to `"ZZZZZ"` — no change
+  (rules out a text-width/measurement bug).
+- Rebuilt with the second call wrapped in an explicit `key("tab-history") { ... }` — no
+  change (rules out a Compose positional-slot collision, the most likely cause for
+  "second identical-shaped composable call in a Row never renders").
+- Rebuilt with the second call changed to a byte-for-byte duplicate of the first
+  (`ProfileTabButton("Overview", tab == "overview") { tab = "overview" }` twice) — still
+  only ONE "OVERVIEW" renders. This is the most conclusive test: it proves the Row's
+  SECOND child never composes visible output regardless of its content, ruling out every
+  content-dependent hypothesis (label text, color, active/inactive state).
+- No crash, no logcat error/exception/warning at any point (checked full app-PID-filtered
+  logcat after each rebuild) — the second child is silently absent, not throwing.
+- Confirmed NOT an install/cache artifact: `dumpsys package` `lastUpdateTime` matched each
+  fresh install's timestamp exactly.
+
+All diagnostic edits were reverted; `ProfileScreen.kt` in the final commit contains only
+the legitimate trophy-icon asset-fidelity change (`git diff` reviewed clean before commit).
+Root-causing this fully needs Android Studio's Layout Inspector / Compose recomposition
+tooling (not available via adb-only black-box testing) to see the actual measured
+Compose slot tree — flagging this as a follow-up bug for whoever next touches
+`ProfileScreen.kt`, filed here rather than left silently undiscovered. This is a genuine
+product gap (replay is unreachable from own-profile), not a regression from the
+asset-fidelity work, and not something this task's scope (visual assets) should attempt
+to fix blind.
+
+**Path 7 verdict: BLOCKED (not FAIL, not PASS)** — actively investigated with strong
+evidence of a specific, isolated root cause, not skipped.
+
+### Asset-fidelity visual changes — before/after evidence
+
+All "before" numbers below are the pre-existing golden-path screenshots already in this
+folder; all "after" numbers were captured this session against the built APK.
+
+| Surface | Before | After |
+|---|---|---|
+| Splash / auth logo | `02-splash.png` (Compose-drawn gradient blob crest) | `71-splash-after.png` (real `logo-sun.png` sun emblem) |
+| Launcher icon | placeholder gold "FD" monogram vector | `logo-sun.png`-derived adaptive icon (not separately screenshottable; verified via `ic_launcher_foreground.png` render + install icon in the app drawer) |
+| Home hub currency/rewards | `04-guest-home.png` (🪙💎🎁👑🏆 emoji) | `72-home-hub-after.png` (real ic-coin/ic-gem/ic-chest/me-crown/ic-trophy art) |
+| AI difficulty cards | `06-ai-mode-select.png` (text-only cards) | `74-ai-difficulty-after.png` (real diff-easy/normal/hard.webp crest art) |
+| Game board + pieces | `07-ai-match-board.png` (flat 2-tone board, flat discs) | `75-ai-board-after.png` (procedural marble-gradient squares + gold-bevel frame matching web's default board exactly, glossy gradient/highlight/rim discs) |
+| Leaderboard podium + trophies | 🥇🥈🥉 emoji medals, 🏆 emoji throughout | `76-leaderboard-after.png` (real medal-1/2/3.png art, real ic-trophy.png throughout) |
+| Profile trophy/tier displays | 🏆 emoji | `73a`/`73b`/`73c` (real ic-trophy.png; tier crest already correctly remote via `tierArtUrl`) |
+| Maintenance mode | not reachable (client never checked config) | `77-maintenance-triggered.png` / `78-maintenance-cleared.png` |
+
+### Cleanup performed this session
+
+- Emulator `fd_asset_fidelity` (PID captured at launch) killed via its own serial
+  (`emulator-5586`), not a blanket `taskkill`.
+- AVD `fd_asset_fidelity` deleted after use (manually-created files removed, since
+  `avdmanager` is unavailable on this machine) — `Medium_Phone_API_36` and `Pixel_9`
+  untouched throughout.
+- `MAINTENANCE_BANNER` / `MAINTENANCE_TEXT` confirmed reverted to `false` / empty via
+  `GET /api/config/public` before session end.
+- The dev server and Docker containers were already running from another session and were
+  left running (not started or stopped by this task).
+- Debug screenshots taken during the `ProfileScreen.kt` tab-row diagnostic (label swaps,
+  duplicate-button test, etc.) were transient and deleted after their findings were
+  captured in this addendum; only the real evidence screenshots (70-78) were kept.

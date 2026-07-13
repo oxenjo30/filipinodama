@@ -34,6 +34,9 @@ import com.filipinodama.app.data.economy.DailyLoginStatusResponse
 import com.filipinodama.app.data.economy.DailyRewardRowDto
 import com.filipinodama.app.data.economy.EconomyRepository
 import com.filipinodama.app.data.economy.EconomyResult
+import com.filipinodama.app.ui.components.CurrencyAmount
+import com.filipinodama.app.ui.components.CurrencyIcon
+import com.filipinodama.app.ui.components.CurrencyIconKind
 import com.filipinodama.app.ui.theme.Gold
 import com.filipinodama.app.ui.theme.GoldLt
 import com.filipinodama.app.ui.theme.Ink
@@ -131,20 +134,23 @@ fun DailyRewardsScreen(onBack: () -> Unit = {}) {
                         .padding(vertical = 16.dp),
                     contentAlignment = Alignment.Center
                 ) {
-                    Text(
-                        text = when {
-                            claiming -> "Claiming…"
-                            s.claimedToday -> "Claimed — come back tomorrow"
-                            else -> {
-                                val parts = mutableListOf<String>()
-                                if (s.rewardToday > 0) parts.add("${s.rewardToday} 🪙")
-                                if (s.rewardGemsToday > 0) parts.add("${s.rewardGemsToday} 💎")
-                                "Claim ${parts.joinToString(" + ")}"
+                    when {
+                        claiming -> Text("Claiming…", color = if (claimable) Color(0xFF2A1607) else Ink2, style = MaterialTheme.typography.titleMedium)
+                        s.claimedToday -> Text("Claimed — come back tomorrow", color = if (claimable) Color(0xFF2A1607) else Ink2, style = MaterialTheme.typography.titleMedium)
+                        else -> {
+                            val textColor = if (claimable) Color(0xFF2A1607) else Ink2
+                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                                Text("Claim", color = textColor, style = MaterialTheme.typography.titleMedium)
+                                if (s.rewardToday > 0) {
+                                    CurrencyAmount(kind = CurrencyIconKind.COIN, text = s.rewardToday.toString(), color = textColor, style = MaterialTheme.typography.titleMedium)
+                                }
+                                if (s.rewardToday > 0 && s.rewardGemsToday > 0) Text("+", color = textColor, style = MaterialTheme.typography.titleMedium)
+                                if (s.rewardGemsToday > 0) {
+                                    CurrencyAmount(kind = CurrencyIconKind.GEM, text = s.rewardGemsToday.toString(), color = textColor, style = MaterialTheme.typography.titleMedium)
+                                }
                             }
-                        },
-                        color = if (claimable) Color(0xFF2A1607) else Ink2,
-                        style = MaterialTheme.typography.titleMedium
-                    )
+                        }
+                    }
                 }
             }
         }
@@ -160,12 +166,20 @@ fun DailyRewardsScreen(onBack: () -> Unit = {}) {
                 modifier = Modifier.background(Panel, RoundedCornerShape(18.dp)).padding(28.dp).clickable(enabled = false) {},
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
-                Text("🎁", style = MaterialTheme.typography.displaySmall)
+                CurrencyIcon(kind = CurrencyIconKind.CHEST, size = 40.dp)
                 Text("Day ${c.day} Claimed!", color = GoldLt, style = MaterialTheme.typography.titleLarge, modifier = Modifier.padding(top = 8.dp))
-                val parts = mutableListOf<String>()
-                if (c.rewardGold > 0) parts.add("+${c.rewardGold} 🪙")
-                if (c.rewardGems > 0) parts.add("+${c.rewardGems} 💎")
-                Text(parts.joinToString(" · "), color = Color(0xFFF2D493), style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(top = 4.dp, bottom = 16.dp))
+                Row(
+                    modifier = Modifier.padding(top = 4.dp, bottom = 16.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    if (c.rewardGold > 0) {
+                        CurrencyAmount(kind = CurrencyIconKind.COIN, text = c.rewardGold.toString(), prefix = "+", color = Color(0xFFF2D493), style = MaterialTheme.typography.titleMedium)
+                    }
+                    if (c.rewardGems > 0) {
+                        CurrencyAmount(kind = CurrencyIconKind.GEM, text = c.rewardGems.toString(), prefix = "+", color = Color(0xFFF2D493), style = MaterialTheme.typography.titleMedium)
+                    }
+                }
                 Box(
                     modifier = Modifier.clickable { justClaimed = null }.background(Gold, RoundedCornerShape(10.dp)).padding(horizontal = 24.dp, vertical = 12.dp)
                 ) { Text("Collect", color = Color(0xFF2A1607), style = MaterialTheme.typography.labelLarge) }
@@ -190,16 +204,16 @@ private fun DailyRewardDay(row: DailyRewardRowDto, day: Int, isToday: Boolean, i
         Text("DAY $day", color = if (isToday) GoldLt else Ink2, style = MaterialTheme.typography.labelSmall)
         when (row.type) {
             "gem" -> {
-                Text("💎", style = MaterialTheme.typography.titleMedium)
+                CurrencyIcon(kind = CurrencyIconKind.GEM, size = 18.dp)
                 Text("${row.amt ?: 0}", color = Color(0xFFF2D493), style = MaterialTheme.typography.labelMedium)
             }
             "chest" -> {
-                Text("🎁", style = MaterialTheme.typography.titleMedium)
-                Text("${row.gold ?: 0}🪙", color = Color(0xFFF2D493), style = MaterialTheme.typography.labelSmall)
-                if ((row.gem ?: 0) > 0) Text("${row.gem}💎", color = Color(0xFFF2D493), style = MaterialTheme.typography.labelSmall)
+                CurrencyIcon(kind = CurrencyIconKind.CHEST, size = 18.dp)
+                CurrencyAmount(kind = CurrencyIconKind.COIN, text = "${row.gold ?: 0}", color = Color(0xFFF2D493), style = MaterialTheme.typography.labelSmall)
+                if ((row.gem ?: 0) > 0) CurrencyAmount(kind = CurrencyIconKind.GEM, text = "${row.gem}", color = Color(0xFFF2D493), style = MaterialTheme.typography.labelSmall)
             }
             else -> {
-                Text("🪙", style = MaterialTheme.typography.titleMedium)
+                CurrencyIcon(kind = CurrencyIconKind.COIN, size = 18.dp)
                 Text("${row.amt ?: 0}", color = Color(0xFFF2D493), style = MaterialTheme.typography.labelMedium)
             }
         }

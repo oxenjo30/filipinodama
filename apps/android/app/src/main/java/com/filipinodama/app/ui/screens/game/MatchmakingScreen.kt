@@ -28,6 +28,8 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.filipinodama.app.data.match.MatchRepository
 import com.filipinodama.app.data.match.MatchStatus
+import com.filipinodama.app.ui.components.CurrencyAmount
+import com.filipinodama.app.ui.components.CurrencyIconKind
 import com.filipinodama.app.ui.theme.Gold
 import com.filipinodama.app.ui.theme.GoldLt
 import com.filipinodama.app.ui.theme.Ink
@@ -118,8 +120,9 @@ fun MatchmakingScreen(mode: String, onCancel: () -> Unit, onEnteredMatch: () -> 
                     Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.weight(1f)) {
                         if (found) {
                             Text(ui.opponent?.displayName ?: "Opponent", color = Color(0xFFFF8FAE), style = MaterialTheme.typography.titleSmall)
-                            Text(
-                                "🏆 ${ui.opponent?.trophies ?: 0}",
+                            CurrencyAmount(
+                                kind = CurrencyIconKind.TROPHY,
+                                text = (ui.opponent?.trophies ?: 0).toString(),
                                 color = Ink,
                                 style = MaterialTheme.typography.labelSmall
                             )

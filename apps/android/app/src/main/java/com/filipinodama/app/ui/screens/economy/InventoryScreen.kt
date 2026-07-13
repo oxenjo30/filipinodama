@@ -42,6 +42,8 @@ import com.filipinodama.app.data.economy.equipRequestFor
 import com.filipinodama.app.data.economy.isItemEquipped
 import com.filipinodama.app.data.economy.storeThumbFor
 import com.filipinodama.app.ui.theme.Gold
+import com.filipinodama.app.ui.components.CurrencyAmount
+import com.filipinodama.app.ui.components.CurrencyIconKind
 import com.filipinodama.app.ui.theme.GoldLt
 import com.filipinodama.app.ui.theme.Ink
 import com.filipinodama.app.ui.theme.Ink2
@@ -279,21 +281,37 @@ fun OrdersScreen(onBrowseStore: () -> Unit = {}) {
 @Composable
 private fun ReceiptRow(r: ReceiptDto) {
     val isTopup = r.kind == "topup"
-    val cur = if (r.currency == "DIAMONDS") "💎" else "🪙"
     Column(modifier = Modifier.fillMaxWidth().background(Panel, RoundedCornerShape(14.dp)).padding(16.dp)) {
         Row(horizontalArrangement = Arrangement.SpaceBetween, modifier = Modifier.fillMaxWidth()) {
             Text("#${r.id.takeLast(8).uppercase()}", color = GoldLt, style = MaterialTheme.typography.labelLarge)
             Text(if (isTopup) "Top-up" else "${r.items.size} item(s)", color = Ink2, style = MaterialTheme.typography.labelSmall)
         }
-        Text(
-            text = if (isTopup) "₱${"%.2f".format(r.total / 100.0)}" else "$cur ${r.total}",
-            color = if (r.currency == "DIAMONDS") Color(0xFFFF9AA8) else Color(0xFFF2D493),
-            style = MaterialTheme.typography.titleMedium,
-            modifier = Modifier.padding(top = 6.dp)
-        )
+        if (isTopup) {
+            Text(
+                text = "₱${"%.2f".format(r.total / 100.0)}",
+                color = if (r.currency == "DIAMONDS") Color(0xFFFF9AA8) else Color(0xFFF2D493),
+                style = MaterialTheme.typography.titleMedium,
+                modifier = Modifier.padding(top = 6.dp)
+            )
+        } else {
+            CurrencyAmount(
+                kind = if (r.currency == "DIAMONDS") CurrencyIconKind.GEM else CurrencyIconKind.COIN,
+                text = r.total.toString(),
+                color = if (r.currency == "DIAMONDS") Color(0xFFFF9AA8) else Color(0xFFF2D493),
+                style = MaterialTheme.typography.titleMedium,
+                modifier = Modifier.padding(top = 6.dp)
+            )
+        }
         Text("Paid with ${r.method}", color = Ink2, style = MaterialTheme.typography.labelSmall, modifier = Modifier.padding(top = 2.dp))
         if (isTopup && (r.creditedDiamonds ?: 0) > 0) {
-            Text("Credited ${r.creditedDiamonds} 💎", color = Color(0xFF7FE0A3), style = MaterialTheme.typography.labelSmall, modifier = Modifier.padding(top = 4.dp))
+            CurrencyAmount(
+                kind = CurrencyIconKind.GEM,
+                text = "${r.creditedDiamonds}",
+                prefix = "Credited ",
+                color = Color(0xFF7FE0A3),
+                style = MaterialTheme.typography.labelSmall,
+                modifier = Modifier.padding(top = 4.dp)
+            )
         }
         r.items.forEach { line ->
             Row(horizontalArrangement = Arrangement.SpaceBetween, modifier = Modifier.fillMaxWidth().padding(top = 8.dp)) {

@@ -49,6 +49,8 @@ import com.filipinodama.app.data.social.SocialResult
 import com.filipinodama.app.data.social.guildRoleAtLeast
 import com.filipinodama.app.data.social.resolveGuildCrest
 import com.filipinodama.app.ui.screens.profile.AvatarView
+import com.filipinodama.app.ui.components.CurrencyAmount
+import com.filipinodama.app.ui.components.CurrencyIconKind
 import com.filipinodama.app.ui.theme.Gold
 import com.filipinodama.app.ui.theme.GoldLt
 import com.filipinodama.app.ui.theme.Green
@@ -461,7 +463,7 @@ private fun JoinRequestRow(request: GuildJoinRequestDto, busy: Boolean, onOpenPr
         AvatarView(avatarUrl = request.user.avatarUrl, frameId = request.user.frameId, size = 40.dp, onClick = onOpenProfile)
         Column(modifier = Modifier.weight(1f).padding(start = 10.dp)) {
             Text(request.user.displayName, color = Color.White, style = MaterialTheme.typography.bodyMedium)
-            Text("${request.user.tag} · 🏆 ${request.user.trophies}", color = Ink2, style = MaterialTheme.typography.labelSmall)
+            CurrencyAmount(kind = CurrencyIconKind.TROPHY, text = request.user.trophies.toString(), prefix = "${request.user.tag} · ", color = Ink2, style = MaterialTheme.typography.labelSmall)
         }
         Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             Box(modifier = Modifier.clickable(enabled = !busy, onClick = onDecline).background(Color(0x33E85D73), RoundedCornerShape(8.dp)).size(36.dp), contentAlignment = Alignment.Center) { Text("✕", color = Color(0xFFFF8398)) }
@@ -623,7 +625,7 @@ private fun GuildCreateDialog(onClose: () -> Unit, onCreated: (String) -> Unit) 
             }
             LabeledField("MINIMUM TROPHIES TO JOIN") {
                 Slider(value = minTrophies, onValueChange = { minTrophies = it }, valueRange = 0f..5000f, steps = 49, colors = SliderDefaults.colors(thumbColor = Gold, activeTrackColor = Gold))
-                Text("🏆 ${minTrophies.toInt()}", color = GoldLt, style = MaterialTheme.typography.labelMedium)
+                CurrencyAmount(kind = CurrencyIconKind.TROPHY, text = minTrophies.toInt().toString(), color = GoldLt, style = MaterialTheme.typography.labelMedium)
             }
             LabeledField("JOIN POLICY") {
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -688,7 +690,7 @@ private fun GuildEditDialog(detail: GuildDetailResponse, onClose: () -> Unit, on
             }
             LabeledField("MINIMUM TROPHIES TO JOIN") {
                 Slider(value = minTrophies, onValueChange = { minTrophies = it }, valueRange = 0f..5000f, steps = 49, colors = SliderDefaults.colors(thumbColor = Gold, activeTrackColor = Gold))
-                Text("🏆 ${minTrophies.toInt()}", color = GoldLt, style = MaterialTheme.typography.labelMedium)
+                CurrencyAmount(kind = CurrencyIconKind.TROPHY, text = minTrophies.toInt().toString(), color = GoldLt, style = MaterialTheme.typography.labelMedium)
             }
             LabeledField("JOIN POLICY") {
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {

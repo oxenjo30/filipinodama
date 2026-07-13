@@ -32,6 +32,8 @@ import com.filipinodama.app.data.engine.MatchEndReasons
 import com.filipinodama.app.data.engine.PieceColors
 import com.filipinodama.app.data.match.MatchRepository
 import com.filipinodama.app.data.match.MatchStatus
+import com.filipinodama.app.ui.components.CurrencyAmount
+import com.filipinodama.app.ui.components.CurrencyIconKind
 import com.filipinodama.app.ui.theme.Gold
 import com.filipinodama.app.ui.theme.GoldLt
 import com.filipinodama.app.ui.theme.Green
@@ -403,14 +405,17 @@ private fun MatchEndCard(
             if (!end.interrupted && mode == "RANKED") {
                 val delta = if (ui.myColor == PieceColors.RED) end.redTrophyDelta else end.blueTrophyDelta
                 Row(modifier = Modifier.padding(top = 14.dp), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                    Text(
-                        text = "🏆 ${if (delta >= 0) "+" else ""}$delta",
+                    CurrencyAmount(
+                        kind = CurrencyIconKind.TROPHY,
+                        text = "${if (delta >= 0) "+" else ""}$delta",
                         color = if (delta >= 0) androidx.compose.ui.graphics.Color(0xFF3FBF6F) else androidx.compose.ui.graphics.Color(0xFFFF8FAE),
                         style = MaterialTheme.typography.titleSmall
                     )
                     if (won && end.goldReward > 0) {
-                        Text(
-                            text = "🪙 +${end.goldReward}",
+                        CurrencyAmount(
+                            kind = CurrencyIconKind.COIN,
+                            text = end.goldReward.toString(),
+                            prefix = "+",
                             color = androidx.compose.ui.graphics.Color(0xFFF2D493),
                             style = MaterialTheme.typography.titleSmall
                         )

@@ -42,6 +42,8 @@ import com.filipinodama.app.data.social.SocialResult
 import com.filipinodama.app.ui.screens.game.GameButton
 import com.filipinodama.app.ui.screens.game.GameButtonVariant
 import com.filipinodama.app.ui.screens.profile.AvatarView
+import com.filipinodama.app.ui.components.CurrencyAmount
+import com.filipinodama.app.ui.components.CurrencyIconKind
 import com.filipinodama.app.ui.theme.Gold
 import com.filipinodama.app.ui.theme.GoldLt
 import com.filipinodama.app.ui.theme.Green
@@ -385,8 +387,10 @@ private fun FriendSwipeRow(
                             Text(friend.displayName, color = Color.White, style = MaterialTheme.typography.bodyLarge)
                             if (muted) Text(" 🔕", color = Ink2, style = MaterialTheme.typography.labelSmall)
                         }
-                        Text(
-                            if (online) "Online now · 🏆 ${friend.trophies}" else "Offline · 🏆 ${friend.trophies}",
+                        CurrencyAmount(
+                            kind = CurrencyIconKind.TROPHY,
+                            text = friend.trophies.toString(),
+                            prefix = if (online) "Online now · " else "Offline · ",
                             color = if (online) Green else Ink2,
                             style = MaterialTheme.typography.labelSmall,
                             modifier = Modifier.padding(top = 2.dp)
@@ -411,7 +415,7 @@ private fun SuggestedRow(user: FriendUserDto, busy: Boolean, onOpen: () -> Unit,
         AvatarView(avatarUrl = user.avatarUrl, frameId = user.frameId, size = 44.dp, onClick = onOpen)
         Column(modifier = Modifier.weight(1f).padding(start = 12.dp).clickable(onClick = onOpen)) {
             Text(user.displayName, color = Color.White, style = MaterialTheme.typography.bodyLarge)
-            Text("${user.tag} · 🏆 ${user.trophies}", color = Ink2, style = MaterialTheme.typography.labelSmall, modifier = Modifier.padding(top = 2.dp))
+            CurrencyAmount(kind = CurrencyIconKind.TROPHY, text = user.trophies.toString(), prefix = "${user.tag} · ", color = Ink2, style = MaterialTheme.typography.labelSmall, modifier = Modifier.padding(top = 2.dp))
         }
         Box(
             modifier = Modifier.clickable(enabled = !busy, onClick = onAdd)
