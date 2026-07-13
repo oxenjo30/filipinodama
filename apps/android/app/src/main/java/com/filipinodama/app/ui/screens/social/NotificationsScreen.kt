@@ -84,7 +84,7 @@ fun NotificationsScreen(onBack: () -> Unit) {
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(6.dp)
         ) {
-            com.filipinodama.app.ui.components.MockupBackButton(onClick = onBack)
+            com.filipinodama.app.ui.components.MockupBackButtonStore(onClick = onBack)
             Text("Notifications", color = Color(0xFFF4ECD6), style = MaterialTheme.typography.headlineSmall, modifier = Modifier.weight(1f))
             val unread = data?.unreadCount ?: 0
             Text(

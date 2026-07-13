@@ -328,10 +328,15 @@ fun AppNavHost() {
                     },
                     onOpenReplay = { matchId -> navController.navigate(AppDestinations.replay(matchId)) },
                     onOpenFriends = { navController.navigate(AppDestinations.FRIENDS) },
-                    onOpenSettings = { navController.navigate(AppDestinations.SETTINGS) },
                     onOpenGuild = { navController.navigate(AppDestinations.GUILD) },
                     onOpenOrders = { navController.navigate(AppDestinations.ORDERS) },
-                    onOpenInventory = { navController.navigate(AppDestinations.INVENTORY) }
+                    onOpenInventory = { navController.navigate(AppDestinations.INVENTORY) },
+                    // Owner round-3 fix: Profile's Settings TAB now renders
+                    // inline (see ProfileScreen.kt kdoc) instead of navigating
+                    // to AppDestinations.SETTINGS — onOpenLegal wires the
+                    // inline tab's Support rows straight to the same real
+                    // Legal destination the standalone SettingsScreen uses.
+                    onOpenLegal = { doc -> navController.navigate(AppDestinations.legal(doc)) }
                 )
             }
 

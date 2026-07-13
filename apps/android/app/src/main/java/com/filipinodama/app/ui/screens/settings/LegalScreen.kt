@@ -48,14 +48,10 @@ fun LegalScreen(initialKey: String, onBack: () -> Unit) {
     Column(modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
         Row(
             modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 14.dp),
-            verticalAlignment = Alignment.CenterVertically
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(10.dp)
         ) {
-            Text(
-                "‹",
-                color = GoldLt,
-                style = MaterialTheme.typography.headlineMedium,
-                modifier = Modifier.clickable(onClick = onBack).padding(horizontal = 8.dp)
-            )
+            com.filipinodama.app.ui.components.MockupBackButton(onClick = onBack)
             Text("Legal & Policies", color = GoldLt, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
         }
 
