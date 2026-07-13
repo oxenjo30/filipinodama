@@ -234,6 +234,7 @@ export function FriendsPage() {
   const [loading, setLoading] = useState(true);
   const [friends, setFriends] = useState<FriendUser[]>([]);
   const [incoming, setIncoming] = useState<FriendReq[]>([]);
+  const [outgoing, setOutgoing] = useState<FriendReq[]>([]);
   const [suggested, setSuggested] = useState<FriendUser[]>([]);
   const [query, setQuery] = useState("");
   /** ids currently mid-request so their button disables (add/accept/decline). */
@@ -264,6 +265,7 @@ export function FriendsPage() {
         if (!alive) return;
         setFriends(f.friends);
         setIncoming(r.incoming);
+        setOutgoing(r.outgoing);
         setSuggested(s.suggested);
       } catch (e) {
         if (!(e instanceof ApiError && e.status === 401)) {
@@ -292,6 +294,14 @@ export function FriendsPage() {
         showToast(`You are now friends with ${u.displayName}.`);
       } else {
         showToast(`Friend request sent to ${u.displayName}.`);
+        // Reflect the new pending request in "Sent Requests" immediately.
+        try {
+          const reqs = await api.get<{ incoming: FriendReq[]; outgoing: FriendReq[] }>("/api/friends/requests");
+          setIncoming(reqs.incoming);
+          setOutgoing(reqs.outgoing);
+        } catch {
+          /* non-fatal refresh */
+        }
       }
     } catch (e) {
       const msg = e instanceof ApiError ? e.message : "Couldn't send request. Try again.";
@@ -315,11 +325,17 @@ export function FriendsPage() {
       }
       setTagInput("");
       setAddOpen(false);
-      // Refresh outgoing state indirectly: pull suggested again so an added user
-      // drops out of the discovery list (kept honest — no local guessing).
+      // Refresh from the server so the new pending request appears in "Sent
+      // Requests" (and the added user drops out of discovery). Kept honest — the
+      // lists come straight from the backend, no local guessing.
       try {
-        const s = await api.get<{ suggested: FriendUser[] }>("/api/friends/suggested");
+        const [s, reqs] = await Promise.all([
+          api.get<{ suggested: FriendUser[] }>("/api/friends/suggested"),
+          api.get<{ incoming: FriendReq[]; outgoing: FriendReq[] }>("/api/friends/requests"),
+        ]);
         setSuggested(s.suggested);
+        setIncoming(reqs.incoming);
+        setOutgoing(reqs.outgoing);
         if (res.status === "accepted") {
           const f = await api.get<{ friends: FriendUser[] }>("/api/friends");
           setFriends(f.friends);
@@ -603,6 +619,58 @@ export function FriendsPage() {
                         Decline
                       </button>
                     </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Sent Requests — outgoing pending requests (ones YOU sent). Read-only
+              "Pending" state, matching the mockup's "Sent" treatment. Only shown
+              when you actually have pending outgoing requests. */}
+          {outgoing.length > 0 && (
+            <div className="frame" style={{ padding: 22 }}>
+              <div className="ptitle" style={{ textAlign: "left", marginBottom: 14 }}>
+                Sent Requests · {outgoing.length}
+              </div>
+              <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+                {outgoing.map((r) => (
+                  <div
+                    key={r.id}
+                    className="fd-social-row"
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 14,
+                      padding: 12,
+                      borderRadius: 12,
+                      border: "1px solid rgba(232,184,75,.16)",
+                      background: "rgba(0,0,0,.2)",
+                    }}
+                  >
+                    <Avatar src={r.user.avatarUrl ?? "champion"} size={44} frame={r.user.frameId ?? undefined} />
+                    <div
+                      onClick={() => navigate(`/profile/${r.user.id}`)}
+                      style={{ flex: 1, minWidth: 0, cursor: "pointer" }}
+                    >
+                      <div style={{ font: "700 15px Inter", color: "#fff" }}>{r.user.displayName}</div>
+                      <div style={{ font: "500 12px Inter", color: "var(--ink2)", marginTop: 2 }}>
+                        {r.user.tag} · {tierOf(r.user).label}
+                      </div>
+                    </div>
+                    <span
+                      style={{
+                        flex: "none",
+                        padding: "9px 14px",
+                        borderRadius: 8,
+                        border: "1px solid rgba(232,184,75,.28)",
+                        background: "rgba(232,184,75,.08)",
+                        color: "var(--gold-lt)",
+                        font: "700 12px Inter",
+                      }}
+                    >
+                      Pending
+                    </span>
                   </div>
                 ))}
               </div>
