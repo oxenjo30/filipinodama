@@ -63,8 +63,24 @@ import com.filipinodama.app.ui.theme.Ink
 @Composable
 fun SplashScreen(onResolved: (SplashDestination) -> Unit) {
     LaunchedEffect(Unit) {
-        val user = AuthRepository.refreshMe()
-        onResolved(resolveSplashDestination(hasUser = user != null, onboarded = AuthRepository.isOnboarded()))
+        // Probe the existing session. If none, AUTO-CREATE A GUEST and go straight
+        // into the app (Home, or Onboarding on a true first run) — matching the
+        // web, which never forces a login wall on launch. Login is only required
+        // at gated actions (Ranked already gates guests). Only fall back to the
+        // Auth screen if guest creation itself fails (e.g. offline) so a network
+        // error isn't a black hole.
+        var hasUser = AuthRepository.refreshMe() != null
+        var guestFailed = false
+        if (!hasUser) {
+            hasUser = AuthRepository.guest() is com.filipinodama.app.data.AuthResult.Success
+            guestFailed = !hasUser
+        }
+        onResolved(
+            when {
+                guestFailed -> SplashDestination.Auth
+                else -> resolveSplashDestination(hasUser = hasUser, onboarded = AuthRepository.isOnboarded())
+            }
+        )
     }
 
     val infiniteTransition = rememberInfiniteTransition(label = "splash")
