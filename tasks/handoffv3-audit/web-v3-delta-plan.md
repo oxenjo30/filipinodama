@@ -150,3 +150,27 @@ Consequence — MOBILE UI-FIDELITY PASS (runs immediately after the asset-fideli
   an isolated headless browser (never the user's Chrome). Tests alone do NOT gate UI merges.
 - No element may be deferred without quoting proof the server lacks its data.
 - Priority: Home + header + tab bar first (owner's evidence), then every screen in nav order.
+
+## OWNER TEST FINDINGS (2026-07-13) — Android live-test fidelity gaps (screenshot-verified against mockup)
+Owner tested the app on-device and found these deviations; all confirmed against the
+FilipinoDama Mobile.dc.html DOM. FIX PASS required (strict mockup-DOM + screenshot gate):
+1. LOADING SCREEN missing before matches: mockup has `<!-- LOADING OVERLAY -->` importing the
+   "Loading Screen" component (loadingActive/loadingCtx) shown entering any game mode. Android
+   has none. Build the pre-game loader from Loading Screen.dc.html (ornate art + dust) + its bg.
+2. LOADING SCREEN BACKGROUND missing (the radial/art bg behind the loader).
+3. ONBOARDING not shown for first-time downloader: mockup gates on fdm.onboarded (_seen()).
+   Android resolveSplashDestination sends onboarded→Home. Verify a FRESH install (cleared data)
+   actually reaches the 3-slide onboarding; the owner's device was already-onboarded from prior
+   test runs. Ensure the flow is correct + the 3 mockup slides render (art incl. dama_redesign_1).
+4. PROFILE (own) page "very different from mockup" — re-diff isProfile section (line 728) DOM vs
+   the built ProfileScreen; rebuild deviations 1:1 (layout, cards, spacing, colors).
+5. SETTINGS page "very different from mockup" — re-diff the settings tab (line 891) DOM; rebuild.
+6. PUBLIC PROFILE (viewing a player) has NO BACK button: mockup PLAYER PUBLIC PROFILE (line 3074)
+   uses an explicit ‹ back control (app has no OS back stack). Add it.
+7. STORE shows DIAMONDS — HIDE for now (owner). Gate every diamond/gem/top-up surface in the
+   Android store + wallet behind the diamondTopUp flag (from GET /api/auth/providers or
+   /config/public DIAMOND_TOPUP_ENABLED) EXACTLY like the web hides them while dark. Earned
+   diamonds balance display also hidden per owner "hide it for now".
+8. HOME game-mode icons have a BACKGROUND box — REMOVE it. Mockup renders IMG('mode-*.png') as
+   bare art on the card (no dark rounded bg behind the icon). Match the mockup: icon art only.
+Each fix verified with an on-device screenshot vs the mockup screen.
