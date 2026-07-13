@@ -83,11 +83,16 @@ export function AppLayout() {
   // it never blocks the modal from a failed/slow fetch. The server-side gate
   // in rewards.ts stays authoritative — this is purely a proactive UI hide.
   const [dailyLoginEnabled, setDailyLoginEnabled] = useState(true);
+  // Watch Live nav gate — same fetch, OPPOSITE default (owner directive
+  // 2026-07-12: hide the Watch page). Missing key / failed fetch / "false" all
+  // mean HIDDEN; only an explicit "true" shows the Watch nav entry. Spectate
+  // flows (/play/online?spectate=, /rooms?code=X&spectate=1) are NOT gated.
+  const [watchLiveEnabled, setWatchLiveEnabled] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
     api
-      .get<{ MAINTENANCE_BANNER?: string; MAINTENANCE_TEXT?: string; DAILY_LOGIN_ENABLED?: string }>("/api/config/public")
+      .get<{ MAINTENANCE_BANNER?: string; MAINTENANCE_TEXT?: string; DAILY_LOGIN_ENABLED?: string; WATCH_LIVE_ENABLED?: string }>("/api/config/public")
       .then((cfg) => {
         if (cancelled) return;
         if (cfg?.MAINTENANCE_BANNER === "true") {
@@ -95,6 +100,9 @@ export function AppLayout() {
         }
         if (cfg?.DAILY_LOGIN_ENABLED === "false") {
           setDailyLoginEnabled(false);
+        }
+        if (cfg?.WATCH_LIVE_ENABLED === "true") {
+          setWatchLiveEnabled(true);
         }
       })
       .catch(() => {
@@ -104,6 +112,11 @@ export function AppLayout() {
       cancelled = true;
     };
   }, []);
+
+  // One filtered list drives BOTH the desktop nav and the mobile drawer, so the
+  // Watch entry hides everywhere in one place. WatchPage itself stays intact;
+  // its /watch route is gated separately in App.tsx (WatchLiveGate → /play).
+  const visibleNav = watchLiveEnabled ? NAV : NAV.filter((n) => n.to !== "/watch");
 
   // Start live presence once signed in (guests included) so friends' online
   // dots + presence-driven UI work app-wide; tear down on sign-out.
@@ -287,7 +300,7 @@ export function AppLayout() {
                 header (Sign In + Play Now on the right) is preserved. Hidden on
                 narrow screens, where the hamburger drawer takes over. */}
             <nav className="fd-hide-narrow" style={{ flex: 1, alignItems: "center", justifyContent: "center", gap: 30 }}>
-              {NAV.map((n) =>
+              {visibleNav.map((n) =>
                 n.children ? (
                   // Dropdown parent (e.g. Play → Quests / Learn). Opens on hover
                   // or click; the parent label itself still navigates to its hub.
@@ -510,7 +523,7 @@ export function AppLayout() {
                 {/* primary nav. A parent with children (Play) renders its own
                     link, then its children indented beneath it. */}
                 <div className="fd-drawer-sec">
-                  {NAV.map((n) => (
+                  {visibleNav.map((n) => (
                     <div key={n.to}>
                       <button className={`fd-drawer-item ${isOn(n.to) ? "on" : ""}`} onClick={() => navigate(n.to)}>
                         {n.label}

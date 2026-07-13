@@ -49,6 +49,7 @@ describe("admin-config", () => {
       { key: "MAINTENANCE_BANNER", value: "true", type: "bool", category: "flag", label: "m" },
       { key: "MAINTENANCE_TEXT", value: "brb", type: "string", category: "flag", label: "t" },
       { key: "DAILY_LOGIN_ENABLED", value: "false", type: "bool", category: "flag", label: "d" }, // allow-listed
+      { key: "WATCH_LIVE_ENABLED", value: "false", type: "bool", category: "flag", label: "w" }, // allow-listed
       { key: "SOME_OTHER_FLAG", value: "true", type: "bool", category: "flag", label: "o" }, // NOT allow-listed
     ]});
     const res = await app.inject({ method: "GET", url: "/api/config/public" });
@@ -56,7 +57,7 @@ describe("admin-config", () => {
     const keys = Object.keys(res.json().data);
     // DIAMOND_TOPUP_ENABLED is env-governed (never a Config row, see payments-dark.test.ts)
     // so it's always present here regardless of the rows seeded above.
-    expect(keys.sort()).toEqual(["DAILY_LOGIN_ENABLED", "DIAMOND_TOPUP_ENABLED", "MAINTENANCE_BANNER", "MAINTENANCE_TEXT"]);
+    expect(keys.sort()).toEqual(["DAILY_LOGIN_ENABLED", "DIAMOND_TOPUP_ENABLED", "MAINTENANCE_BANNER", "MAINTENANCE_TEXT", "WATCH_LIVE_ENABLED"]);
     expect(keys).not.toContain("SOME_OTHER_FLAG");
     await app.close();
   });
@@ -76,6 +77,37 @@ describe("admin-config", () => {
     const res = await app.inject({ method: "GET", url: "/api/config/public" });
     expect(res.statusCode).toBe(200);
     expect(Object.keys(res.json().data)).not.toContain("DAILY_LOGIN_ENABLED");
+    await app.close();
+  });
+
+  // ── WATCH_LIVE_ENABLED (owner directive 2026-07-12: hide the Watch Live PAGE,
+  //    spectate flows untouched). Clients treat a MISSING row as FALSE (safe-off).
+  it("GET /api/config/public includes WATCH_LIVE_ENABLED's value when a Config row exists for it", async () => {
+    const app = await buildTestApp();
+    await prisma.config.create({ data: { key: "WATCH_LIVE_ENABLED", value: "false", type: "bool", category: "flag", label: "w" } });
+    const res = await app.inject({ method: "GET", url: "/api/config/public" });
+    expect(res.statusCode).toBe(200);
+    expect(res.json().data.WATCH_LIVE_ENABLED).toBe("false");
+    await app.close();
+  });
+
+  it("SUPERADMIN PATCH flips WATCH_LIVE_ENABLED and /api/config/public serves the new value", async () => {
+    const app = await buildTestApp();
+    const su = await seedUser({ adminRole: "SUPERADMIN" });
+    await prisma.config.create({ data: { key: "WATCH_LIVE_ENABLED", value: "false", type: "bool", category: "flag", label: "w" } });
+    const patch = await app.inject({ method: "PATCH", url: "/api/admin/config/WATCH_LIVE_ENABLED", headers: { cookie: authFor({ sub: su.id, adminRole: "SUPERADMIN" }) }, payload: { value: "true", reason: "re-enable watch live" } });
+    expect(patch.statusCode).toBe(200);
+    const res = await app.inject({ method: "GET", url: "/api/config/public" });
+    expect(res.json().data.WATCH_LIVE_ENABLED).toBe("true");
+    await app.close();
+  });
+
+  it("GET /api/config/public omits WATCH_LIVE_ENABLED when no Config row exists (clients treat missing as FALSE/hidden)", async () => {
+    const app = await buildTestApp();
+    await prisma.config.create({ data: { key: "MAINTENANCE_BANNER", value: "false", type: "bool", category: "flag", label: "m" } });
+    const res = await app.inject({ method: "GET", url: "/api/config/public" });
+    expect(res.statusCode).toBe(200);
+    expect(Object.keys(res.json().data)).not.toContain("WATCH_LIVE_ENABLED");
     await app.close();
   });
 });

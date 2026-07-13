@@ -34,6 +34,15 @@ object ConfigRepository {
     private val _diamondTopUpEnabled = MutableStateFlow(false)
     val diamondTopUpEnabled: StateFlow<Boolean> = _diamondTopUpEnabled.asStateFlow()
 
+    /** Watch Live PAGE gate (owner directive 2026-07-12) — WATCH_LIVE_ENABLED
+     * from the same payload. SAFE-OFF: starts false and only an explicit
+     * "true" shows the Live Match Browser entry/route ([deriveWatchLiveEnabled]);
+     * a missing key or failed fetch keeps it hidden. Room/match spectate flows
+     * (PrivateRoomScreen spectate deep links, MatchRepository.spectate) are NOT
+     * gated by this — only the browsing page is. */
+    private val _watchLiveEnabled = MutableStateFlow(false)
+    val watchLiveEnabled: StateFlow<Boolean> = _watchLiveEnabled.asStateFlow()
+
     /**
      * Fetches /api/config/public and updates [maintenance]. Safe to call
      * repeatedly (app start, foreground, "Check again" retry, periodic
@@ -50,6 +59,7 @@ object ConfigRepository {
             return
         }
         _diamondTopUpEnabled.value = cfg["DIAMOND_TOPUP_ENABLED"] == "true"
+        _watchLiveEnabled.value = deriveWatchLiveEnabled(cfg["WATCH_LIVE_ENABLED"])
         _maintenance.value = deriveMaintenanceState(cfg["MAINTENANCE_BANNER"], cfg["MAINTENANCE_TEXT"])
     }
 }
@@ -76,3 +86,14 @@ fun deriveMaintenanceState(banner: String?, text: String?): MaintenanceState {
     val trimmed = text?.trim()
     return MaintenanceState.Active(if (trimmed.isNullOrEmpty()) DEFAULT_MAINTENANCE_MESSAGE else trimmed)
 }
+
+/**
+ * Pure derivation for the Watch Live PAGE gate (owner directive 2026-07-12),
+ * mirroring [deriveMaintenanceState]'s testable-without-network shape but with
+ * the OPPOSITE fail-direction: this flag hides a page, so the safe default is
+ * OFF. Only the literal "true" shows the Live Match Browser; a missing row,
+ * "false", or any garbage value keeps it hidden. (Maintenance fails OPEN so a
+ * broken fetch never locks users out; this fails CLOSED so a broken fetch
+ * never un-hides a page the owner turned off.)
+ */
+fun deriveWatchLiveEnabled(value: String?): Boolean = value == "true"

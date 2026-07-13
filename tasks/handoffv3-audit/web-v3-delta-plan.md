@@ -111,6 +111,9 @@ roomState broadcasts.
 6. W6 + W7 verifications → W8 documented-blocked.
 Each cluster: implement → typecheck/build → tests where server logic changed → commit.
 
+## OWNER DIRECTIVE (2026-07-12) — Watch Live page HIDDEN behind WATCH_LIVE_ENABLED
+The Watch/Live-Matches PAGE (web /watch nav+route, Android Live Match Browser) is hidden on both clients behind the `WATCH_LIVE_ENABLED` Config flag (missing/false = hidden, seeded "false"); spectate links (/play/online?spectate=, /rooms?code=X&spectate=1, Android room spectate) and GET /api/matches/live stay live; re-enable without a deploy in Admin → Settings → Config & feature flags → WATCH_LIVE_ENABLED.
+
 ## OWNER DIRECTIVE (2026-07-12) — Damath is WEB-ONLY
 The Damath game mode (damath-* realtime modules, DamathRoomPage/damath matchmaking, DAMATH
 match mode) stays exactly as it is in the web app and goes NO further:

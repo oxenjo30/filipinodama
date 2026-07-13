@@ -23,6 +23,13 @@ import { env } from "../config/env.js";
  * instead of only finding out via a failed POST /api/rewards/daily-login
  * (which stays the authoritative server-side gate either way).
  *
+ * WATCH_LIVE_ENABLED (owner directive 2026-07-12) hides the Watch/Live-Matches
+ * PAGE (web /watch nav+route, Android Live Match Browser) — NOT spectating:
+ * direct spectate flows (/play/online?spectate=, /rooms?code=X&spectate=1,
+ * Android room spectate) keep working, and GET /api/matches/live stays up.
+ * Clients treat a MISSING row as FALSE (hidden) — safe-off default; only an
+ * explicit "true" shows the page. Flip it in Admin → Settings → Config.
+ *
  * DIAMOND_TOPUP_ENABLED is added to the /config/public response OUTSIDE the
  * Config-row query (it's env-governed, never a row — see LOCKED_KEYS) so it
  * can't be listed in PUBLIC_CONFIG_KEYS. The authoritative server-side gate
@@ -33,7 +40,7 @@ import { env } from "../config/env.js";
  */
 
 const LOCKED_KEYS = new Set(["DIAMOND_TOPUP_ENABLED"]);          // env-governed, never a writable row
-const PUBLIC_CONFIG_KEYS = ["MAINTENANCE_BANNER", "MAINTENANCE_TEXT", "DAILY_LOGIN_ENABLED"] as const;
+const PUBLIC_CONFIG_KEYS = ["MAINTENANCE_BANNER", "MAINTENANCE_TEXT", "DAILY_LOGIN_ENABLED", "WATCH_LIVE_ENABLED"] as const;
 
 function validate(type: string, value: string): boolean {
   if (type === "bool") return value === "true" || value === "false";

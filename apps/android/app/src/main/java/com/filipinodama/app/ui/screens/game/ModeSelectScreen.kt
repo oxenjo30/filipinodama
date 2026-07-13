@@ -21,6 +21,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.filipinodama.app.data.AuthRepository
+import com.filipinodama.app.data.config.ConfigRepository
 import com.filipinodama.app.ui.theme.Gold
 import com.filipinodama.app.ui.theme.GoldLt
 import com.filipinodama.app.ui.theme.Ink
@@ -53,6 +54,10 @@ fun ModeSelectScreen(
 ) {
     val authState by AuthRepository.state.collectAsState()
     val isGuest = authState.user?.isGuest ?: false
+    // Watch Live PAGE gate (owner directive 2026-07-12) — safe-off: the card
+    // only renders after /api/config/public explicitly says "true". Room/match
+    // spectate deep links elsewhere are NOT gated by this.
+    val watchLiveEnabled by ConfigRepository.watchLiveEnabled.collectAsState()
 
     Column(
         modifier = Modifier
@@ -108,14 +113,16 @@ fun ModeSelectScreen(
                 meta = "Host or join by code",
                 onClick = onPrivateRoom
             )
-            ModeCardRow(
-                icon = "👁",
-                title = "Watch Live",
-                tag = "LIVE",
-                desc = "Spectate top matches happening right now.",
-                meta = "Real-time, no stakes",
-                onClick = onWatchLive
-            )
+            if (watchLiveEnabled) {
+                ModeCardRow(
+                    icon = "👁",
+                    title = "Watch Live",
+                    tag = "LIVE",
+                    desc = "Spectate top matches happening right now.",
+                    meta = "Real-time, no stakes",
+                    onClick = onWatchLive
+                )
+            }
         }
     }
 }

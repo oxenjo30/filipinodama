@@ -509,6 +509,17 @@ fun AppNavHost() {
             }
 
             composable(AppDestinations.LIVE_MATCH_BROWSER) {
+                // Watch Live PAGE gate (owner directive 2026-07-12): the route
+                // stays registered (hide, not removal) but backs out immediately
+                // when WATCH_LIVE_ENABLED isn't "true" — safe-off, matching the
+                // Mode Select card that is this screen's only entry point. Room/
+                // match spectate flows (PRIVATE_ROOM spectate arg, spectate from
+                // an invite) are NOT gated.
+                val watchLiveEnabled by ConfigRepository.watchLiveEnabled.collectAsState()
+                if (!watchLiveEnabled) {
+                    LaunchedEffect(Unit) { navController.popBackStack() }
+                    return@composable
+                }
                 LiveMatchBrowserScreen(
                     onWatchMatch = { matchId ->
                         MatchRepository.spectate(matchId)

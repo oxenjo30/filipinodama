@@ -160,6 +160,9 @@ const CONFIG_SEED = [
   { key: "MAINTENANCE_BANNER", value: "false", type: "bool", category: "flag", label: "Maintenance banner" },
   { key: "MAINTENANCE_TEXT", value: "", type: "string", category: "flag", label: "Maintenance banner text" },
   { key: "DAILY_LOGIN_ENABLED", value: "true", type: "bool", category: "flag", label: "Daily login bonus enabled" },
+  // Owner directive 2026-07-12: Watch Live PAGE hidden by default (safe-off).
+  // Spectate flows/links stay live regardless — this only gates the page + nav.
+  { key: "WATCH_LIVE_ENABLED", value: "false", type: "bool", category: "flag", label: "Watch Live page enabled" },
 ];
 
 async function main() {
