@@ -60,6 +60,7 @@ import com.filipinodama.app.ui.screens.economy.QuestsScreen
 import com.filipinodama.app.ui.screens.economy.SeasonScreen
 import com.filipinodama.app.ui.screens.economy.TournamentsListScreen
 import com.filipinodama.app.ui.screens.leaderboard.LeaderboardScreen
+import com.filipinodama.app.ui.screens.profile.AchievementsScreen
 import com.filipinodama.app.ui.screens.profile.PublicProfileScreen
 import com.filipinodama.app.ui.screens.profile.ReplayViewerScreen
 import com.filipinodama.app.ui.screens.settings.LegalScreen
@@ -336,8 +337,12 @@ fun AppNavHost() {
                     // to AppDestinations.SETTINGS — onOpenLegal wires the
                     // inline tab's Support rows straight to the same real
                     // Legal destination the standalone SettingsScreen uses.
-                    onOpenLegal = { doc -> navController.navigate(AppDestinations.legal(doc)) }
+                    onOpenLegal = { doc -> navController.navigate(AppDestinations.legal(doc)) },
+                    onOpenAchievements = { navController.navigate(AppDestinations.ACHIEVEMENTS) }
                 )
+            }
+            composable(AppDestinations.ACHIEVEMENTS) {
+                AchievementsScreen(onBack = { navController.popBackStack() })
             }
 
             // ---- Phase 7: settings, legal, delete account, system states ----

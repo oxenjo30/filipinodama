@@ -107,7 +107,8 @@ fun ProfileScreen(
     onOpenGuild: () -> Unit = {},
     onOpenOrders: () -> Unit = {},
     onOpenInventory: () -> Unit = {},
-    onOpenLegal: (String) -> Unit = {}
+    onOpenLegal: (String) -> Unit = {},
+    onOpenAchievements: () -> Unit = {}
 ) {
     val authState by AuthRepository.state.collectAsState()
     val me = authState.user
@@ -402,11 +403,12 @@ fun ProfileScreen(
                 // content off-screen — removed to match the mockup 1:1.
 
                 // Achievements grid — mockup lines 558-566 (4-col grid,
-                // "See all ›" header). Real 4 rules ported from
-                // apps/web AchievementsGrid.tsx (see file kdoc) — NOT the
-                // mockup's own fabricated placeholder names, since those have
-                // no server-side backing data.
-                AchievementsGrid(wins = me.wins, streak = me.streak, trophies = me.trophies)
+                // "See all ›" header). Real rules from the shared
+                // [Achievements.ALL] list (see its kdoc) — NOT the mockup's
+                // own fabricated placeholder names, since some have no
+                // server-side backing data. Header + whole grid both open the
+                // full Achievements screen (mockup row "tap opens Achievements").
+                AchievementsGrid(wins = me.wins, streak = me.streak, trophies = me.trophies, onOpenAchievements = onOpenAchievements)
 
                 // Overview quick-link cards — mockup lines 814-850 ("avEditShow"
                 // sibling section within isProfile). "My Reports" (lines
@@ -765,35 +767,83 @@ private fun ProfileQuickLinkCard(
     }
 }
 
-private data class AchievementDef(val name: String, val desc: String, val assetFile: String, val unlocked: (wins: Int, streak: Int, trophies: Int) -> Boolean)
-
 /**
- * Achievements grid — mockup profAch (line 5019): the exact 4 tiles with the
- * mockup's names AND icon assets (all present in handoffv3/handoff/assets):
- *   First Blood  → ic-trophy.png   (win 1 match)
- *   Streak x10   → me-target.png   (10-win streak)
- *   Capture King → red-king.png    (crimson king piece art)
- *   Season Vet   → tier-datu.png   (reach Datu tier ≈ 1100 trophies)
- * Unlock state is REAL (derived from wins/streak/trophies) — the icons/names
- * are copied verbatim from the mockup, not the web's computed grid.
+ * Achievements grid — mockup profAch (Overview, line 5019) + achList (full
+ * Achievements screen SCREEN 30, line 2331/3338). Both are gated by the SAME
+ * (wins, streak, trophies) inputs — no fabricated stats, no server changes.
+ * This is the ONE shared source [ProfileScreen]'s Overview (first 4) and
+ * [AchievementsScreen] (all 8) both consume, so the two surfaces can't drift.
+ *
+ * Rows 1-4 are the mockup's own Overview profAch tiles verbatim (name + icon).
+ * Rows 5-8 extend to the full screen's 8-item achList using the SAME real
+ * stat inputs — the mockup's own achList text differs slightly per row
+ * ("Rajah's Favor"/"Season Veteran"/"Guild Champion"/"Untouchable"/"Kingdom
+ * Legend" reference guild-war and exact-capture-count data the app has no
+ * field for), so rows 5-8 substitute honestly-derivable milestones instead
+ * of fabricating those specific unlock conditions, reusing real handoff
+ * assets (medal-2.png, kingmaker.png, sb-star.png, tier-alamat.png — all
+ * present under handoffv3/handoff/assets/). "Rajah tier" from the task brief
+ * doesn't exist in RankTiers (the real top tier is Alamat/"Legend") — Legend
+ * targets the real top tier's threshold via RankTiers.TIERS.last().
  */
-@Composable
-private fun AchievementsGrid(wins: Int, streak: Int, trophies: Int) {
-    val defs = listOf(
+internal data class AchievementDef(
+    val name: String,
+    val desc: String,
+    val assetFile: String,
+    /** Null when unlock is boolean-only (no meaningful fractional progress to show). */
+    val progress: ((wins: Int, streak: Int, trophies: Int) -> Float)? = null,
+    val unlocked: (wins: Int, streak: Int, trophies: Int) -> Boolean
+)
+
+internal object Achievements {
+    val ALL: List<AchievementDef> = listOf(
         AchievementDef("First Blood", "Win your first match", "ic-trophy.png") { w, _, _ -> w >= 1 },
         AchievementDef("Streak x10", "Win 10 in a row", "me-target.png") { _, s, _ -> s >= 10 },
         AchievementDef("Capture King", "Crown a king", "pieces/skins/crimson/red-king.png") { w, _, _ -> w >= 1 },
-        AchievementDef("Season Vet", "Reach Datu tier", "tier-datu.png") { _, _, t -> t >= 1100 }
+        AchievementDef("Season Vet", "Reach Datu tier", "tier-datu.png") { _, _, t -> t >= RankTiers.forTrophies(1100).min },
+        AchievementDef(
+            "Veteran", "Win 50 matches", "medal-2.png",
+            progress = { w, _, _ -> (w.toFloat() / 50f).coerceIn(0f, 1f) }
+        ) { w, _, _ -> w >= 50 },
+        AchievementDef(
+            "Champion", "Win 100 matches", "kingmaker.png",
+            progress = { w, _, _ -> (w.toFloat() / 100f).coerceIn(0f, 1f) }
+        ) { w, _, _ -> w >= 100 },
+        AchievementDef(
+            "Rising Star", "Reach 500 trophies", "sb-star.png",
+            progress = { _, _, t -> (t.toFloat() / 500f).coerceIn(0f, 1f) }
+        ) { _, _, t -> t >= 500 },
+        AchievementDef(
+            "Legend", "Reach ${RankTiers.TIERS.last().label} tier", "tier-alamat.png",
+            progress = { _, _, t -> (t.toFloat() / RankTiers.TIERS.last().min.toFloat()).coerceIn(0f, 1f) }
+        ) { _, _, t -> t >= RankTiers.TIERS.last().min }
     )
-    Column {
+}
+
+/**
+ * Overview's 4-tile grid — mockup profAch (line 5019): First Blood / Streak
+ * x10 / Capture King / Season Vet, the first 4 of the shared [Achievements.ALL]
+ * list. Header "See all ›" AND the whole grid are tappable (mockup row
+ * "tap opens Achievements") via [onOpenAchievements].
+ */
+@Composable
+private fun AchievementsGrid(wins: Int, streak: Int, trophies: Int, onOpenAchievements: () -> Unit) {
+    val defs = Achievements.ALL.take(4)
+    Column(modifier = Modifier.clickable(onClick = onOpenAchievements)) {
         Row(modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp), horizontalArrangement = Arrangement.SpaceBetween) {
             Text("ACHIEVEMENTS", color = Ink2, style = MaterialTheme.typography.labelMedium, letterSpacing = 1.5.sp)
-            Text("See all ›", color = Color(0xFFC9A4FF), style = MaterialTheme.typography.labelMedium)
+            Text(
+                "See all ›",
+                color = Color(0xFFC9A4FF),
+                style = MaterialTheme.typography.labelMedium,
+                modifier = Modifier.clickable(onClick = onOpenAchievements)
+            )
         }
         LazyVerticalGrid(
             columns = GridCells.Fixed(4),
             modifier = Modifier.height(96.dp),
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            userScrollEnabled = false
         ) {
             items(defs) { a ->
                 val unlocked = a.unlocked(wins, streak, trophies)
