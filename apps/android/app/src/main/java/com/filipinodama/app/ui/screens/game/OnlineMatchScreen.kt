@@ -268,20 +268,32 @@ fun OnlineMatchScreen(
                 modifier = Modifier.padding(top = 12.dp).fillMaxWidth()
             )
         } else {
-            // Action row — of the mockup's Undo/Hint/Resign only Resign has a
-            // real backend for online play (see the class doc's HONEST
-            // OMISSIONS); it keeps the mockup's exact red-tint styling.
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(top = 12.dp)
-                    .clickable(enabled = gs.result == null) { showResignConfirm = true }
-                    .background(Color(0x1AFF5A6A), RoundedCornerShape(12.dp))
-                    .border(1.dp, Color(0x59FF5A6A), RoundedCornerShape(12.dp))
-                    .padding(vertical = 12.dp),
-                contentAlignment = Alignment.Center
+            // Action row — mockup shows Undo/Hint/Resign (Mobile.dc.html
+            // lines 351-355). Of these, only Resign has a real backend for
+            // online play (no `undo` event in apps/server/src/realtime/
+            // match.ts; no hint implementation anywhere — server, web, or
+            // engine). Per the owner's finding #10 direction, Undo/Hint are
+            // rendered matching the mockup's exact look but disabled
+            // (non-clickable, dimmed) rather than either faking a working
+            // control OR omitting them outright — this is an honest
+            // display-only state, not a dead button pretending to work.
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(top = 12.dp),
+                horizontalArrangement = Arrangement.spacedBy(9.dp)
             ) {
-                Text("⚑ Resign", color = Color(0xFFFF8F9C), style = MaterialTheme.typography.labelLarge)
+                DisabledActionButton(label = "↺ Undo", modifier = Modifier.weight(1f))
+                DisabledActionButton(label = "💡 Hint", modifier = Modifier.weight(1f))
+                Box(
+                    modifier = Modifier
+                        .weight(1f)
+                        .clickable(enabled = gs.result == null) { showResignConfirm = true }
+                        .background(Color(0x1AFF5A6A), RoundedCornerShape(12.dp))
+                        .border(1.dp, Color(0x59FF5A6A), RoundedCornerShape(12.dp))
+                        .padding(vertical = 12.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text("⚑ Resign", color = Color(0xFFFF8F9C), style = MaterialTheme.typography.labelMedium)
+                }
             }
 
             // Quick Chat — real in-match chat (kept even though the mockup's
@@ -396,6 +408,26 @@ private fun MatchPlayerBar(
             Box(modifier = Modifier.size(14.dp).background(capturedSideColor, CircleShape))
             Text("×$caps", color = Color(0xFFC9B8E8), style = MaterialTheme.typography.labelMedium)
         }
+    }
+}
+
+/**
+ * Undo/Hint — mockup styling (gold-hairline dark pill) rendered disabled:
+ * no click handler, dimmed text/border. Neither has a real backend for
+ * online matches (see OnlineMatchScreen kdoc HONEST OMISSIONS) — this is an
+ * honest "shown, but inert" state per the owner's finding #10 direction,
+ * never a fabricated working control.
+ */
+@Composable
+private fun DisabledActionButton(label: String, modifier: Modifier = Modifier) {
+    Box(
+        modifier = modifier
+            .background(Color(0x14E8B84B), RoundedCornerShape(12.dp))
+            .border(1.dp, Color(0x24E8B84B), RoundedCornerShape(12.dp))
+            .padding(vertical = 12.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        Text(label, color = Ink2.copy(alpha = 0.55f), style = MaterialTheme.typography.labelMedium)
     }
 }
 
@@ -523,15 +555,35 @@ private fun MatchEndCard(
     else Brush.verticalGradient(listOf(Color(0xFFF0B8BF), Color(0xFFC05563)))
 
     Box(modifier = Modifier.fillMaxSize()) {
-        // Full-bleed result art: the mockup's exact assets; loss gets
-        // grayscale(.55) brightness(.62) — approximated with a saturation
-        // matrix + darkening scrim.
+        // Full-bleed result art: the mockup's exact assets. Loss gets the
+        // mockup's exact `grayscale(.55) brightness(.62)` filter (resArtFilter,
+        // Mobile.dc.html line ~4041) — a partial-desaturation matrix (55%
+        // toward grayscale, matching CSS grayscale(.55) which blends rather
+        // than fully desaturating) combined with a brightness scale of 0.62
+        // on every channel.
+        val lossMatrix = remember {
+            // Start from the standard luminance-preserving saturation(0.45)
+            // matrix (grayscale(.55) == saturation(1-.55)), then scale its
+            // color-mixing coefficients by brightness 0.62 directly (a
+            // saturation matrix's translation column is already zero, so
+            // scaling every entry by `b` composes both effects in one pass
+            // without needing a matrix-multiply operator).
+            val sat = ColorMatrix().apply { setToSaturation(0.45f) }
+            val b = 0.62f
+            val scaled = FloatArray(20)
+            for (i in 0 until 20) {
+                // Leave the alpha row (indices 15-19) untouched so opacity
+                // is unaffected by the brightness scale.
+                scaled[i] = if (i in 15..19) sat.values[i] else sat.values[i] * b
+            }
+            ColorMatrix(scaled)
+        }
         Image(
             painter = painterResource(if (won || draw) R.drawable.load_victory_portrait else R.drawable.load_crimson_portrait),
             contentDescription = null,
             modifier = Modifier.fillMaxSize(),
             contentScale = ContentScale.Crop,
-            colorFilter = if (won || draw) null else ColorFilter.colorMatrix(ColorMatrix().apply { setToSaturation(0.45f) })
+            colorFilter = if (won || draw) null else ColorFilter.colorMatrix(lossMatrix)
         )
         Box(
             modifier = Modifier
