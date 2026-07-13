@@ -174,3 +174,25 @@ FilipinoDama Mobile.dc.html DOM. FIX PASS required (strict mockup-DOM + screensh
 8. HOME game-mode icons have a BACKGROUND box — REMOVE it. Mockup renders IMG('mode-*.png') as
    bare art on the card (no dark rounded bg behind the icon). Match the mockup: icon art only.
 Each fix verified with an on-device screenshot vs the mockup screen.
+
+## OWNER FINDINGS ROUND 2 (2026-07-13) — confirmed real bugs (art-loading ruled out)
+Owner tested; ruled out the remote-art blanks (env: the test emulator blocks outbound HTTPS —
+TCP/443 fails while ICMP passes; app art architecture + resolver verified correct, renders on
+a real device). The following are REAL bugs to fix:
+1. LAUNCH goes to SIGN-IN for logged-out users — WRONG. Must go to HOME (match web: a logged-out/
+   first-time user reaches Home and browses/plays; login only required at gated actions like
+   Ranked, which ALREADY gates guests). Fix SplashScreen.resolveSplashDestination: no session →
+   auto-create a GUEST session (AuthRepository.guest() exists) → Home (still onboarding-gated for
+   a true first run). Never force the auth wall on launch. Ranked already shows "Requires a free
+   account" for guests (ModeSelectScreen) — that stays.
+2. HOME game-mode icon "dark box" = BAKED INTO THE ART. mode_*.png (bundled + handoff originals)
+   have a dark rounded backdrop around the crest (~24% of opaque area is rgba(57,26,32); only the
+   far corners are transparent). Compose draws the icon bare (no wrapper) — so the box is the
+   image. FIX THE ART: produce mode icons with NO dark disc behind the emblem (crop tight to the
+   crest / remove the vignette), matching how the mockup card shows the emblem floating on the
+   card gradient. Re-verify on a healthy emulator screenshot.
+3. RESULT screen "+50 GOLD on a resign/DEFEAT" — verify vs the REAL settleMatch payload; if a
+   loss/resign shouldn't award +50, show the real delta.
+Method: verify on a HEALTHY emulator the agent controls (owner's emulator blocks HTTPS — the agent
+must NOT rely on the owner's AVD; create its own with working network, or a local dev server +
+local asset origin so art loads for screenshot proof).
