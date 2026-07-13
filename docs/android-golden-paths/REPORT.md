@@ -210,3 +210,21 @@ that matter.
   all since there is no entry point to reach it - Watch Live (live
   spectate) is a different, already-passing feature and was not re-tested
   here since it's out of scope for the 4 remaining paths.
+
+---
+
+## Orchestrator addendum (post-merge correction, 2026-07-13)
+
+The two FAIL rows (paths 7 and 11) are **stale-APK artifacts, not product gaps**. This
+verification branch was cut from the pre-P6a local chain (verified:
+`git merge-base --is-ancestor 8a66c0e <branch>` = false), so the APK under test predated:
+- Phase 6a (commit 8a66c0e): the full Profile tab, match history, and replay viewer
+  (195/195 unit tests at merge), and
+- Phase 7 (commit 1eb8626): ConfigRepository + the maintenance-mode screen
+  (maintenance-gate state machine unit-tested).
+
+Both features exist on current main (now merged into this branch, conflict-free).
+On-device re-verification of paths 7 and 11 against the merged code is folded into the
+asset-fidelity pass's emulator session (next Android task). The other 9 paths — including
+server-authoritative multiplayer vs a scripted client, the store purchase exercising the
+economy fix, chat, and offline recovery — stand as PASSED on-device evidence.
