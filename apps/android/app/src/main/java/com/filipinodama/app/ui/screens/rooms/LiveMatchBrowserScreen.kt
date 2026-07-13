@@ -85,26 +85,25 @@ fun LiveMatchBrowserScreen(
     LaunchedEffect(Unit) { load() }
 
     Column(modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background).padding(20.dp)) {
-        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.Top) {
-            Column {
-                Text("✦ SPECTATE ✦", color = Gold, style = MaterialTheme.typography.labelMedium)
-                Text("Live Matches", color = GoldLt, style = MaterialTheme.typography.headlineMedium, modifier = Modifier.padding(top = 6.dp))
-                Text(
-                    "Jump into any live game — watch top players and casual duels unfold in real time.",
-                    color = Ink,
-                    style = MaterialTheme.typography.bodySmall,
-                    modifier = Modifier.padding(top = 4.dp)
-                )
+        // Mockup title row is "Watch Live" + an inline pulsing "Live" pill on
+        // the SAME row (no separate eyebrow) — mobile-split.txt lines 2533-2541.
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            Text("Watch Live", color = GoldLt, style = MaterialTheme.typography.headlineMedium)
+            Box(
+                modifier = Modifier
+                    .background(Color(0x29FF5A6A), RoundedCornerShape(999.dp))
+                    .border(1.dp, Color(0x80FF5A6A), RoundedCornerShape(999.dp))
+                    .padding(horizontal = 10.dp, vertical = 4.dp)
+            ) {
+                Text("● Live", color = Color(0xFFFF8F9C), style = MaterialTheme.typography.labelSmall)
             }
         }
-        Box(
-            modifier = Modifier
-                .padding(top = 10.dp)
-                .background(Panel, RoundedCornerShape(999.dp))
-                .padding(horizontal = 12.dp, vertical = 6.dp)
-        ) {
-            Text("🔴 $liveCount live now", color = Color(0xFFFF8FAE), style = MaterialTheme.typography.labelMedium)
-        }
+        Text(
+            "Tune in to matches happening right now across FilipinoDama.",
+            color = Ink,
+            style = MaterialTheme.typography.bodySmall,
+            modifier = Modifier.padding(top = 6.dp)
+        )
 
         val current = items
         when {
