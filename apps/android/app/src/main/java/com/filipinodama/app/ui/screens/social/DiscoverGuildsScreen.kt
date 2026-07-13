@@ -89,25 +89,11 @@ fun DiscoverGuildsScreen(onBack: () -> Unit) {
 
     LaunchedEffect(Unit) { loadBrowse("") }
 
-    if (createOpen) {
-        GuildCreateDialog(
-            onClose = { createOpen = false },
-            onCreated = {
-                createOpen = false
-                loadBrowse(query)
-            }
-        )
-    }
-
-    if (previewGuildId != null) {
-        GuildPreviewSheet(
-            guildId = previewGuildId!!,
-            signedIn = me != null,
-            onClose = { previewGuildId = null },
-            onJoined = { loadBrowse(query) }
-        )
-    }
-
+    // Root Box so the modal overlays (create dialog, preview sheet) draw ON TOP
+    // of the screen content. They MUST be emitted AFTER the main Column inside a
+    // shared Box parent — otherwise the full-screen Column paints over them and
+    // the sheet is invisible even though its state/data are correct.
+    Box(modifier = Modifier.fillMaxSize()) {
     Column(modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
         Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp).padding(top = 44.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -229,6 +215,27 @@ fun DiscoverGuildsScreen(onBack: () -> Unit) {
             }
         }
     }
+
+        // Overlays — emitted AFTER the main Column so they layer above it.
+        if (createOpen) {
+            GuildCreateDialog(
+                onClose = { createOpen = false },
+                onCreated = {
+                    createOpen = false
+                    loadBrowse(query)
+                }
+            )
+        }
+
+        if (previewGuildId != null) {
+            GuildPreviewSheet(
+                guildId = previewGuildId!!,
+                signedIn = me != null,
+                onClose = { previewGuildId = null },
+                onJoined = { loadBrowse(query) }
+            )
+        }
+    }
 }
 
 @Composable
@@ -274,17 +281,20 @@ fun GuildPreviewSheet(guildId: String, signedIn: Boolean, onClose: () -> Unit, o
                 )
                 .border(1.dp, Color(0x33E8B84B), RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp))
                 .clickable(enabled = false) {}
-                .padding(start = 18.dp, end = 18.dp, top = 20.dp, bottom = 30.dp)
+                .padding(start = 18.dp, end = 18.dp, top = 14.dp, bottom = 30.dp)
         ) {
+            // Drag handle (its own row so it doesn't clip the content below).
             Box(
                 modifier = Modifier
                     .align(Alignment.CenterHorizontally)
+                    .padding(bottom = 16.dp)
                     .width(38.dp)
                     .height(4.dp)
                     .background(Color(0x4DE8B84B), RoundedCornerShape(100.dp))
-                    .padding(bottom = 18.dp)
             )
-            Box(modifier = Modifier.padding(top = 8.dp)) {
+            // Content wrapper MUST be a Column — a Box would stack the crest,
+            // name, stat tiles, and Join button all on top of each other.
+            Column(modifier = Modifier.fillMaxWidth().padding(top = 4.dp)) {
                 if (detail == null) {
                     Box(Modifier.fillMaxWidth().padding(40.dp), contentAlignment = Alignment.Center) {
                         CircularProgressIndicator(color = Gold)
