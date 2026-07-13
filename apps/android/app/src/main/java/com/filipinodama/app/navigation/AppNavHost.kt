@@ -413,6 +413,7 @@ fun AppNavHost() {
             // Play tab -> Mode Select directly (go('mode') in the prototype).
             composable(AppDestinations.MODE_SELECT) {
                 ModeSelectScreen(
+                    onBack = { navController.popBackStack() },
                     onPlayAi = { navController.navigate(AppDestinations.AI_DIFFICULTY) },
                     onPlayCasual = { navController.navigate(AppDestinations.matchmaking("CASUAL")) },
                     onPlayRanked = { navController.navigate(AppDestinations.matchmaking("RANKED")) },

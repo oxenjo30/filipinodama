@@ -26,6 +26,7 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.dp
 import com.filipinodama.app.R
 import com.filipinodama.app.data.engine.AiDifficulties
+import com.filipinodama.app.ui.components.MockupBackButton
 import com.filipinodama.app.ui.theme.Gold
 import com.filipinodama.app.ui.theme.GoldLt
 import com.filipinodama.app.ui.theme.Ink
@@ -37,7 +38,10 @@ private data class DifficultyLevel(
     val dots: Int,
     /** Real handoff difficulty crest (diff-easy/normal/hard.webp), mirrors
      *  apps/web/src/lib/emblems.ts DIFF_EMBLEMS + AiSetupPage.tsx placement. */
-    val emblem: Int
+    val emblem: Int,
+    /** Mockup per-level accent (mobile-split.txt aiLevels): easy #3fbf6f,
+     *  normal #e8b84b, hard #d63b52 — drives the selected border/glow + pips. */
+    val accent: androidx.compose.ui.graphics.Color
 )
 
 /**
@@ -51,9 +55,9 @@ fun AiDifficultyScreen(onBack: () -> Unit, onStart: (String) -> Unit) {
     var selected by remember { mutableStateOf(AiDifficulties.NORMAL) }
 
     val levels = listOf(
-        DifficultyLevel(AiDifficulties.EASY, "Easy", "A gentle opponent. Great for learning the ropes and trying new tactics.", 1, R.drawable.diff_easy),
-        DifficultyLevel(AiDifficulties.NORMAL, "Normal", "A balanced challenge that punishes loose moves. A fair, steady fight.", 2, R.drawable.diff_normal),
-        DifficultyLevel(AiDifficulties.HARD, "Hard", "A ruthless tactician that hunts every capture. Bring your best game.", 3, R.drawable.diff_hard)
+        DifficultyLevel(AiDifficulties.EASY, "Easy", "A gentle opponent. Great for learning the ropes and trying new tactics.", 1, R.drawable.diff_easy, androidx.compose.ui.graphics.Color(0xFF3FBF6F)),
+        DifficultyLevel(AiDifficulties.NORMAL, "Normal", "A balanced challenge that punishes loose moves. A fair, steady fight.", 2, R.drawable.diff_normal, androidx.compose.ui.graphics.Color(0xFFE8B84B)),
+        DifficultyLevel(AiDifficulties.HARD, "Hard", "A ruthless tactician that hunts every capture. Bring your best game.", 3, R.drawable.diff_hard, androidx.compose.ui.graphics.Color(0xFFD63B52))
     )
 
     Column(
@@ -63,14 +67,18 @@ fun AiDifficultyScreen(onBack: () -> Unit, onStart: (String) -> Unit) {
             .padding(24.dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        Text("✦ TRAIN OFFLINE ✦", color = Gold, style = MaterialTheme.typography.labelMedium)
+        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Start) {
+            MockupBackButton(onClick = onBack)
+        }
+        // Mockup eyebrow color for this screen is green (#3fbf6f), not gold.
+        Text("TRAIN OFFLINE", color = androidx.compose.ui.graphics.Color(0xFF3FBF6F), style = MaterialTheme.typography.labelMedium, modifier = Modifier.padding(top = 12.dp))
         Text(
             "Play vs AI",
-            color = GoldLt,
+            color = androidx.compose.ui.graphics.Color(0xFFF4D886),
             style = MaterialTheme.typography.headlineMedium,
             modifier = Modifier.padding(top = 8.dp, bottom = 4.dp)
         )
-        Text("Choose your opponent's strength, then start the match.", color = Ink, style = MaterialTheme.typography.bodyMedium)
+        Text("Choose your opponent's strength, then start the match.", color = androidx.compose.ui.graphics.Color(0xFF9A8BBF), style = MaterialTheme.typography.bodyMedium)
 
         Column(modifier = Modifier.padding(top = 24.dp).fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             levels.forEach { level ->
@@ -84,12 +92,6 @@ fun AiDifficultyScreen(onBack: () -> Unit, onStart: (String) -> Unit) {
             variant = GameButtonVariant.RED,
             modifier = Modifier.padding(top = 26.dp)
         )
-        GameButton(
-            text = "← Back",
-            onClick = onBack,
-            variant = GameButtonVariant.PURPLE,
-            modifier = Modifier.padding(top = 10.dp)
-        )
     }
 }
 
@@ -100,13 +102,13 @@ private fun DifficultyCard(level: DifficultyLevel, selected: Boolean, onClick: (
             .fillMaxWidth()
             .clickable(onClick = onClick)
             .background(
-                if (selected) Gold.copy(alpha = 0.08f) else androidx.compose.ui.graphics.Color(0xFF0F0820).copy(alpha = 0.5f),
-                RoundedCornerShape(14.dp)
+                if (selected) level.accent.copy(alpha = 0.08f) else androidx.compose.ui.graphics.Color(0xFF0F0820).copy(alpha = 0.5f),
+                RoundedCornerShape(16.dp)
             )
             .border(
                 1.5.dp,
-                if (selected) Gold.copy(alpha = 0.55f) else Gold.copy(alpha = 0.16f),
-                RoundedCornerShape(14.dp)
+                if (selected) level.accent.copy(alpha = 0.5f) else Gold.copy(alpha = 0.16f),
+                RoundedCornerShape(16.dp)
             )
             .padding(18.dp),
         horizontalAlignment = Alignment.CenterHorizontally
@@ -132,7 +134,7 @@ private fun DifficultyCard(level: DifficultyLevel, selected: Boolean, onClick: (
                     modifier = Modifier
                         .size(8.dp)
                         .background(
-                            if (i < level.dots) Gold else Gold.copy(alpha = 0.18f),
+                            if (i < level.dots) level.accent else Gold.copy(alpha = 0.18f),
                             CircleShape
                         )
                 )

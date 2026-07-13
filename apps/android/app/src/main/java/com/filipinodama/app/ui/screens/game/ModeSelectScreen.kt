@@ -20,11 +20,14 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.dp
 import com.filipinodama.app.R
 import com.filipinodama.app.data.AuthRepository
 import com.filipinodama.app.data.config.ConfigRepository
+import com.filipinodama.app.ui.components.MockupBackButton
 import com.filipinodama.app.ui.theme.Gold
 import com.filipinodama.app.ui.theme.GoldLt
 import com.filipinodama.app.ui.theme.Ink
@@ -48,6 +51,7 @@ private data class ModeCard(
  */
 @Composable
 fun ModeSelectScreen(
+    onBack: () -> Unit = {},
     onPlayAi: () -> Unit,
     onPlayCasual: () -> Unit,
     onPlayRanked: () -> Unit,
@@ -69,27 +73,41 @@ fun ModeSelectScreen(
             .padding(24.dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        Text("✦ CHOOSE YOUR BATTLE ✦", color = Gold, style = MaterialTheme.typography.labelMedium)
+        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Start) {
+            MockupBackButton(onClick = onBack)
+        }
+        Text(
+            "CHOOSE YOUR BATTLE",
+            color = Color(0xFFC79A4E),
+            style = MaterialTheme.typography.labelMedium,
+            modifier = Modifier.padding(top = 12.dp)
+        )
         Text(
             "Game Modes",
-            color = GoldLt,
+            color = Color(0xFFF4D886),
             style = MaterialTheme.typography.headlineMedium,
             modifier = Modifier.padding(top = 8.dp, bottom = 4.dp)
         )
         Text(
             "Pick how you want to play. Ranked affects your trophies — everything else is just for fun.",
-            color = Ink,
+            color = Color(0xFF9A8BBF),
             style = MaterialTheme.typography.bodyMedium,
             textAlign = androidx.compose.ui.text.style.TextAlign.Center
         )
 
         Column(modifier = Modifier.padding(top = 24.dp).fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            // Mockup per-mode accent/border/bg (mobile-split.txt modeSelect,
+            // lines ~4034-4039): each mode has its own tinted gradient card,
+            // not a uniform Panel — colors quoted verbatim below.
             ModeCardRow(
                 icon = "🤖",
                 title = "Play vs AI",
                 tag = null,
                 desc = "Practice offline against the computer. No stakes, no ranking.",
                 meta = "3 difficulties",
+                accent = Color(0xFF3FBF6F),
+                border = Color(0x663FBF6F),
+                bg = Brush.linearGradient(listOf(Color(0xFF1C3A2C), Color(0xFF1A1030))),
                 onClick = onPlayAi
             )
             ModeCardRow(
@@ -98,6 +116,9 @@ fun ModeSelectScreen(
                 tag = "CASUAL",
                 desc = "Jump into a casual match against a nearby-rank opponent.",
                 meta = "No trophy risk",
+                accent = Color(0xFFE8B84B),
+                border = Color(0x66E8B84B),
+                bg = Brush.linearGradient(listOf(Color(0xFF3A331C), Color(0xFF1A1030))),
                 onClick = onPlayCasual
             )
             ModeCardRow(
@@ -106,6 +127,9 @@ fun ModeSelectScreen(
                 tag = "RANKED",
                 desc = "Climb the ladder. Trophies and gold are on the line.",
                 meta = if (isGuest) "Requires a free account" else "Affects your rank",
+                accent = Color(0xFFD93B52),
+                border = Color(0x66D93B52),
+                bg = Brush.linearGradient(listOf(Color(0xFF3A1C2A), Color(0xFF1A1030))),
                 onClick = { if (isGuest) onRankedGuestBlocked() else onPlayRanked() }
             )
             ModeCardRow(
@@ -114,6 +138,9 @@ fun ModeSelectScreen(
                 tag = null,
                 desc = "Play with a friend using a room code.",
                 meta = "Host or join by code",
+                accent = Color(0xFFC9A4FF),
+                border = Color(0x66C9A4FF),
+                bg = Brush.linearGradient(listOf(Color(0xFF33234A), Color(0xFF1A1030))),
                 onClick = onPrivateRoom
             )
             if (watchLiveEnabled) {
@@ -123,6 +150,9 @@ fun ModeSelectScreen(
                     tag = "LIVE",
                     desc = "Spectate top matches happening right now.",
                     meta = "Real-time, no stakes",
+                    accent = Color(0xFFFF5A6A),
+                    border = Color(0x66FF5A6A),
+                    bg = Brush.linearGradient(listOf(Color(0xFF3A1C24), Color(0xFF1A1030))),
                     onClick = onWatchLive
                 )
             }
@@ -142,6 +172,9 @@ private fun ModeCardRow(
     tag: String?,
     desc: String,
     meta: String,
+    accent: Color,
+    border: Color,
+    bg: Brush,
     onClick: () -> Unit,
     icon: String? = null,
     iconRes: Int? = null
@@ -150,39 +183,40 @@ private fun ModeCardRow(
         modifier = Modifier
             .fillMaxWidth()
             .clickable(onClick = onClick)
-            .background(Panel, RoundedCornerShape(14.dp))
-            .border(1.dp, Gold.copy(alpha = 0.2f), RoundedCornerShape(14.dp))
-            .padding(16.dp),
+            .background(bg, RoundedCornerShape(20.dp))
+            .border(1.dp, border, RoundedCornerShape(20.dp))
+            .padding(20.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(14.dp)
     ) {
         androidx.compose.foundation.layout.Box(
             modifier = Modifier
-                .size(48.dp)
-                .background(Gold.copy(alpha = 0.12f), CircleShape),
+                .size(60.dp)
+                .background(Color(0x0DFFFFFF), RoundedCornerShape(16.dp)),
             contentAlignment = Alignment.Center
         ) {
             if (iconRes != null) {
-                Image(painter = painterResource(id = iconRes), contentDescription = null, modifier = Modifier.size(26.dp))
+                Image(painter = painterResource(id = iconRes), contentDescription = null, modifier = Modifier.size(44.dp))
             } else if (icon != null) {
-                Text(icon, style = MaterialTheme.typography.titleLarge)
+                Text(icon, style = MaterialTheme.typography.headlineSmall)
             }
         }
         Column(modifier = Modifier.weight(1f)) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text(title, color = GoldLt, style = MaterialTheme.typography.titleMedium)
+                Text(title, color = Color(0xFFF4D886), style = MaterialTheme.typography.titleMedium)
                 if (tag != null) {
                     androidx.compose.foundation.layout.Box(
                         modifier = Modifier
-                            .background(Gold.copy(alpha = 0.14f), RoundedCornerShape(100.dp))
-                            .padding(horizontal = 8.dp, vertical = 2.dp)
+                            .border(1.dp, accent, RoundedCornerShape(100.dp))
+                            .padding(horizontal = 7.dp, vertical = 2.dp)
                     ) {
-                        Text(tag, color = Gold, style = MaterialTheme.typography.labelSmall)
+                        Text(tag, color = accent, style = MaterialTheme.typography.labelSmall)
                     }
                 }
             }
-            Text(desc, color = Ink, style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(top = 2.dp))
-            Text(meta, color = Ink2, style = MaterialTheme.typography.labelSmall, modifier = Modifier.padding(top = 4.dp))
+            Text(desc, color = Color(0xFFA999C8), style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(top = 2.dp))
+            Text(meta, color = Color(0xFF7C6DA3), style = MaterialTheme.typography.labelSmall, modifier = Modifier.padding(top = 4.dp))
         }
+        Text("›", color = accent, style = MaterialTheme.typography.headlineSmall)
     }
 }
