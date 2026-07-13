@@ -9,9 +9,11 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.grid.GridCells
@@ -35,11 +37,14 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
 import com.filipinodama.app.ui.components.CurrencyAmount
+import com.filipinodama.app.ui.components.CurrencyIcon
 import com.filipinodama.app.ui.components.CurrencyIconKind
 import com.filipinodama.app.data.AuthRepository
 import com.filipinodama.app.data.economy.EconomyRepository
@@ -57,6 +62,7 @@ import com.filipinodama.app.data.economy.storeItemPrice
 import com.filipinodama.app.data.economy.storeThumbFor
 import com.filipinodama.app.ui.screens.economy.BuyFlow
 import com.filipinodama.app.ui.screens.economy.BuyFlowState
+import com.filipinodama.app.ui.screens.economy.CheckoutScreen
 import com.filipinodama.app.ui.theme.Gold
 import com.filipinodama.app.ui.theme.GoldLt
 import com.filipinodama.app.ui.theme.Ink
@@ -95,6 +101,46 @@ fun StoreScreen(onOpenInventory: () -> Unit = {}) {
     var buyFlow by remember { mutableStateOf<BuyFlowState>(BuyFlowState.Idle) }
     // Phase 7 retry affordance: bump to re-run the catalog load below.
     var retryTick by remember { mutableStateOf(0) }
+
+    // Cart + Checkout (mockup line 795 Cart button, lines 896-960 Checkout
+    // screen) — de-duplicated by item id, currency-agnostic (never assumes
+    // gold; see CheckoutScreen.kt). Add-to-cart coexists with the existing
+    // immediate-Buy flow above: Buy purchases now, the cart queues for a
+    // single batched checkout later.
+    var cart by remember { mutableStateOf<List<StoreItemDto>>(emptyList()) }
+    var showCheckout by remember { mutableStateOf(false) }
+    val cartIds = remember(cart) { cart.map { it.id }.toSet() }
+
+    fun addToCart(item: StoreItemDto) {
+        if (item.id !in cartIds) cart = cart + item
+    }
+    fun removeFromCart(itemId: String) {
+        cart = cart.filter { it.id != itemId }
+    }
+
+    // Hoisted (not Row-local) — CheckoutScreen's dark-gated Top-up affordance
+    // needs the same flag the header's diamond pill already reads.
+    val diamondTopUpEnabled by com.filipinodama.app.data.config.ConfigRepository.diamondTopUpEnabled.collectAsState()
+
+    if (showCheckout) {
+        CheckoutScreen(
+            cart = cart,
+            goldBalance = me?.gold ?: 0,
+            diamondBalance = me?.diamonds ?: 0,
+            diamondTopUpEnabled = diamondTopUpEnabled,
+            onRemove = { id -> removeFromCart(id) },
+            onClear = { cart = emptyList() },
+            onBrowseStore = { showCheckout = false },
+            onBack = { showCheckout = false },
+            onOpenTopUp = { /* dark while diamondTopUpEnabled is false; nav target TBD when diamonds go live */ },
+            onOrderPlaced = { purchasedIds ->
+                owned = owned + purchasedIds
+                cart = cart.filter { it.id !in purchasedIds }
+                if (cart.isEmpty()) showCheckout = false
+            }
+        )
+        return
+    }
 
     LaunchedEffect(retryTick) {
         items = null
@@ -169,16 +215,36 @@ fun StoreScreen(onOpenInventory: () -> Unit = {}) {
                 // gold-priced items in this build; the pill stays flag-gated,
                 // not deleted, so it comes back automatically once the flag
                 // flips true.
-                val diamondTopUpEnabled by com.filipinodama.app.data.config.ConfigRepository.diamondTopUpEnabled.collectAsState()
                 if (diamondTopUpEnabled) {
                     BalancePill(icon = CurrencyIconKind.GEM, value = me?.diamonds ?: 0, color = Color(0xFF8FB3FF), tint = Color(0xFF5A96FF))
                 }
+                // Cart button (mockup line 795) — REPLACES the former
+                // Inventory/backpack (🎒) affordance in the Store top bar.
+                // Inventory remains reachable via Profile -> Inventory
+                // (onOpenInventory param kept for that caller); it is simply
+                // no longer surfaced here, matching the mockup exactly.
                 Box(
                     modifier = Modifier
-                        .clickable(onClick = onOpenInventory)
+                        .clickable(onClick = { showCheckout = true })
                         .background(Color(0x1AE8B84B), CircleShape)
+                        .border(1.dp, Color(0x47E8B84B), CircleShape)
                         .padding(10.dp)
-                ) { Text("🎒", style = MaterialTheme.typography.labelLarge) }
+                ) {
+                    Text("🛒", color = Color(0xFFF0CF72), style = MaterialTheme.typography.labelLarge)
+                    if (cart.isNotEmpty()) {
+                        Box(
+                            modifier = Modifier
+                                .align(Alignment.TopEnd)
+                                .offset(x = 5.dp, y = (-5).dp)
+                                .defaultMinSize(minWidth = 18.dp, minHeight = 18.dp)
+                                .background(Brush.verticalGradient(listOf(Color(0xFFFF6A7A), Color(0xFFD63B52))), CircleShape)
+                                .padding(horizontal = 4.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(cart.size.toString(), color = Color.White, style = MaterialTheme.typography.labelSmall.copy(fontWeight = androidx.compose.ui.text.font.FontWeight.ExtraBold, fontSize = 10.sp))
+                        }
+                    }
+                }
             }
         }
 
@@ -228,7 +294,9 @@ fun StoreScreen(onOpenInventory: () -> Unit = {}) {
                                 // PATCH patches these via EconomyRepository.equip,
                                 // so this recomposes reactively.
                                 equipped = isItemEquipped(item, me?.equippedBoard, me?.equippedSkin, me?.frameId, me?.avatarUrl),
+                                inCart = item.id in cartIds,
                                 onPreviewOrBuy = { buyFlow = BuyFlow.startConfirm(item) },
+                                onAddToCart = { addToCart(item) },
                                 onEquip = {
                                     scope.launch {
                                         val request = equipRequestFor(item)
@@ -245,7 +313,13 @@ fun StoreScreen(onOpenInventory: () -> Unit = {}) {
                 Text("Daily Deals", color = GoldLt, style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(top = 20.dp, bottom = 10.dp))
                 Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     deals.forEach { item ->
-                        DealRow(item = item, owned = item.id in owned, onBuy = { buyFlow = BuyFlow.startConfirm(item) })
+                        DealRow(
+                            item = item,
+                            owned = item.id in owned,
+                            inCart = item.id in cartIds,
+                            onBuy = { buyFlow = BuyFlow.startConfirm(item) },
+                            onAddToCart = { addToCart(item) }
+                        )
                     }
                 }
             }
@@ -279,7 +353,7 @@ private fun BalancePill(icon: CurrencyIconKind, value: Int, color: Color, tint: 
         horizontalArrangement = Arrangement.spacedBy(4.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        com.filipinodama.app.ui.components.CurrencyIcon(kind = icon, size = 15.dp)
+        CurrencyIcon(kind = icon, size = 15.dp)
         Text(value.toString(), color = color, style = MaterialTheme.typography.labelMedium)
     }
 }
@@ -344,7 +418,9 @@ private fun StoreItemCard(
     item: StoreItemDto,
     owned: Boolean,
     equipped: Boolean,
+    inCart: Boolean,
     onPreviewOrBuy: () -> Unit,
+    onAddToCart: () -> Unit,
     onEquip: () -> Unit
 ) {
     val cur = storeItemCurrency(item)
@@ -423,14 +499,41 @@ private fun StoreItemCard(
                         color = if (cur == "DIAMONDS") Color(0xFFFF9AA8) else Color(0xFFF2D493),
                         style = MaterialTheme.typography.labelMedium
                     )
-                    Box(
-                        modifier = Modifier.clickable(onClick = onPreviewOrBuy).background(Gold.copy(alpha = 0.85f), RoundedCornerShape(8.dp)).padding(horizontal = 14.dp, vertical = 8.dp)
-                    ) {
-                        Text("Buy", color = Color(0xFF2A1607), style = MaterialTheme.typography.labelMedium)
+                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
+                        // Add-to-cart (mockup line 3780-3784): + when not yet
+                        // queued, flips to a no-op ✓ once in the cart. Removal
+                        // only happens on the Checkout screen, matching the
+                        // mockup's addToCart-is-idempotent-by-name behavior.
+                        AddToCartButton(inCart = inCart, onAdd = onAddToCart)
+                        Box(
+                            modifier = Modifier.clickable(onClick = onPreviewOrBuy).background(Gold.copy(alpha = 0.85f), RoundedCornerShape(8.dp)).padding(horizontal = 14.dp, vertical = 8.dp)
+                        ) {
+                            Text("Buy", color = Color(0xFF2A1607), style = MaterialTheme.typography.labelMedium)
+                        }
                     }
                 }
             }
         }
+    }
+}
+
+/** Small +/✓ add-to-cart control shared by [StoreItemCard] and [DealRow] (mockup line 3780-3784). */
+@Composable
+private fun AddToCartButton(inCart: Boolean, onAdd: () -> Unit) {
+    Box(
+        modifier = Modifier
+            .defaultMinSize(minWidth = 38.dp)
+            .clickable(enabled = !inCart, onClick = onAdd)
+            .background(if (inCart) Color(0x243FBF6F) else Color(0x14E8B84B), RoundedCornerShape(11.dp))
+            .border(1.dp, if (inCart) Color(0x663FBF6F) else Color(0x4DE8B84B), RoundedCornerShape(11.dp))
+            .padding(horizontal = 10.dp, vertical = 8.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        Text(
+            if (inCart) "✓" else "+",
+            color = if (inCart) Color(0xFF7FE0A3) else Color(0xFFF0CF72),
+            style = MaterialTheme.typography.labelLarge.copy(fontWeight = androidx.compose.ui.text.font.FontWeight.ExtraBold)
+        )
     }
 }
 
@@ -442,7 +545,7 @@ private fun Badge(text: String, color: Color, background: Color) {
 }
 
 @Composable
-private fun DealRow(item: StoreItemDto, owned: Boolean, onBuy: () -> Unit) {
+private fun DealRow(item: StoreItemDto, owned: Boolean, inCart: Boolean, onBuy: () -> Unit, onAddToCart: () -> Unit) {
     val cur = storeItemCurrency(item)
     val price = storeItemPrice(item)
     Row(
@@ -466,8 +569,11 @@ private fun DealRow(item: StoreItemDto, owned: Boolean, onBuy: () -> Unit) {
         if (owned) {
             Text("✓ Owned", color = Color(0xFF3FBF6F), style = MaterialTheme.typography.labelMedium)
         } else {
-            Box(modifier = Modifier.clickable(onClick = onBuy).background(Gold.copy(alpha = 0.85f), RoundedCornerShape(8.dp)).padding(horizontal = 14.dp, vertical = 8.dp)) {
-                Text("Buy", color = Color(0xFF2A1607), style = MaterialTheme.typography.labelMedium)
+            Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
+                AddToCartButton(inCart = inCart, onAdd = onAddToCart)
+                Box(modifier = Modifier.clickable(onClick = onBuy).background(Gold.copy(alpha = 0.85f), RoundedCornerShape(8.dp)).padding(horizontal = 14.dp, vertical = 8.dp)) {
+                    Text("Buy", color = Color(0xFF2A1607), style = MaterialTheme.typography.labelMedium)
+                }
             }
         }
     }

@@ -111,12 +111,7 @@ fun ReplayViewerScreen(matchId: String, onBack: () -> Unit) {
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            Text(
-                "‹",
-                color = GoldLt,
-                style = MaterialTheme.typography.headlineSmall,
-                modifier = Modifier.clickable(onClick = onBack)
-            )
+            com.filipinodama.app.ui.components.MockupBackButton(onClick = onBack)
             Text("Match Replay", color = Gold, style = MaterialTheme.typography.labelMedium)
         }
 

@@ -14,10 +14,12 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.CircularProgressIndicator
@@ -47,6 +49,7 @@ import com.filipinodama.app.data.profile.MatchRowDto
 import com.filipinodama.app.data.profile.ProfileRepository
 import com.filipinodama.app.data.profile.ProfileResult
 import com.filipinodama.app.data.profile.tierArtUrl
+import com.filipinodama.app.data.settings.SettingsStore
 import com.filipinodama.app.ui.components.CurrencyAmount
 import com.filipinodama.app.ui.components.CurrencyIconKind
 import com.filipinodama.app.ui.theme.Gold
@@ -101,10 +104,10 @@ fun ProfileScreen(
     onSignedOut: () -> Unit = {},
     onOpenReplay: (String) -> Unit = {},
     onOpenFriends: () -> Unit = {},
-    onOpenSettings: () -> Unit = {},
     onOpenGuild: () -> Unit = {},
     onOpenOrders: () -> Unit = {},
-    onOpenInventory: () -> Unit = {}
+    onOpenInventory: () -> Unit = {},
+    onOpenLegal: (String) -> Unit = {}
 ) {
     val authState by AuthRepository.state.collectAsState()
     val me = authState.user
@@ -332,10 +335,17 @@ fun ProfileScreen(
             }
         }
 
-        // ── tabs — mockup's exact 3-tab pill row (lines 549-553): Overview /
-        // History / Settings. Settings navigates to the existing
-        // SettingsScreen destination (same real screen, reached from the
-        // mockup's 3rd tab position instead of a separate action chip).
+        // ── tabs — mockup's exact 3-tab pill row (lines 549-553, profOverview/
+        // profHistory/profSettings @ mockup line 3649): Overview / History /
+        // Settings, ALL THREE are real in-place tab switches (`profTab`
+        // state), not a navigation push. OWNER ROUND-3 FIX: Settings
+        // previously called onOpenSettings() (navigated away to a separate
+        // SettingsScreen destination) — WRONG, the mockup's own
+        // `openSettings` handler is literally
+        // `this.setState({screen:'profile', profTab:'settings'})`, i.e.
+        // Settings is the Profile tab's 3rd inline pane (mockup line 4037),
+        // never a distinct screen. Fixed below: `tab = "settings"` renders
+        // the settings content INLINE via [ProfileSettingsTab].
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -347,7 +357,7 @@ fun ProfileScreen(
         ) {
             ProfileTabButton("Overview", tab == "overview", Modifier.weight(1f)) { tab = "overview" }
             ProfileTabButton("History", tab == "history", Modifier.weight(1f)) { tab = "history" }
-            ProfileTabButton("Settings", false, Modifier.weight(1f), onClick = onOpenSettings)
+            ProfileTabButton("Settings", tab == "settings", Modifier.weight(1f)) { tab = "settings" }
         }
 
         if (tab == "overview") {
@@ -461,7 +471,7 @@ fun ProfileScreen(
                     onClick = { contactOpen = true }
                 )
             }
-        } else {
+        } else if (tab == "history") {
             Column(modifier = Modifier.padding(horizontal = 20.dp, vertical = 12.dp)) {
                 Row(
                     modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp),
@@ -490,7 +500,208 @@ fun ProfileScreen(
                     }
                 }
             }
+        } else {
+            // ── Settings tab (profSettings) — mockup lines 621-651, setGroups
+            // (mockup line 4017): rendered INLINE as the 3rd Profile tab, never
+            // a navigated-to screen (owner round-3 fix — see tab-row kdoc
+            // above). Reuses the SAME real SettingsStore singleton the
+            // standalone SettingsScreen persists to/reads from, so toggling a
+            // row here and opening the standalone screen elsewhere stay in
+            // sync (one source of truth, not two competing prefs stores).
+            ProfileSettingsTab(
+                onOpenLegal = onOpenLegal,
+                onSignedOut = onSignedOut
+            )
         }
+    }
+}
+
+/**
+ * Inline Settings tab content — mockup `profSettings` block (line 621-651)
+ * reproduced top-to-bottom exactly:
+ *   1. Gameplay group (line 4018): Confirm moves / Auto-promote / Move hints /
+ *      Force capture — gold-pill toggle (46x27, mockup `sw()` helper line
+ *      4017) bound to the real [SettingsStore].
+ *   2. Audio & Haptics group (line 4019): Sound effects / Music / Vibration.
+ *   3. Notifications group (line 4020): Match invites / Guild activity /
+ *      Events & offers.
+ *   4. Support section (mockup line 638-644, static NOT-toggle rows): How to
+ *      Play / Help & FAQ / Terms & Privacy / Contact Support (with the
+ *      "Ticket" badge pill) — each a `›` nav row exactly like the mockup.
+ *   5. Log Out button (red, full-width, mockup line 647) + version footer
+ *      (mockup line 648, "FilipinoDama · v{real BuildConfig version}" — the
+ *      mockup's own "v1.0.0 (build 142)" is placeholder demo copy, using the
+ *      real version here is the honest substitution, not a fidelity gap).
+ */
+@Composable
+private fun ProfileSettingsTab(
+    onOpenLegal: (String) -> Unit,
+    onSignedOut: () -> Unit
+) {
+    val scope = rememberCoroutineScope()
+    val store = SettingsStore.instance
+    val confirmMoves by store.confirmMoves.collectAsState()
+    val autoPromote by store.autoPromote.collectAsState()
+    val hints by store.hints.collectAsState()
+    val forceCapture by store.forceCapture.collectAsState()
+    val sound by store.sound.collectAsState()
+    val music by store.music.collectAsState()
+    val haptics by store.haptics.collectAsState()
+    val pushMatch by store.pushMatch.collectAsState()
+    val pushGuild by store.pushGuild.collectAsState()
+    val pushEvent by store.pushEvent.collectAsState()
+
+    var contactOpen by remember { mutableStateOf(false) }
+    if (contactOpen) {
+        com.filipinodama.app.ui.screens.settings.ContactSupportDialog(onClose = { contactOpen = false })
+    }
+
+    Column(modifier = Modifier.padding(horizontal = 20.dp, vertical = 4.dp)) {
+        SettingsGroupCard(title = "Gameplay") {
+            SettingsToggleRow("Confirm moves", "Tap twice to commit a move", confirmMoves) { store.setConfirmMoves(it) }
+            SettingsToggleRow("Auto-promote", "Crown a Dama automatically", autoPromote) { store.setAutoPromote(it) }
+            SettingsToggleRow("Move hints", "Highlight legal destinations", hints) { store.setHints(it) }
+            SettingsToggleRow("Force capture", "Enforce mandatory captures", forceCapture) { store.setForceCapture(it) }
+        }
+        SettingsGroupCard(title = "Audio & Haptics") {
+            SettingsToggleRow("Sound effects", null, sound) { store.setSound(it) }
+            SettingsToggleRow("Music", null, music) { store.setMusic(it) }
+            SettingsToggleRow("Vibration", null, haptics) { store.setHaptics(it) }
+        }
+        SettingsGroupCard(title = "Notifications") {
+            SettingsToggleRow("Match invites", null, pushMatch) { store.setPushMatch(it) }
+            SettingsToggleRow("Guild activity", null, pushGuild) { store.setPushGuild(it) }
+            SettingsToggleRow("Events & offers", null, pushEvent) { store.setPushEvent(it) }
+        }
+        SettingsGroupCard(title = "Support") {
+            SettingsNavRow("How to Play") { onOpenLegal("howto") }
+            SettingsNavRow("Help & FAQ") { onOpenLegal("faq") }
+            SettingsNavRow("Terms & Privacy") { onOpenLegal("terms") }
+            SettingsNavRow("Contact Support", badge = "Ticket") { contactOpen = true }
+        }
+
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(top = 22.dp)
+                .clickable {
+                    scope.launch {
+                        AuthRepository.logout()
+                        onSignedOut()
+                    }
+                }
+                .background(Red.copy(alpha = 0.08f), RoundedCornerShape(14.dp))
+                .padding(vertical = 15.dp),
+            contentAlignment = Alignment.Center
+        ) {
+            Text("Log Out", color = Color(0xFFFF8F9C), style = MaterialTheme.typography.titleMedium)
+        }
+        Text(
+            "FilipinoDama · v${com.filipinodama.app.BuildConfig.VERSION_NAME}",
+            color = Color(0xFF5F527E),
+            style = MaterialTheme.typography.labelSmall,
+            modifier = Modifier.fillMaxWidth().padding(top = 14.dp, bottom = 8.dp),
+            textAlign = androidx.compose.ui.text.style.TextAlign.Center
+        )
+    }
+}
+
+/** Mockup Settings group card — rounded panel with an uppercase gold-muted title (line 626-627). */
+@Composable
+private fun SettingsGroupCard(title: String, content: @Composable androidx.compose.foundation.layout.ColumnScope.() -> Unit) {
+    Column(modifier = Modifier.padding(top = 20.dp)) {
+        Text(
+            title.uppercase(),
+            color = Ink2,
+            style = MaterialTheme.typography.labelMedium,
+            letterSpacing = 1.5.sp,
+            modifier = Modifier.padding(start = 2.dp, bottom = 9.dp)
+        )
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(16.dp))
+                .background(Color(0xCC1B1030))
+                .border(1.dp, Color(0x1FE8B84B), RoundedCornerShape(16.dp))
+        ) {
+            content()
+        }
+    }
+}
+
+/**
+ * Mockup toggle row (line 629-632): label + optional description on the
+ * left, a gold-pill track+knob on the right. Exact mockup `sw()` geometry
+ * (line 4017): track 46x27 pill, gradient gold when on / translucent white
+ * when off; knob 21x21 white circle sliding 19dp on toggle — this is a
+ * hand-built pill (NOT Material's [Switch]) to match the mockup 1:1 rather
+ * than the platform default shape.
+ */
+@Composable
+private fun SettingsToggleRow(label: String, desc: String?, checked: Boolean, onCheckedChange: (Boolean) -> Unit) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable { onCheckedChange(!checked) }
+            .padding(horizontal = 15.dp, vertical = 14.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Column(modifier = Modifier.weight(1f)) {
+            Text(label, color = Color(0xFFE6DCF5), style = MaterialTheme.typography.bodyMedium)
+            if (desc != null) {
+                Text(desc, color = Ink2, style = MaterialTheme.typography.labelSmall, modifier = Modifier.padding(top = 2.dp))
+            }
+        }
+        MockupToggle(checked = checked, onCheckedChange = onCheckedChange)
+    }
+}
+
+/** The mockup's exact gold-pill toggle switch (46x27 track / 21dp knob, mockup `sw()` line 4017). */
+@Composable
+private fun MockupToggle(checked: Boolean, onCheckedChange: (Boolean) -> Unit) {
+    Box(
+        modifier = Modifier
+            .width(46.dp)
+            .height(27.dp)
+            .clip(RoundedCornerShape(100.dp))
+            .background(
+                if (checked) Brush.horizontalGradient(listOf(Color(0xFFEFC25A), Color(0xFFC9971F)))
+                else Brush.horizontalGradient(listOf(Color(0x1FFFFFFF), Color(0x1FFFFFFF)))
+            )
+            .clickable { onCheckedChange(!checked) }
+    ) {
+        Box(
+            modifier = Modifier
+                .padding(3.dp)
+                .size(21.dp)
+                .offset(x = if (checked) 19.dp else 0.dp)
+                .clip(CircleShape)
+                .background(Color.White)
+        )
+    }
+}
+
+/** Mockup Support row (line 640-643): static nav row, label + optional badge + trailing `›`. */
+@Composable
+private fun SettingsNavRow(label: String, badge: String? = null, onClick: () -> Unit) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .padding(horizontal = 15.dp, vertical = 14.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(label, color = Color(0xFFE6DCF5), style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
+        if (badge != null) {
+            Box(
+                modifier = Modifier
+                    .background(Color(0x247FA8FF), RoundedCornerShape(100.dp))
+                    .padding(horizontal = 8.dp, vertical = 3.dp)
+            ) {
+                Text(badge, color = Color(0xFF7FA8FF), style = MaterialTheme.typography.labelSmall)
+            }
+        }
+        Text("›", color = Ink2, style = MaterialTheme.typography.titleLarge, modifier = Modifier.padding(start = 8.dp))
     }
 }
 

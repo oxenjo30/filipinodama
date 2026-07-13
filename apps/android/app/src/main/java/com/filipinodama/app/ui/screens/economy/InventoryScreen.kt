@@ -48,7 +48,7 @@ import com.filipinodama.app.data.economy.storeThumbFor
 import com.filipinodama.app.ui.theme.Gold
 import com.filipinodama.app.ui.components.CurrencyAmount
 import com.filipinodama.app.ui.components.CurrencyIconKind
-import com.filipinodama.app.ui.components.MockupBackButton
+import com.filipinodama.app.ui.components.MockupBackButtonStore
 import com.filipinodama.app.ui.theme.GoldLt
 import com.filipinodama.app.ui.theme.Ink2
 import kotlinx.coroutines.launch
@@ -97,7 +97,7 @@ fun InventoryScreen(onBrowseStore: () -> Unit = {}, onBack: () -> Unit = {}) {
             verticalAlignment = Alignment.CenterVertically
         ) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                MockupBackButton(onClick = onBack)
+                MockupBackButtonStore(onClick = onBack)
                 Column {
                     // Mockup eyebrow: "Your Collection" (no stars), color #c9a4ff.
                     Text("Your Collection", color = Color(0xFFC9A4FF), style = MaterialTheme.typography.labelMedium)
@@ -320,7 +320,7 @@ fun OrdersScreen(onBrowseStore: () -> Unit = {}, onBack: () -> Unit = {}) {
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(6.dp)
         ) {
-            MockupBackButton(onClick = onBack)
+            MockupBackButtonStore(onClick = onBack)
             Text("Purchase History", color = Color(0xFFF4ECD6), style = MaterialTheme.typography.headlineSmall)
         }
 
