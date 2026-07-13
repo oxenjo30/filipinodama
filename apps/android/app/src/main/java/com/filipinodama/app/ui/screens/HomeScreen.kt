@@ -330,6 +330,13 @@ private fun IdentityHeader(
 
 @Composable
 private fun WalletChip(gold: Int, diamonds: Int, onClick: () -> Unit) {
+    // Diamond top-up is dark (owner directive, monetization DARK — see
+    // tasks/lessons.md gold-only-economy): gate the gem balance row (and its
+    // dead "+" top-up affordance, onOpenWallet is a no-op today) behind the
+    // server's DIAMOND_TOPUP_ENABLED flag, same fail-closed pattern as
+    // ConfigRepository.watchLiveEnabled. While off, only the gold row shows —
+    // code stays intact (flag-gated), nothing deleted.
+    val diamondTopUpEnabled by com.filipinodama.app.data.config.ConfigRepository.diamondTopUpEnabled.collectAsState()
     Column(
         modifier = Modifier
             .clickable(onClick = onClick)
@@ -342,10 +349,12 @@ private fun WalletChip(gold: Int, diamonds: Int, onClick: () -> Unit) {
             CurrencyIcon(kind = CurrencyIconKind.COIN, size = 13.dp)
             Text(formatK(gold), color = Color(0xFFF0CF72), style = MaterialTheme.typography.labelSmall)
         }
-        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-            CurrencyIcon(kind = CurrencyIconKind.GEM, size = 13.dp)
-            Text("$diamonds", color = Color(0xFF8FB3FF), style = MaterialTheme.typography.labelSmall)
-            Text("+", color = Color(0xFF8FB3FF), style = MaterialTheme.typography.labelSmall)
+        if (diamondTopUpEnabled) {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                CurrencyIcon(kind = CurrencyIconKind.GEM, size = 13.dp)
+                Text("$diamonds", color = Color(0xFF8FB3FF), style = MaterialTheme.typography.labelSmall)
+                Text("+", color = Color(0xFF8FB3FF), style = MaterialTheme.typography.labelSmall)
+            }
         }
     }
 }

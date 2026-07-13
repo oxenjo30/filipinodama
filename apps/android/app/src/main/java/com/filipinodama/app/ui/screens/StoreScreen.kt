@@ -163,7 +163,16 @@ fun StoreScreen(onOpenInventory: () -> Unit = {}) {
             Text("Store", color = Color(0xFFF4ECD6), style = MaterialTheme.typography.headlineSmall.copy(fontWeight = androidx.compose.ui.text.font.FontWeight.ExtraBold))
             Row(horizontalArrangement = Arrangement.spacedBy(7.dp), verticalAlignment = Alignment.CenterVertically) {
                 BalancePill(icon = CurrencyIconKind.COIN, value = me?.gold ?: 0, color = Color(0xFFF0CF72), tint = Color(0xFFE8B84B))
-                BalancePill(icon = CurrencyIconKind.GEM, value = me?.diamonds ?: 0, color = Color(0xFF8FB3FF), tint = Color(0xFF5A96FF))
+                // Diamond balance hidden while DIAMOND_TOPUP_ENABLED is off
+                // (owner directive: "hide the earned-diamond balance display
+                // for now" — monetization is dark). Store only ever sells
+                // gold-priced items in this build; the pill stays flag-gated,
+                // not deleted, so it comes back automatically once the flag
+                // flips true.
+                val diamondTopUpEnabled by com.filipinodama.app.data.config.ConfigRepository.diamondTopUpEnabled.collectAsState()
+                if (diamondTopUpEnabled) {
+                    BalancePill(icon = CurrencyIconKind.GEM, value = me?.diamonds ?: 0, color = Color(0xFF8FB3FF), tint = Color(0xFF5A96FF))
+                }
                 Box(
                     modifier = Modifier
                         .clickable(onClick = onOpenInventory)
