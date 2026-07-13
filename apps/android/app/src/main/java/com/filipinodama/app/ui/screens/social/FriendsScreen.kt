@@ -1,6 +1,7 @@
 package com.filipinodama.app.ui.screens.social
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -181,7 +182,16 @@ fun FriendsScreen(
     }
 
     if (addOpen) {
-        AddFriendDialog(onClose = { addOpen = false }, onSent = { refresh() })
+        // Mockup's dedicated Add-a-friend SCREEN (isAddFriend replaces
+        // isFriends), not a dialog — live search results with per-row Add.
+        AddFriendScreen(
+            onBack = {
+                addOpen = false
+                refresh()
+            },
+            onOpenProfile = onOpenProfile
+        )
+        return
     }
 
     Column(modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background).verticalScroll(rememberScrollState())) {
@@ -425,56 +435,146 @@ private fun SuggestedRow(user: FriendUserDto, busy: Boolean, onOpen: () -> Unit,
     }
 }
 
+/**
+ * Add a friend — the mockup's dedicated live-search screen (mobile-split.txt
+ * lines 2963-3001, `{{ isAddFriend }}`): back button + "✦ FIND PLAYERS ✦"
+ * eyebrow + "Add a friend" title, search input ("Search by name or player
+ * tag (#ABCD)…"), tag-sharing tip, then live results — avatar, name+tag,
+ * tier·trophies, and a per-row gold "＋ Add" that flips to a green "Sent ✓"
+ * pill. Search uses the same real GET /api/users/search the Global Search
+ * screen uses; Add sends the real POST /friends/request by userId (the
+ * previous blind exact-tag dialog is replaced — that flow forced users to
+ * know the whole tag, the mockup's search-first flow is strictly better AND
+ * is what the design specifies).
+ */
 @Composable
-private fun AddFriendDialog(onClose: () -> Unit, onSent: () -> Unit) {
+private fun AddFriendScreen(onBack: () -> Unit, onOpenProfile: (String) -> Unit) {
     val scope = rememberCoroutineScope()
-    var tag by remember { mutableStateOf("") }
-    var busy by remember { mutableStateOf(false) }
-    var message by remember { mutableStateOf<String?>(null) }
+    val me = com.filipinodama.app.data.AuthRepository.state.collectAsState().value.user
+    var query by remember { mutableStateOf("") }
+    var results by remember { mutableStateOf<List<com.filipinodama.app.data.social.UserSearchResultDto>>(emptyList()) }
+    var loading by remember { mutableStateOf(false) }
+    var sentIds by remember { mutableStateOf<Set<String>>(emptySet()) }
+    var errorMsg by remember { mutableStateOf<String?>(null) }
 
-    fun send() {
-        val trimmed = tag.trim()
-        if (trimmed.isEmpty() || busy) return
-        busy = true
+    LaunchedEffect(query) {
+        val q = query.trim()
+        if (q.length < 2) {
+            results = emptyList()
+            loading = false
+            return@LaunchedEffect
+        }
+        loading = true
+        kotlinx.coroutines.delay(250)
+        when (val r = com.filipinodama.app.data.social.SearchRepository.searchUsers(q)) {
+            is SocialResult.Success -> results = r.data.items.filter { it.id != me?.id }
+            is SocialResult.Failure -> results = emptyList()
+        }
+        loading = false
+    }
+
+    fun add(userId: String) {
+        if (userId in sentIds) return
         scope.launch {
-            when (val result = FriendsRepository.sendRequestByTag(trimmed)) {
-                is SocialResult.Success -> {
-                    tag = ""
-                    onSent()
-                    onClose()
-                }
-                is SocialResult.Failure -> message = result.message
+            when (val result = FriendsRepository.sendRequest(userId)) {
+                is SocialResult.Success -> sentIds = sentIds + userId
+                is SocialResult.Failure -> errorMsg = result.message
             }
-            busy = false
         }
     }
 
-    Dialog(onDismissRequest = { if (!busy) onClose() }) {
-        Column(modifier = Modifier.fillMaxWidth().background(Panel, RoundedCornerShape(18.dp)).padding(24.dp)) {
-            Text("Add a Friend", color = GoldLt, style = MaterialTheme.typography.headlineSmall)
-            Text("Enter their player tag to send a request", color = Ink2, style = MaterialTheme.typography.labelSmall, modifier = Modifier.padding(top = 4.dp, bottom = 16.dp))
-            OutlinedTextField(
-                value = tag,
-                onValueChange = { tag = it },
-                placeholder = { Text("#3947", color = Ink2.copy(alpha = 0.6f)) },
-                singleLine = true,
-                modifier = Modifier.fillMaxWidth(),
-                colors = OutlinedTextFieldDefaults.colors(
-                    focusedTextColor = Color.White,
-                    unfocusedTextColor = Color.White,
-                    focusedBorderColor = Gold,
-                    unfocusedBorderColor = Gold.copy(alpha = 0.3f),
-                    focusedContainerColor = Color.Black.copy(alpha = 0.3f),
-                    unfocusedContainerColor = Color.Black.copy(alpha = 0.3f),
-                    cursorColor = Gold
-                )
-            )
-            Text("A tag looks like #3947 — find it on a player's profile.", color = Ink2, style = MaterialTheme.typography.labelSmall, modifier = Modifier.padding(top = 8.dp))
-            if (message != null) {
-                Text(message!!, color = Color(0xFFFF8FAE), style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(top = 8.dp))
+    Column(modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background).padding(16.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.padding(bottom = 16.dp)) {
+            com.filipinodama.app.ui.components.MockupBackButton(onClick = onBack)
+            Column {
+                Text("✦ FIND PLAYERS ✦", color = Color(0xFFC79A4E), style = MaterialTheme.typography.labelSmall)
+                Text("Add a friend", color = Color(0xFFF4D886), style = MaterialTheme.typography.headlineSmall, modifier = Modifier.padding(top = 2.dp))
             }
-            Box(modifier = Modifier.padding(top = 20.dp)) {
-                GameButton(if (busy) "Sending…" else "Send Request", { send() }, enabled = !busy && tag.trim().isNotEmpty())
+        }
+
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .background(Color(0x991B1030), RoundedCornerShape(13.dp))
+                .border(1.dp, Color(0x29E8B84B), RoundedCornerShape(13.dp))
+                .padding(horizontal = 12.dp, vertical = 3.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Text("🔍", color = Color(0xFF8B7CAE), style = MaterialTheme.typography.labelLarge)
+            Box(modifier = Modifier.weight(1f)) {
+                if (query.isEmpty()) {
+                    Text("Search by name or player tag (#ABCD)…", color = Color(0xFF6F6091), style = MaterialTheme.typography.bodySmall)
+                }
+                androidx.compose.foundation.text.BasicTextField(
+                    value = query,
+                    onValueChange = { query = it },
+                    singleLine = true,
+                    textStyle = androidx.compose.ui.text.TextStyle(color = Color(0xFFEFE7FB), fontSize = MaterialTheme.typography.bodySmall.fontSize),
+                    cursorBrush = androidx.compose.ui.graphics.SolidColor(Gold),
+                    modifier = Modifier.fillMaxWidth().padding(vertical = 12.dp)
+                )
+            }
+        }
+        Text(
+            "Tip: share your tag so friends can add you back.",
+            color = Color(0xFF6F5F92),
+            style = MaterialTheme.typography.labelSmall,
+            modifier = Modifier.padding(top = 8.dp, bottom = 16.dp, start = 4.dp)
+        )
+
+        if (errorMsg != null) {
+            Text(errorMsg!!, color = Color(0xFFFF8FAE), style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(bottom = 8.dp))
+        }
+
+        when {
+            loading -> Box(Modifier.fillMaxWidth().padding(top = 24.dp), contentAlignment = Alignment.Center) {
+                androidx.compose.material3.CircularProgressIndicator(color = Gold)
+            }
+            else -> Column(verticalArrangement = Arrangement.spacedBy(9.dp), modifier = Modifier.verticalScroll(rememberScrollState())) {
+                results.forEach { p ->
+                    val tier = com.filipinodama.app.data.engine.RankTiers.forTrophies(p.trophies)
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .background(Color(0xCC1B1030), RoundedCornerShape(14.dp))
+                            .border(1.dp, Color(0x1FE8B84B), RoundedCornerShape(14.dp))
+                            .padding(horizontal = 13.dp, vertical = 11.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        com.filipinodama.app.ui.screens.profile.AvatarView(
+                            avatarUrl = p.avatarUrl, size = 44.dp, frameId = p.frameId, ring = false,
+                            onClick = { onOpenProfile(p.id) }
+                        )
+                        Column(modifier = Modifier.weight(1f).clickable { onOpenProfile(p.id) }) {
+                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(7.dp)) {
+                                Text(p.displayName, color = Color.White, style = MaterialTheme.typography.titleSmall, maxLines = 1)
+                                Text(p.tag, color = Color(0xFF8B7CAE), style = MaterialTheme.typography.labelSmall)
+                            }
+                            Text("${tier.label} · ${p.trophies} 🏆", color = Color(0xFFC9A4FF), style = MaterialTheme.typography.labelSmall, modifier = Modifier.padding(top = 3.dp))
+                        }
+                        if (p.id in sentIds) {
+                            Box(
+                                modifier = Modifier
+                                    .background(Color(0x243FBF6F), RoundedCornerShape(10.dp))
+                                    .border(1.dp, Color(0x4D3FBF6F), RoundedCornerShape(10.dp))
+                                    .padding(horizontal = 13.dp, vertical = 9.dp)
+                            ) { Text("Sent ✓", color = Color(0xFF7FE0A3), style = MaterialTheme.typography.labelMedium) }
+                        } else {
+                            Box(
+                                modifier = Modifier
+                                    .clickable { add(p.id) }
+                                    .background(
+                                        androidx.compose.ui.graphics.Brush.verticalGradient(listOf(Color(0xFFF0C24B), Color(0xFFC9971F))),
+                                        RoundedCornerShape(10.dp)
+                                    )
+                                    .border(1.dp, Color(0x73E8B84B), RoundedCornerShape(10.dp))
+                                    .padding(horizontal = 15.dp, vertical = 9.dp)
+                            ) { Text("＋ Add", color = Color(0xFF1A0F2E), style = MaterialTheme.typography.labelMedium) }
+                        }
+                    }
+                }
             }
         }
     }

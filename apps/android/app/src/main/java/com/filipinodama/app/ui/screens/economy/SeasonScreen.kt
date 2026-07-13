@@ -2,6 +2,7 @@ package com.filipinodama.app.ui.screens.economy
 
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -37,6 +38,10 @@ import com.filipinodama.app.data.economy.EconomyResult
 import com.filipinodama.app.data.economy.SeasonCurrentResponse
 import com.filipinodama.app.data.economy.SeasonRewardDto
 import com.filipinodama.app.data.economy.SeasonTierDto
+import com.filipinodama.app.data.leaderboard.LbRowDto
+import com.filipinodama.app.data.leaderboard.LeaderboardRepository
+import com.filipinodama.app.data.leaderboard.LeaderboardResult
+import com.filipinodama.app.ui.screens.profile.AvatarView
 import com.filipinodama.app.R
 import com.filipinodama.app.ui.components.CurrencyAmount
 import com.filipinodama.app.ui.components.CurrencyIcon
@@ -64,6 +69,24 @@ fun SeasonScreen(onBack: () -> Unit = {}) {
     var error by remember { mutableStateOf<String?>(null) }
     var busyTier by remember { mutableStateOf<Int?>(null) }
     var buyingPass by remember { mutableStateOf(false) }
+    // Standings tab (mockup seasonTabRanking) — real GET /api/leaderboard
+    // global rows, the same endpoint web's LeaderboardPage uses.
+    var tab by remember { mutableStateOf("rewards") }
+    var standings by remember { mutableStateOf<List<LbRowDto>?>(null) }
+    var standingsMe by remember { mutableStateOf<LbRowDto?>(null) }
+    var standingsError by remember { mutableStateOf(false) }
+
+    LaunchedEffect(tab) {
+        if (tab == "standings" && standings == null) {
+            when (val r = LeaderboardRepository.leaderboard("global")) {
+                is LeaderboardResult.Success -> {
+                    standings = r.data.rows
+                    standingsMe = r.data.me
+                }
+                is LeaderboardResult.Failure -> standingsError = true
+            }
+        }
+    }
 
     suspend fun load() {
         when (val result = EconomyRepository.seasonCurrent()) {
@@ -106,6 +129,30 @@ fun SeasonScreen(onBack: () -> Unit = {}) {
                             .background(Color.Black.copy(alpha = 0.4f), RoundedCornerShape(6.dp))
                     ) {
                         Box(modifier = Modifier.fillMaxWidth(pct).height(10.dp).background(Gold, RoundedCornerShape(6.dp)))
+                    }
+
+                    // Tab row — mockup "⚔ Reward Track" / "🏆 Standings".
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(bottom = 16.dp)) {
+                        SeasonTab("⚔ Reward Track", tab == "rewards") { tab = "rewards" }
+                        SeasonTab("🏆 Standings", tab == "standings") { tab = "standings" }
+                    }
+
+                    if (tab == "standings") {
+                        Text("Season Standings", color = Color(0xFFF4D886), style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(bottom = 12.dp))
+                        when {
+                            standingsError -> Text("Couldn't load standings — try again shortly.", color = Ink2, style = MaterialTheme.typography.bodyMedium)
+                            standings == null -> Box(Modifier.fillMaxWidth().padding(vertical = 24.dp), contentAlignment = Alignment.Center) {
+                                CircularProgressIndicator(color = Gold)
+                            }
+                            else -> {
+                                Column(verticalArrangement = Arrangement.spacedBy(9.dp)) {
+                                    standings!!.forEach { r -> StandingsRow(r) }
+                                }
+                                standingsMe?.let { meRow -> StandingsYouRow(meRow) }
+                            }
+                        }
+                        Box(Modifier.height(24.dp))
+                        return@Column
                     }
 
                     if (!s.hasPass) {
@@ -164,6 +211,95 @@ private fun endsInLabel(endsAtIso: String): String {
         }
     } catch (_: Exception) {
         "—"
+    }
+}
+
+@Composable
+private fun SeasonTab(label: String, selected: Boolean, onClick: () -> Unit) {
+    Box(
+        modifier = Modifier
+            .clickable(onClick = onClick)
+            .background(
+                if (selected) androidx.compose.ui.graphics.Brush.verticalGradient(listOf(Color(0xFFEFC25A), Color(0xFFC9971F)))
+                else androidx.compose.ui.graphics.Brush.verticalGradient(listOf(Color(0xB31B1030), Color(0xB31B1030))),
+                RoundedCornerShape(100.dp)
+            )
+            .padding(horizontal = 15.dp, vertical = 9.dp)
+    ) {
+        Text(label, color = if (selected) Color(0xFF2A1608) else Color(0xFF9A8BBF), style = MaterialTheme.typography.labelMedium)
+    }
+}
+
+/**
+ * Standings row — mockup seasonBoard row (mobile-split.txt lines 3446-3466):
+ * medal image for top 3 / mono rank number otherwise, avatar, name,
+ * tier label in the tier's accent color, trophy count.
+ */
+@Composable
+private fun StandingsRow(r: LbRowDto) {
+    val tierColor = try {
+        Color(android.graphics.Color.parseColor(r.rankTier.accent))
+    } catch (_: Exception) {
+        Ink2
+    }
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(Color(0xD91B1030), RoundedCornerShape(14.dp))
+            .padding(horizontal = 13.dp, vertical = 11.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        Box(modifier = Modifier.width(30.dp), contentAlignment = Alignment.Center) {
+            when (r.rank) {
+                1 -> Image(painterResource(R.drawable.medal_1), contentDescription = null, modifier = Modifier.size(26.dp))
+                2 -> Image(painterResource(R.drawable.medal_2), contentDescription = null, modifier = Modifier.size(26.dp))
+                3 -> Image(painterResource(R.drawable.medal_3), contentDescription = null, modifier = Modifier.size(26.dp))
+                else -> Text("#${r.rank}", color = Color(0xFF8B7CAE), style = MaterialTheme.typography.labelLarge)
+            }
+        }
+        AvatarView(avatarUrl = r.avatarUrl, size = 40.dp, frameId = r.frameId, ring = false)
+        Column(modifier = Modifier.weight(1f)) {
+            Text(r.displayName, color = Color(0xFFF2E9D2), style = MaterialTheme.typography.titleSmall, maxLines = 1)
+            Text(r.rankTier.label, color = tierColor, style = MaterialTheme.typography.labelSmall)
+        }
+        CurrencyAmount(kind = CurrencyIconKind.TROPHY, text = r.trophies.toString(), color = Color(0xFFF2D493), style = MaterialTheme.typography.labelLarge)
+    }
+}
+
+/** Pinned "your row" — gold-bordered card with the YOU badge (mockup seasonYou). */
+@Composable
+private fun StandingsYouRow(r: LbRowDto) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(top = 12.dp)
+            .background(
+                androidx.compose.ui.graphics.Brush.linearGradient(listOf(Color(0x29E8B84B), Color(0x1A0F0820))),
+                RoundedCornerShape(14.dp)
+            )
+            .border(1.dp, Color(0xFFE8B84B), RoundedCornerShape(14.dp))
+            .padding(13.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        Text("#${r.rank}", color = Color(0xFFF4D886), style = MaterialTheme.typography.labelLarge, modifier = Modifier.width(30.dp))
+        AvatarView(avatarUrl = r.avatarUrl, size = 40.dp, frameId = r.frameId, ring = false)
+        Column(modifier = Modifier.weight(1f)) {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(7.dp)) {
+                Text(r.displayName, color = Color(0xFFF4D886), style = MaterialTheme.typography.titleSmall, maxLines = 1)
+                Box(
+                    modifier = Modifier
+                        .background(
+                            androidx.compose.ui.graphics.Brush.verticalGradient(listOf(Color(0xFFF7E2A0), Color(0xFFD5A63A))),
+                            RoundedCornerShape(100.dp)
+                        )
+                        .padding(horizontal = 7.dp, vertical = 2.dp)
+                ) { Text("YOU", color = Color(0xFF1A0F2E), style = MaterialTheme.typography.labelSmall) }
+            }
+            Text(r.rankTier.label, color = Color(0xFFC9A4FF), style = MaterialTheme.typography.labelSmall)
+        }
+        CurrencyAmount(kind = CurrencyIconKind.TROPHY, text = r.trophies.toString(), color = Color(0xFFF2D493), style = MaterialTheme.typography.labelLarge)
     }
 }
 
