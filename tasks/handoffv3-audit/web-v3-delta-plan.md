@@ -135,3 +135,18 @@ Do not reinvent." Applies to the WHOLE Android app:
 - An ASSET-FIDELITY PASS audits every Android screen against the asset inventory right after
   Phase 8's emulator screenshots land (screenshots = audit evidence), fixing all gaps
   (known: launcher placeholder, board texture, loading art; audit finds the rest).
+
+## OWNER DIRECTIVE (2026-07-13) — Mobile UI must match the mockup EXACTLY (screenshot evidence)
+Owner, verbatim: "do not deviate from what is designed in the mockup. you should follow what
+is the mockup, whatever the positions of the elements, space, gap, colors, buttons, etc."
+Evidence: side-by-side of the built Home screen vs the mockup showed reinterpretation
+(currency pills moved, Quick Match text instead of the gold button, missing tournaments card
+/ GAME MODES grid / board hero art / search icon / unread badge / READY pill / day counter).
+Consequence — MOBILE UI-FIDELITY PASS (runs immediately after the asset-fidelity pass):
+- Per screen: extract that screen's exact DOM/CSS from FilipinoDama Mobile.dc.html (the
+  inventory doc is only an index), rebuild the Compose layout 1:1 — element positions, order,
+  spacing/gaps, colors, buttons-vs-text, pills/badges, art slots.
+- Gate: emulator screencap compared against the mockup screen rendered at phone viewport in
+  an isolated headless browser (never the user's Chrome). Tests alone do NOT gate UI merges.
+- No element may be deferred without quoting proof the server lacks its data.
+- Priority: Home + header + tab bar first (owner's evidence), then every screen in nav order.
