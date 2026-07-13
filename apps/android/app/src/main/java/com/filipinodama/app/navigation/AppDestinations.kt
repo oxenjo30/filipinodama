@@ -78,6 +78,10 @@ object AppDestinations {
     const val PUBLIC_PROFILE = "profile/public/{userId}"
     fun publicProfile(userId: String) = "profile/public/$userId"
     const val LEADERBOARD = "social/leaderboard"
+    // Global Player Search — mockup {{ gsOpen }} overlay, the destination for
+    // Home's magnifier icon. Confirmed missing (UI-fidelity sweep); built
+    // against the real GET /api/users/search endpoint.
+    const val GLOBAL_SEARCH = "social/search"
 
     // Phase 6b (friends + DM, guilds, notifications): mobile-screen-inventory.md
     // SCREENs 26 (Friends), 27 (Add Friend — folded into Friends' own modal, no

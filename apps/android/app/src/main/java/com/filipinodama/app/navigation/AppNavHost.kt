@@ -68,6 +68,7 @@ import com.filipinodama.app.data.AuthRepository
 import com.filipinodama.app.ui.screens.social.DmConversationListScreen
 import com.filipinodama.app.ui.screens.social.DmThreadScreen
 import com.filipinodama.app.ui.screens.social.FriendsScreen
+import com.filipinodama.app.ui.screens.social.GlobalSearchScreen
 import com.filipinodama.app.ui.screens.social.GuildHallScreen
 import com.filipinodama.app.ui.screens.social.NotificationsScreen
 import kotlinx.coroutines.launch
@@ -281,7 +282,7 @@ fun AppNavHost() {
                     },
                     onOpenLeaderboard = { navController.navigate(AppDestinations.LEADERBOARD) },
                     onOpenNotifications = { navController.navigate(AppDestinations.NOTIFICATIONS) },
-                    onOpenSearch = { /* global player search — later phase, no destination yet */ },
+                    onOpenSearch = { navController.navigate(AppDestinations.GLOBAL_SEARCH) },
                     // Mockup's Wallet screen (top-up/balance detail) is out of this
                     // task's scope (no payments/top-up UI) and not in the owner's
                     // required-elements list — the chip renders correctly (real
@@ -376,6 +377,15 @@ fun AppNavHost() {
                 LeaderboardScreen(
                     onOpenPublicProfile = { userId -> navController.navigate(AppDestinations.publicProfile(userId)) },
                     onBack = { navController.popBackStack() }
+                )
+            }
+            composable(AppDestinations.GLOBAL_SEARCH) {
+                GlobalSearchScreen(
+                    onClose = { navController.popBackStack() },
+                    onOpenProfile = { userId ->
+                        navController.popBackStack()
+                        navController.navigate(AppDestinations.publicProfile(userId))
+                    }
                 )
             }
 
