@@ -70,6 +70,7 @@ import com.filipinodama.app.ui.screens.settings.SettingsScreen
 import com.filipinodama.app.ui.screens.system.MaintenanceScreen
 import com.filipinodama.app.ui.screens.system.OfflineBanner
 import com.filipinodama.app.data.AuthRepository
+import com.filipinodama.app.ui.screens.social.DiscoverGuildsScreen
 import com.filipinodama.app.ui.screens.social.DmConversationListScreen
 import com.filipinodama.app.ui.screens.social.DmThreadScreen
 import com.filipinodama.app.ui.screens.social.FriendsScreen
@@ -322,7 +323,10 @@ fun AppNavHost() {
                 StoreScreen(onOpenInventory = { navController.navigate(AppDestinations.INVENTORY) })
             }
             composable(AppDestinations.GUILD) {
-                GuildHallScreen(onOpenProfile = { userId -> navController.navigate(AppDestinations.publicProfile(userId)) })
+                GuildHallScreen(
+                    onOpenProfile = { userId -> navController.navigate(AppDestinations.publicProfile(userId)) },
+                    onOpenDiscover = { navController.navigate(AppDestinations.DISCOVER_GUILDS) }
+                )
             }
             composable(AppDestinations.PROFILE) {
                 ProfileScreen(
@@ -332,6 +336,7 @@ fun AppNavHost() {
                     onOpenMatch = { matchId -> navController.navigate(AppDestinations.matchDetail(matchId)) },
                     onOpenFriends = { navController.navigate(AppDestinations.FRIENDS) },
                     onOpenGuild = { navController.navigate(AppDestinations.GUILD) },
+                    onOpenDiscoverGuilds = { navController.navigate(AppDestinations.DISCOVER_GUILDS) },
                     onOpenOrders = { navController.navigate(AppDestinations.ORDERS) },
                     onOpenInventory = { navController.navigate(AppDestinations.INVENTORY) },
                     // Owner round-3 fix: Profile's Settings TAB now renders
@@ -345,6 +350,9 @@ fun AppNavHost() {
             }
             composable(AppDestinations.ACHIEVEMENTS) {
                 AchievementsScreen(onBack = { navController.popBackStack() })
+            }
+            composable(AppDestinations.DISCOVER_GUILDS) {
+                DiscoverGuildsScreen(onBack = { navController.popBackStack() })
             }
 
             // ---- Phase 7: settings, legal, delete account, system states ----

@@ -127,4 +127,9 @@ object AppDestinations {
     // current user's own achievements (no :id arg), reached from Profile
     // Overview's "See all ›" header and the achievements grid tap.
     const val ACHIEVEMENTS = "profile/achievements"
+
+    // Discover Guilds — mobile-screen-inventory.md SCREEN 17. Reached from
+    // Profile's "Discover Guilds" quick-link and Guild Hall's not-in-a-guild
+    // state; explicit back target is Profile per the mockup's `discoverBack`.
+    const val DISCOVER_GUILDS = "social/guilds/discover"
 }
