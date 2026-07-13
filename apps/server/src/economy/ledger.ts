@@ -81,7 +81,15 @@ export async function purchaseItem(prisma: PrismaClient, userId: string, itemId:
     if (owned) throw new Error("ALREADY_OWNED");
     const useDiamonds = item.priceDiamonds != null && item.priceGold == null;
     const currency: Currency = useDiamonds ? "DIAMONDS" : "GOLD";
-    const price = useDiamonds ? item.priceDiamonds! : item.priceGold ?? 0;
+    const basePrice = useDiamonds ? item.priceDiamonds! : item.priceGold ?? 0;
+    // Daily Deals: the client computes and displays item.salePrice when
+    // item.onSale is true (StoreAssets.kt storeItemPrice / apps/web equivalent)
+    // — charge that SAME price here, not the struck-through base price, or the
+    // user is silently overcharged relative to what they saw and confirmed.
+    const price =
+      item.onSale && item.salePrice != null && item.salePrice > 0 && item.salePrice < basePrice
+        ? item.salePrice
+        : basePrice;
     // spend (reuses the same tx by calling primitives inline)
     const user = await tx.user.findUniqueOrThrow({ where: { id: userId } });
     const col = COL[currency];
