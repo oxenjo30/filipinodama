@@ -381,14 +381,20 @@ fun AppNavHost() {
 
             // ---- Phase 5: economy surfaces ----
             composable(AppDestinations.INVENTORY) {
-                InventoryScreen(onBrowseStore = {
-                    navController.navigate(AppDestinations.STORE) { popUpTo(AppDestinations.HOME) }
-                })
+                InventoryScreen(
+                    onBrowseStore = {
+                        navController.navigate(AppDestinations.STORE) { popUpTo(AppDestinations.HOME) }
+                    },
+                    onBack = { navController.popBackStack() }
+                )
             }
             composable(AppDestinations.ORDERS) {
-                OrdersScreen(onBrowseStore = {
-                    navController.navigate(AppDestinations.STORE) { popUpTo(AppDestinations.HOME) }
-                })
+                OrdersScreen(
+                    onBrowseStore = {
+                        navController.navigate(AppDestinations.STORE) { popUpTo(AppDestinations.HOME) }
+                    },
+                    onBack = { navController.popBackStack() }
+                )
             }
             composable(AppDestinations.DAILY_REWARD) {
                 DailyRewardsScreen(onBack = { navController.popBackStack() })

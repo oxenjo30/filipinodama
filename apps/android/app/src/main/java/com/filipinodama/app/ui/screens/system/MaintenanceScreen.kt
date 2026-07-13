@@ -1,11 +1,13 @@
 package com.filipinodama.app.ui.screens.system
 
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -14,10 +16,12 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.filipinodama.app.R
 import com.filipinodama.app.ui.theme.Bg2
 import com.filipinodama.app.ui.theme.Gold
 import com.filipinodama.app.ui.theme.GoldLt
@@ -44,7 +48,8 @@ fun MaintenanceScreen(message: String, onCheckAgain: () -> Unit) {
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Center
         ) {
-            Text("✦", color = Gold, fontSize = 40.sp)
+            // Mockup uses the real logo-sun.png (88x88), not a placeholder glyph.
+            Image(painterResource(R.drawable.logo_sun), contentDescription = null, modifier = Modifier.size(88.dp))
             Text(
                 text = "✦ Scheduled maintenance ✦",
                 color = Gold,

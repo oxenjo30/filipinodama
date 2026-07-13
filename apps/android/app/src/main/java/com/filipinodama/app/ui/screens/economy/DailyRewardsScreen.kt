@@ -37,6 +37,7 @@ import com.filipinodama.app.data.economy.EconomyResult
 import com.filipinodama.app.ui.components.CurrencyAmount
 import com.filipinodama.app.ui.components.CurrencyIcon
 import com.filipinodama.app.ui.components.CurrencyIconKind
+import com.filipinodama.app.ui.components.MockupBackButton
 import com.filipinodama.app.ui.theme.Gold
 import com.filipinodama.app.ui.theme.GoldLt
 import com.filipinodama.app.ui.theme.Ink
@@ -84,7 +85,8 @@ fun DailyRewardsScreen(onBack: () -> Unit = {}) {
     }
 
     Column(modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background).padding(20.dp)) {
-        Text("✦ Login Streak ✦", color = Gold, style = MaterialTheme.typography.labelMedium)
+        MockupBackButton(onClick = onBack)
+        Text("✦ Login Streak ✦", color = Gold, style = MaterialTheme.typography.labelMedium, modifier = Modifier.padding(top = 12.dp))
         Text("Daily Reward", color = GoldLt, style = MaterialTheme.typography.headlineSmall, modifier = Modifier.padding(top = 6.dp, bottom = 4.dp))
         Text(
             "Log in every day to claim escalating rewards. Miss a day and the streak restarts at Day 1.",

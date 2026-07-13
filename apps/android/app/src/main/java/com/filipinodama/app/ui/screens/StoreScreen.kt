@@ -2,6 +2,7 @@ package com.filipinodama.app.ui.screens
 
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -149,31 +150,41 @@ fun StoreScreen(onOpenInventory: () -> Unit = {}) {
     }
 
     Column(modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
-        // Header: title + gold/diamond balances (display only — no "+").
+        // Header: title + gold/diamond balances (display only — no "+", mockup's
+        // diamond "+"/top-up affordance intentionally omitted per the earned-only
+        // policy). Mockup values: title font 800 24px Cinzel #f4ecd6; gold chip
+        // bg rgba(232,184,75,.1) border rgba(232,184,75,.28); diamond chip bg
+        // rgba(90,150,255,.1) border rgba(90,150,255,.3) (mobile-split.txt:1121-1130).
         Row(
-            modifier = Modifier.fillMaxWidth().padding(20.dp, 20.dp, 20.dp, 8.dp),
+            modifier = Modifier.fillMaxWidth().padding(16.dp, 20.dp, 16.dp, 12.dp),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Text("Store", color = GoldLt, style = MaterialTheme.typography.headlineSmall)
-            Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
-                BalancePill(icon = CurrencyIconKind.COIN, value = me?.gold ?: 0, color = Color(0xFFF2D493))
-                BalancePill(icon = CurrencyIconKind.GEM, value = me?.diamonds ?: 0, color = Color(0xFFFF9AA8))
+            Text("Store", color = Color(0xFFF4ECD6), style = MaterialTheme.typography.headlineSmall.copy(fontWeight = androidx.compose.ui.text.font.FontWeight.ExtraBold))
+            Row(horizontalArrangement = Arrangement.spacedBy(7.dp), verticalAlignment = Alignment.CenterVertically) {
+                BalancePill(icon = CurrencyIconKind.COIN, value = me?.gold ?: 0, color = Color(0xFFF0CF72), tint = Color(0xFFE8B84B))
+                BalancePill(icon = CurrencyIconKind.GEM, value = me?.diamonds ?: 0, color = Color(0xFF8FB3FF), tint = Color(0xFF5A96FF))
                 Box(
-                    modifier = Modifier.clickable(onClick = onOpenInventory).background(Panel, RoundedCornerShape(100.dp)).padding(10.dp)
+                    modifier = Modifier
+                        .clickable(onClick = onOpenInventory)
+                        .background(Color(0x1AE8B84B), CircleShape)
+                        .padding(10.dp)
                 ) { Text("🎒", style = MaterialTheme.typography.labelLarge) }
             }
         }
 
-        // Category tabs — real catalog types only.
+        // Category tabs — real catalog types only. Mockup pill: selected =
+        // gold gradient bg #efc25a→#c9971f, ink text #2a1608, border
+        // rgba(232,184,75,.5); unselected = bg rgba(27,16,48,.7), text
+        // #9a8bbf, border rgba(232,184,75,.14) (mobile-split.txt:4787).
         Row(
             modifier = Modifier
                 .fillMaxWidth()
                 .horizontalScroll(rememberScrollState())
-                .padding(horizontal = 20.dp, vertical = 8.dp),
+                .padding(horizontal = 16.dp, vertical = 8.dp),
             horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            CategoryChip(label = "All Items", selected = tab == "All", onClick = { tab = "All" })
+            CategoryChip(label = "Featured", selected = tab == "All", onClick = { tab = "All" })
             presentTypes.forEach { t ->
                 val label = STORE_TYPE_META[t]?.label ?: t
                 CategoryChip(label = label, selected = tab == label, onClick = { tab = label })
@@ -250,14 +261,17 @@ fun StoreScreen(onOpenInventory: () -> Unit = {}) {
 }
 
 @Composable
-private fun BalancePill(icon: CurrencyIconKind, value: Int, color: Color) {
+private fun BalancePill(icon: CurrencyIconKind, value: Int, color: Color, tint: Color) {
     Row(
-        modifier = Modifier.background(Panel, RoundedCornerShape(100.dp)).padding(horizontal = 12.dp, vertical = 8.dp),
-        horizontalArrangement = Arrangement.spacedBy(6.dp),
+        modifier = Modifier
+            .background(tint.copy(alpha = 0.1f), RoundedCornerShape(100.dp))
+            .border(1.dp, tint.copy(alpha = 0.3f), RoundedCornerShape(100.dp))
+            .padding(horizontal = 10.dp, vertical = 6.dp),
+        horizontalArrangement = Arrangement.spacedBy(4.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        com.filipinodama.app.ui.components.CurrencyIcon(kind = icon, size = 20.dp)
-        Text(value.toString(), color = color, style = MaterialTheme.typography.labelLarge)
+        com.filipinodama.app.ui.components.CurrencyIcon(kind = icon, size = 15.dp)
+        Text(value.toString(), color = color, style = MaterialTheme.typography.labelMedium)
     }
 }
 
@@ -266,10 +280,13 @@ private fun CategoryChip(label: String, selected: Boolean, onClick: () -> Unit) 
     Box(
         modifier = Modifier
             .clickable(onClick = onClick)
-            .background(if (selected) Gold.copy(alpha = 0.15f) else Color.Transparent, RoundedCornerShape(8.dp))
-            .padding(horizontal = 14.dp, vertical = 9.dp)
+            .background(
+                if (selected) androidx.compose.ui.graphics.Brush.verticalGradient(listOf(Color(0xFFEFC25A), Color(0xFFC9971F))) else androidx.compose.ui.graphics.Brush.verticalGradient(listOf(Color(0xB31B1030), Color(0xB31B1030))),
+                RoundedCornerShape(100.dp)
+            )
+            .padding(horizontal = 15.dp, vertical = 9.dp)
     ) {
-        Text(label, color = if (selected) GoldLt else Ink, style = MaterialTheme.typography.labelMedium)
+        Text(label, color = if (selected) Color(0xFF2A1608) else Color(0xFF9A8BBF), style = MaterialTheme.typography.labelMedium)
     }
 }
 
@@ -331,11 +348,22 @@ private fun StoreItemCard(
             .padding(14.dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
+        // Mockup tag scheme (mobile-split.txt:4759-4760): NEW=#3fbf6f on
+        // rgba(63,191,111,.16); PREMIUM=#c9a4ff on rgba(201,164,255,.16);
+        // SEASON=#f0cf72 on rgba(240,207,114,.16); VALUE=#8fb3ff on
+        // rgba(90,150,255,.16); default=#ff8f9c on rgba(255,90,106,.16).
         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
             if (owned) {
-                Badge(text = "OWNED", background = Color(0xFF2F8F5B))
+                Badge(text = "OWNED", color = Color(0xFF7FE0A3), background = Color(0x2A3FBF6F))
             } else if (item.tag != null) {
-                Badge(text = item.tag, background = Color(0xFF7A4FBF))
+                val (fg, bg) = when (item.tag) {
+                    "NEW" -> Color(0xFF3FBF6F) to Color(0x293FBF6F)
+                    "PREMIUM" -> Color(0xFFC9A4FF) to Color(0x29C9A4FF)
+                    "SEASON" -> Color(0xFFF0CF72) to Color(0x29F0CF72)
+                    "VALUE" -> Color(0xFF8FB3FF) to Color(0x295A96FF)
+                    else -> Color(0xFFFF8F9C) to Color(0x29FF5A6A)
+                }
+                Badge(text = item.tag, color = fg, background = bg)
             } else {
                 Box {}
             }
@@ -398,9 +426,9 @@ private fun StoreItemCard(
 }
 
 @Composable
-private fun Badge(text: String, background: Color) {
-    Box(modifier = Modifier.background(background, RoundedCornerShape(5.dp)).padding(horizontal = 7.dp, vertical = 3.dp)) {
-        Text(text, color = androidx.compose.ui.graphics.Color.White, style = MaterialTheme.typography.labelSmall)
+private fun Badge(text: String, color: Color, background: Color) {
+    Box(modifier = Modifier.background(background, RoundedCornerShape(100.dp)).padding(horizontal = 8.dp, vertical = 3.dp)) {
+        Text(text, color = color, style = MaterialTheme.typography.labelSmall)
     }
 }
 

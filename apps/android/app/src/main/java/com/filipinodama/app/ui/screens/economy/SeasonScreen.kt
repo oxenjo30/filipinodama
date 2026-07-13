@@ -41,6 +41,7 @@ import com.filipinodama.app.R
 import com.filipinodama.app.ui.components.CurrencyAmount
 import com.filipinodama.app.ui.components.CurrencyIcon
 import com.filipinodama.app.ui.components.CurrencyIconKind
+import com.filipinodama.app.ui.components.MockupBackButton
 import com.filipinodama.app.ui.theme.Gold
 import com.filipinodama.app.ui.theme.GoldLt
 import com.filipinodama.app.ui.theme.Ink
@@ -74,7 +75,8 @@ fun SeasonScreen(onBack: () -> Unit = {}) {
     LaunchedEffect(Unit) { load() }
 
     Column(modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background).padding(20.dp)) {
-        Text("✦ Ranked Season ✦", color = Gold, style = MaterialTheme.typography.labelMedium)
+        MockupBackButton(onClick = onBack)
+        Text("✦ RANKED SEASON ✦", color = Gold, style = MaterialTheme.typography.labelMedium, modifier = Modifier.padding(top = 12.dp))
 
         when {
             error != null -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
