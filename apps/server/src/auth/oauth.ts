@@ -7,14 +7,18 @@ import { err } from "../lib/errors.js";
 import { grantDefaults } from "./service.js";
 
 /**
- * OAuth 2.0 (Google / Facebook) — authorization-code flow.
+ * OAuth 2.0 (Google / Facebook) — authorization-code flow (web), plus a
+ * Google ID-token flow (native Android via Credential Manager).
  *
  * 1. /api/auth/oauth/:provider          → redirect to the provider's consent screen
  * 2. /api/auth/oauth/:provider/callback → exchange code → profile → find/link/create
  *    user → issue our own session (same cookies as email login).
+ * 3. /api/auth/oauth/google/token       → verify a Credential-Manager-issued Google
+ *    ID token → same find/link/create user path → same session cookies.
  *
- * A short-lived signed `state` guards against CSRF. Providers with no configured
- * credentials return a "not configured" error (the button is disabled anyway).
+ * A short-lived signed `state` guards against CSRF on the redirect flow. Providers
+ * with no configured credentials return a "not configured" error (the button is
+ * disabled anyway).
  */
 
 export type OAuthProvider = "google" | "facebook";
@@ -109,6 +113,68 @@ export async function fetchProfile(p: OAuthProvider, code: string): Promise<Prof
   if (!infoRes.ok) throw err.badRequest("OAUTH_PROFILE", "Facebook profile fetch failed");
   const info = (await infoRes.json()) as { id: string; email?: string; name?: string; picture?: { data?: { url?: string } } };
   return { providerId: info.id, email: info.email ?? null, name: info.name ?? null, avatar: info.picture?.data?.url ?? null };
+}
+
+/**
+ * Verify a Google-issued ID token (native Credential Manager flow) and return
+ * the profile it encodes, or throw if the token is invalid/untrustworthy.
+ *
+ * Verification is delegated to Google's tokeninfo endpoint over HTTPS, which
+ * performs the signature check server-side (Google validates the JWT
+ * signature against its own rotating keys before returning claims) — this
+ * avoids adding a JWKS/JWT-verification dependency. We additionally re-check
+ * aud/iss/exp/email_verified ourselves rather than trusting a 200 status
+ * alone, since tokeninfo returns 200 for syntactically valid-but-untrusted
+ * combinations too.
+ *
+ * HARDENING NOTE (future): swap this for local JWKS verification
+ * (https://www.googleapis.com/oauth2/v3/certs) to remove the network
+ * round-trip and the dependency on Google's tokeninfo endpoint staying
+ * available; functionally equivalent for now.
+ *
+ * Exported as its own function (rather than inlined in the route) so tests
+ * can stub the network boundary without hitting Google.
+ */
+type GoogleTokenInfo = {
+  sub: string;
+  aud: string;
+  iss: string;
+  exp: string; // seconds-since-epoch, as a string, per Google's tokeninfo response
+  email?: string;
+  email_verified?: string; // "true" | "false"
+  name?: string;
+  picture?: string;
+};
+
+export async function verifyGoogleIdToken(idToken: string): Promise<Profile> {
+  if (!idToken || typeof idToken !== "string") throw err.badRequest("OAUTH_TOKEN", "Missing ID token");
+
+  const res = await fetch(
+    `https://oauth2.googleapis.com/tokeninfo?id_token=${encodeURIComponent(idToken)}`,
+  );
+  if (!res.ok) throw err.unauthorized("OAUTH_TOKEN_INVALID", "Google could not verify this token");
+  const info = (await res.json()) as GoogleTokenInfo;
+
+  if (info.aud !== env.GOOGLE_CLIENT_ID) {
+    throw err.unauthorized("OAUTH_AUDIENCE_MISMATCH", "This token was not issued for this app");
+  }
+  if (info.iss !== "accounts.google.com" && info.iss !== "https://accounts.google.com") {
+    throw err.unauthorized("OAUTH_ISSUER_MISMATCH", "Untrusted token issuer");
+  }
+  const expSeconds = Number(info.exp);
+  if (!Number.isFinite(expSeconds) || expSeconds * 1000 <= Date.now()) {
+    throw err.unauthorized("OAUTH_TOKEN_EXPIRED", "This sign-in has expired, please try again");
+  }
+  if (info.email_verified !== "true") {
+    throw err.unauthorized("OAUTH_EMAIL_UNVERIFIED", "Your Google email is not verified");
+  }
+
+  return {
+    providerId: info.sub,
+    email: info.email ?? null,
+    name: info.name ?? null,
+    avatar: info.picture ?? null,
+  };
 }
 
 async function uniqueUsername(base: string): Promise<string> {

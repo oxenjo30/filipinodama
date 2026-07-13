@@ -6,6 +6,25 @@ import androidx.security.crypto.EncryptedSharedPreferences
 import androidx.security.crypto.MasterKey
 
 /**
+ * Minimal key-value contract [SecureStore] satisfies, extracted so data-layer
+ * classes that only need simple get/put persistence (e.g.
+ * [com.filipinodama.app.data.settings.SettingsStore]) can depend on THIS
+ * instead of the concrete, Android-Context-bound [SecureStore] — which lets
+ * plain JVM unit tests inject an in-memory fake instead of requiring
+ * Robolectric (this project has no Robolectric dependency; see the Phase 2
+ * AuthRepositoryLogicTest kdoc for the established "extract pure/injectable
+ * logic instead" convention).
+ */
+interface KeyValueStore {
+    fun getString(key: String): String?
+    fun putString(key: String, value: String)
+    fun remove(key: String)
+    fun clear()
+    fun getBoolean(key: String): Boolean
+    fun putBoolean(key: String, value: Boolean)
+}
+
+/**
  * Thin wrapper around EncryptedSharedPreferences for session-related
  * strings: e.g. a serialized cookie blob (see PersistentCookieJar) and
  * simple session metadata like an "isGuest" flag or last-known user id.
@@ -15,7 +34,7 @@ import androidx.security.crypto.MasterKey
  * matching how JS can't touch them either) — this store just persists
  * whatever the app needs across process death.
  */
-class SecureStore(context: Context) {
+class SecureStore(context: Context) : KeyValueStore {
 
     private val prefs: SharedPreferences = run {
         val masterKey = MasterKey.Builder(context)
@@ -31,23 +50,23 @@ class SecureStore(context: Context) {
         )
     }
 
-    fun getString(key: String): String? = prefs.getString(key, null)
+    override fun getString(key: String): String? = prefs.getString(key, null)
 
-    fun putString(key: String, value: String) {
+    override fun putString(key: String, value: String) {
         prefs.edit().putString(key, value).apply()
     }
 
-    fun remove(key: String) {
+    override fun remove(key: String) {
         prefs.edit().remove(key).apply()
     }
 
-    fun clear() {
+    override fun clear() {
         prefs.edit().clear().apply()
     }
 
-    fun getBoolean(key: String): Boolean = prefs.getBoolean(key, false)
+    override fun getBoolean(key: String): Boolean = prefs.getBoolean(key, false)
 
-    fun putBoolean(key: String, value: Boolean) {
+    override fun putBoolean(key: String, value: Boolean) {
         prefs.edit().putBoolean(key, value).apply()
     }
 

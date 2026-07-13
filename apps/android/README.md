@@ -1,4 +1,4 @@
-# FilipinoDama — Native Android (Phase 1 scaffold)
+# FilipinoDama — Native Android
 
 Kotlin + Jetpack Compose native Android client. Separate Gradle toolchain —
 zero impact on the pnpm/Node apps (`apps/web`, `apps/admin`, `apps/server`)
@@ -6,7 +6,10 @@ elsewhere in this repo.
 
 Phase 1 scope: project scaffold, royal dark theme, 5-tab bottom navigation
 shell with placeholder screens, and network/storage plumbing (API client,
-secure cookie storage, socket stub). No game screens, no feature logic yet.
+secure cookie storage, socket stub). Phases 2-7 build out auth, gameplay,
+economy, profile/social, and — this phase — Settings, legal pages, delete
+account, and system states (maintenance/offline/error). Damath stays
+web-only and is never added here (owner directive).
 
 ## Build
 
@@ -67,6 +70,94 @@ emulator. To hit a local dev server from a real phone/tablet, override
 before committing; this value is not meant to be a permanent per-developer
 setting in Phase 1.
 
+## Google Sign-In setup (owner action required)
+
+Native Google Sign-In uses Android's **Credential Manager** (`androidx.credentials`
++ `com.google.android.libraries.identity.googleid`), which hands the app a
+Google-signed ID token that `POST /api/auth/oauth/google/token` verifies
+server-side (same `GOOGLE_CLIENT_ID` env var, same find-or-create-user logic
+as the web's OAuth redirect flow — see `apps/server/src/auth/oauth.ts`).
+
+**No Android-side client-ID configuration is needed.** Per the owner's
+shared-credentials directive — web and mobile share API credentials, no
+mobile-specific keys/config — the app fetches the Google OAuth client ID from
+the server at runtime (`GET /api/auth/providers` → `googleClientId`, the same
+value already configured server-side as `GOOGLE_CLIENT_ID`) rather than
+reading it from an Android `BuildConfig` value. `GoogleSignInHelper.resolveClientId()`
+prefers that server value; only a genuinely absent server value falls back to
+an optional local-dev override (see "Optional: local-dev client-ID override"
+below), and if neither is available the button is disabled with an honest
+"Google sign-in is not configured yet" state — never a fabricated success.
+
+**This still does not work out of the box.** The one remaining item is
+registering this app's package + signing signature in Google Cloud Console —
+an **app registration, NOT a new key/secret** — so Credential Manager can
+issue a credential for this app at all. Until that registration exists,
+tapping "Continue with Google" fails at credential retrieval on-device even
+though the client and server code paths are fully wired.
+
+### Register this app's signature in the existing Google Cloud project
+
+In the **same Google Cloud project as the existing web OAuth client**
+(the one behind the server's `GOOGLE_CLIENT_ID`/`GOOGLE_CLIENT_SECRET` —
+do **not** create a new project or a new client secret):
+
+1. Get the debug keystore's SHA-1 fingerprint:
+   ```sh
+   keytool -list -v -keystore %USERPROFILE%\.android\debug.keystore -alias androiddebugkey -storepass android
+   ```
+   (macOS/Linux: `~/.android/debug.keystore` instead of
+   `%USERPROFILE%\.android\debug.keystore`.) Copy the `SHA1:` value from the
+   output. For this build, that value is:
+   ```
+   F7:0D:21:15:EB:C0:2E:AD:39:B4:33:D3:90:B5:8E:CA:F5:7B:DA:5B
+   ```
+2. Go to **APIs & Services → Credentials → Create Credentials → OAuth client ID**.
+3. Application type: **Android**.
+4. Package name: `com.filipinodama.app`.
+5. SHA-1 certificate fingerprint: the value from step 1 (debug, above). Add
+   the **release** signing key's SHA-1 here too once a real release keystore
+   exists (see "Release / AAB" above — release builds are unsigned today).
+6. Save. (No client secret is issued for Android clients — Credential
+   Manager authenticates via the signed APK + this registration instead, and
+   nothing here is a mobile-specific credential the app itself holds.)
+
+This registration is what lets Credential Manager return a real Google
+credential for this app's package/signature. It does **not** create or
+replace any client ID — the app authenticates *against* the existing shared
+web client ID, which it now reads from the server (see above); this step
+only authorizes this app's package+signature to participate in that same
+OAuth client's flows.
+
+### Optional: local-dev client-ID override
+
+`GoogleSignInHelper.resolveClientId()` falls back to
+`BuildConfig.GOOGLE_SERVER_CLIENT_ID` ONLY when the server's
+`providers.googleClientId` is null/blank — e.g. pointing a debug build at a
+different client ID than whatever a shared dev server currently returns.
+This is never required for normal operation; leave it unset unless you have
+a specific reason to override the server value locally:
+
+```properties
+# apps/android/local.properties (gitignored) or a global gradle.properties
+GOOGLE_SERVER_CLIENT_ID=xxxxxxxxxxxx.apps.googleusercontent.com
+```
+
+or
+
+```sh
+GOOGLE_SERVER_CLIENT_ID=xxxxxxxxxxxx.apps.googleusercontent.com ./gradlew assembleDebug
+```
+
+### Unverified state
+
+As of this change, the console registration step above has **not** been
+performed by an operator with Google Cloud Console access — only the code
+paths (server endpoint + `googleClientId` field, Android runtime resolution,
+Credential Manager wiring) are built and tested. Once the registration
+exists, on-device credential retrieval should be manually verified on an
+emulator or device with a Google account signed in.
+
 ## Fonts
 
 Self-hosted OFL 1.1 fonts (Cinzel, Inter, JetBrains Mono) live in
@@ -103,6 +194,44 @@ apps/android/
 ├── NOTICE.md                    # font licenses
 └── README.md                    # this file
 ```
+
+## Push notifications (future work)
+
+Phase 7 adds push-READINESS only — no live push. What's already in place:
+
+- A `NotificationChannel` (`match_and_social`) is created idempotently on
+  every app start (`PushNotifications.ensureChannel`, called from
+  `MainActivity.onCreate`).
+- The Android 13+ (API 33+) runtime `POST_NOTIFICATIONS` permission is
+  requested from the Settings screen's "Push Notifications" toggle
+  (declared in `AndroidManifest.xml`; requested via
+  `ActivityResultContracts.RequestPermission()` in `SettingsScreen.kt`).
+- `PushNotifications.onPushTokenReady(token: String)` is a documented,
+  intentionally empty stub — the hand-off point for a future FCM device
+  token, once Firebase is added.
+
+To actually enable push later, the owner needs to:
+
+1. Create a Firebase project and add an Android app to it (package
+   `com.filipinodama.app`), then download `google-services.json` into
+   `apps/android/app/`.
+2. Add the Firebase BoM + `firebase-messaging-ktx` to
+   `app/build.gradle.kts` and the Google Services Gradle plugin to the root
+   `build.gradle.kts` — NOT done in this phase, by design (no Firebase
+   dependency was added without the owner's project/config in hand).
+3. Implement a `FirebaseMessagingService` that posts into the existing
+   `PushNotifications.CHANNEL_ID` channel, and call
+   `PushNotifications.onPushTokenReady(token)` from
+   `onNewToken`/`FirebaseMessaging.getInstance().token`.
+4. Add a server-side endpoint to receive + store the device token per user
+   (none exists yet — `apps/server` has no push-token table/route), and a
+   send path (e.g. via Firebase Admin SDK) for match invites, friend
+   requests, guild activity, and support replies — the same events the
+   in-app Notifications screen already surfaces.
+5. Re-verify the `POST_NOTIFICATIONS` request flow still gates correctly
+   once real notifications are posted (today nothing is posted, so the
+   permission simply unlocks the OS-level toggle with no functional effect
+   yet).
 
 ## Known Phase 1 limitations (by design, not oversight)
 
