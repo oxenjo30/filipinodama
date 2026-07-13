@@ -49,6 +49,8 @@ import com.filipinodama.app.ui.screens.game.MatchmakingScreen
 import com.filipinodama.app.ui.screens.game.ModeSelectScreen
 import com.filipinodama.app.ui.screens.game.OfflineGameScreen
 import com.filipinodama.app.ui.screens.game.OnlineMatchScreen
+import com.filipinodama.app.ui.components.LoadingContext
+import com.filipinodama.app.ui.components.LoadingOverlay
 import com.filipinodama.app.ui.screens.rooms.LiveMatchBrowserScreen
 import com.filipinodama.app.ui.screens.rooms.PrivateRoomScreen
 import com.filipinodama.app.ui.screens.economy.DailyRewardsScreen
@@ -112,6 +114,29 @@ import kotlinx.coroutines.launch
  *    BackHandler while on Onboarding so there is nothing behind it to
  *    return to.
  */
+
+/**
+ * In-flow pre-match loader gate — mockup `playWithLoader(ctx, fn)` (Mobile.dc.html
+ * line 2695): show [LoadingOverlay] for [durationMs] (2050, matching the
+ * mockup) the moment a match destination is entered, then reveal [content].
+ * [key] re-arms the gate per distinct navigation (e.g. a new matchId/mode),
+ * so re-entering the same route (rematch, retry) shows the loader again just
+ * like the mockup's fresh `playWithLoader` call per transition.
+ */
+@Composable
+private fun MatchEntryGate(
+    key: Any?,
+    loadingContext: LoadingContext,
+    durationMs: Int = 2050,
+    content: @Composable () -> Unit
+) {
+    var showLoader by remember(key) { mutableStateOf(true) }
+    if (showLoader) {
+        LoadingOverlay(context = loadingContext, durationMs = durationMs, onFinished = { showLoader = false })
+    } else {
+        content()
+    }
+}
 
 private val tabRoutes = setOf(
     AppDestinations.HOME,
@@ -305,7 +330,8 @@ fun AppNavHost() {
                     onOpenFriends = { navController.navigate(AppDestinations.FRIENDS) },
                     onOpenSettings = { navController.navigate(AppDestinations.SETTINGS) },
                     onOpenGuild = { navController.navigate(AppDestinations.GUILD) },
-                    onOpenOrders = { navController.navigate(AppDestinations.ORDERS) }
+                    onOpenOrders = { navController.navigate(AppDestinations.ORDERS) },
+                    onOpenInventory = { navController.navigate(AppDestinations.INVENTORY) }
                 )
             }
 
@@ -371,7 +397,8 @@ fun AppNavHost() {
                     onOpenReplay = { matchId -> navController.navigate(AppDestinations.replay(matchId)) },
                     onOpenChat = { targetId -> navController.navigate(AppDestinations.dmThread(targetId)) },
                     signedIn = signedIn,
-                    onRequireSignIn = { navController.navigate(AppDestinations.LOGIN) }
+                    onRequireSignIn = { navController.navigate(AppDestinations.LOGIN) },
+                    onBack = { navController.popBackStack() }
                 )
             }
 
@@ -453,20 +480,24 @@ fun AppNavHost() {
                 arguments = listOf(navArgument("difficulty") { type = NavType.StringType })
             ) { backStackEntry ->
                 val difficulty = backStackEntry.arguments?.getString("difficulty") ?: "normal"
-                OfflineGameScreen(
-                    difficulty = difficulty,
-                    onChangeDifficulty = {
-                        navController.navigate(AppDestinations.AI_DIFFICULTY) {
-                            popUpTo(AppDestinations.MODE_SELECT)
+                // Mockup: startAI() -> playWithLoader('default', ...) before the
+                // board shows (finding #1/#2 — was previously an instant jump).
+                MatchEntryGate(key = backStackEntry.id, loadingContext = LoadingContext.DEFAULT) {
+                    OfflineGameScreen(
+                        difficulty = difficulty,
+                        onChangeDifficulty = {
+                            navController.navigate(AppDestinations.AI_DIFFICULTY) {
+                                popUpTo(AppDestinations.MODE_SELECT)
+                            }
+                        },
+                        onHome = {
+                            GameRepository.reset()
+                            navController.navigate(AppDestinations.HOME) {
+                                popUpTo(navController.graph.findStartDestination().id)
+                            }
                         }
-                    },
-                    onHome = {
-                        GameRepository.reset()
-                        navController.navigate(AppDestinations.HOME) {
-                            popUpTo(navController.graph.findStartDestination().id)
-                        }
-                    }
-                )
+                    )
+                }
             }
 
             composable(
@@ -498,14 +529,22 @@ fun AppNavHost() {
                     MatchRepository.reset()
                     navController.popBackStack(AppDestinations.MODE_SELECT, inclusive = false)
                 }
-                OnlineMatchScreen(
-                    mode = mode,
-                    onExit = {
-                        navController.popBackStack(AppDestinations.MODE_SELECT, inclusive = false)
-                    },
-                    onWatchReplay = { matchId -> navController.navigate(AppDestinations.replay(matchId)) },
-                    onOpenSettings = { navController.navigate(AppDestinations.SETTINGS) }
-                )
+                // Mockup: enterMatchmaking()/startRoomMatch()/submitJoin() all
+                // funnel into playWithLoader(ctx, ...) before the board shows
+                // (finding #1/#2). RANKED gets the crimson-tinted loader
+                // context, everything else (CASUAL/PRIVATE/SPECTATE) the
+                // matchmaking context — mirrors the mockup's ctx mapping.
+                val loadingCtx = if (mode == "RANKED") LoadingContext.RANKED else LoadingContext.MATCHMAKING
+                MatchEntryGate(key = backStackEntry.id, loadingContext = loadingCtx) {
+                    OnlineMatchScreen(
+                        mode = mode,
+                        onExit = {
+                            navController.popBackStack(AppDestinations.MODE_SELECT, inclusive = false)
+                        },
+                        onWatchReplay = { matchId -> navController.navigate(AppDestinations.replay(matchId)) },
+                        onOpenSettings = { navController.navigate(AppDestinations.SETTINGS) }
+                    )
+                }
             }
 
             // ---- Phase 4: private rooms, in-match chat + emotes, spectate ----

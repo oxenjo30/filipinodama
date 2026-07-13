@@ -33,6 +33,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.filipinodama.app.data.profile.ProfileExtrasResponse
 import com.filipinodama.app.data.profile.ProfileRepository
 import com.filipinodama.app.data.profile.ProfileResult
@@ -80,7 +81,8 @@ fun PublicProfileScreen(
     onOpenReplay: (String) -> Unit,
     onOpenChat: (String) -> Unit = {},
     signedIn: Boolean = true,
-    onRequireSignIn: () -> Unit = {}
+    onRequireSignIn: () -> Unit = {},
+    onBack: () -> Unit = {}
 ) {
     var user by remember { mutableStateOf<PublicUserProfileDto?>(null) }
     var notFound by remember { mutableStateOf(false) }
@@ -123,6 +125,24 @@ fun PublicProfileScreen(
     }
 
     Column(modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background).verticalScroll(rememberScrollState())) {
+        // Header — mockup lines 2250-2253 ("PLAYER PUBLIC PROFILE"): a bare
+        // in-flow flex row (no header-bar container of its own) holding the
+        // ‹ back control + an uppercase "Player profile" eyebrow label. This
+        // app has no OS back stack chrome for this screen, so the mockup's
+        // explicit back button is the only way back — previously missing.
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(start = 16.dp, top = 44.dp, end = 16.dp, bottom = 6.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            com.filipinodama.app.ui.components.MockupBackButton(onClick = onBack)
+            Text(
+                "PLAYER PROFILE",
+                color = Ink2,
+                style = MaterialTheme.typography.labelMedium,
+                letterSpacing = 2.sp
+            )
+        }
         when {
             notFound -> Box(Modifier.fillMaxSize().padding(40.dp), contentAlignment = Alignment.Center) {
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
@@ -154,7 +174,7 @@ fun PublicProfileScreen(
                 // PresenceRepository.isOnline() would silently report "Offline"
                 // for a genuinely-online non-friend, which is worse than not
                 // showing the pill. Avatar sized 96dp per the mockup (was 76dp).
-                Column(modifier = Modifier.fillMaxWidth().padding(20.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                Column(modifier = Modifier.fillMaxWidth().padding(start = 20.dp, top = 12.dp, end = 20.dp, bottom = 8.dp), horizontalAlignment = Alignment.CenterHorizontally) {
                     AvatarView(avatarUrl = u.avatarUrl, frameId = u.frameId, size = 96.dp)
                     Text(u.displayName, color = Color(0xFFF4ECD6), style = MaterialTheme.typography.headlineSmall, modifier = Modifier.padding(top = 14.dp))
                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(top = 5.dp)) {

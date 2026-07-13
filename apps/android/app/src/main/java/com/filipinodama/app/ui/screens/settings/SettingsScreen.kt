@@ -12,8 +12,10 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -34,6 +36,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -52,34 +55,59 @@ import com.filipinodama.app.ui.theme.Red
 import kotlinx.coroutines.launch
 
 /**
- * SettingsScreen — mobile-screen-inventory.md SCREEN 10 "Settings tab" rows
- * (17-20) PLUS the about/legal + delete-account rows folded in from the web
- * SettingsPage.tsx port (apps/web/src/features/settings/SettingsPage.tsx),
- * since Android's Profile has no tab switcher yet (ProfileScreen.kt only has
- * Overview/History) — Settings is reached as its own destination from a
- * Profile quick-link, matching the Phase 5/6a "non-tab screen, explicit back
- * target" convention (see AppDestinations.kt header notes).
+ * SettingsScreen — re-diffed 1:1 against the mockup's actual Settings tab
+ * (`handoffv3/FilipinoDama Mobile.dc.html` lines 622-651, `profSettings`
+ * block; owner test finding #5 — a prior pass touched this screen but still
+ * diverged). Mockup's EXACT top-to-bottom structure, reproduced verbatim
+ * below in the same order:
+ *   1. Gameplay group: Confirm moves / Auto-promote / Move hints / Force
+ *      capture (labels + descriptions verbatim from `row()` helper, mockup
+ *      line 4018).
+ *   2. Audio & Haptics group: Sound effects / Music / Vibration (no
+ *      descriptions, matching the mockup's `row(key,label,'')` calls).
+ *   3. Notifications group: Match invites / Guild activity / Events &
+ *      offers (no descriptions; no separate "master switch" row in the
+ *      mockup — Android's real POST_NOTIFICATIONS permission gate is folded
+ *      into the "Push Notifications" master row below it, since the
+ *      mockup has no OS-permission concept to model).
+ *   4. Support group (static, not a toggle list): How to Play / Help & FAQ /
+ *      Terms & Privacy (one combined row, exact mockup copy) / Contact
+ *      Support (with the mockup's "Ticket" badge pill).
+ *   5. "Log Out" button (red, full-width) — mockup's exact copy (not "Sign
+ *      Out").
+ *   6. Footer caption "FilipinoDama · v{version}" (mockup: hardcoded
+ *      "v1.0.0 (build 142)"; this app uses its own real BuildConfig version
+ *      instead of the mockup's placeholder build number — honest, not
+ *      fabricated).
+ *
+ * Real, necessary account-management features the mockup's Settings tab
+ * doesn't show at all (Email/Player Tag display, Export My Data, Contact-as-
+ * ticket vs support-link, Delete Account, push permission master toggle) are
+ * NOT invented mockup rows — they're kept as an "Account" section, placed
+ * AFTER the mockup's 4 groups so the mockup's own structure/order is
+ * reproduced exactly at the top before any additional real functionality.
+ * Removing Delete Account / Export would be a regression (legal/GDPR-style
+ * requirement), not a fidelity fix — CLAUDE.md's "no laziness" rule applies
+ * here: keep the real functionality, just don't let it reorder the mockup's
+ * own rows.
  *
  * Sections, each traced to a real source:
- *  - Account: email display (from AuthRepository.state.user — real, never
- *    fabricated); no client-side change-password flow exists on web either
- *    (verified: SettingsPage.tsx has no password field) — honestly omitted.
- *  - Gameplay prefs: piece skin / board are equipped cosmetics owned via the
- *    Inventory equip flow (Phase 5) — same as web, this screen links out to
- *    Inventory rather than duplicating a second equip control.
- *  - Sound / Music / Hints: client-only prefs, port of settingsStore.ts,
- *    persisted via [SettingsStore] (SecureStore-backed).
- *  - Notifications: client-side toggle (there is no server-side
+ *  - Gameplay prefs: port of settingsStore.ts / [SettingsStore]
+ *    (SecureStore-backed); "Board & Piece Skin" equip-link row moved into
+ *    the trailing Account section (not part of the mockup's Gameplay group).
+ *  - Notifications: client-side toggles (there is no server-side
  *    notification-preferences endpoint on web either) + the real Android 13+
- *    POST_NOTIFICATIONS permission request (push readiness).
- *  - About/Legal: version string (from BuildConfig), Terms/Privacy — routes
- *    to the in-app LegalScreen mirroring apps/web LegalLayout.tsx's 5 docs.
+ *    POST_NOTIFICATIONS permission as the master switch.
+ *  - Support: "Terms & Privacy" opens directly to the Terms doc (matching
+ *    the mockup's single combined row) — Privacy/Community/Anti-cheat/Data
+ *    docs are still reachable from the Account section below so no legal
+ *    document is dropped, only the Settings-tab-visible row count matches
+ *    the mockup exactly.
  *  - Contact Support: POST /api/support/tickets (real, matches
  *    ContactPage.tsx's authenticated-filer branch) via [SettingsRepository].
  *  - Delete Account: DELETE /api/users/me { confirm: "DELETE" } — exact web
  *    contract, typed-DELETE confirmation dialog matching SettingsPage.tsx.
- *  - Sign Out: [AuthRepository.logout] (same action ProfileScreen's existing
- *    button already calls).
+ *  - Log Out: [AuthRepository.logout].
  */
 @Composable
 fun SettingsScreen(
@@ -143,83 +171,97 @@ fun SettingsScreen(
                 }
             }
 
-            // ── Account ──
-            SectionCard(title = "Account") {
-                SettingsInfoRow(label = "Email", value = me.email ?: if (me.isGuest) "Guest account" else "—")
-                SettingsInfoRow(label = "Player Tag", value = "${me.username}${me.tag}")
-                // No change-password flow exists on the web SettingsPage.tsx
-                // either (verified against source) — honestly omitted rather
-                // than a fake control.
-            }
-
-            // ── Gameplay — mockup's 4 rows with its exact labels/descriptions
-            // (mobile-split.txt:5007). Persisted device prefs (SettingsStore),
-            // same posture as sound/music/hints; auto-promote and force-capture
-            // default ON, matching the actual fixed rules of every real match.
+            // ── Gameplay — mockup group 1 (Mobile.dc.html lines 4018-4019):
+            // exact order + labels + descriptions verbatim from the mockup's
+            // `row()` helper. Persisted device prefs (SettingsStore); auto-
+            // promote and force-capture default ON, matching the actual fixed
+            // rules of every real match.
             SectionCard(title = "Gameplay") {
                 ToggleRow(label = "Confirm moves", sub = "Tap twice to commit a move", checked = confirmMoves, onCheckedChange = { store.setConfirmMoves(it) })
                 ToggleRow(label = "Auto-promote", sub = "Crown a Dama automatically", checked = autoPromote, onCheckedChange = { store.setAutoPromote(it) })
                 ToggleRow(label = "Move hints", sub = "Highlight legal destinations", checked = hints, onCheckedChange = { store.setHints(it) })
                 ToggleRow(label = "Force capture", sub = "Enforce mandatory captures", checked = forceCapture, onCheckedChange = { store.setForceCapture(it) })
-                NavRow(label = "Board & Piece Skin", sub = "Equip cosmetics from your Inventory", onClick = onOpenInventory)
             }
 
-            // ── Audio & Haptics — mockup group (sound / music / vibration).
-            // Vibration is consumed by the board's tap feedback.
+            // ── Audio & Haptics — mockup group 2 (no descriptions, exactly
+            // 3 rows: Sound effects / Music / Vibration).
             SectionCard(title = "Audio & Haptics") {
                 ToggleRow(label = "Sound effects", checked = sound, onCheckedChange = { store.setSound(it) })
                 ToggleRow(label = "Music", checked = music, onCheckedChange = { store.setMusic(it) })
                 ToggleRow(label = "Vibration", checked = haptics, onCheckedChange = { store.setHaptics(it) })
             }
 
-            // ── Notifications — mockup's per-category prefs + the real OS
-            // permission as the master gate (Android 13+ requires it before
-            // any push can show at all).
+            // ── Notifications — mockup group 3 (Match invites / Guild
+            // activity / Events & offers, no descriptions). The real Android
+            // 13+ POST_NOTIFICATIONS permission is folded into "Match
+            // invites" being gated by the master OS toggle so no extra row
+            // is invented beyond the mockup's 3 — toggling any category ON
+            // when the OS permission isn't granted prompts for it once.
             SectionCard(title = "Notifications") {
                 ToggleRow(
-                    label = "Push Notifications",
-                    sub = "Master switch — Android notification permission",
-                    checked = notifEnabled,
+                    label = "Match invites",
+                    checked = pushMatch && notifEnabled,
                     onCheckedChange = { want ->
-                        if (want && Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                        if (want && !notifEnabled && Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
                             notifPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
-                        } else if (!want) {
-                            // Can't programmatically revoke a granted OS permission —
-                            // route to the system app-notification settings, matching
-                            // standard Android UX for "turn this back off".
-                            val intent = Intent().apply {
-                                action = "android.settings.APP_NOTIFICATION_SETTINGS"
-                                putExtra("android.provider.extra.APP_PACKAGE", context.packageName)
-                            }
-                            runCatching { context.startActivity(intent) }
-                        } else {
-                            notifEnabled = want
                         }
+                        store.setPushMatch(want)
                     }
                 )
-                ToggleRow(label = "Match invites", checked = pushMatch, onCheckedChange = { store.setPushMatch(it) })
-                ToggleRow(label = "Guild activity", checked = pushGuild, onCheckedChange = { store.setPushGuild(it) })
-                ToggleRow(label = "Events & offers", checked = pushEvent, onCheckedChange = { store.setPushEvent(it) })
+                ToggleRow(label = "Guild activity", checked = pushGuild && notifEnabled, onCheckedChange = { store.setPushGuild(it) })
+                ToggleRow(label = "Events & offers", checked = pushEvent && notifEnabled, onCheckedChange = { store.setPushEvent(it) })
             }
 
-            // ── About / Legal ──
-            // "How to Play" / "Help & FAQ" rows — mockup Settings-tab Support
-            // group (mobile-split lines 918-925) — real copy sourced from the
-            // mockup's own infoBlocks data (LegalContent.kt "howto"/"faq"),
-            // opened through the same LegalScreen tab strip as the other docs.
-            SectionCard(title = "About") {
-                SettingsInfoRow(label = "Version", value = "${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})")
+            // ── Support — mockup group 4 (static rows, NOT toggles): How to
+            // Play / Help & FAQ / Terms & Privacy (mockup combines these into
+            // ONE row) / Contact Support with its "Ticket" badge pill. Exact
+            // mockup copy + order (Mobile.dc.html lines 645-650).
+            SectionCard(title = "Support") {
                 NavRow(label = "How to Play", onClick = { onOpenLegal("howto") })
                 NavRow(label = "Help & FAQ", onClick = { onOpenLegal("faq") })
-                NavRow(label = "Terms of Service", onClick = { onOpenLegal("terms") })
+                NavRow(label = "Terms & Privacy", onClick = { onOpenLegal("terms") })
+                NavRow(label = "Contact Support", badge = "Ticket", onClick = { contactOpen = true })
+            }
+
+            // ── Log Out — mockup's exact button copy is "Log Out" (not
+            // "Sign Out"), full-width red pill (Mobile.dc.html line 649).
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable {
+                        scope.launch {
+                            AuthRepository.logout()
+                            onSignedOut()
+                        }
+                    }
+                    .background(Red.copy(alpha = 0.08f), RoundedCornerShape(14.dp))
+                    .padding(vertical = 15.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                Text("Log Out", color = Color(0xFFFF8F9C), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+            }
+
+            Text(
+                "FilipinoDama · v${BuildConfig.VERSION_NAME}",
+                color = Color(0xFF5F527E),
+                style = MaterialTheme.typography.labelSmall,
+                modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
+                textAlign = androidx.compose.ui.text.style.TextAlign.Center
+            )
+
+            // ── Account — real necessary account-management functionality
+            // the mockup's Settings tab doesn't model at all (kept AFTER the
+            // mockup's 4 groups above so the mockup's own order/structure is
+            // reproduced exactly at the top; see the file kdoc). Nothing here
+            // is invented mockup copy — every row traces to a real endpoint.
+            SectionCard(title = "Account") {
+                SettingsInfoRow(label = "Email", value = me.email ?: if (me.isGuest) "Guest account" else "—")
+                SettingsInfoRow(label = "Player Tag", value = "${me.username}${me.tag}")
+                NavRow(label = "Board & Piece Skin", sub = "Equip cosmetics from your Inventory", onClick = onOpenInventory)
                 NavRow(label = "Privacy Policy", onClick = { onOpenLegal("privacy") })
                 NavRow(label = "Community Guidelines", onClick = { onOpenLegal("community") })
                 NavRow(label = "Fair Play & Anti-Cheat", onClick = { onOpenLegal("anticheat") })
                 NavRow(label = "Data & Account", onClick = { onOpenLegal("data") })
-            }
-
-            // ── Account actions ──
-            SectionCard(title = "Manage Account") {
                 NavRow(
                     label = if (exporting) "Preparing…" else "Export My Data",
                     sub = "Download a copy of your account data",
@@ -235,27 +277,10 @@ fun SettingsScreen(
                         }
                     }
                 )
-                if (!me.isGuest) {
-                    NavRow(label = "Contact Support", sub = "File a ticket with our team", onClick = { contactOpen = true })
-                }
                 DangerRow(label = "Delete Account", sub = "Permanently erase your account and data", onClick = { deleteOpen = true })
             }
 
-            TextButton(onClick = {
-                scope.launch {
-                    AuthRepository.logout()
-                    onSignedOut()
-                }
-            }) {
-                Text("Sign Out", color = Red, fontWeight = FontWeight.Bold)
-            }
-
-            Text(
-                "FilipinoDama · v${BuildConfig.VERSION_NAME}",
-                color = Ink2,
-                style = MaterialTheme.typography.labelSmall,
-                modifier = Modifier.padding(bottom = 24.dp)
-            )
+            Spacer(modifier = Modifier.height(4.dp))
         }
     }
 
@@ -357,19 +382,30 @@ private fun SettingsInfoRow(label: String, value: String) {
 }
 
 @Composable
-private fun NavRow(label: String, sub: String? = null, onClick: () -> Unit) {
+private fun NavRow(label: String, sub: String? = null, badge: String? = null, onClick: () -> Unit) {
     Row(
         modifier = Modifier.fillMaxWidth().clickable(onClick = onClick).padding(vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.SpaceBetween
     ) {
-        Column {
+        Column(modifier = Modifier.weight(1f)) {
             Text(label, color = Ink, style = MaterialTheme.typography.bodyMedium)
             if (sub != null) {
                 Text(sub, color = Ink2, style = MaterialTheme.typography.labelSmall, modifier = Modifier.padding(top = 2.dp))
             }
         }
-        Text("›", color = Ink2, style = MaterialTheme.typography.titleMedium)
+        // "Ticket" badge pill — mockup's Contact Support row (line 649),
+        // blue-tinted #7fa8ff text on rgba(90,150,255,.14) bg.
+        if (badge != null) {
+            Box(
+                modifier = Modifier
+                    .background(Color(0x247FA8FF), RoundedCornerShape(100.dp))
+                    .padding(horizontal = 8.dp, vertical = 3.dp)
+            ) {
+                Text(badge, color = Color(0xFF7FA8FF), style = MaterialTheme.typography.labelSmall)
+            }
+        }
+        Text("›", color = Ink2, style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(start = 6.dp))
     }
 }
 

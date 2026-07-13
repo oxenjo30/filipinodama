@@ -7,9 +7,11 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.grid.GridCells
@@ -31,10 +33,12 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
 import com.filipinodama.app.data.AuthRepository
 import com.filipinodama.app.data.engine.RankTiers
@@ -55,29 +59,42 @@ import com.filipinodama.app.ui.theme.Red
 import kotlinx.coroutines.launch
 
 /**
- * ProfileScreen — mobile-screen-inventory.md SCREEN 10, own profile.
- * A port of apps/web/src/features/profile/ProfilePage.tsx: identity + stats
- * come straight from AuthRepository.state (the real, live account — zero for
- * a brand-new user, never fabricated), rank ladder from RankTiers (a port of
- * @dama/shared RANK_TIERS), Trophy History from GET /api/users/me/ledger,
- * Match History from GET /api/matches?userId=, and Edit Profile /
- * avatar-picker via PATCH /api/users/me.
+ * ProfileScreen — re-diffed 1:1 against the mockup's own-profile section
+ * (`handoffv3/FilipinoDama Mobile.dc.html` lines 506-651, `isProfile` block;
+ * owner test finding #4 — the built screen had drifted structurally from the
+ * mockup). Row-by-row mapping to the mockup markup:
+ *   508-530  identity header card: avatar (60dp, gold ring) + tier badge
+ *            pill bottom-right + optional cosmetic frame overlay, name
+ *            (Cinzel), guild-line subtitle, trophy count + tier label,
+ *            "Edit" button top-right, rank-progress bar to next tier.
+ *   533-536  quick-links row: "🎒 Inventory" + "👥 Friends" (w/ unread badge)
+ *            pills, NOT the old 3-chip Edit/Friends/Settings row.
+ *   539-546  stat tiles (4-col grid): Wins / Win Rate / Best Streak / Games
+ *            — REPLACES the old Matches/Wins/Losses/Win Rate set, which
+ *            doesn't match the mockup's `profStats` data (line 4022).
+ *   549-556  tab bar: Overview / History / Settings (3 tabs, THIS app's
+ *            Settings tab navigates to the existing SettingsScreen
+ *            destination rather than inlining its content a second time —
+ *            same real screen, just reachable as the mockup's 3rd tab
+ *            instead of a separate action chip).
+ *   558-566  Achievements grid (Overview) — CLIENT-COMPUTED FROM REAL STATS,
+ *            same 4 rules apps/web/src/features/profile/AchievementsGrid.tsx
+ *            uses (First Blood/Royal Streak/Grandmaster/Kingmaker — wins,
+ *            streak, trophies thresholds). The mockup's OWN placeholder
+ *            names ("Streak x10"/"Capture King"/"Season Vet") have no
+ *            server-side backing data (verified: no bestStreak/achievements
+ *            table anywhere) — reproducing them verbatim would fabricate
+ *            unlock state, so the web's real 4 are ported instead (same grid
+ *            shape/spacing, honest data).
+ *   567-589  Guild card / Purchase History card / Discover Guilds / Create a
+ *            Guild / Contact Support — real data (guild membership, orders).
+ *   609-619  History tab — real match list (tap -> replay).
  *
- * Rows built: identity header (avatar+frame, name+tag, tier+trophies),
- * Edit/Friends/Inventory quick actions (Friends wired Phase 6b — real unread
- * DM badge via DmRepository.unreadTotal(), matching FriendsPage.tsx's own
- * unread-badge convention), tab switcher (Overview/History),
- * Overview: stat tiles, rank tier ladder, trophy history list;
- * History: match list (tap -> replay), sign-out.
- *
- * DEFERRED (no server source / out of this phase's row list): Achievements
- * grid section reuses the same client-computed rules as web
- * (wins/streak/trophies thresholds) — ported inline below rather than a
- * separate module since web's AchievementsGrid has no dedicated server
- * endpoint either. Guild card / Purchase History / Discover Guilds / Contact
- * Support / My Reports quick-links (Overview tab rows 10-15) are Support
- * surfaces outside this phase's scope — honestly omitted, not faked (Guild
- * itself is now wired as the GUILD tab, see GuildHallScreen.kt).
+ * "Best Streak" in the mockup's stat tiles has NO longest-historical-streak
+ * field anywhere server-side (verified: only a CURRENT win-streak column
+ * exists, User.streak, distinct from the unrelated daily-login streak) — the
+ * tile is honestly relabeled "Current Streak" and wired to the real field
+ * rather than fabricating a running maximum.
  */
 @Composable
 fun ProfileScreen(
@@ -86,7 +103,8 @@ fun ProfileScreen(
     onOpenFriends: () -> Unit = {},
     onOpenSettings: () -> Unit = {},
     onOpenGuild: () -> Unit = {},
-    onOpenOrders: () -> Unit = {}
+    onOpenOrders: () -> Unit = {},
+    onOpenInventory: () -> Unit = {}
 ) {
     val authState by AuthRepository.state.collectAsState()
     val me = authState.user
@@ -166,82 +184,186 @@ fun ProfileScreen(
         com.filipinodama.app.ui.screens.settings.ContactSupportDialog(onClose = { contactOpen = false })
     }
 
+    val dmUnread by com.filipinodama.app.data.social.DmRepository.state.collectAsState()
+
     Column(modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background).verticalScroll(rememberScrollState())) {
-        // ── identity header ──
-        Row(modifier = Modifier.fillMaxWidth().padding(20.dp), verticalAlignment = Alignment.CenterVertically) {
-            AvatarView(
-                avatarUrl = me.avatarUrl,
-                frameId = me.frameId,
-                size = 76.dp,
-                onClick = { avatarPickerOpen = true }
-            )
-            Column(modifier = Modifier.weight(1f).padding(start = 16.dp)) {
-                Text("${me.displayName} ${me.tag}", color = GoldLt, style = MaterialTheme.typography.headlineSmall)
-                CurrencyAmount(
-                    kind = CurrencyIconKind.TROPHY,
-                    text = me.trophies.toString(),
-                    prefix = "${tierNow.label} · ",
-                    color = Gold,
-                    style = MaterialTheme.typography.bodyMedium,
-                    modifier = Modifier.padding(top = 4.dp)
-                )
+        // ── identity header card — mockup lines 508-530: gradient card,
+        // avatar (60dp) + tier-badge pill bottom-right + optional frame
+        // overlay, name (Cinzel), guild-line subtitle, trophy+tier line,
+        // top-right "Edit" button, rank-progress bar to next tier.
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(20.dp)
+                .background(Brush.linearGradient(listOf(Color(0xFF3A1C4A), Color(0xFF1A1030))), RoundedCornerShape(22.dp))
+                .border(1.dp, Color(0x47E8B84B), RoundedCornerShape(22.dp))
+                .padding(20.dp)
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Box {
+                    AvatarView(
+                        avatarUrl = me.avatarUrl,
+                        frameId = me.frameId,
+                        size = 60.dp,
+                        onClick = { avatarPickerOpen = true }
+                    )
+                    // Tier badge pill — mockup shows icon + roman-numeral
+                    // sub-tier ("III"); this app's real 7-tier ladder
+                    // (RankTiers.TIERS) has no sub-tier numeral concept, so
+                    // the pill shows the real tier crest art only (honest —
+                    // no fabricated numeral).
+                    Box(
+                        modifier = Modifier
+                            .align(Alignment.BottomEnd)
+                            .size(22.dp)
+                            .background(Color(0xFF1A1030), androidx.compose.foundation.shape.CircleShape)
+                            .border(1.dp, Color(0x66E8B84B), androidx.compose.foundation.shape.CircleShape),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        AsyncImage(model = tierArtUrl(tierNow.img), contentDescription = null, modifier = Modifier.size(14.dp))
+                    }
+                }
+                Column(modifier = Modifier.weight(1f).padding(start = 20.dp)) {
+                    Text("${me.displayName}${me.tag}", color = Color(0xFFF4ECD6), style = MaterialTheme.typography.titleLarge)
+                    if (myGuild != null) {
+                        Text("[${myGuild!!.tag}] ${myGuild!!.name}", color = Color(0xFF9A8BBF), style = MaterialTheme.typography.labelSmall, modifier = Modifier.padding(top = 2.dp))
+                    }
+                    CurrencyAmount(
+                        kind = CurrencyIconKind.TROPHY,
+                        text = me.trophies.toString(),
+                        color = Gold,
+                        style = MaterialTheme.typography.bodyMedium,
+                        modifier = Modifier.padding(top = 7.dp)
+                    )
+                }
+                Box(
+                    modifier = Modifier
+                        .clickable { editOpen = true }
+                        .background(Color(0x1AE8B84B), RoundedCornerShape(11.dp))
+                        .border(1.dp, Color(0x4DE8B84B), RoundedCornerShape(11.dp))
+                        .padding(horizontal = 14.dp, vertical = 8.dp)
+                ) {
+                    Text("Edit", color = Color(0xFFF4D886), style = MaterialTheme.typography.labelLarge)
+                }
+            }
+            // Rank progress bar to next tier.
+            Column(modifier = Modifier.padding(top = 18.dp)) {
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                    Text(tierNow.label.uppercase(), color = Color(0xFFC9A4FF), style = MaterialTheme.typography.labelSmall)
+                    Text("${me.trophies} / ${if (nextTier != null) nextTier.min else me.trophies}", color = Color(0xFF8B7CAE), style = MaterialTheme.typography.labelSmall)
+                }
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = 6.dp)
+                        .height(8.dp)
+                        .clip(RoundedCornerShape(4.dp))
+                        .background(Color(0x66000000))
+                ) {
+                    val progress = if (span > 0) (into.toFloat() / span.toFloat()).coerceIn(0f, 1f) else 1f
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth(progress)
+                            .fillMaxHeight()
+                            .background(Brush.horizontalGradient(listOf(Color(0xFFEFC25A), Color(0xFFC9971F))))
+                    )
+                }
+                Text(toNextLabel, color = Color(0xFF8B7CAE), style = MaterialTheme.typography.labelSmall, modifier = Modifier.padding(top = 6.dp))
             }
         }
 
+        // ── quick links row — mockup lines 533-536: "🎒 Inventory" (gold) +
+        // "👥 Friends" (purple, unread badge) pills. Replaces the old
+        // Edit/Friends/Settings 3-chip row (Edit moved into the header above,
+        // Settings moved into the tab bar below).
         Row(
             modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp),
-            horizontalArrangement = Arrangement.spacedBy(10.dp)
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            ProfileActionChip("Edit Profile", modifier = androidx.compose.ui.Modifier.weight(1f)) { editOpen = true }
-            ProfileActionChip("👥 Friends", modifier = androidx.compose.ui.Modifier.weight(1f), onClick = onOpenFriends)
-            // Sign Out now lives inside Settings (mobile-screen-inventory.md
-            // SCREEN 10 Settings-tab row 19), alongside Delete Account/legal/
-            // contact-support — this chip routes there instead of signing out
-            // directly, matching the inventory's Settings-owns-Sign-Out shape.
-            ProfileActionChip("⚙ Settings", modifier = androidx.compose.ui.Modifier.weight(1f), onClick = onOpenSettings)
+            Box(
+                modifier = Modifier
+                    .weight(1f)
+                    .clickable(onClick = onOpenInventory)
+                    .background(Color(0x1AE8B84B), RoundedCornerShape(13.dp))
+                    .border(1.dp, Color(0x59E8B84B), RoundedCornerShape(13.dp))
+                    .padding(vertical = 13.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                Text("🎒 Inventory", color = Color(0xFFF4D886), style = MaterialTheme.typography.labelLarge)
+            }
+            Box(
+                modifier = Modifier
+                    .weight(1f)
+                    .clickable(onClick = onOpenFriends)
+                    .background(Brush.verticalGradient(listOf(Color(0x477A4BBF), Color(0x474E2A8E))), RoundedCornerShape(13.dp))
+                    .border(1.dp, Color(0x66C9A4FF), RoundedCornerShape(13.dp))
+                    .padding(vertical = 13.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                Box {
+                    Text("👥 Friends", color = Color(0xFFE7D6FF), style = MaterialTheme.typography.labelLarge)
+                    if (dmUnread.unread > 0) {
+                        Box(
+                            modifier = Modifier
+                                .align(Alignment.TopEnd)
+                                .offset(x = 12.dp, y = (-8).dp)
+                                .background(Brush.verticalGradient(listOf(Color(0xFFFF6B7D), Color(0xFFE23D55))), RoundedCornerShape(10.dp))
+                                .padding(horizontal = 5.dp, vertical = 1.dp)
+                        ) {
+                            Text(dmUnread.unread.toString(), color = androidx.compose.ui.graphics.Color.White, style = MaterialTheme.typography.labelSmall)
+                        }
+                    }
+                }
+            }
         }
 
-        // ── tabs — mockup's real pill-tab row (FilipinoDama Mobile.dc.html
-        // split-file lines 792-797: a rounded pill container with 4dp gap/
-        // padding, each button `flex:1` gold-gradient when active,
-        // transparent when inactive). Settings stays a separate destination
-        // by deliberate design (see ProfileScreen kdoc above), so only
-        // Overview/History are reproduced here.
+        // ── tabs — mockup's exact 3-tab pill row (lines 549-553): Overview /
+        // History / Settings. Settings navigates to the existing
+        // SettingsScreen destination (same real screen, reached from the
+        // mockup's 3rd tab position instead of a separate action chip).
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(top = 20.dp)
+                .padding(horizontal = 20.dp)
+                .padding(top = 18.dp)
                 .background(Color(0xFF0F0720).copy(alpha = 0.6f), RoundedCornerShape(14.dp))
                 .padding(4.dp),
             horizontalArrangement = Arrangement.spacedBy(4.dp)
         ) {
             ProfileTabButton("Overview", tab == "overview", Modifier.weight(1f)) { tab = "overview" }
-            ProfileTabButton("Match History", tab == "history", Modifier.weight(1f)) { tab = "history" }
+            ProfileTabButton("History", tab == "history", Modifier.weight(1f)) { tab = "history" }
+            ProfileTabButton("Settings", false, Modifier.weight(1f), onClick = onOpenSettings)
         }
 
         if (tab == "overview") {
             Column(modifier = Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                // Stat tiles — mockup profStats (line 4022): Wins / Win Rate /
+                // Best Streak / Games, in that exact order+colors. "Best
+                // Streak" has no longest-historical-streak field anywhere
+                // server-side (verified) — relabeled "Current Streak" and
+                // wired to the real User.streak column instead of fabricating
+                // a running maximum (see file kdoc).
                 val total = me.wins + me.losses + me.draws
                 val winRate = if (total > 0) (me.wins * 100 / total) else 0
                 val stats: List<Triple<String, String, Color>> = listOf(
-                    Triple("Matches", total.toString(), Ink),
                     Triple("Wins", me.wins.toString(), Green),
-                    Triple("Losses", me.losses.toString(), Red),
-                    Triple("Win Rate", "$winRate%", GoldLt)
+                    Triple("Win Rate", "$winRate%", GoldLt),
+                    Triple("Current Streak", me.streak.toString(), Color(0xFFFF8F9C)),
+                    Triple("Games", total.toString(), Color(0xFF8FB3FF))
                 )
                 LazyVerticalGrid(
                     columns = GridCells.Fixed(4),
                     modifier = Modifier.height(90.dp),
-                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     items(stats) { stat ->
                         val (label, value, color) = stat
                         Column(
-                            modifier = Modifier.background(Panel, RoundedCornerShape(12.dp)).padding(vertical = 14.dp),
+                            modifier = Modifier.background(Panel, RoundedCornerShape(14.dp)).padding(vertical = 13.dp, horizontal = 4.dp),
                             horizontalAlignment = Alignment.CenterHorizontally
                         ) {
-                            Text(value, color = color, style = MaterialTheme.typography.titleLarge)
-                            Text(label, color = Ink2, style = MaterialTheme.typography.labelSmall, modifier = Modifier.padding(top = 4.dp))
+                            Text(value, color = color, style = MaterialTheme.typography.titleMedium)
+                            Text(label, color = Ink2, style = MaterialTheme.typography.labelSmall, textAlign = androidx.compose.ui.text.style.TextAlign.Center, modifier = Modifier.padding(top = 3.dp))
                         }
                     }
                 }
@@ -249,6 +371,13 @@ fun ProfileScreen(
                 RankTierLadder(tierNow = tierNow, trophies = me.trophies, toNextLabel = toNextLabel, nextLabel = nextTier?.label ?: "—")
 
                 TrophyHistoryCard(trophyRows = trophyRows, trophies = me.trophies)
+
+                // Achievements grid — mockup lines 558-566 (4-col grid,
+                // "See all ›" header). Real 4 rules ported from
+                // apps/web AchievementsGrid.tsx (see file kdoc) — NOT the
+                // mockup's own fabricated placeholder names, since those have
+                // no server-side backing data.
+                AchievementsGrid(wins = me.wins, streak = me.streak, trophies = me.trophies)
 
                 // Overview quick-link cards — mockup lines 814-850 ("avEditShow"
                 // sibling section within isProfile). "My Reports" (lines
@@ -403,6 +532,60 @@ private fun ProfileQuickLinkCard(
             Text(subtitle, color = Color(0xFF9A8BBF), style = MaterialTheme.typography.labelSmall, modifier = Modifier.padding(top = 2.dp))
         }
         Text("›", color = Ink2, style = MaterialTheme.typography.titleLarge)
+    }
+}
+
+private data class AchievementDef(val name: String, val desc: String, val assetFile: String, val unlocked: (wins: Int, streak: Int, trophies: Int) -> Boolean)
+
+/**
+ * Achievements grid — mockup lines 558-566 (4-col grid, "Achievements"
+ * header + "See all ›" link). Rules + copy ported 1:1 from
+ * apps/web/src/features/profile/AchievementsGrid.tsx (real thresholds
+ * against real wins/streak/trophies — the mockup's own placeholder names
+ * have no server-backed unlock data, see ProfileScreen kdoc).
+ */
+@Composable
+private fun AchievementsGrid(wins: Int, streak: Int, trophies: Int) {
+    val defs = listOf(
+        AchievementDef("First Blood", "Win your first match", "first-blood.png") { w, _, _ -> w >= 1 },
+        AchievementDef("Royal Streak", "Win 5 matches in a row", "royal-streak.png") { _, s, _ -> s >= 5 },
+        AchievementDef("Grandmaster", "Reach 1,800 rating", "grandmaster.png") { _, _, t -> t >= 1800 },
+        AchievementDef("Kingmaker", "Win 50 matches", "kingmaker.png") { w, _, _ -> w >= 50 }
+    )
+    Column {
+        Row(modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp), horizontalArrangement = Arrangement.SpaceBetween) {
+            Text("ACHIEVEMENTS", color = Ink2, style = MaterialTheme.typography.labelMedium, letterSpacing = 1.5.sp)
+            Text("See all ›", color = Color(0xFFC9A4FF), style = MaterialTheme.typography.labelMedium)
+        }
+        LazyVerticalGrid(
+            columns = GridCells.Fixed(4),
+            modifier = Modifier.height(96.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            items(defs) { a ->
+                val unlocked = a.unlocked(wins, streak, trophies)
+                Column(
+                    modifier = Modifier
+                        .background(Panel, RoundedCornerShape(14.dp))
+                        .padding(vertical = 12.dp, horizontal = 4.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    AsyncImage(
+                        model = "${com.filipinodama.app.BuildConfig.WEB_ORIGIN}/assets/${a.assetFile}",
+                        contentDescription = null,
+                        modifier = Modifier.size(38.dp).then(if (!unlocked) Modifier.alpha(0.35f) else Modifier)
+                    )
+                    Text(
+                        a.name,
+                        color = if (unlocked) Color(0xFFC9BCE0) else Ink2.copy(alpha = 0.6f),
+                        style = MaterialTheme.typography.labelSmall,
+                        textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                        maxLines = 2,
+                        modifier = Modifier.padding(top = 6.dp)
+                    )
+                }
+            }
+        }
     }
 }
 
