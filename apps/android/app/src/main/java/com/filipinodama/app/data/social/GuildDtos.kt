@@ -88,6 +88,50 @@ data class GuildJoinRequestDto(
     val user: GuildMemberUserDto
 )
 
+// GET /api/guilds/war — weekly Guild War status (matches getWarStatus on server).
+@Serializable
+data class WarStandingDto(
+    val guildId: String,
+    val name: String,
+    val tag: String,
+    val crestKey: String? = null,
+    val points: Int = 0,
+    val rank: Int = 0,
+    val rewardGold: Int = 0
+)
+
+@Serializable
+data class WarMyGuildDto(
+    val guildId: String,
+    val name: String,
+    val tag: String,
+    val points: Int = 0,
+    val rank: Int = 0,
+    val myContribution: Int = 0
+)
+
+@Serializable
+data class WarLogEntryDto(
+    val guildName: String,
+    val guildTag: String,
+    val crestKey: String? = null,
+    val rank: Int = 0,
+    val points: Int = 0,
+    val rewardGold: Int = 0
+)
+
+@Serializable
+data class WarStatusResponse(
+    val week: Int = 1,
+    val startsAt: String = "",
+    val endsAt: String = "",
+    val topN: Int = 3,
+    val poolGold: Int = 0,
+    val standings: List<WarStandingDto> = emptyList(),
+    val myGuild: WarMyGuildDto? = null,
+    val lastWeek: List<WarLogEntryDto> = emptyList()
+)
+
 @Serializable
 data class GuildJoinRequestsResponse(
     val requests: List<GuildJoinRequestDto> = emptyList()

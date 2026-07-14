@@ -322,7 +322,8 @@ fun AppNavHost() {
             composable(AppDestinations.GUILD) {
                 GuildHallScreen(
                     onOpenProfile = { userId -> navController.navigate(AppDestinations.publicProfile(userId)) },
-                    onOpenDiscover = { navController.navigate(AppDestinations.DISCOVER_GUILDS) }
+                    onOpenDiscover = { navController.navigate(AppDestinations.DISCOVER_GUILDS) },
+                    onPlayRanked = { navController.navigate(AppDestinations.matchmaking("RANKED")) }
                 )
             }
             composable(AppDestinations.PROFILE) {

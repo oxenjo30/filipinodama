@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
@@ -48,6 +49,7 @@ import com.filipinodama.app.data.social.GuildJoinRequestDto
 import com.filipinodama.app.data.social.GuildMemberDto
 import com.filipinodama.app.data.social.GuildsRepository
 import com.filipinodama.app.data.social.SocialResult
+import com.filipinodama.app.data.social.WarStatusResponse
 import com.filipinodama.app.data.social.guildRoleAtLeast
 import com.filipinodama.app.data.social.resolveGuildCrest
 import com.filipinodama.app.ui.screens.profile.AvatarView
@@ -80,7 +82,7 @@ import kotlinx.coroutines.launch
  * inventory's Wars tab rows are therefore deferred pending a real backend.
  */
 @Composable
-fun GuildHallScreen(onOpenProfile: (String) -> Unit, onOpenDiscover: () -> Unit = {}) {
+fun GuildHallScreen(onOpenProfile: (String) -> Unit, onOpenDiscover: () -> Unit = {}, onPlayRanked: () -> Unit = {}) {
     val me = AuthRepository.state.collectAsState().value.user
     val scope = rememberCoroutineScope()
 
@@ -355,13 +357,14 @@ fun GuildHallScreen(onOpenProfile: (String) -> Unit, onOpenDiscover: () -> Unit 
                 horizontalArrangement = Arrangement.spacedBy(4.dp)
             ) {
                 GuildTabPill("Roster", tab == "roster", Modifier.weight(1f)) { tab = "roster" }
+                GuildTabPill("Wars", tab == "wars", Modifier.weight(1f)) { tab = "wars" }
                 GuildTabPill("Chat", tab == "chat", Modifier.weight(1f)) { tab = "chat" }
             }
 
-            if (tab == "chat") {
-                GuildChatPanel(guildId = g.id, guildName = g.name)
-            } else {
-                SectionCard(title = "Members · ${g.memberCount}") {
+            when (tab) {
+                "chat" -> GuildChatPanel(guildId = g.id, guildName = g.name)
+                "wars" -> GuildWarsTab(myGuildId = g.id, onPlayRanked = onPlayRanked)
+                else -> SectionCard(title = "Members · ${g.memberCount}") {
                     detail!!.roster.sortedByDescending { it.weeklyContribution }.forEach { m ->
                         RosterRow(
                             member = m,
@@ -484,6 +487,145 @@ private fun GuildTabPill(label: String, selected: Boolean, modifier: Modifier = 
  * role badge pill, tier crest + tier label (REAL trophies/rankTier fields,
  * also previously ignored), trophy count in gold mono.
  */
+/**
+ * Wars tab — weekly Guild War (contribution ladder). Shows your guild's real
+ * war rank + points + countdown, the top standings with gold reward tiers, your
+ * personal contribution, and a Play-Ranked CTA (ranked wins earn war points).
+ * All from GET /api/guilds/war (GuildsRepository.war()).
+ */
+@Composable
+private fun GuildWarsTab(myGuildId: String, onPlayRanked: () -> Unit) {
+    var war by remember { mutableStateOf<WarStatusResponse?>(null) }
+    var loading by remember { mutableStateOf(true) }
+    LaunchedEffect(Unit) {
+        when (val r = GuildsRepository.war()) {
+            is SocialResult.Success -> war = r.data
+            is SocialResult.Failure -> war = null
+        }
+        loading = false
+    }
+
+    if (loading) {
+        Box(Modifier.fillMaxWidth().padding(30.dp), contentAlignment = Alignment.Center) { CircularProgressIndicator(color = Gold) }
+        return
+    }
+    val w = war
+    if (w == null) {
+        SectionCard(title = "Guild War") {
+            Text("Couldn't load the war right now.", color = Ink2, style = MaterialTheme.typography.bodyMedium)
+        }
+        return
+    }
+
+    // War-in-progress card: rank + points + countdown + Play Ranked.
+    SectionCard(title = "Weekly Guild War · Week ${w.week}") {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    if (w.myGuild != null) "#${w.myGuild.rank}" else "—",
+                    color = Color.White,
+                    style = MaterialTheme.typography.headlineMedium
+                )
+                Text("war rank", color = Ink2, style = MaterialTheme.typography.labelSmall)
+            }
+            Column(horizontalAlignment = Alignment.End) {
+                Text("${w.myGuild?.points ?: 0} pts", color = GoldLt, style = MaterialTheme.typography.titleMedium)
+                Text(warCountdownLabel(w.endsAt), color = Ink2, style = MaterialTheme.typography.labelSmall)
+            }
+        }
+        Box(Modifier.height(12.dp))
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clickable(onClick = onPlayRanked)
+                .background(androidx.compose.ui.graphics.Brush.verticalGradient(listOf(Color(0xFFEFC25A), Color(0xFFC9971F))), RoundedCornerShape(12.dp))
+                .padding(vertical = 13.dp),
+            contentAlignment = Alignment.Center
+        ) {
+            Text("⚔ Play Ranked", color = Color(0xFF2A1608), style = MaterialTheme.typography.labelLarge)
+        }
+        if (w.topN > 0) {
+            Text(
+                "Top ${w.topN} guilds earn gold at reset — split among contributors.",
+                color = Ink2,
+                style = MaterialTheme.typography.labelSmall,
+                modifier = Modifier.padding(top = 10.dp)
+            )
+        }
+    }
+
+    // Standings.
+    SectionCard(title = "Standings") {
+        if (w.standings.isEmpty()) {
+            Text("No war points scored yet this week — be the first.", color = Ink2, style = MaterialTheme.typography.bodyMedium)
+        } else {
+            w.standings.take(10).forEach { s ->
+                val mine = s.guildId == myGuildId
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 6.dp)
+                        .background(if (mine) Color(0x1AE8B84B) else Color.Transparent, RoundedCornerShape(9.dp))
+                        .padding(horizontal = 10.dp, vertical = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    Text("#${s.rank}", color = if (s.rank <= w.topN) GoldLt else Ink2, style = MaterialTheme.typography.titleSmall, modifier = Modifier.width(34.dp))
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(s.name, color = if (mine) GoldLt else Color.White, style = MaterialTheme.typography.bodyMedium, maxLines = 1)
+                        Text(s.tag, color = Ink2, style = MaterialTheme.typography.labelSmall)
+                    }
+                    Text("${s.points}", color = Ink2, style = MaterialTheme.typography.labelMedium)
+                    if (s.rewardGold > 0) {
+                        Text("🪙 ${s.rewardGold}", color = Color(0xFFF0CF72), style = MaterialTheme.typography.labelMedium)
+                    }
+                }
+            }
+        }
+    }
+
+    // Your contribution.
+    SectionCard(title = "Your Contribution") {
+        Text(
+            "${w.myGuild?.myContribution ?: 0}",
+            color = Color.White,
+            style = MaterialTheme.typography.headlineSmall
+        )
+        Text("war points you've contributed this week", color = Ink2, style = MaterialTheme.typography.labelSmall)
+    }
+
+    // War log (last settled week).
+    if (w.lastWeek.isNotEmpty()) {
+        SectionCard(title = "War Log · last week") {
+            w.lastWeek.take(5).forEach { e ->
+                Row(modifier = Modifier.fillMaxWidth().padding(vertical = 5.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Text("#${e.rank}", color = GoldLt, style = MaterialTheme.typography.titleSmall, modifier = Modifier.width(34.dp))
+                    Text("${e.guildName} ${e.guildTag}", color = Color.White, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f), maxLines = 1)
+                    if (e.rewardGold > 0) Text("🪙 ${e.rewardGold}", color = Color(0xFFF0CF72), style = MaterialTheme.typography.labelMedium)
+                }
+            }
+        }
+    }
+}
+
+/** "Resets in 3d 4h" / "2h 15m" from the war end ISO timestamp. */
+private fun warCountdownLabel(endsAtIso: String): String {
+    return try {
+        val ms = java.time.Instant.parse(endsAtIso).toEpochMilli() - System.currentTimeMillis()
+        if (ms <= 0) return "Resetting…"
+        val d = ms / 86_400_000
+        val h = (ms % 86_400_000) / 3_600_000
+        val m = (ms % 3_600_000) / 60_000
+        when {
+            d > 0 -> "Resets in ${d}d ${h}h"
+            h > 0 -> "Resets in ${h}h ${m}m"
+            else -> "Resets in ${m}m"
+        }
+    } catch (e: Exception) {
+        "—"
+    }
+}
+
 @Composable
 private fun RosterRow(member: GuildMemberDto, mine: Boolean, manageable: Boolean, onOpenProfile: () -> Unit, onManage: () -> Unit) {
     val tier = com.filipinodama.app.data.engine.RankTiers.forTrophies(member.user.trophies)
