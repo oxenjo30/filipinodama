@@ -1,5 +1,7 @@
 package com.filipinodama.app.data.economy
 
+import com.filipinodama.app.data.apiErrorFrom
+
 import com.filipinodama.app.data.AuthRepository
 import com.filipinodama.app.data.ApiClient
 import com.filipinodama.app.data.ApiEnvelope
@@ -168,7 +170,16 @@ object EconomyRepository {
                 EconomyResult.Failure(error?.code ?: "UNKNOWN", error?.message ?: "Something went wrong. Please try again.")
             }
         } catch (e: Exception) {
-            EconomyResult.Failure("NETWORK_ERROR", "Couldn't reach the server. Check your connection and try again.")
+            // A non-2xx (e.g. 400 "Not enough gold") is thrown as an HttpException
+            // carrying the server's real error envelope — surface THAT instead of
+            // a misleading "couldn't reach the server". Only a genuine transport
+            // failure (no HTTP response) falls through to the network message.
+            val apiError = apiErrorFrom(e)
+            if (apiError != null) {
+                EconomyResult.Failure(apiError.code, apiError.message)
+            } else {
+                EconomyResult.Failure("NETWORK_ERROR", "Couldn't reach the server. Check your connection and try again.")
+            }
         }
     }
 }

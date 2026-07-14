@@ -352,6 +352,10 @@ fun AppNavHost() {
                     onSignedOut = {
                         goClearingStack(AppDestinations.LOGIN)
                     },
+                    // Guest tapping "Sign In / Create Account" on the Overview:
+                    // go to Login without clearing the stack, so a cancelled
+                    // sign-in (back) returns them to their guest session.
+                    onGoToSignIn = { navController.navigate(AppDestinations.LOGIN) },
                     onOpenMatch = { matchId -> navController.navigate(AppDestinations.matchDetail(matchId)) },
                     onOpenFriends = { navController.navigate(AppDestinations.FRIENDS) },
                     onOpenGuild = { navController.navigate(AppDestinations.GUILD) },

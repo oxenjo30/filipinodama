@@ -103,6 +103,7 @@ import kotlinx.coroutines.launch
 @Composable
 fun ProfileScreen(
     onSignedOut: () -> Unit = {},
+    onGoToSignIn: () -> Unit = {},
     onOpenMatch: (String) -> Unit = {},
     onOpenFriends: () -> Unit = {},
     onOpenGuild: () -> Unit = {},
@@ -480,6 +481,43 @@ fun ProfileScreen(
                     iconBg = Color(0x1F5A96FF),
                     onClick = { contactOpen = true }
                 )
+
+                // Account action on the Overview itself (owner request: Log Out
+                // was only reachable inside the Settings tab). Guest-aware: a
+                // guest's only meaningful action is upgrading to a real account,
+                // so show "Sign In / Create Account" for them (logging a guest
+                // out just recycles them into another anonymous guest); a real
+                // user gets the red Log Out, mirroring the Settings-tab button.
+                if (me.isGuest) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(top = 6.dp)
+                            .clickable(onClick = onGoToSignIn)
+                            .background(Brush.verticalGradient(listOf(Color(0xFFEFC25A), Color(0xFFC9971F))), RoundedCornerShape(14.dp))
+                            .padding(vertical = 15.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text("Sign In / Create Account", color = Color(0xFF3A2405), style = MaterialTheme.typography.titleMedium)
+                    }
+                } else {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(top = 6.dp)
+                            .clickable {
+                                scope.launch {
+                                    AuthRepository.logout()
+                                    onSignedOut()
+                                }
+                            }
+                            .background(Red.copy(alpha = 0.08f), RoundedCornerShape(14.dp))
+                            .padding(vertical = 15.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text("Log Out", color = Color(0xFFFF8F9C), style = MaterialTheme.typography.titleMedium)
+                    }
+                }
             }
         } else if (tab == "history") {
             Column(modifier = Modifier.padding(horizontal = 20.dp, vertical = 12.dp)) {

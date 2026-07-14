@@ -1,5 +1,7 @@
 package com.filipinodama.app.data.social
 
+import com.filipinodama.app.data.apiErrorFrom
+
 import com.filipinodama.app.data.ApiClient
 
 /** ReportRepository — server-authoritative client for player reports (Phase 6b). */
@@ -27,7 +29,12 @@ object ReportRepository {
                 SocialResult.Failure(error?.code ?: "UNKNOWN", message)
             }
         } catch (e: Exception) {
-            SocialResult.Failure("NETWORK_ERROR", "Couldn't reach the server. Check your connection and try again.")
+            // Surface the server's real 4xx error (validation, permission, etc.)
+            // instead of a misleading network message; only true transport
+            // failures (no HTTP response) fall back to NETWORK_ERROR.
+            val apiError = apiErrorFrom(e)
+            if (apiError != null) SocialResult.Failure(apiError.code, apiError.message)
+            else SocialResult.Failure("NETWORK_ERROR", "Couldn't reach the server. Check your connection and try again.")
         }
     }
 }

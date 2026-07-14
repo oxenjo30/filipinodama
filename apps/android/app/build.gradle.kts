@@ -26,9 +26,11 @@ android {
         // Play permanently reserves every uploaded versionCode (even deleted
         // ones), so each upload must bump it. 1 = uploaded then deleted; 2 =
         // first accepted internal-testing bundle; 3 = tablet width-cap build;
-        // 4 = system-bar insets fix + new onboarding art.
-        versionCode = 4
-        versionName = "0.1.3"
+        // 4 = system-bar insets fix + new onboarding art; 5 = real 4xx error
+        // messages + Match Detail scroll + Store Buy button + owner onboarding
+        // banners + Profile overview logout.
+        versionCode = 5
+        versionName = "0.1.4"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 

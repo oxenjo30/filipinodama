@@ -1,5 +1,7 @@
 package com.filipinodama.app.data.social
 
+import com.filipinodama.app.data.apiErrorFrom
+
 import com.filipinodama.app.data.ApiClient
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -92,9 +94,11 @@ object NotificationsRepository {
                     action
                 }
             }
-        } catch (_: Exception) {
+        } catch (e: Exception) {
             load()
-            SocialResult.Failure("NETWORK_ERROR", "Couldn't reach the server.")
+            val apiError = apiErrorFrom(e)
+            if (apiError != null) SocialResult.Failure(apiError.code, apiError.message)
+            else SocialResult.Failure("NETWORK_ERROR", "Couldn't reach the server.")
         }
     }
 
