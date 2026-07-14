@@ -10,7 +10,7 @@ plugins {
 // Release signing — credentials live in a gitignored keystore.properties (never
 // committed). Absent on CI / a fresh clone, in which case the release build is
 // left unsigned (a debug build is unaffected). See docs for the upload key.
-val keystorePropsFile = rootProject.file("app/keystore.properties")
+val keystorePropsFile = rootProject.file("keystore.properties")
 val keystoreProps = Properties().apply {
     if (keystorePropsFile.exists()) keystorePropsFile.inputStream().use { load(it) }
 }
@@ -55,7 +55,7 @@ android {
         // and the release build stays unsigned rather than failing the build.
         if (keystorePropsFile.exists()) {
             create("release") {
-                storeFile = rootProject.file("app/${keystoreProps.getProperty("storeFile")}")
+                storeFile = rootProject.file(keystoreProps.getProperty("storeFile"))
                 storePassword = keystoreProps.getProperty("storePassword")
                 keyAlias = keystoreProps.getProperty("keyAlias")
                 keyPassword = keystoreProps.getProperty("keyPassword")
