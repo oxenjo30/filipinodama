@@ -45,6 +45,7 @@ import { supportRoutes } from "./modules/support.js";
 import { tournamentsRoutes } from "./modules/tournaments.js";
 import { registerRealtime } from "./realtime/index.js";
 import { runDueCampaigns } from "./modules/campaign-scheduler.js";
+import { runWarResetTick } from "./lib/guild-wars.js";
 
 export { prisma };
 
@@ -163,6 +164,16 @@ async function main() {
   // interval alongside its own direct runDueCampaigns() calls.
   setInterval(() => {
     runDueCampaigns().catch((e) => app.log.error({ err: e }, "campaign-scheduler tick failed"));
+  }, 60_000);
+
+  // Guild War reset poller — settles the weekly war (ranks guilds, pays the
+  // top-N gold pot split by contribution, opens the next week) once the active
+  // season's window closes. Same setInterval-on-boot pattern as campaigns; the
+  // tick is a cheap no-op until a season actually expires. Kick once at boot so
+  // week 1 opens immediately.
+  runWarResetTick().catch((e) => app.log.error({ err: e }, "guild-war init tick failed"));
+  setInterval(() => {
+    runWarResetTick().catch((e) => app.log.error({ err: e }, "guild-war reset tick failed"));
   }, 60_000);
 
   app.log.info(`FilipinoDama server listening on :${env.PORT}`);

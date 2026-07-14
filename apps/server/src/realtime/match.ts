@@ -13,6 +13,7 @@ import type { MatchMode as PrismaMatchMode } from "@prisma/client";
 import { prisma } from "../db/client.js";
 import { isMuted } from "../lib/mute.js";
 import { applyLedger } from "../economy/ledger.js";
+import { awardWarPointsTx } from "../lib/guild-wars.js";
 import { allow } from "./rate-limit.js";
 import { questAdvanceFor, type MatchQuestContext } from "../lib/quest-trigger.js";
 
@@ -490,6 +491,17 @@ async function settleMatch(io: IOServer, lm: LiveMatch): Promise<void> {
         refType: "match",
         refId: lm.matchId,
       }).catch((e) => console.error("[match] gold grant failed", e)),
+    );
+  }
+  // Guild Wars: a RANKED win adds war points to the winner's guild + the
+  // member's contribution (no-op if they aren't in a guild). Guarded so a war
+  // hiccup never blocks match settlement. Only real ranked human wins count —
+  // a bot-filled seat has no user id, so a bot "win" can't award points.
+  if (isRankedMode && winnerId) {
+    grants.push(
+      prisma
+        .$transaction((tx) => awardWarPointsTx(tx, winnerId, new Date()))
+        .catch((e) => console.error("[match] guild-war award failed", e)),
     );
   }
   await Promise.all(grants);
