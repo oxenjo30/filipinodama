@@ -60,6 +60,7 @@ import com.filipinodama.app.ui.screens.economy.QuestsScreen
 import com.filipinodama.app.ui.screens.economy.SeasonScreen
 import com.filipinodama.app.ui.screens.economy.TournamentDetailScreen
 import com.filipinodama.app.ui.screens.economy.TournamentsListScreen
+import com.filipinodama.app.ui.screens.economy.WalletScreen
 import com.filipinodama.app.ui.screens.leaderboard.LeaderboardScreen
 import com.filipinodama.app.ui.screens.profile.AchievementsScreen
 import com.filipinodama.app.ui.screens.profile.MatchDetailScreen
@@ -312,11 +313,7 @@ fun AppNavHost() {
                     onOpenLeaderboard = { navController.navigate(AppDestinations.LEADERBOARD) },
                     onOpenNotifications = { navController.navigate(AppDestinations.NOTIFICATIONS) },
                     onOpenSearch = { navController.navigate(AppDestinations.GLOBAL_SEARCH) },
-                    // Mockup's Wallet screen (top-up/balance detail) is out of this
-                    // task's scope (no payments/top-up UI) and not in the owner's
-                    // required-elements list — the chip renders correctly (real
-                    // gold/diamonds) but its tap has no destination yet, honestly.
-                    onOpenWallet = { }
+                    onOpenWallet = { navController.navigate(AppDestinations.WALLET) }
                 )
             }
             composable(AppDestinations.STORE) {
@@ -350,6 +347,9 @@ fun AppNavHost() {
             }
             composable(AppDestinations.ACHIEVEMENTS) {
                 AchievementsScreen(onBack = { navController.popBackStack() })
+            }
+            composable(AppDestinations.WALLET) {
+                WalletScreen(onBack = { navController.popBackStack() })
             }
             composable(AppDestinations.DISCOVER_GUILDS) {
                 DiscoverGuildsScreen(onBack = { navController.popBackStack() })

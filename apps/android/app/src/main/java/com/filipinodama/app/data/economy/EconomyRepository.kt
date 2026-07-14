@@ -141,6 +141,11 @@ object EconomyRepository {
     suspend fun activeMatch(): EconomyResult<ActiveMatchResponse> =
         call { api.activeMatch() }
 
+    // ── Wallet: recent activity ──
+
+    suspend fun ledger(): EconomyResult<LedgerResponse> =
+        call { api.ledger() }
+
     // ---- internals ----
 
     /** Reflects a fresh server balance into AuthRepository's cached session user (nullable = leave unchanged). */
