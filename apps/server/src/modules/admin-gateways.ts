@@ -15,6 +15,8 @@ import {
   type CredentialKey,
   CREDENTIAL_KEYS,
 } from "../lib/gateway-credentials.js";
+import { getPlayBillingStatus, setPlayBilling } from "../lib/play-billing-config.js";
+import { testPlayServiceAccount } from "../lib/play-verify.js";
 
 /**
  * Admin — Settings → Payment gateways tab (handoffv3 rows 1-7 / v3-delta
@@ -332,4 +334,65 @@ export async function adminGatewaysRoutes(app: FastifyInstance) {
       return ok({ key, configured: false });
     },
   );
+
+  // ── Google Play Billing config (SUPERADMIN) ─────────────────────────────────
+
+  // GET status — package, service-account (configured + client_email only),
+  // pack→product-id mapping, enable toggle. Never returns the raw key.
+  app.get("/admin/play-billing", { preHandler: requireAdmin("SUPPORT") }, async () => {
+    return ok(await getPlayBillingStatus());
+  });
+
+  const playBillingSchema = z.object({
+    enabled: z.boolean().optional(),
+    packageName: z.string().max(200).optional(),
+    // Raw service-account JSON; "" clears it; omitted = unchanged. Never echoed back.
+    serviceAccountJson: z.string().max(20000).optional(),
+    productIds: z.record(z.string(), z.string()).optional(),
+    reason: reasonField,
+  });
+
+  app.post("/admin/play-billing", { preHandler: requireAdmin("SUPERADMIN") }, async (req) => {
+    const body = playBillingSchema.parse(req.body);
+    const result = await setPlayBilling({
+      enabled: body.enabled,
+      packageName: body.packageName,
+      serviceAccountJson: body.serviceAccountJson,
+      productIds: body.productIds,
+    });
+    if (!result.ok) throw err.badRequest("INVALID_PLAY_CONFIG", result.error);
+    await audit(prisma, {
+      actorId: req.userId!,
+      action: "finance.playbilling",
+      targetType: "play_billing",
+      targetId: "config",
+      // Never audit the service-account key itself — only WHICH fields changed.
+      after: {
+        changed: [
+          body.enabled !== undefined ? "enabled" : null,
+          body.packageName !== undefined ? "packageName" : null,
+          body.serviceAccountJson !== undefined ? (body.serviceAccountJson.trim() ? "serviceAccount(set)" : "serviceAccount(cleared)") : null,
+          body.productIds !== undefined ? "productIds" : null,
+        ].filter(Boolean),
+      },
+      reason: body.reason,
+    });
+    return ok(await getPlayBillingStatus());
+  });
+
+  // POST test — mint a Play access token with the stored service account to
+  // confirm the credential works (a real check, not a fabricated success).
+  app.post("/admin/play-billing/test", { preHandler: requireAdmin("SUPERADMIN") }, async (req) => {
+    const started = Date.now();
+    const nowSec = Math.floor(started / 1000);
+    const result = await testPlayServiceAccount(nowSec);
+    await audit(prisma, {
+      actorId: req.userId!,
+      action: "finance.playbilling.test",
+      targetType: "play_billing",
+      targetId: "config",
+      after: { status: result.status },
+    });
+    return ok({ ...result, latencyMs: Date.now() - started });
+  });
 }
