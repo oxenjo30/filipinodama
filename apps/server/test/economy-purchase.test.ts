@@ -17,6 +17,12 @@ import { seedUser, truncateAll } from "./helpers.js";
  */
 describe("purchaseItem — Daily Deals sale price", () => {
   afterEach(async () => {
+    // truncateAll() intentionally does NOT clear StoreItem (durable seed data),
+    // but this suite creates StoreItem rows with fixed ids (t_*). Without this
+    // cleanup those rows leak and the NEXT run collides on the unique id
+    // ("Unique constraint failed on the fields: (id)"). Scope the delete to the
+    // test-only "t_" ids so real seeded store items are never touched.
+    await prisma.storeItem.deleteMany({ where: { id: { startsWith: "t_" } } });
     await truncateAll();
   });
   afterAll(async () => {
