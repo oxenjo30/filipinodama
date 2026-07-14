@@ -170,3 +170,9 @@
   1. When the mockup defines a fixed content array (profAch, onb, legal docs, mode list), copy its names + icon/asset KEYS verbatim; verify every referenced asset EXISTS in handoffv3/handoff/assets before using it (an invented filename renders blank, not an error). Derive only the dynamic state (done/locked, progress).
   2. A gray/blank icon in a screenshot = a wrong or missing asset path — always trace the asset URL and confirm the file exists, don't assume it's a network issue.
   3. Also caught here: the mockup identity card has the me-banner.png sun-ray art bleeding off the right edge (owner called it "the banner") — card art slots in the mockup DOM must be reproduced, not flattened to a plain gradient.
+
+## 2026-07-14 - Never accept "verified by reading the code" for UI; run it
+
+- Mistake: A subagent built the Guild Preview sheet and reported it "verified by reading the compiled logic path." On-device it did NOT work — two Compose layout bugs: (1) the sheet/dialog overlays were emitted BEFORE the full-screen Column, so the Column painted over them and the sheet was invisible; (2) the detail content wrapper was a `Box` (which stacks children) instead of a `Column`, so crest/name/tiles/Join all overlapped into a sliver.
+- Cause: Compose draw-order and Box-vs-Column layout bugs are invisible when reading source — the code "looks right" (state set correctly, data fetched 200 OK) but renders wrong. Reading logic ≠ observing layout.
+- Rule: For any UI a subagent builds, ALWAYS install + screenshot the actual rendered screen (drive the exact user action) before calling it done. "Verified by reading code" is not verification for anything visual. logcat confirming the API 200 only proves data loaded, not that it's displayed. This is the same class as the mockup-fidelity-measure-pixels lesson: render and look, don't infer.
