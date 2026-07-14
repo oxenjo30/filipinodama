@@ -23,8 +23,10 @@ android {
         applicationId = "com.filipinodama.app"
         minSdk = 26
         targetSdk = 35
-        versionCode = 1
-        versionName = "0.1.0"
+        // Play permanently reserves every uploaded versionCode (even deleted
+        // ones), so each upload must bump it. Was 1 (uploaded then deleted).
+        versionCode = 2
+        versionName = "0.1.1"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
