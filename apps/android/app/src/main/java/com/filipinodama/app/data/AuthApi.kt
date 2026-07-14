@@ -159,5 +159,18 @@ data class AuthUser(
     val avatarUrl: String? = null,
     val frameId: String? = null,
     val equippedBoard: String? = null,
-    val equippedSkin: String? = null
+    val equippedSkin: String? = null,
+    // In-session sanction state (mute/ban) from publicUser(). A ban is normally
+    // rejected at the auth guard, so this mainly surfaces MUTES — the only
+    // sanction that keeps a user signed in while silencing chat. Drives the
+    // SanctionBanner. Nullable/defaulted so older responses parse fine.
+    val sanction: Sanction? = null
+)
+
+@Serializable
+data class Sanction(
+    val muted: Boolean = false,
+    val mutedUntil: String? = null,
+    val banned: Boolean = false,
+    val bannedUntil: String? = null
 )

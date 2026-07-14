@@ -33,6 +33,31 @@ export function publicUser(u: User) {
     draws: u.draws,
     streak: u.streak,
     adminRole: u.adminRole,
+    // In-session sanction state so a signed-in user can be shown a banner. A
+    // BAN is normally rejected at the auth guard (403), but if a ban is issued
+    // mid-session the client sees banned=true on its next /me and can react; a
+    // MUTE never blocks login, so this is the only way a muted user learns why
+    // their chat is silenced. `until` is null for a permanent sanction.
+    sanction: sanctionState(u),
+  };
+}
+
+/** Derive the client-facing sanction state from the User's mute/ban columns. */
+function sanctionState(u: User): {
+  muted: boolean;
+  mutedUntil: string | null;
+  banned: boolean;
+  bannedUntil: string | null;
+} {
+  const now = new Date();
+  const PERMANENT_MS = new Date("2999-01-01T00:00:00Z").getTime();
+  const muted = !!(u.mutedUntil && u.mutedUntil > now);
+  const banned = !!(u.bannedUntil && u.bannedUntil > now);
+  return {
+    muted,
+    mutedUntil: muted && u.mutedUntil!.getTime() !== PERMANENT_MS ? u.mutedUntil!.toISOString() : null,
+    banned,
+    bannedUntil: banned && u.bannedUntil!.getTime() !== PERMANENT_MS ? u.bannedUntil!.toISOString() : null,
   };
 }
 

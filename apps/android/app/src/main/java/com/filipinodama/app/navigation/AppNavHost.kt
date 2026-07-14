@@ -70,6 +70,7 @@ import com.filipinodama.app.ui.screens.settings.LegalScreen
 import com.filipinodama.app.ui.screens.settings.SettingsScreen
 import com.filipinodama.app.ui.screens.system.MaintenanceScreen
 import com.filipinodama.app.ui.screens.system.OfflineBanner
+import com.filipinodama.app.ui.screens.system.SanctionBanner
 import com.filipinodama.app.data.AuthRepository
 import com.filipinodama.app.ui.screens.social.DiscoverGuildsScreen
 import com.filipinodama.app.ui.screens.social.DmConversationListScreen
@@ -225,6 +226,7 @@ fun AppNavHost() {
 
     Column(modifier = Modifier.fillMaxSize()) {
         OfflineBanner(visible = offlineBannerVisible(isOnline))
+        SanctionBanner()
         Scaffold(
             bottomBar = {
                 if (showTabBar) {
