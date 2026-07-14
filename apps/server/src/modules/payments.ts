@@ -88,6 +88,29 @@ export async function paymentRoutes(app: FastifyInstance) {
   // GET /api/payments/packs — the diamond top-up packs (public)
   app.get("/payments/packs", async () => ok({ packs: DIAMOND_PACKS, enabled: features.payments, currency: "PHP" }));
 
+  // GET /api/payments/play/products — Android's read-only source for which
+  // diamond packs are purchasable via Google Play Billing right now (public;
+  // no auth required to browse prices, same as /payments/packs). Sourced
+  // entirely from getPlayBillingRuntime() (admin-configured pack -> Play
+  // product-id map) so the app never has to guess a product id or call the
+  // admin-only status endpoint. Returns `enabled:false, products:[]` whenever
+  // Play Billing is off OR no packs are mapped yet — the app treats both as
+  // "stay dark". Exposes ONLY packId/productId/diamonds/bonus — never the
+  // service account or any other secret (mirrors getPlayBillingStatus's
+  // non-secret shape).
+  app.get("/payments/play/products", async () => {
+    const runtime = await getPlayBillingRuntime();
+    if (!runtime.enabled) return ok({ enabled: false, products: [] });
+    const products = Object.entries(runtime.productIds)
+      .map(([packId, productId]) => {
+        const pack = PACK(packId);
+        if (!pack) return null;
+        return { packId, productId, diamonds: pack.diamonds as number, bonus: pack.bonus as number };
+      })
+      .filter((p) => p !== null);
+    return ok({ enabled: true, products });
+  });
+
   // POST /api/payments/play/verify — Android Google Play Billing verification.
   // The app sends the completed purchase; we verify it against the Play Developer
   // API using the admin-configured service account, then credit diamonds ONCE
