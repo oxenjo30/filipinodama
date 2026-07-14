@@ -358,8 +358,9 @@ fun GuildPreviewSheet(guildId: String, signedIn: Boolean, onClose: () -> Unit, o
                         effectiveState == "requested" -> "✓ Application sent"
                         effectiveState == "invite-only" -> "Members only"
                         effectiveState == "guest" -> "Sign in to join"
-                        g.joinPolicy == "request" -> "Request to Join"
-                        else -> "Join"
+                        // Approval is universal now (owner policy): every joinable
+                        // guild is "Request to Join", never an instant "Join".
+                        else -> "Request to Join"
                     }
                     val joinEnabled = !busy && !joined && !requested &&
                         effectiveState !in setOf("member", "in-other-guild", "invite-only", "requested") &&

@@ -732,7 +732,9 @@ fun BrowseGuildRow(card: GuildCardDto, isMine: Boolean, busy: Boolean, onOpenPre
             Text("${card.memberCount} members · ${card.weeklyPoints} pts", color = Ink2, style = MaterialTheme.typography.labelSmall, modifier = Modifier.padding(top = 3.dp))
         }
         Text(
-            if (isMine) "Your Guild" else if (card.joinPolicy == "invite") "Members only" else if (card.joinPolicy == "request") "Request" else "Join",
+            // Approval is universal (owner policy): non-invite guilds are always
+            // "Request", never an instant "Join".
+            if (isMine) "Your Guild" else if (card.joinPolicy == "invite") "Members only" else "Request",
             color = if (isMine) Ink2 else Color(0xFF2A1608),
             style = MaterialTheme.typography.labelMedium,
             modifier = Modifier
