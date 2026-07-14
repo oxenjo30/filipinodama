@@ -17,6 +17,7 @@ kotlinxCoroutinesTest = "1.9.0"
 mockwebserver = "4.12.0"
 credentials = "1.3.0"
 googleid = "1.1.1"
+billing = "7.1.1"
 
 [libraries]
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
@@ -41,6 +42,10 @@ okhttp-logging-interceptor = { group = "com.squareup.okhttp3", name = "logging-i
 socketio-client = { group = "io.socket", name = "socket.io-client", version.ref = "socketIoClient" }
 
 coil-compose = { group = "io.coil-kt", name = "coil-compose", version.ref = "coilCompose" }
+
+# Google Play Billing — real-money in-app purchases (diamond top-up). KTX gives
+# the suspend/Flow API used by BillingRepository.
+billing-ktx = { group = "com.android.billingclient", name = "billing-ktx", version.ref = "billing" }
 
 # Sign-in with Google via Credential Manager (native Android auth). serverClientId
 # on GetGoogleIdOption must be the WEB OAuth client ID (same GOOGLE_CLIENT_ID the
