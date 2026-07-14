@@ -1,5 +1,7 @@
 package com.filipinodama.app.data.profile
 
+import com.filipinodama.app.data.apiErrorFrom
+
 import com.filipinodama.app.data.ApiClient
 import com.filipinodama.app.data.ApiEnvelope
 import com.filipinodama.app.data.AuthRepository
@@ -65,7 +67,12 @@ object ProfileRepository {
                 ProfileResult.Failure(error?.code ?: "UNKNOWN", error?.message ?: "Something went wrong. Please try again.")
             }
         } catch (e: Exception) {
-            ProfileResult.Failure("NETWORK_ERROR", "Couldn't reach the server. Check your connection and try again.")
+            // Surface the server's real 4xx error (validation, permission, etc.)
+            // instead of a misleading network message; only true transport
+            // failures (no HTTP response) fall back to NETWORK_ERROR.
+            val apiError = apiErrorFrom(e)
+            if (apiError != null) ProfileResult.Failure(apiError.code, apiError.message)
+            else ProfileResult.Failure("NETWORK_ERROR", "Couldn't reach the server. Check your connection and try again.")
         }
     }
 }

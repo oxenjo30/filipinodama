@@ -83,7 +83,7 @@ fun GlobalSearchScreen(onClose: () -> Unit, onOpenProfile: (String) -> Unit) {
         modifier = Modifier
             .fillMaxSize()
             .background(Color(0xB8060312))
-            .padding(top = 44.dp, start = 16.dp, end = 16.dp, bottom = 20.dp)
+            .padding(top = 12.dp, start = 16.dp, end = 16.dp, bottom = 20.dp)
     ) {
         // Search bar: magnifier + input + close, mockup lines 3006-3010.
         Row(

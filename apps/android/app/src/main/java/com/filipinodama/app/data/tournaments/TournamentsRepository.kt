@@ -1,5 +1,7 @@
 package com.filipinodama.app.data.tournaments
 
+import com.filipinodama.app.data.apiErrorFrom
+
 import com.filipinodama.app.data.ApiClient
 import com.filipinodama.app.data.ApiEnvelope
 import com.filipinodama.app.data.economy.EconomyResult
@@ -22,7 +24,7 @@ object TournamentsRepository {
             val envelope = api.list()
             unwrap(envelope)
         } catch (e: Exception) {
-            EconomyResult.Failure("NETWORK_ERROR", "Couldn't reach the server. Check your connection and try again.")
+            failureFrom(e, "NETWORK_ERROR", "Couldn't reach the server. Check your connection and try again.")
         }
     }
 
@@ -31,27 +33,23 @@ object TournamentsRepository {
         return try {
             unwrap(api.detail(id))
         } catch (e: Exception) {
-            EconomyResult.Failure("NETWORK_ERROR", "Couldn't reach the server. Check your connection and try again.")
+            failureFrom(e, "NETWORK_ERROR", "Couldn't reach the server. Check your connection and try again.")
         }
     }
 
     /**
      * POST /api/tournaments/:id/join — guest-blocked (403 GUEST_CANNOT_JOIN).
-     * A non-2xx response surfaces via Retrofit as an HttpException, which the
-     * generic catch below can't decode a real server error code/message out
-     * of (this app's Retrofit setup has no error-body-decoding interceptor
-     * anywhere — see EconomyRepository.purchase for the identical, already-
-     * accepted limitation on store purchases). The guest case specifically is
-     * additionally guarded client-side in TournamentDetailScreen (checks
-     * AuthRepository's isGuest before calling this at all) so the honest
-     * "Sign in to join tournaments" message shows without depending on
-     * decoding the 403 body.
+     * A non-2xx now surfaces the server's real error code/message via
+     * [apiErrorFrom] (see ApiErrors.kt), so e.g. the 403 GUEST_CANNOT_JOIN body
+     * reaches the UI. The guest case is ALSO guarded client-side in
+     * TournamentDetailScreen (checks AuthRepository's isGuest before calling),
+     * so the honest "Sign in to join tournaments" message shows regardless.
      */
     suspend fun join(id: String): EconomyResult<TournamentJoinResponse> {
         return try {
             unwrap(api.join(id))
         } catch (e: Exception) {
-            EconomyResult.Failure("JOIN_FAILED", "Couldn't join this tournament. Please try again.")
+            failureFrom(e, "JOIN_FAILED", "Couldn't join this tournament. Please try again.")
         }
     }
 
@@ -60,8 +58,18 @@ object TournamentsRepository {
         return try {
             unwrap(api.leave(id))
         } catch (e: Exception) {
-            EconomyResult.Failure("LEAVE_FAILED", "Couldn't leave this tournament. Please try again.")
+            failureFrom(e, "LEAVE_FAILED", "Couldn't leave this tournament. Please try again.")
         }
+    }
+
+    /**
+     * Build a Failure from a thrown request: the server's real 4xx error when
+     * present ([apiErrorFrom]), else the given transport-failure fallback.
+     */
+    private fun <T> failureFrom(e: Throwable, fallbackCode: String, fallbackMessage: String): EconomyResult<T> {
+        val apiError = apiErrorFrom(e)
+        return if (apiError != null) EconomyResult.Failure(apiError.code, apiError.message)
+        else EconomyResult.Failure(fallbackCode, fallbackMessage)
     }
 
     private fun <T> unwrap(envelope: ApiEnvelope<T>): EconomyResult<T> {

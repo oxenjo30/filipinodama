@@ -10,7 +10,10 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
@@ -91,7 +94,10 @@ fun MatchDetailScreen(
 
     Column(modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
         Row(
-            modifier = Modifier.fillMaxWidth().padding(top = 44.dp, start = 16.dp, end = 16.dp, bottom = 16.dp),
+            // top inset now comes from the app-root statusBarsPadding(); this is
+            // just the header's own top margin (was 44dp of manual status-bar
+            // offset that would double up now).
+            modifier = Modifier.fillMaxWidth().padding(top = 12.dp, start = 16.dp, end = 16.dp, bottom = 16.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(10.dp)
         ) {
@@ -123,7 +129,18 @@ fun MatchDetailScreen(
                 val m = match!!
                 val info = matchDetailInfo(m, meId)
 
-                Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp)) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .verticalScroll(rememberScrollState())
+                        .padding(horizontal = 16.dp)
+                        // Clear the system gesture/nav bar so the bottom "Watch
+                        // replay" button isn't clipped under it (this is a pushed
+                        // screen with no tab bar to own the bottom inset). Extra
+                        // 16dp breathing room below the button.
+                        .navigationBarsPadding()
+                        .padding(bottom = 16.dp)
+                ) {
                     // Result banner
                     Column(
                         modifier = Modifier

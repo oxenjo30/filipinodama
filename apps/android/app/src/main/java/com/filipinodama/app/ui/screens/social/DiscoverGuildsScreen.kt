@@ -95,7 +95,7 @@ fun DiscoverGuildsScreen(onBack: () -> Unit) {
     // the sheet is invisible even though its state/data are correct.
     Box(modifier = Modifier.fillMaxSize()) {
     Column(modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
-        Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp).padding(top = 44.dp)) {
+        Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp).padding(top = 12.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 MockupBackButton(onClick = onBack)
                 Text(

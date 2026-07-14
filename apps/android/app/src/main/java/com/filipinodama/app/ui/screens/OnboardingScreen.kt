@@ -11,9 +11,9 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.draw.clip
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -25,7 +25,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 import com.filipinodama.app.BuildConfig
@@ -56,24 +55,18 @@ import com.filipinodama.app.ui.theme.Gold
  * re-shown the tour after a process restart.
  */
 
-private data class OnbSlide(val img: String, val title: String, val body: String)
+private data class OnbSlide(val img: String)
 
+// Owner-supplied full-bleed onboarding banners (play-store-assets/, normalised
+// into apps/web/public/assets). Each banner already contains its own title and
+// tagline baked into the art ("MASTER THE BOARD — Sharpen your strategy", etc.),
+// so the slide carries ONLY the image: the layout below renders the banner
+// full-width and does NOT draw any separate title/body text (that would double
+// the wording). Replaces the earlier square art + app-rendered captions.
 private val SLIDES = listOf(
-    OnbSlide(
-        "dama_redesign_1.png",
-        "Master the Board",
-        "Classic Filipino Dama on an 8×8 board — diagonal moves, mandatory captures, and kings that rule the diagonals."
-    ),
-    OnbSlide(
-        "board-marble.png",
-        "Climb the Ranks",
-        "Play ranked matches, earn trophies, and rise from Squire to Alamat across competitive seasons."
-    ),
-    OnbSlide(
-        "me-guild.png",
-        "Play With Friends",
-        "Create private rooms, invite friends with a code, join a guild, and battle rivals in Guild Wars."
-    )
+    OnbSlide("onb-board.png"),
+    OnbSlide("onb-ranks.png"),
+    OnbSlide("onb-friends.png")
 )
 private const val SLIDE_COUNT = 3
 
@@ -103,36 +96,21 @@ fun OnboardingScreen(onFinished: () -> Unit) {
             modifier = Modifier
                 .weight(1f)
                 .fillMaxWidth()
-                .padding(horizontal = 34.dp, vertical = 46.dp),
+                .padding(horizontal = 20.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Center
         ) {
-            Box(
+            // Full-bleed banner — the owner's art already contains the title and
+            // tagline, so no separate Text is drawn. ContentScale.Fit letterboxes
+            // on the brand background so no baked-in text is ever cropped,
+            // regardless of the banner's native ratio.
+            AsyncImage(
+                model = "${BuildConfig.WEB_ORIGIN}/assets/${slide.img}",
+                contentDescription = null,
+                contentScale = ContentScale.Fit,
                 modifier = Modifier
-                    .size(230.dp)
-                    .background(Color(0xFF160C28), RoundedCornerShape(28.dp))
-                    .border(1.dp, Color(0x38E8B84B), RoundedCornerShape(28.dp))
-            ) {
-                AsyncImage(
-                    model = "${BuildConfig.WEB_ORIGIN}/assets/${slide.img}",
-                    contentDescription = null,
-                    contentScale = ContentScale.Crop,
-                    modifier = Modifier.fillMaxSize()
-                )
-            }
-            Text(
-                text = slide.title,
-                style = MaterialTheme.typography.headlineMedium,
-                color = Color(0xFFF4D886),
-                textAlign = TextAlign.Center,
-                modifier = Modifier.padding(top = 34.dp)
-            )
-            Text(
-                text = slide.body,
-                color = Color(0xFFB6A8D4),
-                style = MaterialTheme.typography.bodyMedium,
-                textAlign = TextAlign.Center,
-                modifier = Modifier.padding(top = 12.dp)
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(20.dp))
             )
         }
 

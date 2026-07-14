@@ -520,30 +520,59 @@ private fun StoreItemCard(
             else -> {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    CurrencyAmount(
-                        kind = if (cur == "DIAMONDS") CurrencyIconKind.GEM else CurrencyIconKind.COIN,
-                        text = price.toString(),
-                        color = if (cur == "DIAMONDS") Color(0xFFFF9AA8) else Color(0xFFF2D493),
-                        style = MaterialTheme.typography.labelMedium
-                    )
+                    // Price takes the leftover room and yields first (weight) so
+                    // that on a narrow 2-per-row card the +/Buy action group keeps
+                    // its intrinsic width and "Buy" never gets squeezed into wrap.
+                    Box(modifier = Modifier.weight(1f)) {
+                        CurrencyAmount(
+                            kind = if (cur == "DIAMONDS") CurrencyIconKind.GEM else CurrencyIconKind.COIN,
+                            text = price.toString(),
+                            color = if (cur == "DIAMONDS") Color(0xFFFF9AA8) else Color(0xFFF2D493),
+                            style = MaterialTheme.typography.labelMedium
+                        )
+                    }
                     Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
                         // Add-to-cart (mockup line 3780-3784): + when not yet
                         // queued, flips to a no-op ✓ once in the cart. Removal
                         // only happens on the Checkout screen, matching the
                         // mockup's addToCart-is-idempotent-by-name behavior.
                         AddToCartButton(inCart = inCart, onAdd = onAddToCart)
-                        Box(
-                            modifier = Modifier.clickable(onClick = onPreviewOrBuy).background(Gold.copy(alpha = 0.85f), RoundedCornerShape(8.dp)).padding(horizontal = 14.dp, vertical = 8.dp)
-                        ) {
-                            Text("Buy", color = Color(0xFF2A1607), style = MaterialTheme.typography.labelMedium)
-                        }
+                        BuyButton(onClick = onPreviewOrBuy)
                     }
                 }
             }
         }
+    }
+}
+
+/**
+ * Primary gold "Buy" button, shared by the featured grid cards and the Daily
+ * Deals rows. Centralised so every Buy button is identical AND so the label can
+ * never wrap: in a 2-per-row grid card a long price + the "+" cart button used
+ * to squeeze the old inline box until "Buy" broke onto two lines ("Bu"/"y").
+ * maxLines=1 + softWrap=false + a min-width guarantees the label always fits on
+ * one line; the price beside it ellipsizes instead of stealing the button's room.
+ */
+@Composable
+private fun BuyButton(label: String = "Buy", onClick: () -> Unit) {
+    Box(
+        modifier = Modifier
+            .defaultMinSize(minWidth = 52.dp)
+            .clickable(onClick = onClick)
+            .background(Gold.copy(alpha = 0.85f), RoundedCornerShape(8.dp))
+            .padding(horizontal = 14.dp, vertical = 8.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        Text(
+            label,
+            color = Color(0xFF2A1607),
+            style = MaterialTheme.typography.labelMedium,
+            maxLines = 1,
+            softWrap = false
+        )
     }
 }
 
@@ -601,9 +630,7 @@ private fun DealRow(item: StoreItemDto, owned: Boolean, inCart: Boolean, onBuy: 
         } else {
             Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
                 AddToCartButton(inCart = inCart, onAdd = onAddToCart)
-                Box(modifier = Modifier.clickable(onClick = onBuy).background(Gold.copy(alpha = 0.85f), RoundedCornerShape(8.dp)).padding(horizontal = 14.dp, vertical = 8.dp)) {
-                    Text("Buy", color = Color(0xFF2A1607), style = MaterialTheme.typography.labelMedium)
-                }
+                BuyButton(onClick = onBuy)
             }
         }
     }

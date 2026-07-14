@@ -3,8 +3,10 @@ package com.filipinodama.app.navigation
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.material3.Scaffold
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -164,6 +166,10 @@ fun AppNavHost() {
     val navBackStackEntry by navController.currentBackStackEntryAsState()
     val currentDestination = navBackStackEntry?.destination
     val showTabBar = currentDestination?.hierarchy?.any { it.route in tabRoutes } == true
+    // Tablet width cap (see TabletWidthCap.kt): centre + cap page content at
+    // 640dp on large screens, except the game/board routes which must stay
+    // full-width so the checkerboard fills the screen. No-op on phones.
+    val fullWidthRoute = isFullWidthRoute(currentDestination?.route)
 
     /** Clears the whole back stack down to the graph root, then lands on [route]. */
     fun goClearingStack(route: String) {
@@ -224,16 +230,29 @@ fun AppNavHost() {
         return
     }
 
-    Column(modifier = Modifier.fillMaxSize()) {
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            // Edge-to-edge is on (MainActivity), so inset the whole app below the
+            // status bar. The bottom nav-bar inset is handled inside BottomTabBar
+            // (navigationBarsPadding) so the Scaffold owns its own bottom insets;
+            // here we only claim the TOP so headers/banners clear the status bar.
+            .statusBarsPadding()
+    ) {
         OfflineBanner(visible = offlineBannerVisible(isOnline))
         SanctionBanner()
         Scaffold(
+            // The tab bar handles its own navigation-bar inset; don't let the
+            // Scaffold add the bottom system inset a second time (would push the
+            // content up by the gesture-bar height and leave a gap).
+            contentWindowInsets = WindowInsets(0, 0, 0, 0),
             bottomBar = {
                 if (showTabBar) {
                     BottomTabBar(navController)
                 }
             }
         ) { innerPadding ->
+        TabletWidthCap(capEnabled = !fullWidthRoute) {
         NavHost(
             navController = navController,
             startDestination = AppDestinations.SPLASH,
@@ -333,6 +352,10 @@ fun AppNavHost() {
                     onSignedOut = {
                         goClearingStack(AppDestinations.LOGIN)
                     },
+                    // Guest tapping "Sign In / Create Account" on the Overview:
+                    // go to Login without clearing the stack, so a cancelled
+                    // sign-in (back) returns them to their guest session.
+                    onGoToSignIn = { navController.navigate(AppDestinations.LOGIN) },
                     onOpenMatch = { matchId -> navController.navigate(AppDestinations.matchDetail(matchId)) },
                     onOpenFriends = { navController.navigate(AppDestinations.FRIENDS) },
                     onOpenGuild = { navController.navigate(AppDestinations.GUILD) },
@@ -663,6 +686,7 @@ fun AppNavHost() {
                     }
                 )
             }
+        }
         }
         }
     }

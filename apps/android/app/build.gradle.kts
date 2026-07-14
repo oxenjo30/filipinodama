@@ -1,8 +1,18 @@
+import java.util.Properties
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
     alias(libs.plugins.kotlin.compose.compiler)
     alias(libs.plugins.kotlin.serialization)
+}
+
+// Release signing — credentials live in a gitignored keystore.properties (never
+// committed). Absent on CI / a fresh clone, in which case the release build is
+// left unsigned (a debug build is unaffected). See docs for the upload key.
+val keystorePropsFile = rootProject.file("keystore.properties")
+val keystoreProps = Properties().apply {
+    if (keystorePropsFile.exists()) keystorePropsFile.inputStream().use { load(it) }
 }
 
 android {
@@ -13,8 +23,14 @@ android {
         applicationId = "com.filipinodama.app"
         minSdk = 26
         targetSdk = 35
-        versionCode = 1
-        versionName = "0.1.0"
+        // Play permanently reserves every uploaded versionCode (even deleted
+        // ones), so each upload must bump it. 1 = uploaded then deleted; 2 =
+        // first accepted internal-testing bundle; 3 = tablet width-cap build;
+        // 4 = system-bar insets fix + new onboarding art; 5 = real 4xx error
+        // messages + Match Detail scroll + Store Buy button + owner onboarding
+        // banners + Profile overview logout.
+        versionCode = 5
+        versionName = "0.1.4"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
@@ -39,6 +55,20 @@ android {
         buildConfigField("String", "GOOGLE_SERVER_CLIENT_ID", "\"$googleServerClientId\"")
     }
 
+    signingConfigs {
+        // Only define the release signing config when the keystore.properties is
+        // present (i.e. on the owner's machine). On CI / fresh clones it's absent
+        // and the release build stays unsigned rather than failing the build.
+        if (keystorePropsFile.exists()) {
+            create("release") {
+                storeFile = rootProject.file(keystoreProps.getProperty("storeFile"))
+                storePassword = keystoreProps.getProperty("storePassword")
+                keyAlias = keystoreProps.getProperty("keyAlias")
+                keyPassword = keystoreProps.getProperty("keyPassword")
+            }
+        }
+    }
+
     buildTypes {
         debug {
             // Emulator-to-host-localhost alias; see README for physical-device overrides.
@@ -58,8 +88,10 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
-            // NOTE: release build is intentionally left UNSIGNED for Phase 1.
-            // Owner must add a keystore + signingConfig before shipping a real release build.
+            // Sign with the upload key when keystore.properties is present.
+            if (keystorePropsFile.exists()) {
+                signingConfig = signingConfigs.getByName("release")
+            }
         }
     }
 
@@ -103,7 +135,6 @@ dependencies {
     implementation(libs.socketio.client)
 
     implementation(libs.coil.compose)
-    implementation(libs.billing.ktx)
 
     // Google Play Billing — real-money diamond top-up (dark behind
     // DIAMOND_TOPUP_ENABLED; see data/billing/BillingRepository.kt).
