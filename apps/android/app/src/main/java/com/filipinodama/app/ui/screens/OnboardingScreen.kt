@@ -58,19 +58,24 @@ import com.filipinodama.app.ui.theme.Gold
 
 private data class OnbSlide(val img: String, val title: String, val body: String)
 
+// Purpose-made onboarding art (owner-directed replacement of the handoff's
+// mismatched images: the old slides paired "Climb the Ranks" with a plain
+// board and "Master the Board" with a web-UI screenshot). These three are
+// generated to match each slide's meaning in the royal gold-on-purple style
+// and live alongside every other mockup image in apps/web/public/assets.
 private val SLIDES = listOf(
     OnbSlide(
-        "dama_redesign_1.png",
+        "onb-board.png",
         "Master the Board",
         "Classic Filipino Dama on an 8×8 board — diagonal moves, mandatory captures, and kings that rule the diagonals."
     ),
     OnbSlide(
-        "board-marble.png",
+        "onb-ranks.png",
         "Climb the Ranks",
         "Play ranked matches, earn trophies, and rise from Squire to Alamat across competitive seasons."
     ),
     OnbSlide(
-        "me-guild.png",
+        "onb-friends.png",
         "Play With Friends",
         "Create private rooms, invite friends with a code, join a guild, and battle rivals in Guild Wars."
     )

@@ -3,8 +3,10 @@ package com.filipinodama.app.navigation
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.material3.Scaffold
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -228,10 +230,22 @@ fun AppNavHost() {
         return
     }
 
-    Column(modifier = Modifier.fillMaxSize()) {
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            // Edge-to-edge is on (MainActivity), so inset the whole app below the
+            // status bar. The bottom nav-bar inset is handled inside BottomTabBar
+            // (navigationBarsPadding) so the Scaffold owns its own bottom insets;
+            // here we only claim the TOP so headers/banners clear the status bar.
+            .statusBarsPadding()
+    ) {
         OfflineBanner(visible = offlineBannerVisible(isOnline))
         SanctionBanner()
         Scaffold(
+            // The tab bar handles its own navigation-bar inset; don't let the
+            // Scaffold add the bottom system inset a second time (would push the
+            // content up by the gesture-bar height and leave a gap).
+            contentWindowInsets = WindowInsets(0, 0, 0, 0),
             bottomBar = {
                 if (showTabBar) {
                     BottomTabBar(navController)

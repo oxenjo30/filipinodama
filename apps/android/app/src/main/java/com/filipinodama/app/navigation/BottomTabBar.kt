@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.material3.MaterialTheme
@@ -68,8 +69,14 @@ fun BottomTabBar(navController: NavHostController) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .height(78.dp)
+            // The app draws edge-to-edge (MainActivity.enableEdgeToEdge), so the
+            // system gesture/nav bar sits UNDER this strip. Pad by its inset
+            // BEFORE the fixed height so the tab row lifts fully above the
+            // gesture bar instead of being overlapped by it (the background
+            // still extends behind the nav bar for a seamless look).
             .background(Brush.verticalGradient(listOf(Color(0xFF0F0720).copy(alpha = 0.5f), Color(0xFF120A22))))
+            .navigationBarsPadding()
+            .height(78.dp)
             .padding(horizontal = 8.dp)
             .padding(bottom = 14.dp),
         horizontalArrangement = Arrangement.SpaceAround,
