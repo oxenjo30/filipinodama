@@ -59,4 +59,8 @@ interface EconomyApi {
 
     @GET("api/matches/active")
     suspend fun activeMatch(): ApiEnvelope<ActiveMatchResponse>
+
+    /** Wallet screen's "Recent activity" — real gold/diamond ledger history. */
+    @GET("api/users/me/ledger")
+    suspend fun ledger(): ApiEnvelope<LedgerResponse>
 }

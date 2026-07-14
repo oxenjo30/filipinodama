@@ -132,4 +132,9 @@ object AppDestinations {
     // Profile's "Discover Guilds" quick-link and Guild Hall's not-in-a-guild
     // state; explicit back target is Profile per the mockup's `discoverBack`.
     const val DISCOVER_GUILDS = "social/guilds/discover"
+
+    // Wallet — mobile-screen-inventory.md SCREEN 32. Reached from Home's
+    // wallet chip (WalletChip/onOpenWallet); explicit back target is Home per
+    // the mockup's `walletBack`.
+    const val WALLET = "economy/wallet"
 }
