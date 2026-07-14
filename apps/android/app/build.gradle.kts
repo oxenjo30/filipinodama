@@ -24,9 +24,10 @@ android {
         minSdk = 26
         targetSdk = 35
         // Play permanently reserves every uploaded versionCode (even deleted
-        // ones), so each upload must bump it. Was 1 (uploaded then deleted).
-        versionCode = 2
-        versionName = "0.1.1"
+        // ones), so each upload must bump it. 1 = uploaded then deleted; 2 =
+        // first accepted internal-testing bundle; 3 = tablet width-cap build.
+        versionCode = 3
+        versionName = "0.1.2"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 

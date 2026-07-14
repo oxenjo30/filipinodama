@@ -164,6 +164,10 @@ fun AppNavHost() {
     val navBackStackEntry by navController.currentBackStackEntryAsState()
     val currentDestination = navBackStackEntry?.destination
     val showTabBar = currentDestination?.hierarchy?.any { it.route in tabRoutes } == true
+    // Tablet width cap (see TabletWidthCap.kt): centre + cap page content at
+    // 640dp on large screens, except the game/board routes which must stay
+    // full-width so the checkerboard fills the screen. No-op on phones.
+    val fullWidthRoute = isFullWidthRoute(currentDestination?.route)
 
     /** Clears the whole back stack down to the graph root, then lands on [route]. */
     fun goClearingStack(route: String) {
@@ -234,6 +238,7 @@ fun AppNavHost() {
                 }
             }
         ) { innerPadding ->
+        TabletWidthCap(capEnabled = !fullWidthRoute) {
         NavHost(
             navController = navController,
             startDestination = AppDestinations.SPLASH,
@@ -663,6 +668,7 @@ fun AppNavHost() {
                     }
                 )
             }
+        }
         }
         }
     }
