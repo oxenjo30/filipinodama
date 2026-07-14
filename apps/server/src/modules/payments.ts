@@ -6,6 +6,7 @@ import { ok, err } from "../lib/errors.js";
 import { env, features } from "../config/env.js";
 import { requireAuth } from "../auth/guards.js";
 import { applyLedger, applyLedgerTx } from "../economy/ledger.js";
+import { getCredential } from "../lib/gateway-credentials.js";
 
 /**
  * PayMongo payments — the ONLY path that credits Diamonds is the
@@ -48,17 +49,21 @@ export const DIAMOND_PACKS = [
 ] as const;
 
 const PACK = (id: string) => DIAMOND_PACKS.find((p) => p.id === id);
-const basicAuth = () => "Basic " + Buffer.from(`${env.PAYMONGO_SECRET_KEY}:`).toString("base64");
+// PayMongo credentials resolve "admin overrides env": an admin-entered key
+// (encrypted at rest) wins; otherwise fall back to the PAYMONGO_* env var.
+const basicAuth = async () =>
+  "Basic " + Buffer.from(`${await getCredential("paymongo.secretKey")}:`).toString("base64");
 
-/** Verify the Paymongo-Signature header against the raw request body. */
-function verifySignature(rawBody: string, header: string | undefined): boolean {
-  if (!header || !env.PAYMONGO_WEBHOOK_SECRET) return false;
+/** Verify the Paymongo-Signature header against the raw request body, using the
+ *  supplied webhook secret (resolved by the caller: stored-or-env). */
+function verifySignature(rawBody: string, header: string | undefined, webhookSecret: string): boolean {
+  if (!header || !webhookSecret) return false;
   // Header format: "t=<ts>,te=<sig>,li=<sig>" (te = test-mode, li = live-mode).
   const parts = Object.fromEntries(header.split(",").map((kv) => kv.split("=") as [string, string]));
   const ts = parts.t;
   const sig = parts.te || parts.li;
   if (!ts || !sig) return false;
-  const expected = createHmac("sha256", env.PAYMONGO_WEBHOOK_SECRET).update(`${ts}.${rawBody}`).digest("hex");
+  const expected = createHmac("sha256", webhookSecret).update(`${ts}.${rawBody}`).digest("hex");
   try {
     return timingSafeEqual(Buffer.from(sig), Buffer.from(expected));
   } catch {
@@ -104,7 +109,7 @@ export async function paymentRoutes(app: FastifyInstance) {
 
     const res = await fetch("https://api.paymongo.com/v1/checkout_sessions", {
       method: "POST",
-      headers: { Authorization: basicAuth(), "Content-Type": "application/json" },
+      headers: { Authorization: await basicAuth(), "Content-Type": "application/json" },
       body: JSON.stringify({
         data: {
           attributes: {
@@ -137,7 +142,8 @@ export async function paymentRoutes(app: FastifyInstance) {
   app.post("/payments/webhook", async (req, reply) => {
     const raw = (req as unknown as { rawBody?: string }).rawBody ?? "";
     const sigHeader = req.headers["paymongo-signature"] as string | undefined;
-    if (!verifySignature(raw, sigHeader)) {
+    const webhookSecret = await getCredential("paymongo.webhookSecret");
+    if (!verifySignature(raw, sigHeader, webhookSecret)) {
       return reply.status(401).send({ ok: false, error: { code: "BAD_SIGNATURE", message: "Invalid signature" } });
     }
 
