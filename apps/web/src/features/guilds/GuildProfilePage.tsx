@@ -66,7 +66,9 @@ export function GuildProfilePage() {
       case "in-other-guild": return <button style={{ ...jbtn, opacity: 0.5, cursor: "default", background: "rgba(0,0,0,.3)", color: "var(--ink2)", border: "1px solid rgba(232,184,75,.2)" }} disabled>In another guild</button>;
       case "invite-only": return <button style={{ ...jbtn, opacity: 0.5, cursor: "default", background: "rgba(0,0,0,.3)", color: "var(--ink2)", border: "1px solid rgba(232,184,75,.2)" }} disabled>Invite only</button>;
       case "requested": return <button style={{ ...jbtn, opacity: 0.6, cursor: "default", background: "rgba(0,0,0,.3)", color: "var(--ink2)", border: "1px solid rgba(232,184,75,.2)" }} disabled>Requested</button>;
-      case "joinable": return <button className="btn btn-gold" style={jbtn} onClick={onJoin}>{g.joinPolicy === "open" ? "Join Guild" : "Request to Join"}</button>;
+      {/* Every join now requires officer approval (owner policy), so a joinable
+          guild always shows "Request to Join" — there is no instant join. */}
+      case "joinable": return <button className="btn btn-gold" style={jbtn} onClick={onJoin}>Request to Join</button>;
     }
   };
 

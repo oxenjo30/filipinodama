@@ -490,7 +490,12 @@ private fun StoreItemCard(
             StoreThumbView(storeThumbFor(item), size = 60.dp)
         }
         Text(item.name, color = androidx.compose.ui.graphics.Color.White, style = MaterialTheme.typography.titleSmall, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
-        Text(meta?.sub ?: "", color = Ink2, style = MaterialTheme.typography.labelSmall, modifier = Modifier.padding(top = 2.dp, bottom = 8.dp))
+        Text(meta?.sub ?: "", color = Ink2, style = MaterialTheme.typography.labelSmall, modifier = Modifier.padding(top = 2.dp, bottom = 6.dp))
+
+        // Visible "Preview" affordance — matches the web card's 🔍 Preview link
+        // (StorePage.tsx). Without it the tap-to-preview on the image above is
+        // invisible, so users don't know a preview exists (owner-reported).
+        PreviewLabel(onClick = onPreviewOrBuy)
 
         when {
             owned -> {
@@ -572,6 +577,32 @@ private fun BuyButton(label: String = "Buy", onClick: () -> Unit) {
             style = MaterialTheme.typography.labelMedium,
             maxLines = 1,
             softWrap = false
+        )
+    }
+}
+
+/**
+ * "🔍 Preview" text link under a store card, mirroring the web card's Preview
+ * affordance (StorePage.tsx). Makes the tap-to-preview on the item art
+ * discoverable — the art itself is also tappable, but nothing signalled it.
+ */
+@Composable
+private fun PreviewLabel(onClick: () -> Unit) {
+    Row(
+        modifier = Modifier
+            .clickable(onClick = onClick)
+            .padding(bottom = 8.dp),
+        horizontalArrangement = Arrangement.spacedBy(4.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text("🔍", style = MaterialTheme.typography.labelSmall)
+        Text(
+            "PREVIEW",
+            color = Color(0xFFF0CF72),
+            style = MaterialTheme.typography.labelSmall.copy(
+                letterSpacing = 0.8.sp,
+                fontWeight = androidx.compose.ui.text.font.FontWeight.Bold
+            )
         )
     }
 }

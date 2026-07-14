@@ -28,9 +28,10 @@ android {
         // first accepted internal-testing bundle; 3 = tablet width-cap build;
         // 4 = system-bar insets fix + new onboarding art; 5 = real 4xx error
         // messages + Match Detail scroll + Store Buy button + owner onboarding
-        // banners + Profile overview logout.
-        versionCode = 5
-        versionName = "0.1.4"
+        // banners + Profile overview logout; 6 = universal guild approval + Store
+        // preview affordance.
+        versionCode = 6
+        versionName = "0.1.5"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 

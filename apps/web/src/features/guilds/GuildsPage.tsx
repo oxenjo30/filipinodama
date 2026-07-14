@@ -411,6 +411,9 @@ export function GuildsPage() {
     setBusy(true);
     try {
       const res = await api.post<{ status: "joined" | "requested" }>(`/api/guilds/${g.id}/join`, {});
+      // Approval is universal now — the server returns "requested" for every
+      // join. The "joined" branch is kept only as defensive fallback in case an
+      // older server is deployed; the normal path is always the request toast.
       if (res.status === "joined") {
         showToast(`Joined ${g.name}!`);
         setMyGuildId(g.id);
@@ -871,7 +874,9 @@ export function GuildsPage() {
                   </div>
                   </div>
                   <div className="fd-row-actions" style={{ display: "flex", flex: "none" }}>
-                    <button onClick={() => { if (!isMine) void onJoin(g); }} disabled={isMine || busy} style={joinStyle}>{isMine ? "Your Guild" : open ? "Join" : "Request"}</button>
+                    {/* Approval is universal (owner policy) — every non-mine guild
+                        shows "Request", never an instant "Join". */}
+                    <button onClick={() => { if (!isMine) void onJoin(g); }} disabled={isMine || busy} style={joinStyle}>{isMine ? "Your Guild" : "Request"}</button>
                   </div>
                 </div>
               );

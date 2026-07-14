@@ -17,6 +17,16 @@ import { seedUser, truncateAll } from "./helpers.js";
  */
 describe("purchaseItem — Daily Deals sale price", () => {
   afterEach(async () => {
+    // truncateAll() intentionally does NOT clear StoreItem (durable seed data),
+    // but this suite creates StoreItem rows with fixed ids (t_*). Without cleanup
+    // those rows leak and the NEXT run collides on the unique id ("Unique
+    // constraint failed on the fields: (id)"). Delete the test-only "t_" items —
+    // but first delete the InventoryItem rows the purchases created that FK to
+    // them (InventoryItem.itemId -> StoreItem.id; InventoryItem is not in
+    // truncateAll), or the StoreItem delete violates the foreign key. Scoped to
+    // "t_" ids so real seeded store items are never touched.
+    await prisma.inventoryItem.deleteMany({ where: { itemId: { startsWith: "t_" } } });
+    await prisma.storeItem.deleteMany({ where: { id: { startsWith: "t_" } } });
     await truncateAll();
   });
   afterAll(async () => {

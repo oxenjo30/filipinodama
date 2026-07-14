@@ -307,7 +307,8 @@ export async function guildRoutes(app: FastifyInstance) {
     },
   );
 
-  // POST /api/guilds/:id/join — auto-join if trophies>=minTrophies else create request
+  // POST /api/guilds/:id/join — creates a pending join request for officer/leader
+  // approval (owner policy: no instant self-join); invite-only guilds 403.
   app.post<{ Params: { id: string } }>(
     "/guilds/:id/join",
     { preHandler: requireAuth },
@@ -321,21 +322,22 @@ export async function guildRoutes(app: FastifyInstance) {
       const guild = await prisma.guild.findUnique({ where: { id: guildId } });
       if (!guild) throw err.notFound("GUILD_NOT_FOUND", "Guild not found");
 
-      const user = await prisma.user.findUnique({ where: { id: me }, select: { trophies: true } });
-      if (!user) throw err.notFound("USER_NOT_FOUND", "User not found");
+      // (No trophy-floor lookup here anymore: since every join now routes
+      // through the approval request below regardless of trophies, the floor
+      // is enforced by officers at review time, not by an auto-join gate.)
 
-      // Below the trophy floor → never auto-join regardless of policy.
-      if (user.trophies < guild.minTrophies) {
-        // falls through to the request flow below
-      } else if (guild.joinPolicy === "invite") {
+      // OWNER POLICY (2026-07-14): ALL guild joins require officer/leader
+      // approval — there is no instant self-join anymore. Invite-only guilds
+      // remain fully closed (must be invited); every other join (formerly
+      // "open" too) now creates a pending request that an officer must accept.
+      // This intentionally supersedes the previous "open" auto-join branch:
+      // approval is universal, so joinPolicy "open" and "request" behave
+      // identically here, and the trophy floor still routes through requests.
+      if (guild.joinPolicy === "invite") {
         // Invite-only: no self-join and no open request — must be invited.
         throw err.forbidden("INVITE_ONLY", "This guild is invite-only");
-      } else if (guild.joinPolicy === "open") {
-        // Open + meets trophies → join immediately.
-        await prisma.guildMember.create({ data: { userId: me, guildId, role: "MEMBER" } });
-        return ok({ status: "joined" });
       }
-      // "request" policy (or below-floor) → create a join request below.
+      // Any non-invite guild → create a join request below (never instant).
 
       const request = await prisma.guildJoinRequest.upsert({
         where: { guildId_userId: { guildId, userId: me } },
