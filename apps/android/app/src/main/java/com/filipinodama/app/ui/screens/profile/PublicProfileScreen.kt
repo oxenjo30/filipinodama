@@ -256,11 +256,16 @@ fun PublicProfileScreen(
                     }
                 }
 
+                // Mockup pubStatRows (Mobile.dc.html): Rating / Wins / Win rate /
+                // Best streak — exact labels, order, and colors. The mockup's own
+                // "Best streak" value is st.streak, so we use the real `streak`
+                // field (server has no separate bestStreak) — honoring the label
+                // with real data, not fabricating a new metric.
                 val statTriples: List<Triple<String, String, androidx.compose.ui.graphics.Color>> = listOf(
-                    Triple("Trophies", u.trophies.toString(), GoldLt),
-                    Triple("Wins", u.wins.toString(), Green),
-                    Triple("Losses", u.losses.toString(), Red),
-                    Triple("Win Rate", "$winRate%", GoldLt)
+                    Triple("Rating", u.trophies.toString(), Color(0xFFF0CF72)),
+                    Triple("Wins", u.wins.toString(), Color(0xFF3FBF6F)),
+                    Triple("Win rate", "$winRate%", Color(0xFF8FB3FF)),
+                    Triple("Best streak", u.streak.toString(), Color(0xFFFF8F9C))
                 )
                 LazyVerticalGrid(
                     columns = GridCells.Fixed(4),

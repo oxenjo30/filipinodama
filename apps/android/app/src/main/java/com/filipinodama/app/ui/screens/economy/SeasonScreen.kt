@@ -33,6 +33,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.filipinodama.app.data.economy.EconomyRepository
 import com.filipinodama.app.data.economy.EconomyResult
 import com.filipinodama.app.data.economy.SeasonCurrentResponse
@@ -344,6 +345,10 @@ private fun SeasonTierCard(tier: SeasonTierDto, hasPass: Boolean, busy: Boolean,
     ) {
         Text("Lvl ${tier.tier}", color = GoldLt, style = MaterialTheme.typography.labelLarge)
         Box(Modifier.height(8.dp))
+        // FREE track — tag pill + reward + claim (mockup: each track tile is
+        // labelled FREE / ROYAL above its reward cell).
+        TrackTagPill(label = "FREE", premium = false)
+        Box(Modifier.height(5.dp))
         RewardCell(reward = tier.freeReward, premium = false)
         Box(Modifier.height(6.dp))
         TierActionButton(
@@ -352,14 +357,41 @@ private fun SeasonTierCard(tier: SeasonTierDto, hasPass: Boolean, busy: Boolean,
             busy = busy,
             onClaim = onClaimFree
         )
-        Box(Modifier.height(10.dp))
+        Box(Modifier.height(12.dp))
+        // ROYAL (premium) track.
+        TrackTagPill(label = "ROYAL", premium = true)
+        Box(Modifier.height(5.dp))
         RewardCell(reward = tier.premiumReward, premium = true)
         Box(Modifier.height(6.dp))
         if (!hasPass) {
-            Text("Royal Pass", color = Ink2, style = MaterialTheme.typography.labelSmall)
+            // Locked until the Royal Pass is owned — a real locked action state,
+            // not a bare label (mockup shows a lock affordance on premium tiles).
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(Color(0x14E8B84B), RoundedCornerShape(9.dp))
+                    .border(1.dp, Color(0x33E8B84B), RoundedCornerShape(9.dp))
+                    .padding(vertical = 7.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                Text("🔒 Royal", color = Color(0xFFC79A4E), style = MaterialTheme.typography.labelSmall)
+            }
         } else {
             TierActionButton(unlocked = tier.unlocked, claimed = tier.claimed, busy = false, onClaim = {})
         }
+    }
+}
+
+/** Small FREE / ROYAL track tag pill above each reward cell (mockup). */
+@Composable
+private fun TrackTagPill(label: String, premium: Boolean) {
+    val color = if (premium) Color(0xFFF0CF72) else Color(0xFF8FB3FF)
+    Box(
+        modifier = Modifier
+            .background(color.copy(alpha = 0.12f), RoundedCornerShape(100.dp))
+            .padding(horizontal = 9.dp, vertical = 2.dp)
+    ) {
+        Text(label, color = color, style = MaterialTheme.typography.labelSmall, letterSpacing = 1.sp)
     }
 }
 
