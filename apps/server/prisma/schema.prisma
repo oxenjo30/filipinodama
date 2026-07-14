@@ -423,6 +423,43 @@ model GuildJoinRequest {
   @@unique([guildId, userId])
 }
 
+// ─────────────── Guild Wars ───────────────
+// Weekly contribution ladder: ranked wins by a member add war points to their
+// guild (Guild.weeklyPoints) + the member (GuildMember.weeklyContribution). At
+// weekly reset the top-N guilds earn a gold pot split among contributors, then
+// points reset and a new season opens.
+
+model GuildWarSeason {
+  id        String    @id @default(cuid())
+  // Monotonic week index (also the human-facing "Week N").
+  weekIndex Int       @unique
+  startsAt  DateTime  @default(now())
+  endsAt    DateTime
+  // "active" while running, "settled" once rewards are paid at reset.
+  status    String    @default("active")
+  settledAt DateTime?
+  results   GuildWarResult[]
+}
+
+// A frozen snapshot of one guild's final standing in a settled war season —
+// the "War Log" history rows shown in the Wars tab.
+model GuildWarResult {
+  id        String         @id @default(cuid())
+  seasonId  String
+  season    GuildWarSeason @relation(fields: [seasonId], references: [id], onDelete: Cascade)
+  guildId   String
+  guildName String // denormalized so history survives a guild rename/delete
+  guildTag  String
+  crestKey  String?
+  rank      Int
+  points    Int
+  rewardGold Int           @default(0)
+  createdAt DateTime       @default(now())
+
+  @@index([seasonId, rank])
+  @@index([guildId])
+}
+
 // ─────────────── Progression ───────────────
 model Quest {
   id          String          @id

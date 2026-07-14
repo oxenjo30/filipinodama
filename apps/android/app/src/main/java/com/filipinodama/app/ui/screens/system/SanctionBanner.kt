@@ -1,63 +1,78 @@
 package com.filipinodama.app.ui.screens.system
 
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.unit.dp
+import com.filipinodama.app.data.AuthRepository
+
 /**
- * Sanction banner — DEFERRED, DOCUMENTED HONESTLY (not built as a fake
- * always-hidden component). This file exists so the deferral is explicit and
- * findable, per the "honest handling of anything without a server source"
- * boundary.
+ * Sanction banner — a top notice shown to a signed-in user who is currently
+ * MUTED or BANNED. Now driven by real server data: publicUser() (and so
+ * AuthUser.sanction) exposes the in-session mute/ban state.
  *
- * mobile-screen-inventory.md lists a "Sanction banner" as global overlay
- * layer #6 (`{{ sanctionShow }}` in the prototype) — a top-dropping
- * admin-issued warning/ban banner. Investigated whether Android has a real
- * signal to drive it from:
- *
- *   1. GET /api/auth/me -> `publicUser()` (apps/server/src/auth/service.ts,
- *      lines 11-37) returns id, email, emailVerified, isGuest, username,
- *      displayName, tag, bio, avatarUrl, countryCode, trophies, gold,
- *      diamonds, rankTier, equipped*, wins/losses/draws/streak, adminRole.
- *      NO bannedUntil, NO mute field, NO sanction field of any kind.
- *      `MeResponse`/`AuthUser` in AuthApi.kt mirror this 1:1 (verified — the
- *      Android DTO has no ban/mute fields either, matching the server).
- *
- *   2. What the server actually does with `User.bannedUntil` instead:
- *      auth/service.ts `login()` (line 152) throws 403 "BANNED" BEFORE a
- *      session is issued; `rotateSession()` (line 195) throws the same 403
- *      on refresh if a ban was applied mid-session, and mass-deletes that
- *      user's sessions so no cookie can silently keep working. guards.ts's
- *      `requireAuth` preHandler (line 54) also 403s any authenticated
- *      request from a banned user. NET EFFECT: a banned user can never
- *      reach an authenticated state — they are rejected at the door, not
- *      let in and shown a banner about it.
- *
- *   3. apps/web has NO sanction-banner implementation either (grepped
- *      apps/web/src for "sanction"/"Sanction"/"BANNED"/"bannedUntil" —
- *      zero matches outside legal-policy copy). The web client's ONLY
- *      surfacing of a ban is the login form displaying the server's 403
- *      "This account is suspended" error message — a plain auth-failure
- *      toast, not a dedicated banner component.
- *
- * CONCLUSION: there is no server payload this Android build (or the real
- * production web client it must match) can read to render a persistent
- * "you are sanctioned" banner for a signed-in user, because sanctioned users
- * are never signed in. The correct, honest behavior — matching both the
- * server's actual design and the web client's actual behavior — is:
- *   - LoginScreen already surfaces the server's 403 "BANNED" error message
- *     via the same generic AuthResult.Failure(message) path every other
- *     login error uses (see AuthRepository.login -> throwableToAuthFailure);
- *     no separate work was needed there, and none was added, to avoid
- *     inventing a second error-handling path for one specific error code.
- *   - No in-app persistent sanction banner is built, because building one
- *     would require either (a) fabricating fields the server does not send,
- *     or (b) polling a nonexistent endpoint. Both are excluded by this
- *     project's "no fabricated data / honest gaps" rule.
- *
- * If a future server change adds mute/timeout support for signed-in users
- * (as opposed to today's all-or-nothing ban-at-login model), this file is
- * where the composable would go — read `AuthUser`'s new field(s), and this
- * kdoc's investigation trail explains exactly what changed and why.
+ * A ban is normally rejected at the auth guard (403 at login/refresh), so in
+ * practice this mainly surfaces MUTES — the only sanction that keeps a user
+ * signed in while silencing their chat, which they'd otherwise have no way to
+ * understand. It disappears on its own when the sanction expires and the next
+ * /me reports muted=false. (This replaces the earlier documented deferral —
+ * the server change that kdoc anticipated has now landed.)
  */
-object SanctionBannerDeferral {
-    /** True — kept as a named, greppable marker rather than deleting this
-     * investigation trail once the feature is revisited. */
-    const val DEFERRED_NO_SERVER_SIGNAL: Boolean = true
+@Composable
+fun SanctionBanner(modifier: Modifier = Modifier) {
+    val authState by AuthRepository.state.collectAsState()
+    val s = authState.user?.sanction
+    if (s == null || (!s.muted && !s.banned)) return
+
+    val banned = s.banned
+    val label = if (banned) {
+        "Your account is suspended ${untilLabel(s.bannedUntil)}."
+    } else {
+        "You've been muted ${untilLabel(s.mutedUntil)} — you can't send chat messages."
+    }
+
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .background(
+                Brush.verticalGradient(
+                    if (banned) listOf(Color(0xFF5A1522), Color(0xFF3A0E18))
+                    else listOf(Color(0xFF5A3A1A), Color(0xFF3A2410))
+                )
+            )
+            .padding(horizontal = 16.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(10.dp)
+    ) {
+        Text(if (banned) "⛔" else "🔇", style = MaterialTheme.typography.titleMedium)
+        Text(
+            label,
+            color = Color(0xFFF7E6C8),
+            style = MaterialTheme.typography.labelMedium
+        )
+    }
+}
+
+/** "for about 3h" / "for about 2d" / "indefinitely" from the sanction end ISO. */
+private fun untilLabel(iso: String?): String {
+    if (iso == null) return "indefinitely"
+    return try {
+        val ms = java.time.Instant.parse(iso).toEpochMilli() - System.currentTimeMillis()
+        if (ms <= 0) return "shortly"
+        val h = Math.round(ms / 3_600_000.0).toInt()
+        if (h < 24) "for about ${h}h" else "for about ${Math.round(h / 24.0).toInt()}d"
+    } catch (e: Exception) {
+        "indefinitely"
+    }
 }

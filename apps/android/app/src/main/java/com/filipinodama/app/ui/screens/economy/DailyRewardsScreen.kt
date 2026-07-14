@@ -99,11 +99,14 @@ fun DailyRewardsScreen(onBack: () -> Unit = {}) {
             MockupBackButton(onClick = onBack)
             if (statusNow != null) {
                 val trackSize = if (statusNow.trackFull.isNotEmpty()) statusNow.trackFull.size else statusNow.track.size.coerceAtLeast(1)
+                // Mockup drProgLabel = daysClaimed + ' / 7 days' (days already
+                // claimed this cycle, not the current day index).
+                val daysClaimed = (statusNow.day - 1 + if (statusNow.claimedToday) 1 else 0).coerceIn(0, trackSize)
                 Box(
                     modifier = Modifier
                         .border(1.dp, Color(0x4DE8B84B), RoundedCornerShape(100.dp))
                         .padding(horizontal = 11.dp, vertical = 5.dp)
-                ) { Text("DAY ${statusNow.day} / $trackSize", color = Color(0xFFC79A4E), style = MaterialTheme.typography.labelSmall) }
+                ) { Text("$daysClaimed / $trackSize days", color = Color(0xFFC79A4E), style = MaterialTheme.typography.labelSmall) }
             }
         }
         Text("✦ Login Streak ✦", color = Color(0xFFC79A4E), style = MaterialTheme.typography.labelMedium, modifier = Modifier.padding(top = 12.dp))
@@ -151,7 +154,11 @@ fun DailyRewardsScreen(onBack: () -> Unit = {}) {
                                 .background(androidx.compose.ui.graphics.Brush.horizontalGradient(listOf(Color(0xFFC98B2E), Color(0xFFF7E2A0))), RoundedCornerShape(5.dp))
                         )
                     }
-                    Text("${s.streak}-DAY STREAK", color = Color(0xFFC9B8E8), style = MaterialTheme.typography.labelSmall)
+                    // Mockup drStreakLabel: "Cycle complete — resets tomorrow"
+                    // when the whole 7-day cycle is claimed, else "Day N of 7".
+                    val cycleDone = s.claimedToday && s.day >= trackSize
+                    val streakLabel = if (cycleDone) "Cycle complete — resets tomorrow" else "Day ${s.day} of $trackSize"
+                    Text(streakLabel, color = Color(0xFFC9B8E8), style = MaterialTheme.typography.labelSmall)
                 }
 
                 LazyVerticalGrid(

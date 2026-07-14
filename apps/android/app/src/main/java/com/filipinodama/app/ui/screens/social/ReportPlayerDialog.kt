@@ -57,7 +57,8 @@ fun ReportPlayerDialog(
     onSubmitted: (String) -> Unit = {}
 ) {
     val scope = rememberCoroutineScope()
-    var reason by remember { mutableStateOf("HARASSMENT") }
+    // Default to the mockup's first/default reason (Cheating / bot).
+    var reason by remember { mutableStateOf(REPORT_REASONS.first().first) }
     var note by remember { mutableStateOf("") }
     var busy by remember { mutableStateOf(false) }
     var toast by remember { mutableStateOf<String?>(null) }

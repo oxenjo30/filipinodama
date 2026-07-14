@@ -90,4 +90,11 @@ export type Me = {
   draws: number;
   streak: number;
   adminRole: string | null;
+  // In-session sanction state (mute/ban). `until` is null for permanent.
+  sanction?: {
+    muted: boolean;
+    mutedUntil: string | null;
+    banned: boolean;
+    bannedUntil: string | null;
+  };
 };

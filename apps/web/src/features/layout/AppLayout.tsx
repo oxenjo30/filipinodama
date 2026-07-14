@@ -15,6 +15,8 @@ import { TopUpModal } from "../store/TopUpModal";
 import { NotificationsMenu } from "../nav/NotificationsMenu";
 import { GlobalPlayerSearchModal } from "../nav/GlobalPlayerSearchModal";
 import { CookieConsent } from "../consent/CookieConsent";
+import { InstallPrompt } from "../pwa/InstallPrompt";
+import { SanctionBanner } from "../moderation/SanctionBanner";
 import { Footer } from "./Footer";
 import { OnboardingFlow } from "../onboarding/OnboardingFlow";
 import { DailyLoginBonusModal } from "../rewards/DailyLoginBonusModal";
@@ -587,7 +589,9 @@ export function AppLayout() {
       <Toasts />
       <OnboardingFlow />
       {dailyLoginEnabled && <DailyLoginBonusModal />}
+      <SanctionBanner />
       <CookieConsent />
+      <InstallPrompt />
       <TopUpModal open={topUpOpen} onClose={() => setTopUpOpen(false)} />
       <NotificationsMenu open={notifOpen} onClose={() => setNotifOpen(false)} onUnreadChange={setNotifUnread} />
       <GlobalPlayerSearchModal open={searchOpen} onClose={() => setSearchOpen(false)} />

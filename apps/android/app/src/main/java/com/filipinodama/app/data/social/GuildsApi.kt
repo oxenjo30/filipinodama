@@ -18,6 +18,9 @@ interface GuildsApi {
     @GET("api/guilds")
     suspend fun browse(@Query("search") search: String? = null): ApiEnvelope<GuildsListResponse>
 
+    @GET("api/guilds/war")
+    suspend fun war(): ApiEnvelope<WarStatusResponse>
+
     @POST("api/guilds")
     suspend fun create(@Body body: GuildCreateBody): ApiEnvelope<GuildCreateResponse>
 

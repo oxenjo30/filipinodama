@@ -588,7 +588,8 @@ private fun SettingsCard(settings: GameSettings, onSettings: (GameSettings) -> U
 
             Text("Move Timer", color = Color.White, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(top = 16.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(top = 8.dp)) {
-                listOf(null, 30, 60, 120).forEach { secs ->
+                // Mockup move-timer options: Off / 15s / 30s / 60s (ROOM-2).
+                listOf(null, 15, 30, 60).forEach { secs ->
                     val selected = settings.moveTimerSec == secs
                     Box(
                         modifier = Modifier

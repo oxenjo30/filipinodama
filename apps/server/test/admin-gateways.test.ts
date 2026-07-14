@@ -72,9 +72,18 @@ describe("GET /api/admin/gateways", () => {
     expect(d.credentials.paypal.configured).toBe(false);
     expect(d.credentials.stripe.configured).toBe(false);
     expect(d.credentials.xendit.configured).toBe(false);
-    // Never expose secret values, only presence booleans.
+    // Never expose secret values — each field is a non-secret status object
+    // { configured: boolean, source: "admin"|"env"|"none", preview: string }.
+    // The preview is masked (never a full secret); no raw secret is present.
     for (const cred of Object.values(d.credentials) as any[]) {
-      for (const v of Object.values(cred.fields)) expect(typeof v).toBe("boolean");
+      for (const v of Object.values(cred.fields) as any[]) {
+        expect(typeof v.configured).toBe("boolean");
+        expect(["admin", "env", "none"]).toContain(v.source);
+        expect(typeof v.preview).toBe("string");
+        // A masked preview never contains a full-length secret — for a
+        // not-configured field (test env) it must be empty.
+        if (!v.configured) expect(v.preview).toBe("");
+      }
       expect(typeof cred.webhookUrl).toBe("string");
       expect(cred.webhookUrl).toMatch(/^https:\/\/api\.filipinodama\.com\/webhooks\//);
     }

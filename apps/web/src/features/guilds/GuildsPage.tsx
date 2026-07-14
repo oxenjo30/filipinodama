@@ -88,6 +88,18 @@ type ApiJoinRequest = {
   user: ApiMember["user"];
 };
 
+// GET /api/guilds/war — weekly Guild War status.
+type ApiWarStatus = {
+  week: number;
+  startsAt: string;
+  endsAt: string;
+  topN: number;
+  poolGold: number;
+  standings: { guildId: string; name: string; tag: string; crestKey: string | null; points: number; rank: number; rewardGold: number }[];
+  myGuild: { guildId: string; name: string; tag: string; points: number; rank: number; myContribution: number } | null;
+  lastWeek: { guildName: string; guildTag: string; crestKey: string | null; rank: number; points: number; rewardGold: number }[];
+};
+
 type Role = "LEADER" | "OFFICER" | "MEMBER";
 const ROLE_RANK: Record<Role, number> = { MEMBER: 1, OFFICER: 2, LEADER: 3 };
 const ROLE_LABEL: Record<Role, string> = { LEADER: "Leader", OFFICER: "Officer", MEMBER: "Member" };
@@ -185,6 +197,18 @@ function guildLevel(weeklyPoints: number): number {
   return Math.floor(Math.max(0, weeklyPoints) / 1000) + 1;
 }
 
+/** "Resets in 3d 4h" / "2h 15m" — human countdown to the war week's end. */
+function warCountdown(endsAtIso: string): string {
+  const ms = new Date(endsAtIso).getTime() - Date.now();
+  if (ms <= 0) return "Resetting…";
+  const d = Math.floor(ms / 86_400_000);
+  const h = Math.floor((ms % 86_400_000) / 3_600_000);
+  const m = Math.floor((ms % 3_600_000) / 60_000);
+  if (d > 0) return `Resets in ${d}d ${h}h`;
+  if (h > 0) return `Resets in ${h}h ${m}m`;
+  return `Resets in ${m}m`;
+}
+
 // A member is "online" if seen in the last 5 minutes.
 function isOnline(lastSeenAt: string): boolean {
   const t = new Date(lastSeenAt).getTime();
@@ -214,6 +238,7 @@ export function GuildsPage() {
   const [membershipChecked, setMembershipChecked] = useState(false);
   const [myGuildId, setMyGuildId] = useState<string | null>(null);
   const [detail, setDetail] = useState<ApiGuildDetail | null>(null);
+  const [war, setWar] = useState<ApiWarStatus | null>(null);
   const [requests, setRequests] = useState<ApiJoinRequest[] | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -229,10 +254,21 @@ export function GuildsPage() {
     }
   }, []);
 
+  // Weekly Guild War status — standings, your guild's rank, your contribution,
+  // reward tiers, and last week's log. Loaded once when the guild view opens.
+  const loadWar = useCallback(async () => {
+    try {
+      setWar(await api.get<ApiWarStatus>("/api/guilds/war"));
+    } catch {
+      setWar(null);
+    }
+  }, []);
+
   const loadDetail = useCallback(async (guildId: string, myRole?: Role | null) => {
     try {
       const d = await api.get<ApiGuildDetail>(`/api/guilds/${guildId}`);
       setDetail(d);
+      void loadWar();
       const role = d.myRole ?? myRole ?? null;
       if (role && ROLE_RANK[role] >= ROLE_RANK.OFFICER) {
         try {
@@ -315,13 +351,6 @@ export function GuildsPage() {
     return idx >= 0 ? idx + 1 : null;
   }, [browse, myGuildId]);
 
-  // Honest war meter derived from real weeklyPoints toward a rolling weekly goal.
-  const warPct = useMemo(() => {
-    if (!detail) return 0;
-    const pts = detail.guild.weeklyPoints;
-    const goal = Math.max(1000, Math.ceil((pts + 1) / 1000) * 1000);
-    return Math.min(100, Math.round((pts / goal) * 100));
-  }, [detail]);
 
   // ── create modal ─────────────────────────────────────────────────────────
   const [createShow, setCreateShow] = useState(false);
@@ -574,26 +603,53 @@ export function GuildsPage() {
             </div>
           </div>
 
-          {/* Weekly war + your contribution */}
+          {/* Weekly Guild War — real standings, rank, contribution, countdown */}
           <div className="fd-collapse-2" style={{ display: "grid", gridTemplateColumns: "1.4fr 1fr", gap: 16 }}>
             <div className="frame" style={{ padding: 22 }}>
               <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 14 }}>
-                <span className="ptitle" style={{ margin: 0 }}>Weekly Guild War</span>
-                <span style={{ font: "700 12px Inter", color: "var(--gold)" }}>{warPct}% to goal</span>
+                <span className="ptitle" style={{ margin: 0 }}>Weekly Guild War{war ? ` · Week ${war.week}` : ""}</span>
+                <span style={{ font: "700 12px Inter", color: "var(--gold)" }}>
+                  {war ? warCountdown(war.endsAt) : "—"}
+                </span>
               </div>
-              <div style={{ height: 14, borderRadius: 100, background: "rgba(0,0,0,.35)", border: "1px solid rgba(232,184,75,.15)", overflow: "hidden" }}>
-                <div style={{ height: "100%", width: `${warPct}%`, background: "linear-gradient(90deg,#7a4bbf,#f0c24b)", borderRadius: 100 }} />
+              <div style={{ display: "flex", alignItems: "baseline", gap: 12, marginBottom: 4 }}>
+                <span style={{ font: "800 34px 'JetBrains Mono',monospace", color: "#fff" }}>
+                  {war?.myGuild ? `#${war.myGuild.rank}` : "—"}
+                </span>
+                <span style={{ font: "500 12px Inter", color: "var(--ink2)" }}>war rank</span>
               </div>
-              <div style={{ display: "flex", justifyContent: "space-between", marginTop: 10, font: "500 12px Inter", color: "var(--ink2)" }}>
-                <span>{detail.guild.weeklyPoints.toLocaleString()} war points this week</span>
-                <span>Play ranked to earn more</span>
+              <div style={{ font: "500 12px Inter", color: "var(--ink2)", marginBottom: 14 }}>
+                {(war?.myGuild?.points ?? detail.guild.weeklyPoints).toLocaleString()} war points this week · play ranked to climb
+              </div>
+              {/* Standings (top guilds) */}
+              <div className="ptitle" style={{ textAlign: "left", fontSize: 11, marginBottom: 8 }}>Standings</div>
+              <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                {(war?.standings ?? []).slice(0, 5).map((s) => {
+                  const mine = s.guildId === myGuildId;
+                  return (
+                    <div key={s.guildId} style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 10px", borderRadius: 9, background: mine ? "rgba(232,184,75,.1)" : "rgba(0,0,0,.2)", border: `1px solid ${mine ? "rgba(232,184,75,.3)" : "rgba(232,184,75,.08)"}` }}>
+                      <span style={{ font: "800 13px 'JetBrains Mono',monospace", color: s.rank <= war!.topN ? "var(--gold-lt)" : "var(--ink2)", minWidth: 26 }}>#{s.rank}</span>
+                      <span style={{ flex: 1, font: "700 13px Inter", color: mine ? "var(--gold-lt)" : "#fff", minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{s.name} <span style={{ color: "var(--ink2)", fontWeight: 500 }}>{s.tag}</span></span>
+                      <span style={{ font: "700 12px 'JetBrains Mono',monospace", color: "var(--ink)" }}>{s.points.toLocaleString()}</span>
+                      {s.rewardGold > 0 && <span style={{ font: "700 11px Inter", color: "#f0c24b" }}>🪙 {s.rewardGold.toLocaleString()}</span>}
+                    </div>
+                  );
+                })}
+                {(!war || war.standings.length === 0) && (
+                  <div style={{ font: "500 12px Inter", color: "var(--ink2)", padding: "10px 0" }}>No war points scored yet this week — be the first.</div>
+                )}
               </div>
             </div>
             <div className="frame" style={{ padding: 22, textAlign: "center", display: "flex", flexDirection: "column", justifyContent: "center" }}>
               <div style={{ font: "500 11px Inter", letterSpacing: "1px", textTransform: "uppercase", color: "var(--gold-lt)" }}>Your Contribution</div>
-              <div style={{ font: "800 30px 'JetBrains Mono',monospace", color: "#fff", margin: "6px 0 2px" }}>{(myMember?.weeklyContribution ?? 0).toLocaleString()}</div>
-              <div style={{ font: "500 12px Inter", color: "var(--ink2)", marginBottom: 14 }}>{myContribRank ? `Ranked #${myContribRank}` : "Not yet ranked"}</div>
-              <button className="btn btn-gold" onClick={() => setContribShow(true)} style={{ width: "100%", padding: 10 }}>Contribute</button>
+              <div style={{ font: "800 30px 'JetBrains Mono',monospace", color: "#fff", margin: "6px 0 2px" }}>{(war?.myGuild?.myContribution ?? myMember?.weeklyContribution ?? 0).toLocaleString()}</div>
+              <div style={{ font: "500 12px Inter", color: "var(--ink2)", marginBottom: 14 }}>{myContribRank ? `Ranked #${myContribRank} in guild` : "Not yet ranked"}</div>
+              {war && war.topN > 0 && (
+                <div style={{ font: "500 11px Inter", color: "var(--ink2)", marginBottom: 14, lineHeight: 1.5 }}>
+                  Top {war.topN} guilds earn gold at reset — split among contributors.
+                </div>
+              )}
+              <button className="btn btn-gold" onClick={() => setContribShow(true)} style={{ width: "100%", padding: 10 }}>Play Ranked</button>
             </div>
           </div>
 

@@ -1,11 +1,15 @@
 import type { FastifyInstance } from "fastify";
 import { createHmac, timingSafeEqual } from "node:crypto";
+import { z } from "zod";
 import { checkoutSchema } from "@dama/shared";
 import { prisma } from "../db/client.js";
 import { ok, err } from "../lib/errors.js";
 import { env, features } from "../config/env.js";
 import { requireAuth } from "../auth/guards.js";
 import { applyLedger, applyLedgerTx } from "../economy/ledger.js";
+import { getCredential } from "../lib/gateway-credentials.js";
+import { getPlayBillingRuntime, packForPlayProduct } from "../lib/play-billing-config.js";
+import { verifyPlayPurchase } from "../lib/play-verify.js";
 
 /**
  * PayMongo payments — the ONLY path that credits Diamonds is the
@@ -48,17 +52,21 @@ export const DIAMOND_PACKS = [
 ] as const;
 
 const PACK = (id: string) => DIAMOND_PACKS.find((p) => p.id === id);
-const basicAuth = () => "Basic " + Buffer.from(`${env.PAYMONGO_SECRET_KEY}:`).toString("base64");
+// PayMongo credentials resolve "admin overrides env": an admin-entered key
+// (encrypted at rest) wins; otherwise fall back to the PAYMONGO_* env var.
+const basicAuth = async () =>
+  "Basic " + Buffer.from(`${await getCredential("paymongo.secretKey")}:`).toString("base64");
 
-/** Verify the Paymongo-Signature header against the raw request body. */
-function verifySignature(rawBody: string, header: string | undefined): boolean {
-  if (!header || !env.PAYMONGO_WEBHOOK_SECRET) return false;
+/** Verify the Paymongo-Signature header against the raw request body, using the
+ *  supplied webhook secret (resolved by the caller: stored-or-env). */
+function verifySignature(rawBody: string, header: string | undefined, webhookSecret: string): boolean {
+  if (!header || !webhookSecret) return false;
   // Header format: "t=<ts>,te=<sig>,li=<sig>" (te = test-mode, li = live-mode).
   const parts = Object.fromEntries(header.split(",").map((kv) => kv.split("=") as [string, string]));
   const ts = parts.t;
   const sig = parts.te || parts.li;
   if (!ts || !sig) return false;
-  const expected = createHmac("sha256", env.PAYMONGO_WEBHOOK_SECRET).update(`${ts}.${rawBody}`).digest("hex");
+  const expected = createHmac("sha256", webhookSecret).update(`${ts}.${rawBody}`).digest("hex");
   try {
     return timingSafeEqual(Buffer.from(sig), Buffer.from(expected));
   } catch {
@@ -79,6 +87,105 @@ export async function paymentRoutes(app: FastifyInstance) {
 
   // GET /api/payments/packs — the diamond top-up packs (public)
   app.get("/payments/packs", async () => ok({ packs: DIAMOND_PACKS, enabled: features.payments, currency: "PHP" }));
+
+  // GET /api/payments/play/products — Android's read-only source for which
+  // diamond packs are purchasable via Google Play Billing right now (public;
+  // no auth required to browse prices, same as /payments/packs). Sourced
+  // entirely from getPlayBillingRuntime() (admin-configured pack -> Play
+  // product-id map) so the app never has to guess a product id or call the
+  // admin-only status endpoint. Returns `enabled:false, products:[]` whenever
+  // Play Billing is off OR no packs are mapped yet — the app treats both as
+  // "stay dark". Exposes ONLY packId/productId/diamonds/bonus — never the
+  // service account or any other secret (mirrors getPlayBillingStatus's
+  // non-secret shape).
+  app.get("/payments/play/products", async () => {
+    const runtime = await getPlayBillingRuntime();
+    if (!runtime.enabled) return ok({ enabled: false, products: [] });
+    const products = Object.entries(runtime.productIds)
+      .map(([packId, productId]) => {
+        const pack = PACK(packId);
+        if (!pack) return null;
+        return { packId, productId, diamonds: pack.diamonds as number, bonus: pack.bonus as number };
+      })
+      .filter((p) => p !== null);
+    return ok({ enabled: true, products });
+  });
+
+  // POST /api/payments/play/verify — Android Google Play Billing verification.
+  // The app sends the completed purchase; we verify it against the Play Developer
+  // API using the admin-configured service account, then credit diamonds ONCE
+  // (idempotent on the purchase token via Payment.providerRef's unique index).
+  // This is the ONLY Play-billing crediting path. Disabled → 503.
+  app.post("/payments/play/verify", { preHandler: requireAuth }, async (req) => {
+    const runtime = await getPlayBillingRuntime();
+    if (!runtime.enabled) throw err.notConfigured("Google Play Billing");
+    if (req.isGuest) throw err.forbidden("GUEST_CANNOT_TOPUP", "Sign in to buy diamonds.");
+
+    const body = z
+      .object({ productId: z.string().min(1), purchaseToken: z.string().min(1) })
+      .parse(req.body);
+    const userId = req.userId!;
+
+    // Map the Play product id → our diamond pack (admin-configured mapping).
+    const pack = await packForPlayProduct(body.productId);
+    if (!pack) throw err.badRequest("UNKNOWN_PRODUCT", "That product is not mapped to a diamond pack.");
+    const totalDiamonds = pack.diamonds + pack.bonus;
+
+    // Verify with Google. nowSec passed explicitly (Date read here at the edge).
+    const nowSec = Math.floor(Date.now() / 1000);
+    const result = await verifyPlayPurchase(runtime.packageName, body.productId, body.purchaseToken, nowSec);
+    if (!result.ok) {
+      // Retriable (token/network/Google 5xx) vs a genuinely invalid purchase.
+      // Both surface as 400 (no badGateway helper exists) but with distinct
+      // codes so the client can decide whether to retry.
+      throw err.badRequest(
+        result.retriable ? "PLAY_VERIFY_UNAVAILABLE" : "PLAY_PURCHASE_INVALID",
+        result.error,
+      );
+    }
+    if (result.purchaseState !== 0) {
+      // 1 = canceled, 2 = pending — never credit.
+      throw err.badRequest("PLAY_PURCHASE_NOT_COMPLETE", "Purchase is not in a completed state.");
+    }
+
+    // Idempotent credit: providerRef = the purchase token (globally unique). A
+    // retry (same token) hits the unique constraint and credits nothing extra.
+    const providerRef = `play_${body.purchaseToken}`;
+    let credited = false;
+    await prisma.$transaction(async (tx) => {
+      const existing = await tx.payment.findUnique({ where: { providerRef } });
+      if (existing) return; // already recorded/credited by an earlier call
+      await tx.payment.create({
+        data: {
+          userId,
+          provider: "play",
+          providerRef,
+          amountCents: pack.priceCents,
+          currencyCode: "usd", // Play prices are set in the store; our pack price is the reference
+          diamonds: totalDiamonds,
+          status: "settled",
+          settledAt: new Date(),
+        },
+      });
+      await applyLedgerTx(tx, {
+        userId,
+        currency: "DIAMONDS",
+        amount: totalDiamonds,
+        reason: "topup.play",
+        refType: "play_purchase",
+        refId: providerRef,
+      });
+      credited = true;
+    });
+
+    return ok({
+      credited,
+      alreadyProcessed: !credited,
+      diamonds: totalDiamonds,
+      // Tell the client it's safe to acknowledge/consume the purchase with Play.
+      acknowledged: result.acknowledgementState === 1,
+    });
+  });
 
   // POST /api/payments/checkout — create a PayMongo Checkout Session, return its url
   app.post("/payments/checkout", { preHandler: requireAuth }, async (req) => {
@@ -104,7 +211,7 @@ export async function paymentRoutes(app: FastifyInstance) {
 
     const res = await fetch("https://api.paymongo.com/v1/checkout_sessions", {
       method: "POST",
-      headers: { Authorization: basicAuth(), "Content-Type": "application/json" },
+      headers: { Authorization: await basicAuth(), "Content-Type": "application/json" },
       body: JSON.stringify({
         data: {
           attributes: {
@@ -137,7 +244,8 @@ export async function paymentRoutes(app: FastifyInstance) {
   app.post("/payments/webhook", async (req, reply) => {
     const raw = (req as unknown as { rawBody?: string }).rawBody ?? "";
     const sigHeader = req.headers["paymongo-signature"] as string | undefined;
-    if (!verifySignature(raw, sigHeader)) {
+    const webhookSecret = await getCredential("paymongo.webhookSecret");
+    if (!verifySignature(raw, sigHeader, webhookSecret)) {
       return reply.status(401).send({ ok: false, error: { code: "BAD_SIGNATURE", message: "Invalid signature" } });
     }
 

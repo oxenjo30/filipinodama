@@ -15,6 +15,9 @@ object GuildsRepository {
     suspend fun browse(search: String = ""): SocialResult<GuildsListResponse> =
         call { api.browse(search.trim().ifEmpty { null }) }
 
+    suspend fun war(): SocialResult<WarStatusResponse> =
+        call { api.war() }
+
     suspend fun detail(guildId: String): SocialResult<GuildDetailResponse> =
         call { api.detail(guildId) }
 

@@ -103,6 +103,11 @@ dependencies {
     implementation(libs.socketio.client)
 
     implementation(libs.coil.compose)
+    implementation(libs.billing.ktx)
+
+    // Google Play Billing — real-money diamond top-up (dark behind
+    // DIAMOND_TOPUP_ENABLED; see data/billing/BillingRepository.kt).
+    implementation(libs.billing.ktx)
 
     // Sign-in with Google (Credential Manager) — native auth, mirrors the web's
     // Google OAuth. serverClientId is the WEB client ID (see GOOGLE_SERVER_CLIENT_ID

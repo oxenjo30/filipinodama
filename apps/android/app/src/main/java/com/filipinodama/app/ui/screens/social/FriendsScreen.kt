@@ -196,9 +196,11 @@ fun FriendsScreen(
 
     Column(modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background).verticalScroll(rememberScrollState())) {
         Row(modifier = Modifier.fillMaxWidth().padding(20.dp), verticalAlignment = Alignment.CenterVertically) {
-            Column(modifier = Modifier.weight(1f)) {
-                Text("‹ Back", color = GoldLt, style = MaterialTheme.typography.labelLarge, modifier = Modifier.clickable(onClick = onBack))
-                Text("✦ YOUR CIRCLE ✦", color = Gold, style = MaterialTheme.typography.labelMedium, modifier = Modifier.padding(top = 10.dp))
+            // Mockup Friends header (line 2800): the ‹ chevron square button, then
+            // the eyebrow + title. NOT a "‹ Back" text link (owner round-3 fix).
+            com.filipinodama.app.ui.components.MockupBackButton(onClick = onBack)
+            Column(modifier = Modifier.weight(1f).padding(start = 12.dp)) {
+                Text("✦ YOUR CIRCLE ✦", color = Gold, style = MaterialTheme.typography.labelMedium)
                 Text("Friends", color = GoldLt, style = MaterialTheme.typography.headlineMedium, modifier = Modifier.padding(top = 2.dp))
             }
             Box(
@@ -211,9 +213,11 @@ fun FriendsScreen(
             }
         }
 
+        // Stat tiles — mockup order/labels/colors EXACTLY (line 3298-3300):
+        // Online now (#6ee0a0 green) · Total friends (#f4d886 gold) · Requests.
         Row(modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            SummaryTile("Friends", friends.size.toString(), GoldLt, Modifier.weight(1f))
-            SummaryTile("Online Now", onlineCount.toString(), Green, Modifier.weight(1f))
+            SummaryTile("Online now", onlineCount.toString(), Color(0xFF6EE0A0), Modifier.weight(1f))
+            SummaryTile("Total friends", friends.size.toString(), Color(0xFFF4D886), Modifier.weight(1f))
             SummaryTile("Requests", incoming.size.toString(), Color(0xFFFF9AA6), Modifier.weight(1f))
         }
 
@@ -238,7 +242,8 @@ fun FriendsScreen(
             Box(Modifier.fillMaxWidth().padding(32.dp), contentAlignment = Alignment.Center) { CircularProgressIndicator(color = Gold) }
         } else {
             if (incoming.isNotEmpty()) {
-                SectionCard(title = "Friend Requests · ${incoming.size}") {
+                // Mockup header (line 2081): "Requests · N" — not "Friend Requests".
+                SectionCard(title = "Requests · ${incoming.size}") {
                     incoming.forEach { req ->
                         FriendRequestRow(req = req, busy = busyIds.contains(req.id), onOpen = { onOpenProfile(req.user.id) }, onAccept = { accept(req) }, onDecline = { decline(req) })
                     }

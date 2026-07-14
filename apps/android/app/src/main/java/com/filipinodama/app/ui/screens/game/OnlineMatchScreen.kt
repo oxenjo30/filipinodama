@@ -159,16 +159,37 @@ fun OnlineMatchScreen(
             horizontalArrangement = Arrangement.SpaceBetween
         ) {
             MockupBackButton(onClick = { leave() })
-            Text(
-                text = when {
-                    isSpectating -> "SPECTATING"
-                    mode == "RANKED" -> if (seasonNum != null) "RANKED · SEASON $seasonNum" else "RANKED"
-                    else -> "CASUAL MATCH"
-                },
-                color = Color(0xFF8B7CAE),
-                style = MaterialTheme.typography.labelMedium,
-                letterSpacing = 2.sp
-            )
+            if (isSpectating) {
+                // Spectate top bar: pulsing "LIVE" label + real viewer count
+                // (SOC-4/ROOM-1). `ui.viewers` is pushed live over the socket
+                // (spectate:count) — render it as the mockup's 👁 count pill.
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(5.dp),
+                        modifier = Modifier
+                            .background(Color(0x1FFF5A6A), RoundedCornerShape(100.dp))
+                            .border(1.dp, Color(0x40FF5A6A), RoundedCornerShape(100.dp))
+                            .padding(horizontal = 9.dp, vertical = 4.dp)
+                    ) {
+                        Box(modifier = Modifier.size(6.dp).background(Color(0xFFFF5A6A), CircleShape))
+                        Text("LIVE", color = Color(0xFFFF8F9C), style = MaterialTheme.typography.labelSmall, letterSpacing = 1.5.sp)
+                    }
+                    ui.viewers?.let { v ->
+                        Text("👁 $v", color = Color(0xFF8B7CAE), style = MaterialTheme.typography.labelMedium)
+                    }
+                }
+            } else {
+                Text(
+                    text = when {
+                        mode == "RANKED" -> if (seasonNum != null) "RANKED · SEASON $seasonNum" else "RANKED"
+                        else -> "CASUAL MATCH"
+                    },
+                    color = Color(0xFF8B7CAE),
+                    style = MaterialTheme.typography.labelMedium,
+                    letterSpacing = 2.sp
+                )
+            }
             Box(
                 modifier = Modifier
                     .size(38.dp)

@@ -68,6 +68,12 @@ object AppDestinations {
     // TournamentsListScreen.kt kdoc).
     const val TOURNAMENTS = "economy/tournaments"
 
+    // Tournament Detail — mobile-screen-inventory.md SCREEN 9, reached from a
+    // TournamentsListScreen row tap (finding PROG-1/PROG-2 — those rows were
+    // previously dead). Explicit back target: the Tournaments list.
+    const val TOURNAMENT_DETAIL = "economy/tournaments/{id}"
+    fun tournamentDetail(id: String) = "economy/tournaments/$id"
+
     // Phase 6a (profile + social): match history replay, public player
     // profiles, leaderboard — reached from Profile tab / leaderboard rows /
     // Home hub identity header (mobile-screen-inventory.md SCREENs 10, 25,
@@ -77,6 +83,14 @@ object AppDestinations {
     fun replay(matchId: String) = "profile/replay/$matchId"
     const val PUBLIC_PROFILE = "profile/public/{userId}"
     fun publicProfile(userId: String) = "profile/public/$userId"
+
+    // Match Detail (finding PROF-1) — mobile-screen-inventory.md SCREEN 29, the
+    // intermediate stats screen between a match-history row and the full
+    // ReplayViewerScreen board playback. Reached from Profile's History tab
+    // and Public Profile's Match Replays list; its own "Watch replay" opens
+    // [REPLAY] for the same matchId.
+    const val MATCH_DETAIL = "profile/match/{matchId}"
+    fun matchDetail(matchId: String) = "profile/match/$matchId"
     const val LEADERBOARD = "social/leaderboard"
     // Global Player Search — mockup {{ gsOpen }} overlay, the destination for
     // Home's magnifier icon. Confirmed missing (UI-fidelity sweep); built
@@ -108,4 +122,19 @@ object AppDestinations {
     const val SETTINGS = "profile/settings"
     const val LEGAL = "profile/legal/{doc}"
     fun legal(doc: String) = "profile/legal/$doc"
+
+    // Achievements — mobile-screen-inventory.md SCREEN 30. Always the
+    // current user's own achievements (no :id arg), reached from Profile
+    // Overview's "See all ›" header and the achievements grid tap.
+    const val ACHIEVEMENTS = "profile/achievements"
+
+    // Discover Guilds — mobile-screen-inventory.md SCREEN 17. Reached from
+    // Profile's "Discover Guilds" quick-link and Guild Hall's not-in-a-guild
+    // state; explicit back target is Profile per the mockup's `discoverBack`.
+    const val DISCOVER_GUILDS = "social/guilds/discover"
+
+    // Wallet — mobile-screen-inventory.md SCREEN 32. Reached from Home's
+    // wallet chip (WalletChip/onOpenWallet); explicit back target is Home per
+    // the mockup's `walletBack`.
+    const val WALLET = "economy/wallet"
 }

@@ -28,12 +28,18 @@ data class ReportResponse(
     val id: String
 )
 
-/** The six report reasons, mirrors ReportPlayerModal.tsx's REASONS exactly. */
+/**
+ * Report reasons — mockup `reportCats` (Mobile.dc.html): exact 5-item list,
+ * order, labels, and default (Cheating first/default). Server enum values
+ * (HARASSMENT | HATE_SPEECH | CHEATING | INAPPROPRIATE | SPAM | OTHER) are
+ * unchanged; the mockup's 5 UI reasons map onto the valid server values
+ * ("Offensive name" → INAPPROPRIATE). HATE_SPEECH stays a valid server value
+ * but isn't surfaced as its own row per the mockup.
+ */
 val REPORT_REASONS: List<Pair<String, String>> = listOf(
+    "CHEATING" to "Cheating / bot",
     "HARASSMENT" to "Harassment / abuse",
-    "HATE_SPEECH" to "Hate speech",
-    "CHEATING" to "Cheating",
-    "INAPPROPRIATE" to "Inappropriate name / avatar",
+    "INAPPROPRIATE" to "Offensive name",
     "SPAM" to "Spam",
     "OTHER" to "Other"
 )

@@ -38,6 +38,12 @@ const schema = z.object({
   PAYMONGO_SECRET_KEY: z.string().default(""),
   PAYMONGO_WEBHOOK_SECRET: z.string().default(""),
   PAYMONGO_PUBLIC_KEY: z.string().default(""),
+  // Master key for encrypting admin-entered secrets (gateway credentials, Play
+  // Billing service-account JSON) at rest in the Config table. Defaults to
+  // JWT_ACCESS_SECRET so it works out of the box, but SET A DEDICATED VALUE in
+  // production so secrets survive a JWT-secret rotation. Rotating this key makes
+  // previously-encrypted admin secrets undecryptable (they must be re-entered).
+  SECRETS_KEY: z.string().default(""),
   // Real-money diamond top-up master switch. Default OFF for legal compliance —
   // the store is gold-only. Set DIAMOND_TOPUP_ENABLED=true (with live PayMongo
   // keys) to reactivate buying diamonds. The PayMongo wiring stays intact and

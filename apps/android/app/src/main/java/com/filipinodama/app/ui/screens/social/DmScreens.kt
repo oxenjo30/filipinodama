@@ -69,11 +69,13 @@ fun DmConversationListScreen(onBack: () -> Unit, onOpenThread: (String) -> Unit)
     }
 
     Column(modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
-        Row(modifier = Modifier.fillMaxWidth().padding(20.dp), verticalAlignment = Alignment.CenterVertically) {
-            Column {
-                Text("‹ Back", color = GoldLt, style = MaterialTheme.typography.labelLarge, modifier = Modifier.clickable(onClick = onBack))
-                Text("Messages", color = GoldLt, style = MaterialTheme.typography.headlineMedium, modifier = Modifier.padding(top = 10.dp))
-            }
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(20.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            com.filipinodama.app.ui.components.MockupBackButton(onClick = onBack)
+            Text("Messages", color = GoldLt, style = MaterialTheme.typography.headlineMedium)
         }
 
         if (me == null) {
@@ -170,7 +172,7 @@ fun DmThreadScreen(userId: String, onBack: () -> Unit) {
 
     Column(modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
         Row(modifier = Modifier.fillMaxWidth().padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
-            Text("‹", color = GoldLt, style = MaterialTheme.typography.headlineSmall, modifier = Modifier.clickable(onClick = onBack).padding(end = 12.dp))
+            com.filipinodama.app.ui.components.MockupBackButton(onClick = onBack, modifier = Modifier.padding(end = 12.dp))
             if (openUser != null) AvatarView(avatarUrl = openUser.avatarUrl, size = 38.dp)
             Column(modifier = Modifier.weight(1f).padding(start = 10.dp)) {
                 Text(openUser?.displayName ?: if (dmState.loadingThread) "Loading…" else "Conversation", color = GoldLt, style = MaterialTheme.typography.titleMedium)

@@ -63,7 +63,8 @@ import kotlinx.coroutines.launch
  *
  * Rows built: identity header (avatar+frame, name+tag, tier, guild),
  * stat tiles (trophies/wins/losses/win-rate), Guild + Favorite Move tiles,
- * Match Replays list (tap -> ReplayViewerScreen), Badges (honest empty —
+ * Match Replays list (tap -> Match Detail, SCREEN 29, which then opens the
+ * full ReplayViewerScreen via "Watch replay"), Badges (honest empty —
  * server always returns [] per users.ts kdoc, no fabricated achievements),
  * Favorite Openings progress bars.
  *
@@ -78,7 +79,7 @@ import kotlinx.coroutines.launch
 @Composable
 fun PublicProfileScreen(
     userId: String,
-    onOpenReplay: (String) -> Unit,
+    onOpenMatch: (String) -> Unit,
     onOpenChat: (String) -> Unit = {},
     signedIn: Boolean = true,
     onRequireSignIn: () -> Unit = {},
@@ -255,11 +256,16 @@ fun PublicProfileScreen(
                     }
                 }
 
+                // Mockup pubStatRows (Mobile.dc.html): Rating / Wins / Win rate /
+                // Best streak — exact labels, order, and colors. The mockup's own
+                // "Best streak" value is st.streak, so we use the real `streak`
+                // field (server has no separate bestStreak) — honoring the label
+                // with real data, not fabricating a new metric.
                 val statTriples: List<Triple<String, String, androidx.compose.ui.graphics.Color>> = listOf(
-                    Triple("Trophies", u.trophies.toString(), GoldLt),
-                    Triple("Wins", u.wins.toString(), Green),
-                    Triple("Losses", u.losses.toString(), Red),
-                    Triple("Win Rate", "$winRate%", GoldLt)
+                    Triple("Rating", u.trophies.toString(), Color(0xFFF0CF72)),
+                    Triple("Wins", u.wins.toString(), Color(0xFF3FBF6F)),
+                    Triple("Win rate", "$winRate%", Color(0xFF8FB3FF)),
+                    Triple("Best streak", u.streak.toString(), Color(0xFFFF8F9C))
                 )
                 LazyVerticalGrid(
                     columns = GridCells.Fixed(4),
@@ -305,7 +311,7 @@ fun PublicProfileScreen(
                         ex == null -> Box(Modifier.fillMaxWidth().padding(20.dp), contentAlignment = Alignment.Center) { CircularProgressIndicator(color = Gold) }
                         ex.recentMatches.isEmpty() -> Text("No matches yet.", color = Ink2, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(top = 12.dp))
                         else -> Column(modifier = Modifier.padding(top = 8.dp)) {
-                            ex.recentMatches.forEach { m -> RecentMatchRow(m, onOpenReplay) }
+                            ex.recentMatches.forEach { m -> RecentMatchRow(m, onOpenMatch) }
                         }
                     }
                 }
@@ -399,7 +405,7 @@ private fun FriendActionButton(relationship: String, busy: Boolean, signedIn: Bo
 private data class FriendButtonStyle(val label: String, val bg: Color, val fg: Color, val enabled: Boolean)
 
 @Composable
-private fun RecentMatchRow(m: RecentMatchDto, onOpenReplay: (String) -> Unit) {
+private fun RecentMatchRow(m: RecentMatchDto, onOpenMatch: (String) -> Unit) {
     val color = when (m.result) {
         "win" -> Green
         "loss" -> Red
@@ -419,7 +425,7 @@ private fun RecentMatchRow(m: RecentMatchDto, onOpenReplay: (String) -> Unit) {
         Box(
             modifier = Modifier
                 .background(if (m.hasReplay) Gold else Ink2.copy(alpha = 0.2f), RoundedCornerShape(8.dp))
-                .clickable(enabled = m.hasReplay) { onOpenReplay(m.id) }
+                .clickable(enabled = m.hasReplay) { onOpenMatch(m.id) }
                 .padding(horizontal = 12.dp, vertical = 8.dp)
         ) {
             Text("▶ Replay", color = if (m.hasReplay) androidx.compose.ui.graphics.Color(0xFF1A0F2E) else Ink2, style = MaterialTheme.typography.labelSmall)

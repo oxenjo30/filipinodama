@@ -269,6 +269,30 @@ data class SeasonPassResponse(
     val balance: Int = 0
 )
 
+// ── Ledger / recent activity (apps/server/src/modules/users.ts GET /users/me/ledger) ──
+// Wallet screen's "Recent activity" list — real LedgerEntry rows (gold/diamond
+// changes with reason + timestamp + signed amount), the same rows the GDPR
+// export's `ledger` array carries. NEVER fabricated: an empty list renders the
+// honest "No activity yet" empty state.
+
+@Serializable
+data class LedgerEntryDto(
+    val id: String,
+    val currency: String, // GOLD | DIAMONDS | TROPHIES
+    val amount: Int, // signed: positive credit, negative debit
+    val balance: Int = 0,
+    val reason: String? = null,
+    val refType: String? = null,
+    val refId: String? = null,
+    val createdAt: String
+)
+
+@Serializable
+data class LedgerResponse(
+    val items: List<LedgerEntryDto> = emptyList(),
+    val nextCursor: String? = null
+)
+
 // ── Active match (apps/server/src/modules/matches.ts GET /matches/active) ──
 
 @Serializable

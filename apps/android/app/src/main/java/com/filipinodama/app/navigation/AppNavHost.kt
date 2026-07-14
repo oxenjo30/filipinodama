@@ -58,15 +58,21 @@ import com.filipinodama.app.ui.screens.economy.InventoryScreen
 import com.filipinodama.app.ui.screens.economy.OrdersScreen
 import com.filipinodama.app.ui.screens.economy.QuestsScreen
 import com.filipinodama.app.ui.screens.economy.SeasonScreen
+import com.filipinodama.app.ui.screens.economy.TournamentDetailScreen
 import com.filipinodama.app.ui.screens.economy.TournamentsListScreen
+import com.filipinodama.app.ui.screens.economy.WalletScreen
 import com.filipinodama.app.ui.screens.leaderboard.LeaderboardScreen
+import com.filipinodama.app.ui.screens.profile.AchievementsScreen
+import com.filipinodama.app.ui.screens.profile.MatchDetailScreen
 import com.filipinodama.app.ui.screens.profile.PublicProfileScreen
 import com.filipinodama.app.ui.screens.profile.ReplayViewerScreen
 import com.filipinodama.app.ui.screens.settings.LegalScreen
 import com.filipinodama.app.ui.screens.settings.SettingsScreen
 import com.filipinodama.app.ui.screens.system.MaintenanceScreen
 import com.filipinodama.app.ui.screens.system.OfflineBanner
+import com.filipinodama.app.ui.screens.system.SanctionBanner
 import com.filipinodama.app.data.AuthRepository
+import com.filipinodama.app.ui.screens.social.DiscoverGuildsScreen
 import com.filipinodama.app.ui.screens.social.DmConversationListScreen
 import com.filipinodama.app.ui.screens.social.DmThreadScreen
 import com.filipinodama.app.ui.screens.social.FriendsScreen
@@ -220,6 +226,7 @@ fun AppNavHost() {
 
     Column(modifier = Modifier.fillMaxSize()) {
         OfflineBanner(visible = offlineBannerVisible(isOnline))
+        SanctionBanner()
         Scaffold(
             bottomBar = {
                 if (showTabBar) {
@@ -308,31 +315,47 @@ fun AppNavHost() {
                     onOpenLeaderboard = { navController.navigate(AppDestinations.LEADERBOARD) },
                     onOpenNotifications = { navController.navigate(AppDestinations.NOTIFICATIONS) },
                     onOpenSearch = { navController.navigate(AppDestinations.GLOBAL_SEARCH) },
-                    // Mockup's Wallet screen (top-up/balance detail) is out of this
-                    // task's scope (no payments/top-up UI) and not in the owner's
-                    // required-elements list — the chip renders correctly (real
-                    // gold/diamonds) but its tap has no destination yet, honestly.
-                    onOpenWallet = { }
+                    onOpenWallet = { navController.navigate(AppDestinations.WALLET) }
                 )
             }
             composable(AppDestinations.STORE) {
                 StoreScreen(onOpenInventory = { navController.navigate(AppDestinations.INVENTORY) })
             }
             composable(AppDestinations.GUILD) {
-                GuildHallScreen(onOpenProfile = { userId -> navController.navigate(AppDestinations.publicProfile(userId)) })
+                GuildHallScreen(
+                    onOpenProfile = { userId -> navController.navigate(AppDestinations.publicProfile(userId)) },
+                    onOpenDiscover = { navController.navigate(AppDestinations.DISCOVER_GUILDS) },
+                    onPlayRanked = { navController.navigate(AppDestinations.matchmaking("RANKED")) }
+                )
             }
             composable(AppDestinations.PROFILE) {
                 ProfileScreen(
                     onSignedOut = {
                         goClearingStack(AppDestinations.LOGIN)
                     },
-                    onOpenReplay = { matchId -> navController.navigate(AppDestinations.replay(matchId)) },
+                    onOpenMatch = { matchId -> navController.navigate(AppDestinations.matchDetail(matchId)) },
                     onOpenFriends = { navController.navigate(AppDestinations.FRIENDS) },
-                    onOpenSettings = { navController.navigate(AppDestinations.SETTINGS) },
                     onOpenGuild = { navController.navigate(AppDestinations.GUILD) },
+                    onOpenDiscoverGuilds = { navController.navigate(AppDestinations.DISCOVER_GUILDS) },
                     onOpenOrders = { navController.navigate(AppDestinations.ORDERS) },
-                    onOpenInventory = { navController.navigate(AppDestinations.INVENTORY) }
+                    onOpenInventory = { navController.navigate(AppDestinations.INVENTORY) },
+                    // Owner round-3 fix: Profile's Settings TAB now renders
+                    // inline (see ProfileScreen.kt kdoc) instead of navigating
+                    // to AppDestinations.SETTINGS — onOpenLegal wires the
+                    // inline tab's Support rows straight to the same real
+                    // Legal destination the standalone SettingsScreen uses.
+                    onOpenLegal = { doc -> navController.navigate(AppDestinations.legal(doc)) },
+                    onOpenAchievements = { navController.navigate(AppDestinations.ACHIEVEMENTS) }
                 )
+            }
+            composable(AppDestinations.ACHIEVEMENTS) {
+                AchievementsScreen(onBack = { navController.popBackStack() })
+            }
+            composable(AppDestinations.WALLET) {
+                WalletScreen(onBack = { navController.popBackStack() })
+            }
+            composable(AppDestinations.DISCOVER_GUILDS) {
+                DiscoverGuildsScreen(onBack = { navController.popBackStack() })
             }
 
             // ---- Phase 7: settings, legal, delete account, system states ----
@@ -386,6 +409,23 @@ fun AppNavHost() {
                 ReplayViewerScreen(matchId = matchId, onBack = { navController.popBackStack() })
             }
 
+            // Match Detail (finding PROF-1) — the intermediate stats screen a
+            // History row / Public Profile match row opens BEFORE the full
+            // ReplayViewer. Its own "Watch replay" pushes AppDestinations.REPLAY
+            // for the same matchId; its opponent row pushes PUBLIC_PROFILE.
+            composable(
+                route = AppDestinations.MATCH_DETAIL,
+                arguments = listOf(navArgument("matchId") { type = NavType.StringType })
+            ) { backStackEntry ->
+                val matchId = backStackEntry.arguments?.getString("matchId") ?: ""
+                MatchDetailScreen(
+                    matchId = matchId,
+                    onBack = { navController.popBackStack() },
+                    onOpenProfile = { userId -> navController.navigate(AppDestinations.publicProfile(userId)) },
+                    onWatchReplay = { id -> navController.navigate(AppDestinations.replay(id)) }
+                )
+            }
+
             composable(
                 route = AppDestinations.PUBLIC_PROFILE,
                 arguments = listOf(navArgument("userId") { type = NavType.StringType })
@@ -394,7 +434,7 @@ fun AppNavHost() {
                 val signedIn = AuthRepository.state.value.user != null
                 PublicProfileScreen(
                     userId = userId,
-                    onOpenReplay = { matchId -> navController.navigate(AppDestinations.replay(matchId)) },
+                    onOpenMatch = { matchId -> navController.navigate(AppDestinations.matchDetail(matchId)) },
                     onOpenChat = { targetId -> navController.navigate(AppDestinations.dmThread(targetId)) },
                     signedIn = signedIn,
                     onRequireSignIn = { navController.navigate(AppDestinations.LOGIN) },
@@ -445,7 +485,22 @@ fun AppNavHost() {
                 SeasonScreen(onBack = { navController.popBackStack() })
             }
             composable(AppDestinations.TOURNAMENTS) {
-                TournamentsListScreen(onBack = { navController.popBackStack() })
+                TournamentsListScreen(
+                    onBack = { navController.popBackStack() },
+                    onOpenDetail = { id -> navController.navigate(AppDestinations.tournamentDetail(id)) }
+                )
+            }
+            composable(
+                route = AppDestinations.TOURNAMENT_DETAIL,
+                arguments = listOf(navArgument("id") { type = NavType.StringType })
+            ) { backStackEntry ->
+                val id = backStackEntry.arguments?.getString("id") ?: ""
+                TournamentDetailScreen(
+                    tournamentId = id,
+                    onBack = { navController.popBackStack() },
+                    onRequireSignIn = { navController.navigate(AppDestinations.LOGIN) },
+                    onWatchReplay = { matchId -> navController.navigate(AppDestinations.replay(matchId)) }
+                )
             }
 
             // ---- Phase 3: gameplay core (Play tab) ----

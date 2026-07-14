@@ -14,10 +14,12 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.CircularProgressIndicator
@@ -47,6 +49,7 @@ import com.filipinodama.app.data.profile.MatchRowDto
 import com.filipinodama.app.data.profile.ProfileRepository
 import com.filipinodama.app.data.profile.ProfileResult
 import com.filipinodama.app.data.profile.tierArtUrl
+import com.filipinodama.app.data.settings.SettingsStore
 import com.filipinodama.app.ui.components.CurrencyAmount
 import com.filipinodama.app.ui.components.CurrencyIconKind
 import com.filipinodama.app.ui.theme.Gold
@@ -88,7 +91,8 @@ import kotlinx.coroutines.launch
  *            shape/spacing, honest data).
  *   567-589  Guild card / Purchase History card / Discover Guilds / Create a
  *            Guild / Contact Support — real data (guild membership, orders).
- *   609-619  History tab — real match list (tap -> replay).
+ *   609-619  History tab — real match list (tap -> Match Detail, SCREEN 29,
+ *            which then opens the full ReplayViewer via "Watch replay").
  *
  * "Best Streak" in the mockup's stat tiles has NO longest-historical-streak
  * field anywhere server-side (verified: only a CURRENT win-streak column
@@ -99,12 +103,14 @@ import kotlinx.coroutines.launch
 @Composable
 fun ProfileScreen(
     onSignedOut: () -> Unit = {},
-    onOpenReplay: (String) -> Unit = {},
+    onOpenMatch: (String) -> Unit = {},
     onOpenFriends: () -> Unit = {},
-    onOpenSettings: () -> Unit = {},
     onOpenGuild: () -> Unit = {},
+    onOpenDiscoverGuilds: () -> Unit = {},
     onOpenOrders: () -> Unit = {},
-    onOpenInventory: () -> Unit = {}
+    onOpenInventory: () -> Unit = {},
+    onOpenLegal: (String) -> Unit = {},
+    onOpenAchievements: () -> Unit = {}
 ) {
     val authState by AuthRepository.state.collectAsState()
     val me = authState.user
@@ -239,9 +245,15 @@ fun ProfileScreen(
                 }
                 Column(modifier = Modifier.weight(1f).padding(start = 20.dp)) {
                     Text("${me.displayName}${me.tag}", color = Color(0xFFF4ECD6), style = MaterialTheme.typography.titleLarge)
-                    if (myGuild != null) {
-                        Text("[${myGuild!!.tag}] ${myGuild!!.name}", color = Color(0xFF9A8BBF), style = MaterialTheme.typography.labelSmall, modifier = Modifier.padding(top = 2.dp))
-                    }
+                    // Guild line — always rendered; "No guild" fallback when the
+                    // player isn't in one (PROF-7), matching the mockup which
+                    // always shows a guild subtitle.
+                    Text(
+                        if (myGuild != null) "[${myGuild!!.tag}] ${myGuild!!.name}" else "No guild",
+                        color = Color(0xFF9A8BBF),
+                        style = MaterialTheme.typography.labelSmall,
+                        modifier = Modifier.padding(top = 2.dp)
+                    )
                     CurrencyAmount(
                         kind = CurrencyIconKind.TROPHY,
                         text = me.trophies.toString(),
@@ -332,10 +344,17 @@ fun ProfileScreen(
             }
         }
 
-        // ── tabs — mockup's exact 3-tab pill row (lines 549-553): Overview /
-        // History / Settings. Settings navigates to the existing
-        // SettingsScreen destination (same real screen, reached from the
-        // mockup's 3rd tab position instead of a separate action chip).
+        // ── tabs — mockup's exact 3-tab pill row (lines 549-553, profOverview/
+        // profHistory/profSettings @ mockup line 3649): Overview / History /
+        // Settings, ALL THREE are real in-place tab switches (`profTab`
+        // state), not a navigation push. OWNER ROUND-3 FIX: Settings
+        // previously called onOpenSettings() (navigated away to a separate
+        // SettingsScreen destination) — WRONG, the mockup's own
+        // `openSettings` handler is literally
+        // `this.setState({screen:'profile', profTab:'settings'})`, i.e.
+        // Settings is the Profile tab's 3rd inline pane (mockup line 4037),
+        // never a distinct screen. Fixed below: `tab = "settings"` renders
+        // the settings content INLINE via [ProfileSettingsTab].
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -347,7 +366,7 @@ fun ProfileScreen(
         ) {
             ProfileTabButton("Overview", tab == "overview", Modifier.weight(1f)) { tab = "overview" }
             ProfileTabButton("History", tab == "history", Modifier.weight(1f)) { tab = "history" }
-            ProfileTabButton("Settings", false, Modifier.weight(1f), onClick = onOpenSettings)
+            ProfileTabButton("Settings", tab == "settings", Modifier.weight(1f)) { tab = "settings" }
         }
 
         if (tab == "overview") {
@@ -392,11 +411,12 @@ fun ProfileScreen(
                 // content off-screen — removed to match the mockup 1:1.
 
                 // Achievements grid — mockup lines 558-566 (4-col grid,
-                // "See all ›" header). Real 4 rules ported from
-                // apps/web AchievementsGrid.tsx (see file kdoc) — NOT the
-                // mockup's own fabricated placeholder names, since those have
-                // no server-side backing data.
-                AchievementsGrid(wins = me.wins, streak = me.streak, trophies = me.trophies)
+                // "See all ›" header). Real rules from the shared
+                // [Achievements.ALL] list (see its kdoc) — NOT the mockup's
+                // own fabricated placeholder names, since some have no
+                // server-side backing data. Header + whole grid both open the
+                // full Achievements screen (mockup row "tap opens Achievements").
+                AchievementsGrid(wins = me.wins, streak = me.streak, trophies = me.trophies, onOpenAchievements = onOpenAchievements)
 
                 // Overview quick-link cards — mockup lines 814-850 ("avEditShow"
                 // sibling section within isProfile). "My Reports" (lines
@@ -424,7 +444,7 @@ fun ProfileScreen(
                         subtitle = "Browse & join active orders",
                         accentBorder = Color(0x47C9A4FF),
                         iconBg = Color(0x1FC9A4FF),
-                        onClick = onOpenGuild
+                        onClick = onOpenDiscoverGuilds
                     )
                 }
                 ProfileQuickLinkCard(
@@ -461,7 +481,7 @@ fun ProfileScreen(
                     onClick = { contactOpen = true }
                 )
             }
-        } else {
+        } else if (tab == "history") {
             Column(modifier = Modifier.padding(horizontal = 20.dp, vertical = 12.dp)) {
                 Row(
                     modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp),
@@ -486,11 +506,212 @@ fun ProfileScreen(
                         )
                     }
                     else -> Column {
-                        rows.forEach { m -> MatchHistoryRow(match = m, myUserId = me.id, onClick = { onOpenReplay(m.id) }) }
+                        rows.forEach { m -> MatchHistoryRow(match = m, myUserId = me.id, onClick = { onOpenMatch(m.id) }) }
                     }
                 }
             }
+        } else {
+            // ── Settings tab (profSettings) — mockup lines 621-651, setGroups
+            // (mockup line 4017): rendered INLINE as the 3rd Profile tab, never
+            // a navigated-to screen (owner round-3 fix — see tab-row kdoc
+            // above). Reuses the SAME real SettingsStore singleton the
+            // standalone SettingsScreen persists to/reads from, so toggling a
+            // row here and opening the standalone screen elsewhere stay in
+            // sync (one source of truth, not two competing prefs stores).
+            ProfileSettingsTab(
+                onOpenLegal = onOpenLegal,
+                onSignedOut = onSignedOut
+            )
         }
+    }
+}
+
+/**
+ * Inline Settings tab content — mockup `profSettings` block (line 621-651)
+ * reproduced top-to-bottom exactly:
+ *   1. Gameplay group (line 4018): Confirm moves / Auto-promote / Move hints /
+ *      Force capture — gold-pill toggle (46x27, mockup `sw()` helper line
+ *      4017) bound to the real [SettingsStore].
+ *   2. Audio & Haptics group (line 4019): Sound effects / Music / Vibration.
+ *   3. Notifications group (line 4020): Match invites / Guild activity /
+ *      Events & offers.
+ *   4. Support section (mockup line 638-644, static NOT-toggle rows): How to
+ *      Play / Help & FAQ / Terms & Privacy / Contact Support (with the
+ *      "Ticket" badge pill) — each a `›` nav row exactly like the mockup.
+ *   5. Log Out button (red, full-width, mockup line 647) + version footer
+ *      (mockup line 648, "FilipinoDama · v{real BuildConfig version}" — the
+ *      mockup's own "v1.0.0 (build 142)" is placeholder demo copy, using the
+ *      real version here is the honest substitution, not a fidelity gap).
+ */
+@Composable
+private fun ProfileSettingsTab(
+    onOpenLegal: (String) -> Unit,
+    onSignedOut: () -> Unit
+) {
+    val scope = rememberCoroutineScope()
+    val store = SettingsStore.instance
+    val confirmMoves by store.confirmMoves.collectAsState()
+    val autoPromote by store.autoPromote.collectAsState()
+    val hints by store.hints.collectAsState()
+    val forceCapture by store.forceCapture.collectAsState()
+    val sound by store.sound.collectAsState()
+    val music by store.music.collectAsState()
+    val haptics by store.haptics.collectAsState()
+    val pushMatch by store.pushMatch.collectAsState()
+    val pushGuild by store.pushGuild.collectAsState()
+    val pushEvent by store.pushEvent.collectAsState()
+
+    var contactOpen by remember { mutableStateOf(false) }
+    if (contactOpen) {
+        com.filipinodama.app.ui.screens.settings.ContactSupportDialog(onClose = { contactOpen = false })
+    }
+
+    Column(modifier = Modifier.padding(horizontal = 20.dp, vertical = 4.dp)) {
+        SettingsGroupCard(title = "Gameplay") {
+            SettingsToggleRow("Confirm moves", "Tap twice to commit a move", confirmMoves) { store.setConfirmMoves(it) }
+            SettingsToggleRow("Auto-promote", "Crown a Dama automatically", autoPromote) { store.setAutoPromote(it) }
+            SettingsToggleRow("Move hints", "Highlight legal destinations", hints) { store.setHints(it) }
+            SettingsToggleRow("Force capture", "Enforce mandatory captures", forceCapture) { store.setForceCapture(it) }
+        }
+        SettingsGroupCard(title = "Audio & Haptics") {
+            SettingsToggleRow("Sound effects", null, sound) { store.setSound(it) }
+            SettingsToggleRow("Music", null, music) { store.setMusic(it) }
+            SettingsToggleRow("Vibration", null, haptics) { store.setHaptics(it) }
+        }
+        SettingsGroupCard(title = "Notifications") {
+            SettingsToggleRow("Match invites", null, pushMatch) { store.setPushMatch(it) }
+            SettingsToggleRow("Guild activity", null, pushGuild) { store.setPushGuild(it) }
+            SettingsToggleRow("Events & offers", null, pushEvent) { store.setPushEvent(it) }
+        }
+        SettingsGroupCard(title = "Support") {
+            SettingsNavRow("How to Play") { onOpenLegal("howto") }
+            SettingsNavRow("Help & FAQ") { onOpenLegal("faq") }
+            SettingsNavRow("Terms & Privacy") { onOpenLegal("terms") }
+            SettingsNavRow("Contact Support", badge = "Ticket") { contactOpen = true }
+        }
+
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(top = 22.dp)
+                .clickable {
+                    scope.launch {
+                        AuthRepository.logout()
+                        onSignedOut()
+                    }
+                }
+                .background(Red.copy(alpha = 0.08f), RoundedCornerShape(14.dp))
+                .padding(vertical = 15.dp),
+            contentAlignment = Alignment.Center
+        ) {
+            Text("Log Out", color = Color(0xFFFF8F9C), style = MaterialTheme.typography.titleMedium)
+        }
+        Text(
+            "FilipinoDama · v${com.filipinodama.app.BuildConfig.VERSION_NAME}",
+            color = Color(0xFF5F527E),
+            style = MaterialTheme.typography.labelSmall,
+            modifier = Modifier.fillMaxWidth().padding(top = 14.dp, bottom = 8.dp),
+            textAlign = androidx.compose.ui.text.style.TextAlign.Center
+        )
+    }
+}
+
+/** Mockup Settings group card — rounded panel with an uppercase gold-muted title (line 626-627). */
+@Composable
+private fun SettingsGroupCard(title: String, content: @Composable androidx.compose.foundation.layout.ColumnScope.() -> Unit) {
+    Column(modifier = Modifier.padding(top = 20.dp)) {
+        Text(
+            title.uppercase(),
+            color = Ink2,
+            style = MaterialTheme.typography.labelMedium,
+            letterSpacing = 1.5.sp,
+            modifier = Modifier.padding(start = 2.dp, bottom = 9.dp)
+        )
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(16.dp))
+                .background(Color(0xCC1B1030))
+                .border(1.dp, Color(0x1FE8B84B), RoundedCornerShape(16.dp))
+        ) {
+            content()
+        }
+    }
+}
+
+/**
+ * Mockup toggle row (line 629-632): label + optional description on the
+ * left, a gold-pill track+knob on the right. Exact mockup `sw()` geometry
+ * (line 4017): track 46x27 pill, gradient gold when on / translucent white
+ * when off; knob 21x21 white circle sliding 19dp on toggle — this is a
+ * hand-built pill (NOT Material's [Switch]) to match the mockup 1:1 rather
+ * than the platform default shape.
+ */
+@Composable
+private fun SettingsToggleRow(label: String, desc: String?, checked: Boolean, onCheckedChange: (Boolean) -> Unit) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable { onCheckedChange(!checked) }
+            .padding(horizontal = 15.dp, vertical = 14.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Column(modifier = Modifier.weight(1f)) {
+            Text(label, color = Color(0xFFE6DCF5), style = MaterialTheme.typography.bodyMedium)
+            if (desc != null) {
+                Text(desc, color = Ink2, style = MaterialTheme.typography.labelSmall, modifier = Modifier.padding(top = 2.dp))
+            }
+        }
+        MockupToggle(checked = checked, onCheckedChange = onCheckedChange)
+    }
+}
+
+/** The mockup's exact gold-pill toggle switch (46x27 track / 21dp knob, mockup `sw()` line 4017). */
+@Composable
+private fun MockupToggle(checked: Boolean, onCheckedChange: (Boolean) -> Unit) {
+    Box(
+        modifier = Modifier
+            .width(46.dp)
+            .height(27.dp)
+            .clip(RoundedCornerShape(100.dp))
+            .background(
+                if (checked) Brush.horizontalGradient(listOf(Color(0xFFEFC25A), Color(0xFFC9971F)))
+                else Brush.horizontalGradient(listOf(Color(0x1FFFFFFF), Color(0x1FFFFFFF)))
+            )
+            .clickable { onCheckedChange(!checked) }
+    ) {
+        Box(
+            modifier = Modifier
+                .padding(3.dp)
+                .size(21.dp)
+                .offset(x = if (checked) 19.dp else 0.dp)
+                .clip(CircleShape)
+                .background(Color.White)
+        )
+    }
+}
+
+/** Mockup Support row (line 640-643): static nav row, label + optional badge + trailing `›`. */
+@Composable
+private fun SettingsNavRow(label: String, badge: String? = null, onClick: () -> Unit) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .padding(horizontal = 15.dp, vertical = 14.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(label, color = Color(0xFFE6DCF5), style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
+        if (badge != null) {
+            Box(
+                modifier = Modifier
+                    .background(Color(0x247FA8FF), RoundedCornerShape(100.dp))
+                    .padding(horizontal = 8.dp, vertical = 3.dp)
+            ) {
+                Text(badge, color = Color(0xFF7FA8FF), style = MaterialTheme.typography.labelSmall)
+            }
+        }
+        Text("›", color = Ink2, style = MaterialTheme.typography.titleLarge, modifier = Modifier.padding(start = 8.dp))
     }
 }
 
@@ -554,35 +775,83 @@ private fun ProfileQuickLinkCard(
     }
 }
 
-private data class AchievementDef(val name: String, val desc: String, val assetFile: String, val unlocked: (wins: Int, streak: Int, trophies: Int) -> Boolean)
-
 /**
- * Achievements grid — mockup profAch (line 5019): the exact 4 tiles with the
- * mockup's names AND icon assets (all present in handoffv3/handoff/assets):
- *   First Blood  → ic-trophy.png   (win 1 match)
- *   Streak x10   → me-target.png   (10-win streak)
- *   Capture King → red-king.png    (crimson king piece art)
- *   Season Vet   → tier-datu.png   (reach Datu tier ≈ 1100 trophies)
- * Unlock state is REAL (derived from wins/streak/trophies) — the icons/names
- * are copied verbatim from the mockup, not the web's computed grid.
+ * Achievements grid — mockup profAch (Overview, line 5019) + achList (full
+ * Achievements screen SCREEN 30, line 2331/3338). Both are gated by the SAME
+ * (wins, streak, trophies) inputs — no fabricated stats, no server changes.
+ * This is the ONE shared source [ProfileScreen]'s Overview (first 4) and
+ * [AchievementsScreen] (all 8) both consume, so the two surfaces can't drift.
+ *
+ * Rows 1-4 are the mockup's own Overview profAch tiles verbatim (name + icon).
+ * Rows 5-8 extend to the full screen's 8-item achList using the SAME real
+ * stat inputs — the mockup's own achList text differs slightly per row
+ * ("Rajah's Favor"/"Season Veteran"/"Guild Champion"/"Untouchable"/"Kingdom
+ * Legend" reference guild-war and exact-capture-count data the app has no
+ * field for), so rows 5-8 substitute honestly-derivable milestones instead
+ * of fabricating those specific unlock conditions, reusing real handoff
+ * assets (medal-2.png, kingmaker.png, sb-star.png, tier-alamat.png — all
+ * present under handoffv3/handoff/assets/). "Rajah tier" from the task brief
+ * doesn't exist in RankTiers (the real top tier is Alamat/"Legend") — Legend
+ * targets the real top tier's threshold via RankTiers.TIERS.last().
  */
-@Composable
-private fun AchievementsGrid(wins: Int, streak: Int, trophies: Int) {
-    val defs = listOf(
+internal data class AchievementDef(
+    val name: String,
+    val desc: String,
+    val assetFile: String,
+    /** Null when unlock is boolean-only (no meaningful fractional progress to show). */
+    val progress: ((wins: Int, streak: Int, trophies: Int) -> Float)? = null,
+    val unlocked: (wins: Int, streak: Int, trophies: Int) -> Boolean
+)
+
+internal object Achievements {
+    val ALL: List<AchievementDef> = listOf(
         AchievementDef("First Blood", "Win your first match", "ic-trophy.png") { w, _, _ -> w >= 1 },
         AchievementDef("Streak x10", "Win 10 in a row", "me-target.png") { _, s, _ -> s >= 10 },
         AchievementDef("Capture King", "Crown a king", "pieces/skins/crimson/red-king.png") { w, _, _ -> w >= 1 },
-        AchievementDef("Season Vet", "Reach Datu tier", "tier-datu.png") { _, _, t -> t >= 1100 }
+        AchievementDef("Season Vet", "Reach Datu tier", "tier-datu.png") { _, _, t -> t >= RankTiers.forTrophies(1100).min },
+        AchievementDef(
+            "Veteran", "Win 50 matches", "medal-2.png",
+            progress = { w, _, _ -> (w.toFloat() / 50f).coerceIn(0f, 1f) }
+        ) { w, _, _ -> w >= 50 },
+        AchievementDef(
+            "Champion", "Win 100 matches", "kingmaker.png",
+            progress = { w, _, _ -> (w.toFloat() / 100f).coerceIn(0f, 1f) }
+        ) { w, _, _ -> w >= 100 },
+        AchievementDef(
+            "Rising Star", "Reach 500 trophies", "sb-star.png",
+            progress = { _, _, t -> (t.toFloat() / 500f).coerceIn(0f, 1f) }
+        ) { _, _, t -> t >= 500 },
+        AchievementDef(
+            "Legend", "Reach ${RankTiers.TIERS.last().label} tier", "tier-alamat.png",
+            progress = { _, _, t -> (t.toFloat() / RankTiers.TIERS.last().min.toFloat()).coerceIn(0f, 1f) }
+        ) { _, _, t -> t >= RankTiers.TIERS.last().min }
     )
-    Column {
+}
+
+/**
+ * Overview's 4-tile grid — mockup profAch (line 5019): First Blood / Streak
+ * x10 / Capture King / Season Vet, the first 4 of the shared [Achievements.ALL]
+ * list. Header "See all ›" AND the whole grid are tappable (mockup row
+ * "tap opens Achievements") via [onOpenAchievements].
+ */
+@Composable
+private fun AchievementsGrid(wins: Int, streak: Int, trophies: Int, onOpenAchievements: () -> Unit) {
+    val defs = Achievements.ALL.take(4)
+    Column(modifier = Modifier.clickable(onClick = onOpenAchievements)) {
         Row(modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp), horizontalArrangement = Arrangement.SpaceBetween) {
             Text("ACHIEVEMENTS", color = Ink2, style = MaterialTheme.typography.labelMedium, letterSpacing = 1.5.sp)
-            Text("See all ›", color = Color(0xFFC9A4FF), style = MaterialTheme.typography.labelMedium)
+            Text(
+                "See all ›",
+                color = Color(0xFFC9A4FF),
+                style = MaterialTheme.typography.labelMedium,
+                modifier = Modifier.clickable(onClick = onOpenAchievements)
+            )
         }
         LazyVerticalGrid(
             columns = GridCells.Fixed(4),
             modifier = Modifier.height(96.dp),
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            userScrollEnabled = false
         ) {
             items(defs) { a ->
                 val unlocked = a.unlocked(wins, streak, trophies)

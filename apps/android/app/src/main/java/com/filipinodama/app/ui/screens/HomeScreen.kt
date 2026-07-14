@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
@@ -758,6 +759,39 @@ private fun SeasonPassBanner(season: SeasonCurrentResponse?, onClick: () -> Unit
                 Text("${numLabel.uppercase()} · ENDS $endsLabel", color = Color(0xFFF4D886), style = MaterialTheme.typography.labelSmall)
             }
             Text(seasonName, color = Color(0xFFF4ECD6), style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(top = 9.dp))
+
+            // Level-progress label + bar (ENTRY-1) — reuses the same real fields
+            // the dedicated Season Pass screen uses: tier = current level, xp vs
+            // the tiers' max xp threshold. Only shown when season data is loaded.
+            if (season != null && season.tiers.isNotEmpty()) {
+                val maxLevel = season.tiers.size
+                // Current level = number of tiers whose xp threshold is already
+                // met (same derivation the dedicated Season screen uses).
+                val currentLevel = season.tiers.count { it.xp <= season.xp }.coerceIn(0, maxLevel)
+                val maxXp = (season.tiers.maxOfOrNull { it.xp } ?: 1).coerceAtLeast(1)
+                val pct = (season.xp.toFloat() / maxXp).coerceIn(0f, 1f)
+                Text(
+                    "Level $currentLevel of $maxLevel · ${(pct * 100).toInt()}% to next reward",
+                    color = Color(0xFFC9B8E0),
+                    style = MaterialTheme.typography.labelSmall,
+                    modifier = Modifier.padding(top = 8.dp)
+                )
+                Box(
+                    modifier = Modifier
+                        .padding(top = 6.dp)
+                        .width(150.dp)
+                        .height(7.dp)
+                        .clip(RoundedCornerShape(100.dp))
+                        .background(Color(0x66000000))
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth(pct)
+                            .height(7.dp)
+                            .background(Brush.horizontalGradient(listOf(Color(0xFFC98B2E), Color(0xFFF7E2A0))), RoundedCornerShape(100.dp))
+                    )
+                }
+            }
         }
     }
 }

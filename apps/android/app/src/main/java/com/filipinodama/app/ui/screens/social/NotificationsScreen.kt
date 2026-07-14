@@ -84,14 +84,15 @@ fun NotificationsScreen(onBack: () -> Unit) {
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(6.dp)
         ) {
-            com.filipinodama.app.ui.components.MockupBackButton(onClick = onBack)
+            com.filipinodama.app.ui.components.MockupBackButtonStore(onClick = onBack)
             Text("Notifications", color = Color(0xFFF4ECD6), style = MaterialTheme.typography.headlineSmall, modifier = Modifier.weight(1f))
             val unread = data?.unreadCount ?: 0
             Text(
                 "Mark all read",
                 color = Color(0xFFC9A4FF),
                 style = MaterialTheme.typography.labelMedium,
-                modifier = Modifier.clickable(enabled = unread > 0) { scope.launch { NotificationsRepository.markAll() } }.padding(8.dp)
+                // Mockup never gates "Mark all read" (SOC-6) — always tappable.
+                modifier = Modifier.clickable { scope.launch { NotificationsRepository.markAll() } }.padding(8.dp)
             )
         }
 

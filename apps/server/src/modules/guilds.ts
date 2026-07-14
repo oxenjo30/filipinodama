@@ -9,6 +9,7 @@ import { requireAuth, attachUser } from "../auth/guards.js";
 import { EV } from "@dama/shared";
 import { getIO } from "../realtime/io.js";
 import { loadGuildHistory, postGuildMessage, guildRoom } from "./guild-chat-service.js";
+import { getWarStatus } from "../lib/guild-wars.js";
 
 const ROLE_RANK: Record<GuildRole, number> = { MEMBER: 1, OFFICER: 2, LEADER: 3 };
 const roleSchema = z.object({ role: z.enum(["OFFICER", "MEMBER"]) });
@@ -542,4 +543,13 @@ export async function guildRoutes(app: FastifyInstance) {
       });
     },
   );
+
+  // ── GET /api/guilds/war — weekly Guild War status (PUBLIC/optional-auth) ────
+  // Standings + reward tiers for everyone; your guild's rank/points + your
+  // contribution when signed in and in a guild. Read-only.
+  app.get("/guilds/war", { preHandler: attachUser }, async (req) => {
+    const me = req.userId ?? null;
+    const status = await getWarStatus(prisma, me, new Date());
+    return ok(status);
+  });
 }
