@@ -5,20 +5,19 @@ import { useAdminMutation, useToast } from "../lib/ui";
 
 type ConfigRow = { key: string; value: string; type: "bool" | "string" | "int"; category: string; label: string; locked?: boolean };
 
-type Tab = "config" | "payments" | "api";
+type Tab = "config" | "payments";
 
-/** Static, honest read-only integration list — no fabricated keys/secrets.
- *  Mirrors what's actually wired: PayMongo (dormant per gold-only-economy),
- *  Resend for transactional email, Postgres + Redis as core infra. */
-const INTEGRATIONS: { name: string; desc: string; status: "active" | "dormant" }[] = [
-  { name: "PayMongo", desc: "Real-money top-up — disabled for legal compliance (gold-only economy).", status: "dormant" },
+/** Static, honest read-only infra status — no fabricated keys/secrets. Shown on
+ *  the Config tab (the old standalone read-only 'API keys' tab was redundant;
+ *  editable payment secrets now live on the Payment gateways tab). */
+const INFRA: { name: string; desc: string; status: "active" | "dormant" }[] = [
   { name: "Resend", desc: "Transactional email (password reset, receipts, notices).", status: "active" },
   { name: "Postgres", desc: "Primary datastore.", status: "active" },
   { name: "Redis", desc: "Cache + realtime session/presence backing.", status: "active" },
 ];
 
-/** 2B. Settings — live feature flags + economy constants over the Config model.
- *  SUPERADMIN-gated; API keys tab is a read-only integrations list. */
+/** 2B. Settings — live feature flags + economy constants + infra status (Config),
+ *  and editable payment-gateway credentials (Payment gateways). SUPERADMIN-gated. */
 export function Settings() {
   const { can } = useAuth();
   const isSuperadmin = can("SUPERADMIN");
@@ -41,20 +40,14 @@ export function Settings() {
             Payment gateways
           </button>
         )}
-        <button
-          className={tab === "api" ? "abtn btn-gold-pill sm" : "abtn btn-ghost btn-ghost-sm"}
-          onClick={() => setTab("api")}
-        >
-          API keys &amp; integrations
-        </button>
       </div>
 
       {tab === "config" ? (
         isSuperadmin ? <ConfigPanel /> : <RestrictedPanel />
-      ) : tab === "payments" ? (
-        isSuperadmin ? <PaymentGatewaysPanel /> : <RestrictedPanel />
+      ) : isSuperadmin ? (
+        <PaymentGatewaysPanel />
       ) : (
-        <IntegrationsPanel />
+        <RestrictedPanel />
       )}
     </>
   );
@@ -90,6 +83,7 @@ function ConfigPanel() {
   const constants = items.filter((r) => r.type !== "bool");
 
   return (
+    <>
     <div className="fd-2col">
       <div className="acard" style={{ padding: 20 }}>
         <div style={{ font: "700 14px var(--sans)", color: "var(--ink-2)" }}>Feature flags</div>
@@ -121,6 +115,10 @@ function ConfigPanel() {
         )}
       </div>
     </div>
+    <div style={{ marginTop: 16 }}>
+      <InfraStatus />
+    </div>
+    </>
   );
 }
 
@@ -226,8 +224,8 @@ function LockedFlagRow({ row }: { row: ConfigRow }) {
 
 type GatewayId = "paypal" | "stripe" | "paymongo" | "xendit";
 type GatewayRow = { id: GatewayId; name: string; enabled: boolean; feePct: number };
-type CredentialField = Record<string, boolean>;
-type CredentialInfo = { configured: boolean; fields: CredentialField; webhookUrl: string };
+type FieldStatus = { configured: boolean; source: "admin" | "env" | "none"; preview: string };
+type CredentialInfo = { configured: boolean; editable: boolean; fields: Record<string, FieldStatus>; webhookUrl: string };
 type GatewaysResponse = {
   gateways: GatewayRow[];
   environment: "live" | "sandbox";
@@ -235,6 +233,20 @@ type GatewaysResponse = {
   diamondPacks: { id: string; label: string; diamonds: number; bonus: number; priceCents: number; currencyCode: string }[];
   moneyInert: boolean;
   moneyInertNote: string;
+};
+
+// Maps a UI field name (e.g. "secretKey") to the server credential key
+// ("paymongo.secretKey") that the write endpoint expects. Only PayMongo fields
+// are writable today.
+const CREDENTIAL_KEY: Record<GatewayId, Record<string, string>> = {
+  paymongo: {
+    secretKey: "paymongo.secretKey",
+    webhookSecret: "paymongo.webhookSecret",
+    publicKey: "paymongo.publicKey",
+  },
+  paypal: {},
+  stripe: {},
+  xendit: {},
 };
 
 const FIELD_LABELS: Record<string, string> = {
@@ -288,8 +300,8 @@ function PaymentGatewaysPanel() {
       <GatewayStatusCard data={data} onDone={load} />
       <EnvironmentCard environment={data.environment} onDone={load} />
 
-      {(["paypal", "stripe", "paymongo", "xendit"] as GatewayId[]).map((id) => (
-        <CredentialCard key={id} id={id} name={data.gateways.find((g) => g.id === id)!.name} info={data.credentials[id]} onCopy={copy} />
+      {(["paymongo", "paypal", "stripe", "xendit"] as GatewayId[]).map((id) => (
+        <CredentialCard key={id} id={id} name={data.gateways.find((g) => g.id === id)!.name} info={data.credentials[id]} onCopy={copy} onDone={load} />
       ))}
 
       <DiamondPacksCard packs={data.diamondPacks} />
@@ -467,7 +479,7 @@ function EnvironmentCard({ environment, onDone }: { environment: "live" | "sandb
   );
 }
 
-function CredentialCard({ id, name, info, onCopy }: { id: GatewayId; name: string; info: CredentialInfo; onCopy: (s: string) => void }) {
+function CredentialCard({ id, name, info, onCopy, onDone }: { id: GatewayId; name: string; info: CredentialInfo; onCopy: (s: string) => void; onDone: () => void }) {
   return (
     <div className="acard" style={{ padding: 20 }}>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
@@ -475,17 +487,20 @@ function CredentialCard({ id, name, info, onCopy }: { id: GatewayId; name: strin
         <span className={`badge-st ${info.configured ? "st-active" : "st-muted"}`}>{info.configured ? "Configured" : "Not configured"}</span>
       </div>
       <div style={{ marginTop: 6, font: "500 11px var(--sans)", color: "var(--dim)" }}>
-        Credential editing arrives with the secrets manager.
+        {info.editable
+          ? "Enter a value to set or update a secret. Stored encrypted — the value is never shown again, only a masked preview."
+          : "No server-side integration exists for this gateway yet, so its credentials aren't editable."}
       </div>
       <div style={{ marginTop: 14, display: "flex", flexDirection: "column", gap: 4 }}>
-        {Object.entries(info.fields).map(([field, present]) => (
-          <div key={field} style={{ display: "flex", alignItems: "center", gap: 12, padding: "9px 0", borderBottom: "1px solid rgba(232, 184, 75, .07)" }}>
-            <div style={{ flex: 1, font: "600 12px var(--sans)", color: "var(--ink-2)" }}>{FIELD_LABELS[field] ?? field}</div>
-            <input disabled value="••••••••" style={{ width: 120, background: "#0f0720", border: "1px solid rgba(232, 184, 75, .12)", borderRadius: 7, padding: "6px 8px", color: "var(--dim)", fontSize: 12, opacity: 0.6 }} />
-            <span className={`badge-st ${present ? "st-active" : "st-muted"}`} style={{ minWidth: 96, textAlign: "center" }}>
-              {present ? "Configured" : "Not configured"}
-            </span>
-          </div>
+        {Object.entries(info.fields).map(([field, status]) => (
+          <CredentialFieldRow
+            key={field}
+            gatewayId={id}
+            field={field}
+            status={status}
+            editable={info.editable}
+            onDone={onDone}
+          />
         ))}
         <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "9px 0" }}>
           <div style={{ flex: 1, font: "600 12px var(--sans)", color: "var(--ink-2)" }}>Webhook endpoint</div>
@@ -493,6 +508,92 @@ function CredentialCard({ id, name, info, onCopy }: { id: GatewayId; name: strin
           <button className="abtn btn-ghost btn-ghost-sm" onClick={() => onCopy(info.webhookUrl)}>Copy</button>
         </div>
       </div>
+    </div>
+  );
+}
+
+function CredentialFieldRow({
+  gatewayId,
+  field,
+  status,
+  editable,
+  onDone,
+}: {
+  gatewayId: GatewayId;
+  field: string;
+  status: FieldStatus;
+  editable: boolean;
+  onDone: () => void;
+}) {
+  const mutate = useAdminMutation();
+  const [value, setValue] = useState("");
+  const credKey = CREDENTIAL_KEY[gatewayId]?.[field];
+  const canEdit = editable && !!credKey;
+
+  const save = async () => {
+    if (!credKey || value.trim() === "") return;
+    const ok = await mutate({
+      title: `Update ${FIELD_LABELS[field] ?? field}`,
+      body: `Set the ${FIELD_LABELS[field] ?? field} for this gateway. The value is encrypted at rest and never displayed.`,
+      requireReason: true,
+      confirmLabel: "Save secret",
+      method: "POST",
+      path: "/api/admin/gateways/credentials",
+      payload: { key: credKey, value },
+      successMsg: `${FIELD_LABELS[field] ?? field} saved.`,
+    });
+    if (ok) {
+      setValue("");
+      onDone();
+    }
+  };
+
+  const clear = async () => {
+    if (!credKey) return;
+    await mutate({
+      title: `Clear ${FIELD_LABELS[field] ?? field}`,
+      body: `Remove the stored ${FIELD_LABELS[field] ?? field}. If an environment variable is set, it will be used as the fallback.`,
+      requireReason: true,
+      confirmLabel: "Clear secret",
+      method: "DELETE",
+      path: `/api/admin/gateways/credentials/${encodeURIComponent(credKey)}`,
+      successMsg: `${FIELD_LABELS[field] ?? field} cleared.`,
+      onDone,
+    });
+  };
+
+  const badge = status.configured
+    ? status.source === "admin"
+      ? { label: "Set in admin", cls: "st-active" }
+      : { label: "From env", cls: "st-active" }
+    : { label: "Not configured", cls: "st-muted" };
+
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 0", borderBottom: "1px solid rgba(232, 184, 75, .07)", flexWrap: "wrap" }}>
+      <div style={{ flex: 1, minWidth: 130 }}>
+        <div style={{ font: "600 12px var(--sans)", color: "var(--ink-2)" }}>{FIELD_LABELS[field] ?? field}</div>
+        {status.configured && status.preview && (
+          <div className="mono dim" style={{ fontSize: 10, marginTop: 2 }}>{status.preview}</div>
+        )}
+      </div>
+      {canEdit ? (
+        <>
+          <input
+            type="password"
+            value={value}
+            onChange={(e) => setValue(e.target.value)}
+            placeholder={status.configured ? "Enter new value to replace" : "Enter value"}
+            style={{ flex: 2, minWidth: 160, background: "#0f0720", border: "1px solid rgba(232, 184, 75, .2)", borderRadius: 7, padding: "8px 10px", color: "var(--gold-lt)", fontSize: 12 }}
+          />
+          <button className="abtn btn-gold-pill sm" disabled={value.trim() === ""} onClick={() => void save()}>Save</button>
+          {status.source === "admin" && (
+            <button className="abtn btn-ghost btn-ghost-sm" onClick={() => void clear()}>Clear</button>
+          )}
+        </>
+      ) : (
+        <input disabled value="••••••••" style={{ width: 120, background: "#0f0720", border: "1px solid rgba(232, 184, 75, .12)", borderRadius: 7, padding: "6px 8px", color: "var(--dim)", fontSize: 12, opacity: 0.6 }} />
+      )}
+      <span className={`badge-st ${badge.cls}`} style={{ minWidth: 96, textAlign: "center" }}>{badge.label}</span>
     </div>
   );
 }
@@ -535,15 +636,17 @@ function DiamondPacksCard({ packs }: { packs: GatewaysResponse["diamondPacks"] }
   );
 }
 
-function IntegrationsPanel() {
+/** Read-only infrastructure status (email + datastore + cache). Payment secrets
+ *  are managed on the Payment gateways tab; this is just a health list. */
+function InfraStatus() {
   return (
-    <div className="acard">
-      <div style={{ font: "700 14px var(--sans)", color: "var(--ink-2)" }}>Integrations</div>
+    <div className="acard" style={{ padding: 20 }}>
+      <div style={{ font: "700 14px var(--sans)", color: "var(--ink-2)" }}>Infrastructure</div>
       <div style={{ marginTop: 6, font: "500 11px var(--sans)", color: "var(--dim)" }}>
-        Read-only. No keys or secrets are ever shown here.
+        Read-only status. Payment credentials are managed on the Payment gateways tab.
       </div>
       <div style={{ marginTop: 14, display: "flex", flexDirection: "column", gap: 4 }}>
-        {INTEGRATIONS.map((it) => (
+        {INFRA.map((it) => (
           <div key={it.name} style={{ display: "flex", alignItems: "center", gap: 12, padding: "11px 0", borderBottom: "1px solid rgba(232, 184, 75, .07)" }}>
             <div style={{ flex: 1 }}>
               <div style={{ font: "700 12.5px var(--sans)", color: "var(--ink-2)" }}>{it.name}</div>
