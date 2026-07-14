@@ -305,6 +305,223 @@ function PaymentGatewaysPanel() {
       ))}
 
       <DiamondPacksCard packs={data.diamondPacks} />
+
+      <PlayBillingCard />
+    </div>
+  );
+}
+
+// ── Google Play Billing (Android real-money diamond top-up) ─────────────────
+
+type PlayBillingStatus = {
+  enabled: boolean;
+  packageName: string;
+  serviceAccount: { configured: boolean; clientEmail: string };
+  productIds: Record<string, string>;
+  packs: { id: string; label: string; diamonds: number; bonus: number; priceCents: number }[];
+};
+
+function PlayBillingCard() {
+  const [data, setData] = useState<PlayBillingStatus | null>(null);
+  const [loading, setLoading] = useState(true);
+  const mutate = useAdminMutation();
+  const toast = useToast();
+
+  const [pkg, setPkg] = useState("");
+  const [sa, setSa] = useState("");
+  const [products, setProducts] = useState<Record<string, string>>({});
+  const [testing, setTesting] = useState(false);
+
+  const load = () => {
+    setLoading(true);
+    api
+      .get<PlayBillingStatus>("/api/admin/play-billing")
+      .then((d) => {
+        setData(d);
+        setPkg(d.packageName);
+        setProducts(d.productIds);
+      })
+      .catch(() => setData(null))
+      .finally(() => setLoading(false));
+  };
+  useEffect(load, []);
+
+  if (loading) return <div className="acard dim" style={{ padding: 24, textAlign: "center" }}>Loading Play Billing…</div>;
+  if (!data) return <div className="acard dim" style={{ padding: 24, textAlign: "center" }}>Could not load Play Billing.</div>;
+
+  const savePackage = async () => {
+    if (pkg.trim() === data.packageName) return;
+    await mutate({
+      title: "Update Play package name",
+      body: `Set the Android package name to "${pkg.trim()}".`,
+      requireReason: true,
+      confirmLabel: "Save",
+      method: "POST",
+      path: "/api/admin/play-billing",
+      payload: { packageName: pkg.trim() },
+      successMsg: "Package name saved.",
+      onDone: load,
+    });
+  };
+
+  const saveServiceAccount = async () => {
+    if (sa.trim() === "") return;
+    const ok = await mutate({
+      title: "Update Play service account",
+      body: "Store the Google Play service-account key (encrypted at rest; never displayed again).",
+      requireReason: true,
+      confirmLabel: "Save key",
+      method: "POST",
+      path: "/api/admin/play-billing",
+      payload: { serviceAccountJson: sa },
+      successMsg: "Service account saved.",
+    });
+    if (ok) { setSa(""); load(); }
+  };
+
+  const clearServiceAccount = async () => {
+    await mutate({
+      title: "Clear Play service account",
+      body: "Remove the stored service-account key. Play Billing verification will stop working until a new key is entered.",
+      requireReason: true,
+      confirmLabel: "Clear key",
+      method: "POST",
+      path: "/api/admin/play-billing",
+      payload: { serviceAccountJson: "" },
+      successMsg: "Service account cleared.",
+      onDone: load,
+    });
+  };
+
+  const saveProducts = async () => {
+    await mutate({
+      title: "Update product mapping",
+      body: "Save the Play Console product-id for each diamond pack.",
+      requireReason: true,
+      confirmLabel: "Save mapping",
+      method: "POST",
+      path: "/api/admin/play-billing",
+      payload: { productIds: products },
+      successMsg: "Product mapping saved.",
+      onDone: load,
+    });
+  };
+
+  const toggleEnabled = async () => {
+    const next = !data.enabled;
+    await mutate({
+      title: next ? "Enable Play Billing" : "Disable Play Billing",
+      body: next
+        ? "Enable Android real-money diamond top-up via Google Play Billing? Requires a valid service account and product mapping."
+        : "Disable Google Play Billing on Android?",
+      requireReason: true,
+      confirmLabel: next ? "Enable" : "Disable",
+      method: "POST",
+      path: "/api/admin/play-billing",
+      payload: { enabled: next },
+      successMsg: next ? "Play Billing enabled." : "Play Billing disabled.",
+      onDone: load,
+    });
+  };
+
+  const test = async () => {
+    setTesting(true);
+    try {
+      const res = await api.post<{ status: "ok" | "not_configured" | "fail"; detail?: string; latencyMs?: number }>("/api/admin/play-billing/test");
+      if (res.status === "ok") toast("ok", `✓ Play service account authenticated${res.latencyMs != null ? ` (${res.latencyMs}ms)` : ""}.`);
+      else if (res.status === "not_configured") toast("err", "No service account configured.");
+      else toast("err", `Play test failed: ${res.detail ?? "unknown error"}.`);
+    } catch (e) {
+      toast("err", e instanceof ApiError ? e.message : "Play test failed.");
+    } finally {
+      setTesting(false);
+    }
+  };
+
+  const productsDirty = JSON.stringify(products) !== JSON.stringify(data.productIds);
+
+  return (
+    <div className="acard" style={{ padding: 20 }}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
+        <div style={{ font: "700 14px var(--sans)", color: "var(--ink-2)" }}>Google Play Billing (Android)</div>
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <span className={`badge-st ${data.enabled ? "st-active" : "st-muted"}`}>{data.enabled ? "Enabled" : "Disabled"}</span>
+          <button className={`abtn ${data.enabled ? "btn-ghost btn-ghost-sm" : "btn-gold-pill sm"}`} onClick={() => void toggleEnabled()}>
+            {data.enabled ? "Disable" : "Enable"}
+          </button>
+        </div>
+      </div>
+      <div style={{ marginTop: 6, font: "500 11px var(--sans)", color: "var(--dim)" }}>
+        Real-money diamond top-up on Android must use Google Play Billing. Enter your Play details below —
+        the service-account key is encrypted at rest and never shown again.
+      </div>
+
+      {/* Package name */}
+      <div style={{ marginTop: 16 }}>
+        <div style={{ font: "600 12px var(--sans)", color: "var(--ink-2)", marginBottom: 6 }}>Package name</div>
+        <div style={{ display: "flex", gap: 8 }}>
+          <input
+            className="mono"
+            value={pkg}
+            onChange={(e) => setPkg(e.target.value)}
+            placeholder="com.filipinodama.app"
+            style={{ flex: 1, background: "#0f0720", border: "1px solid rgba(232, 184, 75, .2)", borderRadius: 7, padding: "8px 10px", color: "var(--gold-lt)", fontSize: 12 }}
+          />
+          <button className="abtn btn-gold-pill sm" disabled={pkg.trim() === data.packageName} onClick={() => void savePackage()}>Save</button>
+        </div>
+      </div>
+
+      {/* Service account */}
+      <div style={{ marginTop: 16 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
+          <div style={{ font: "600 12px var(--sans)", color: "var(--ink-2)" }}>Service-account JSON</div>
+          <span className={`badge-st ${data.serviceAccount.configured ? "st-active" : "st-muted"}`}>
+            {data.serviceAccount.configured ? "Configured" : "Not configured"}
+          </span>
+          {data.serviceAccount.configured && (
+            <span className="dim mono" style={{ fontSize: 10 }}>{data.serviceAccount.clientEmail}</span>
+          )}
+        </div>
+        <textarea
+          value={sa}
+          onChange={(e) => setSa(e.target.value)}
+          placeholder={data.serviceAccount.configured ? "Paste a new key to replace the stored one…" : "Paste the Play Developer API service-account JSON key…"}
+          rows={4}
+          style={{ width: "100%", boxSizing: "border-box", background: "#0f0720", border: "1px solid rgba(232, 184, 75, .2)", borderRadius: 7, padding: "8px 10px", color: "var(--gold-lt)", fontSize: 11, fontFamily: "monospace", resize: "vertical" }}
+        />
+        <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
+          <button className="abtn btn-gold-pill sm" disabled={sa.trim() === ""} onClick={() => void saveServiceAccount()}>Save key</button>
+          {data.serviceAccount.configured && (
+            <button className="abtn btn-ghost btn-ghost-sm" onClick={() => void clearServiceAccount()}>Clear</button>
+          )}
+          <button className="abtn btn-ghost btn-ghost-sm" disabled={testing || !data.serviceAccount.configured} onClick={() => void test()}>
+            {testing ? "Testing…" : "Test connection"}
+          </button>
+        </div>
+      </div>
+
+      {/* Product mapping */}
+      <div style={{ marginTop: 16 }}>
+        <div style={{ font: "600 12px var(--sans)", color: "var(--ink-2)", marginBottom: 8 }}>Diamond pack → Play product ID</div>
+        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+          {data.packs.map((p) => (
+            <div key={p.id} style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+              <div style={{ minWidth: 150 }}>
+                <div style={{ font: "700 12px var(--sans)", color: "var(--ink-2)" }}>{p.label}</div>
+                <div className="dim" style={{ fontSize: 10 }}>💎 {p.diamonds}{p.bonus > 0 ? ` +${p.bonus}` : ""}</div>
+              </div>
+              <input
+                className="mono"
+                value={products[p.id] ?? ""}
+                onChange={(e) => setProducts((m) => ({ ...m, [p.id]: e.target.value }))}
+                placeholder="com.filipinodama.diamonds.xxx"
+                style={{ flex: 1, minWidth: 200, background: "#0f0720", border: "1px solid rgba(232, 184, 75, .2)", borderRadius: 7, padding: "7px 10px", color: "var(--gold-lt)", fontSize: 11 }}
+              />
+            </div>
+          ))}
+        </div>
+        <button className="abtn btn-gold-pill sm" style={{ marginTop: 12 }} disabled={!productsDirty} onClick={() => void saveProducts()}>Save mapping</button>
+      </div>
     </div>
   );
 }
