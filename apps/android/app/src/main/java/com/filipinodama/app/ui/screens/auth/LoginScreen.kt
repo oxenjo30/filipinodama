@@ -197,7 +197,7 @@ fun LoginScreen(
             error?.let { AuthErrorRow(it) }
 
             AuthPrimaryButton(
-                text = if (busy) "Please wait…" else "Sign In",
+                text = if (busy) "Please wait…" else "Sign in",
                 onClick = { submit() },
                 enabled = !busy,
                 loading = busy,
@@ -224,7 +224,7 @@ fun LoginScreen(
         Box(modifier = Modifier.height(12.dp))
 
         AuthSecondaryButton(
-            text = "Continue as Guest",
+            text = "Continue as guest",
             onClick = { playAsGuest() },
             enabled = !busy && !googleBusy
         )

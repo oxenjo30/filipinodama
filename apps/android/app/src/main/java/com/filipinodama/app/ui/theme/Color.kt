@@ -48,8 +48,11 @@ val RankGrandmaster = Color(0xFFB98CFF)
 
 // ---- Button gradient pairs (top -> bottom, per DESIGN_SYSTEM.md `.btn-*`) ----
 // Gold button uses a dark ink text color, all others use TextDefault.
-val ButtonRedTop = Color(0xFFA83744)
-val ButtonRedBottom = Color(0xFF6E1B24)
+// Mockup red-button gradient (d93b52 → a51e35). Was a darker/desaturated
+// A83744→6E1B24; corrected to the mockup value (MATCH-2, systemic — fixes every
+// GameButtonVariant.RED across the app).
+val ButtonRedTop = Color(0xFFD93B52)
+val ButtonRedBottom = Color(0xFFA51E35)
 val ButtonPurpleTop = Color(0xFF3D2A6B)
 val ButtonPurpleBottom = Color(0xFF241640)
 val ButtonBlueTop = Color(0xFF2F5DA8)

@@ -91,7 +91,8 @@ fun NotificationsScreen(onBack: () -> Unit) {
                 "Mark all read",
                 color = Color(0xFFC9A4FF),
                 style = MaterialTheme.typography.labelMedium,
-                modifier = Modifier.clickable(enabled = unread > 0) { scope.launch { NotificationsRepository.markAll() } }.padding(8.dp)
+                // Mockup never gates "Mark all read" (SOC-6) — always tappable.
+                modifier = Modifier.clickable { scope.launch { NotificationsRepository.markAll() } }.padding(8.dp)
             )
         }
 

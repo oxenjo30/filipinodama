@@ -245,9 +245,15 @@ fun ProfileScreen(
                 }
                 Column(modifier = Modifier.weight(1f).padding(start = 20.dp)) {
                     Text("${me.displayName}${me.tag}", color = Color(0xFFF4ECD6), style = MaterialTheme.typography.titleLarge)
-                    if (myGuild != null) {
-                        Text("[${myGuild!!.tag}] ${myGuild!!.name}", color = Color(0xFF9A8BBF), style = MaterialTheme.typography.labelSmall, modifier = Modifier.padding(top = 2.dp))
-                    }
+                    // Guild line — always rendered; "No guild" fallback when the
+                    // player isn't in one (PROF-7), matching the mockup which
+                    // always shows a guild subtitle.
+                    Text(
+                        if (myGuild != null) "[${myGuild!!.tag}] ${myGuild!!.name}" else "No guild",
+                        color = Color(0xFF9A8BBF),
+                        style = MaterialTheme.typography.labelSmall,
+                        modifier = Modifier.padding(top = 2.dp)
+                    )
                     CurrencyAmount(
                         kind = CurrencyIconKind.TROPHY,
                         text = me.trophies.toString(),
