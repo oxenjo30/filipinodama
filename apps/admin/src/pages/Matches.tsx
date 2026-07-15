@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { api } from "../lib/api";
+import { Pagination, usePagination } from "../components/Pagination";
 
 type Player = { id: string; username: string; tag: string } | null;
 
@@ -82,6 +83,8 @@ export function MatchesPage() {
   const [playerId, setPlayerId] = useState("");
   const [loading, setLoading] = useState(true);
   const [selId, setSelId] = useState<string | null>(null);
+  // Client-side pagination of the (already fully fetched) match list.
+  const pg = usePagination(rows, 10);
 
   const load = () => {
     setLoading(true);
@@ -140,7 +143,7 @@ export function MatchesPage() {
               ) : rows.length === 0 ? (
                 <tr><td colSpan={6} className="dim" style={{ textAlign: "center", padding: 24 }}>No matches found.</td></tr>
               ) : (
-                rows.map((m) => (
+                pg.pageItems.map((m) => (
                   <tr key={m.id} className="arow">
                     <td>
                       <div style={{ fontWeight: 700, color: "var(--ink-2)" }}>{playerLabel(m.red)} <span className="dim" style={{ fontWeight: 500 }}>vs</span> {playerLabel(m.blue)}</div>
@@ -165,6 +168,7 @@ export function MatchesPage() {
             </tbody>
           </table>
         </div>
+        {!loading && <Pagination {...pg} noun="matches" />}
       </div>
 
       {selId && <MatchDrawer id={selId} onClose={() => setSelId(null)} />}

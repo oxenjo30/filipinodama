@@ -4,13 +4,43 @@ import { legalMoves, applyMove } from "./engine.js";
 const DEPTH: Record<AiDifficulty, number> = { easy: 2, normal: 4, hard: 7 };
 const BLUNDER: Record<AiDifficulty, number> = { easy: 0.35, normal: 0.08, hard: 0 };
 
+/**
+ * Positional evaluation (higher = better for [me]). Beyond raw material this
+ * rewards the ideas a strong Dama player actually uses, which is what makes
+ * Hard feel "calculating" rather than just deep:
+ *  - Kings are worth much more than men (mobile in all directions).
+ *  - Center squares > edge squares (a piece on the rim has half the moves).
+ *  - Men advancing toward promotion gain value; the closer, the more.
+ *  - Holding your own back rank denies the opponent easy promotions
+ *    (a classic checkers principle) — reward each intact home-row man.
+ * Board is 8x8; red starts at the bottom (rows 5-7) and moves UP (toward r=0),
+ * blue starts at the top and moves DOWN (toward r=7). Kept identical to the
+ * Kotlin port in apps/android/.../engine/Ai.kt so web and mobile play equally.
+ */
 function evaluate(state: GameState, me: PieceColor): number {
   let score = 0;
   for (const p of state.pieces) {
-    const v = p.king ? 3 : 1;
-    // advancement bonus for men
-    const adv = p.king ? 0 : p.color === "red" ? (7 - p.square.r) * 0.05 : p.square.r * 0.05;
-    score += (p.color === me ? 1 : -1) * (v + adv);
+    let v = p.king ? 5 : 1;
+
+    if (!p.king) {
+      // Advancement toward the promotion row (0-1 range), squared so the last
+      // steps before kinging matter most.
+      const rowsToPromote = p.color === "red" ? p.square.r : 7 - p.square.r;
+      const progress = (7 - rowsToPromote) / 7; // 0 at home, 1 at promotion edge
+      v += progress * progress * 0.9;
+
+      // Back-rank hold: a man still on its own home row guards two promotion
+      // squares. Reward keeping the back rank populated.
+      const homeRow = p.color === "red" ? 7 : 0;
+      if (p.square.r === homeRow) v += 0.35;
+    }
+
+    // Central control: distance from the board centre (3.5, 3.5). Central
+    // pieces have more legal moves and influence more of the board.
+    const centreDist = Math.abs(p.square.r - 3.5) + Math.abs(p.square.c - 3.5);
+    v += (7 - centreDist) * 0.03; // ~0..0.2
+
+    score += (p.color === me ? 1 : -1) * v;
   }
   return score;
 }

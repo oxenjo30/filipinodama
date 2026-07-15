@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { api } from "../lib/api";
 import { useAdminMutation } from "../lib/ui";
+import { Pagination, usePagination } from "../components/Pagination";
 
 type PersonRef = { id: string | null; username: string; tag: string; avatarUrl: string | null };
 type ProfileSnapshot = { displayName: string; username: string; tag: string; avatarUrl: string | null; bio: string | null };
@@ -39,6 +40,8 @@ export function Moderation() {
   const [reason, setReason] = useState<string>("");
   const [rows, setRows] = useState<Report[]>([]);
   const [loading, setLoading] = useState(true);
+  // Client-side pagination of the (already fully fetched) reports queue.
+  const pg = usePagination(rows, 10);
 
   const load = () => {
     setLoading(true);
@@ -81,11 +84,14 @@ export function Moderation() {
           <EmptyState title="Queue clear" note="No open reports. Nicely done." />
         )
       ) : (
-        <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-          {rows.map((r) => (
-            <ReportCard key={r.id} r={r} onDone={load} />
-          ))}
-        </div>
+        <>
+          <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+            {pg.pageItems.map((r) => (
+              <ReportCard key={r.id} r={r} onDone={load} />
+            ))}
+          </div>
+          <Pagination {...pg} noun="reports" />
+        </>
       )}
     </>
   );

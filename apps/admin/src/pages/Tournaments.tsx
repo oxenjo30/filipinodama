@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { api } from "../lib/api";
 import { useAdminMutation } from "../lib/ui";
+import { Pagination, usePagination } from "../components/Pagination";
 
 // ── Types (mirror admin-tournaments.ts response shapes) ────────────────────
 
@@ -129,6 +130,8 @@ export function TournamentsPage() {
   const [creating, setCreating] = useState(false);
   const [editing, setEditing] = useState<Tournament | null>(null);
   const [viewingId, setViewingId] = useState<string | null>(null);
+  // Client-side pagination of the (already fully fetched) tournament list.
+  const pg = usePagination(rows, 10);
   // Deep-link from the header global search (handoffv3 row 16): a cup result
   // routes to `?open=<id>`, which opens the same BracketDrawer a row's "View"
   // action does. Consumed once on mount, then stripped from the URL.
@@ -227,7 +230,7 @@ export function TournamentsPage() {
                   </td>
                 </tr>
               ) : (
-                rows.map((t) => (
+                pg.pageItems.map((t) => (
                   <TournamentRow
                     key={t.id}
                     t={t}
@@ -239,6 +242,7 @@ export function TournamentsPage() {
               )}
             </tbody>
           </table>
+          {!loading && <Pagination {...pg} noun="tournaments" />}
         </div>
       </div>
 

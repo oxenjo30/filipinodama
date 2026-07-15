@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { api } from "../lib/api";
 import { useAdminMutation } from "../lib/ui";
+import { Pagination, usePagination } from "../components/Pagination";
 
 // StoreItem.type — mirrors ItemType in schema.prisma.
 const ITEM_TYPES = ["BOARD", "SKIN", "AVATAR", "FRAME", "EMOTE", "BUNDLE", "SEASON_PASS"] as const;
@@ -79,6 +80,10 @@ export function StoreCatalog() {
   const [form, setForm] = useState<Form | null>(null);
   const [editId, setEditId] = useState<string | null>(null);
   const mutate = useAdminMutation();
+
+  // Client-side pagination of the (already fully fetched) catalog. pg.pageItems
+  // is what the table renders; the footer control lives below the table.
+  const pg = usePagination(rows, 10);
 
   const load = () => {
     setLoading(true);
@@ -383,7 +388,7 @@ export function StoreCatalog() {
                   </td>
                 </tr>
               ) : (
-                rows.map((it) => (
+                pg.pageItems.map((it) => (
                   <tr key={it.id} className="arow">
                     <td>
                       <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
@@ -447,6 +452,7 @@ export function StoreCatalog() {
             </tbody>
           </table>
         </div>
+        {!loading && <Pagination {...pg} noun="items" />}
       </div>
     </>
   );

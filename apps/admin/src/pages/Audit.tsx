@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { api } from "../lib/api";
+import { Pagination, usePagination } from "../components/Pagination";
 
 type Row = {
   id: string;
@@ -17,6 +18,8 @@ export function AuditPage() {
   const [rows, setRows] = useState<Row[]>([]);
   const [action, setAction] = useState("");
   const [loading, setLoading] = useState(true);
+  // Client-side pagination of the (already fully fetched) audit list.
+  const pg = usePagination(rows, 10);
   // "My activity log" (account menu, handoffv3 row 17) deep-links here with
   // `?actor=<adminId>` — filter to just that admin's own audit rows.
   const [searchParams, setSearchParams] = useSearchParams();
@@ -64,7 +67,7 @@ export function AuditPage() {
               ) : rows.length === 0 ? (
                 <tr><td colSpan={5} className="dim" style={{ textAlign: "center", padding: 24 }}>No audit entries.</td></tr>
               ) : (
-                rows.map((r) => (
+                pg.pageItems.map((r) => (
                   <tr key={r.id} className="arow">
                     <td className="mono dim" style={{ whiteSpace: "nowrap", fontSize: 11, fontWeight: 500 }}>{new Date(r.createdAt).toLocaleString()}</td>
                     <td><span style={{ color: "var(--ink-3)" }}>{r.actor.username}</span> <span className="dim mono">{r.actor.tag}</span></td>
@@ -77,6 +80,7 @@ export function AuditPage() {
             </tbody>
           </table>
         </div>
+        {!loading && <Pagination {...pg} noun="entries" />}
       </div>
     </>
   );
