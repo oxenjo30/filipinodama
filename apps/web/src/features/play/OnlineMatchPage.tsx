@@ -230,21 +230,32 @@ export function OnlineMatchPage() {
     return () => window.clearTimeout(t);
   }, [resuming, state, error, navigate, reset, showToast]);
 
-  // Branded pre-match loader, mirroring the prototype's playWithLoader: on a FRESH
-  // entry (not a resync into an existing match) show the themed LoadingScreen with
-  // the correct context — "ranked" for the ladder, "matchmaking" for casual — then
-  // reveal the matchmaking/search UI. Skipped when resuming a live match OR joining
-  // as a spectator (neither needs the "finding an opponent" framing).
-  const [entering, setEntering] = useState(() => {
-    if (spectateId) return false;
-    const st = useOnlineStore.getState();
-    return !(st.matchId && (st.status === "playing" || st.status === "found"));
-  });
+  // Pre-BOARD loader — shown AFTER an opponent is found, as the dramatic
+  // "entering the arena" transition into the match (owner UX fix: find the
+  // opponent FIRST, then the loader — not the other way around). It runs the
+  // moment status flips to "found"/"playing" and stays up until BOTH (a) the
+  // live board `state` has arrived AND (b) the loader has had a minimum on-screen
+  // time so it always visibly fills to 100% instead of flashing. Spectators skip
+  // it (they join a match already in progress, no "finding" framing).
+  const [enteringMatch, setEnteringMatch] = useState(false);
+  const [loaderMinElapsed, setLoaderMinElapsed] = useState(false);
   useEffect(() => {
-    if (!entering) return;
-    const t = window.setTimeout(() => setEntering(false), ONLINE_LOADER_MS);
-    return () => window.clearTimeout(t);
-  }, [entering]);
+    // Fire only when a FRESH match is found via matchmaking — not a spectate and
+    // not a resume (the `resuming` guard below owns the resume loader with its
+    // own timeout/bounce-out). "found" is the moment matchmaking pairs us.
+    const freshlyFound = !spectateId && !resuming && status === "found";
+    if (freshlyFound && !enteringMatch) {
+      setEnteringMatch(true);
+      setLoaderMinElapsed(false);
+      const t = window.setTimeout(() => setLoaderMinElapsed(true), ONLINE_LOADER_MS);
+      return () => window.clearTimeout(t);
+    }
+  }, [status, spectateId, resuming, enteringMatch]);
+  // Dismiss the loader only once the board is ready AND the min time has passed —
+  // so progress always completes to 100% before the board appears (no mid-jump).
+  useEffect(() => {
+    if (enteringMatch && state && loaderMinElapsed) setEnteringMatch(false);
+  }, [enteringMatch, state, loaderMinElapsed]);
 
   const myTurn = !!state && !state.result && state.turn === myColor && status === "playing";
   const flip = myColor === "blue"; // blue player views from their side
@@ -259,15 +270,23 @@ export function OnlineMatchPage() {
   // Static rotating Tip of the Day (no backend needed); rotates by day-of-year.
   const tip = TIPS[Math.floor(Date.now() / 86_400_000) % TIPS.length];
 
-  // ── Branded pre-match loader (prototype playWithLoader) — themed per mode:
-  //    ranked ladder vs casual matchmaking. Shown briefly on fresh entry only. ──
-  if (entering) {
+  // ── Pre-board loader — shown ONLY after an opponent is found (or a match is
+  //    resuming), as the transition into the board. Runs until the board is
+  //    ready so its progress always completes to 100% first. Comes AFTER the
+  //    matchmaking search screen below in the flow (find opponent → loader). ──
+  if (enteringMatch) {
     return <LoadingScreen context={mode === "RANKED" ? "ranked" : "matchmaking"} />;
   }
 
   // ── MATCHMAKING screen (reproduced from prototype isMatchmaking, lines 345-423) ──
-  if (status === "searching" || status === "found" || (status === "idle" && !state)) {
-    const found = status === "found" && !!opponent;
+  // Shown while SEARCHING (before an opponent is found). Once found, the loader
+  // above takes over.
+  if (status === "searching" || (status === "idle" && !state)) {
+    // This screen is now the SEARCHING state only — the "match found" moment is
+    // the loader transition above (owner UX fix). So `found` is always false
+    // here; kept as a const so the existing conditional markup below is a no-op
+    // rather than being ripped out.
+    const found = false;
     const myTrophies = me?.trophies ?? 0;
     const myTier = rankTierFor(myTrophies);
     const oppTier = opponent ? rankTierFor(opponent.trophies) : myTier;
