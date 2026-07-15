@@ -79,6 +79,9 @@ fun DiscoverGuildsScreen(onBack: () -> Unit, onRequireSignIn: () -> Unit = {}) {
     var previewGuildId by remember { mutableStateOf<String?>(null) }
     // Review M2: surface a join failure instead of swallowing it silently.
     var toast by remember { mutableStateOf<String?>(null) }
+    // Guilds this session has successfully requested to join — drives the
+    // "Request Sent ✓" button state so a tap gives immediate feedback.
+    var requestedIds by remember { mutableStateOf(setOf<String>()) }
 
     fun loadBrowse(q: String) {
         scope.launch {
@@ -182,6 +185,7 @@ fun DiscoverGuildsScreen(onBack: () -> Unit, onRequireSignIn: () -> Unit = {}) {
                             card = card,
                             isMine = false,
                             busy = busy,
+                            requested = requestedIds.contains(card.id),
                             onOpenPreview = { previewGuildId = card.id },
                             onJoin = {
                                 if (me == null) {
@@ -190,12 +194,14 @@ fun DiscoverGuildsScreen(onBack: () -> Unit, onRequireSignIn: () -> Unit = {}) {
                                 } else {
                                     busy = true
                                     scope.launch {
-                                        // Review M2: the join result was previously
-                                        // SWALLOWED — a failure left a dead button with
-                                        // no feedback. Now surface it (and route an auth
-                                        // error to the sign-in prompt).
+                                        // On success flip the button to "Request Sent ✓"
+                                        // (owner: the tap must give feedback). On failure
+                                        // surface the message; auth errors → sign-in.
                                         when (val r = GuildsRepository.join(card.id)) {
-                                            is SocialResult.Success -> { toast = null; loadBrowse(query) }
+                                            is SocialResult.Success -> {
+                                                toast = null
+                                                requestedIds = requestedIds + card.id
+                                            }
                                             is SocialResult.Failure ->
                                                 if (com.filipinodama.app.ui.components.isAuthError(r.code)) onRequireSignIn()
                                                 else toast = r.message

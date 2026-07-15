@@ -17,6 +17,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -110,8 +111,30 @@ fun OnlineMatchScreen(
 
     val gs = ui.gameState
     if (gs == null) {
+        // The match state hasn't arrived. Two cases:
+        //  1. ENDED — the server said no-such-match (an abandoned/forfeited match
+        //     that's already gone from live memory, e.g. resuming a stale
+        //     "Continue" card). Don't spin on "Loading match…" forever — exit
+        //     back so the resume card refreshes away.
+        //  2. Still genuinely loading — show the loader, but with a TIMEOUT so a
+        //     resync that never resolves (dead match) can't strand the player.
+        if (ui.status == MatchStatus.ENDED) {
+            LaunchedEffect(Unit) { onExit() }
+            return
+        }
+        // Give the resync ~8s; if no state arrives, the match is unresumable — bail.
+        LaunchedEffect(ui.matchId) {
+            kotlinx.coroutines.delay(8000)
+            if (MatchRepository.state.value.gameState == null) {
+                MatchRepository.reset()
+                onExit()
+            }
+        }
         Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background), contentAlignment = Alignment.Center) {
-            Text("Loading match…", color = Ink, style = MaterialTheme.typography.bodyLarge)
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                CircularProgressIndicator(color = GoldLt)
+                Text("Loading match…", color = Ink, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.padding(top = 14.dp))
+            }
         }
         return
     }

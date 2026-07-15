@@ -725,7 +725,7 @@ private fun JoinRequestRow(request: GuildJoinRequestDto, busy: Boolean, onOpenPr
  * Compose, so tapping Join does not also fire the row's preview open).
  */
 @Composable
-fun BrowseGuildRow(card: GuildCardDto, isMine: Boolean, busy: Boolean, onOpenPreview: () -> Unit, onJoin: () -> Unit) {
+fun BrowseGuildRow(card: GuildCardDto, isMine: Boolean, busy: Boolean, requested: Boolean = false, onOpenPreview: () -> Unit, onJoin: () -> Unit) {
     val crest = resolveGuildCrest(card.crestKey, card.id)
     val level = (card.weeklyPoints.coerceAtLeast(0) / 1000) + 1
     Row(
@@ -754,19 +754,35 @@ fun BrowseGuildRow(card: GuildCardDto, isMine: Boolean, busy: Boolean, onOpenPre
             }
             Text("${card.memberCount} members · ${card.weeklyPoints} pts", color = Ink2, style = MaterialTheme.typography.labelSmall, modifier = Modifier.padding(top = 3.dp))
         }
+        // Button label: "Join" is the CTA (approval is universal, so the tap
+        // sends a REQUEST); after a successful tap it flips to "Request Sent" and
+        // disables so the player gets clear feedback (owner: "when I click the
+        // button nothing happens — it should change to sent").
+        val label = when {
+            isMine -> "Your Guild"
+            requested -> "Request Sent ✓"
+            card.joinPolicy == "invite" -> "Members only"
+            else -> "Join"
+        }
+        val actionable = !isMine && !busy && !requested && card.joinPolicy != "invite"
         Text(
-            // Approval is universal (owner policy): non-invite guilds are always
-            // "Request", never an instant "Join".
-            if (isMine) "Your Guild" else if (card.joinPolicy == "invite") "Members only" else "Request",
-            color = if (isMine) Ink2 else Color(0xFF2A1608),
+            label,
+            color = when {
+                isMine || card.joinPolicy == "invite" -> Ink2
+                requested -> Color(0xFF7EE6A4)
+                else -> Color(0xFF2A1608)
+            },
             style = MaterialTheme.typography.labelMedium,
             modifier = Modifier
                 .background(
-                    if (isMine) androidx.compose.ui.graphics.Brush.verticalGradient(listOf(Color.Black.copy(alpha = 0.3f), Color.Black.copy(alpha = 0.3f)))
-                    else androidx.compose.ui.graphics.Brush.verticalGradient(listOf(Color(0xFFEFC25A), Color(0xFFC9971F))),
+                    when {
+                        isMine || card.joinPolicy == "invite" -> androidx.compose.ui.graphics.Brush.verticalGradient(listOf(Color.Black.copy(alpha = 0.3f), Color.Black.copy(alpha = 0.3f)))
+                        requested -> androidx.compose.ui.graphics.Brush.verticalGradient(listOf(Color(0x1F5FD48A), Color(0x1F5FD48A)))
+                        else -> androidx.compose.ui.graphics.Brush.verticalGradient(listOf(Color(0xFFEFC25A), Color(0xFFC9971F)))
+                    },
                     RoundedCornerShape(9.dp)
                 )
-                .clickable(enabled = !isMine && !busy && card.joinPolicy != "invite", onClick = onJoin)
+                .clickable(enabled = actionable, onClick = onJoin)
                 .padding(horizontal = 14.dp, vertical = 9.dp)
         )
     }

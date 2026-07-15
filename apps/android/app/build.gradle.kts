@@ -62,9 +62,17 @@ android {
         // reconciled/rolled-back by the server's authoritative echo) so a laggy
         // connection no longer freezes the board waiting for the round-trip;
         // "Sending move…" hint while a move is in flight. (Pairs with a server-
-        // side connectionStateRecovery change that deploys with the API.)
-        versionCode = 15
-        versionName = "0.1.14"
+        // side connectionStateRecovery change that deploys with the API.) 16 =
+        // matchmaking no longer strands a player whose socket reconnected before
+        // pairing (server resolves the CURRENT socket by userId + signals a
+        // dropped player instead of silent-dropping — pairs with a server change)
+        // + mobile no longer hangs on "Loading match…" for an abandoned/gone
+        // match (exits on ENDED + an 8s resync timeout) + Home re-fetches the
+        // active-match card on resume so a stale "Continue" card auto-clears +
+        // Discover-Guilds join button now reads "Join" → "Request Sent ✓" with
+        // real feedback (was silent).
+        versionCode = 16
+        versionName = "0.1.15"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
