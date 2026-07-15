@@ -303,85 +303,91 @@ function AnalyticsBody({ d }: { d: AnalyticsData }) {
         </div>
       </div>
 
-      {/* Gold spend by item category — real store-purchase sinks, by StoreItem type. */}
-      <div className="acard" style={{ padding: 20, marginTop: 14 }}>
-        <div style={{ font: "700 13px var(--sans)", color: "var(--ink-2)" }}>
-          Gold spend by category <span style={{ fontWeight: 500, color: "var(--dim)" }}>· store purchases ({d.window})</span>
-        </div>
-        {d.goldByCategory.length === 0 ? (
-          <div className="dim" style={{ font: "600 12px var(--sans)", marginTop: 16 }}>No store purchases in this window.</div>
-        ) : (
-          <div style={{ marginTop: 16, display: "flex", flexDirection: "column", gap: 12 }}>
-            {d.goldByCategory.map((c, i) => (
-              <div key={c.category}>
-                <div style={{ display: "flex", justifyContent: "space-between", font: "600 12px var(--sans)", color: "var(--ink-3)" }}>
-                  <span>{catLabel(c.category)}</span>
-                  <span className="mono dim">{c.gold.toLocaleString()} gold · {Math.round(c.pct * 100)}%</span>
+      {/* Gold spend by category (left) + Match outcomes (right) — paired into one
+          balanced row so neither sits alone with dead space beside it. */}
+      <div style={{ display: "grid", gridTemplateColumns: "1.5fr 1fr", gap: 14, marginTop: 14, alignItems: "start" }} className="ov-2col">
+        <div className="acard" style={{ padding: 20 }}>
+          <div style={{ font: "700 13px var(--sans)", color: "var(--ink-2)" }}>
+            Gold spend by category <span style={{ fontWeight: 500, color: "var(--dim)" }}>· store purchases ({d.window})</span>
+          </div>
+          {d.goldByCategory.length === 0 ? (
+            <div className="dim" style={{ font: "600 12px var(--sans)", marginTop: 16 }}>No store purchases in this window.</div>
+          ) : (
+            <div style={{ marginTop: 16, display: "flex", flexDirection: "column", gap: 12 }}>
+              {d.goldByCategory.map((c, i) => (
+                <div key={c.category}>
+                  <div style={{ display: "flex", justifyContent: "space-between", font: "600 12px var(--sans)", color: "var(--ink-3)" }}>
+                    <span>{catLabel(c.category)}</span>
+                    <span className="mono dim">{c.gold.toLocaleString()} gold · {Math.round(c.pct * 100)}%</span>
+                  </div>
+                  <div style={{ height: 9, borderRadius: 5, overflow: "hidden", marginTop: 4, background: "var(--bg-2)" }}>
+                    <div style={{ width: `${Math.max(1, (c.gold / (d.goldByCategory[0]?.gold || 1)) * 100)}%`, height: "100%", background: CAT_COLORS[i % CAT_COLORS.length] }} />
+                  </div>
                 </div>
-                <div style={{ height: 9, borderRadius: 5, overflow: "hidden", marginTop: 4, background: "var(--bg-2)" }}>
-                  <div style={{ width: `${Math.max(1, (c.gold / (d.goldByCategory[0]?.gold || 1)) * 100)}%`, height: "100%", background: CAT_COLORS[i % CAT_COLORS.length] }} />
+              ))}
+            </div>
+          )}
+        </div>
+
+        <div className="acard" style={{ padding: 20 }}>
+          <div style={{ font: "700 13px var(--sans)", color: "var(--ink-2)" }}>Match outcomes <span style={{ fontWeight: 500, color: "var(--dim)" }}>· {d.window}</span></div>
+          <div style={{ marginTop: 14, display: "flex", flexDirection: "column", gap: 11 }}>
+            <Stat label="Red wins" value={d.matchOutcomes.redWins} color="var(--red-lt)" />
+            <Stat label="Blue wins" value={d.matchOutcomes.blueWins} color="var(--blue)" />
+            <Stat label="Draws" value={d.matchOutcomes.draws} color="var(--dim-2)" />
+            <Stat label="Unfinished" value={d.matchOutcomes.unfinished} color="var(--dim)" />
+            <div style={{ borderTop: "1px solid var(--edge)", marginTop: 4, paddingTop: 10, display: "flex", justifyContent: "space-between", font: "700 12px var(--sans)", color: "var(--ink-2)" }}>
+              <span>Total</span>
+              <span className="mono">{d.matchOutcomes.total.toLocaleString()}</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Rank-tier distribution (left) + Top cosmetics table (right) — paired so
+          the tier bars and the ownership table fill one row with no orphan. */}
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14, marginTop: 14, alignItems: "start" }} className="ov-2col">
+        <div className="acard" style={{ padding: 20 }}>
+          <div style={{ font: "700 13px var(--sans)", color: "var(--ink-2)" }}>Rank-tier distribution <span style={{ fontWeight: 500, color: "var(--dim)" }}>· all-time</span></div>
+          <div style={{ marginTop: 16, display: "flex", flexDirection: "column", gap: 12 }}>
+            {d.rankTiers.map((t) => (
+              <div key={t.key}>
+                <div style={{ display: "flex", justifyContent: "space-between", font: "600 12px var(--sans)", color: "var(--ink-3)" }}>
+                  <span>{t.label}</span>
+                  <span className="mono dim">{t.count.toLocaleString()} · {Math.round(t.pct * 100)}%</span>
+                </div>
+                <div style={{ height: 8, borderRadius: 5, overflow: "hidden", marginTop: 4, background: "var(--bg-2)" }}>
+                  <div style={{ width: `${(t.count / maxTier) * 100}%`, height: "100%", background: t.accent }} />
                 </div>
               </div>
             ))}
           </div>
-        )}
-      </div>
+        </div>
 
-      {/* Match outcomes — compact stat block. (Matches by mode already lives in the
-          mockup's right-column slot above, so this panel stands alone here.) */}
-      <div className="acard" style={{ padding: 20, marginTop: 14, maxWidth: 420 }}>
-        <div style={{ font: "700 13px var(--sans)", color: "var(--ink-2)" }}>Match outcomes</div>
-        <div style={{ marginTop: 14, display: "flex", flexDirection: "column", gap: 11 }}>
-          <Stat label="Red wins" value={d.matchOutcomes.redWins} color="var(--red-lt)" />
-          <Stat label="Blue wins" value={d.matchOutcomes.blueWins} color="var(--blue)" />
-          <Stat label="Draws" value={d.matchOutcomes.draws} color="var(--dim-2)" />
-          <Stat label="Unfinished" value={d.matchOutcomes.unfinished} color="var(--dim)" />
-          <div style={{ borderTop: "1px solid var(--edge)", marginTop: 4, paddingTop: 10, display: "flex", justifyContent: "space-between", font: "700 12px var(--sans)", color: "var(--ink-2)" }}>
-            <span>Total</span>
-            <span className="mono">{d.matchOutcomes.total.toLocaleString()}</span>
+        <div className="acard" style={{ padding: 20 }}>
+          <div style={{ font: "700 13px var(--sans)", color: "var(--ink-2)", marginBottom: 14 }}>Top cosmetics <span style={{ fontWeight: 500, color: "var(--dim)" }}>· by ownership</span></div>
+          <div style={{ overflowX: "auto" }}>
+            <table className="tbl" style={{ width: "100%" }}>
+              <thead>
+                <tr><th>Item</th><th>Type</th><th className="num">Owners</th><th className="num">%</th></tr>
+              </thead>
+              <tbody>
+                {d.topItems.length === 0 ? (
+                  <tr><td colSpan={4} className="dim" style={{ textAlign: "center", padding: 24 }}>No inventory ownership data.</td></tr>
+                ) : (
+                  d.topItems.map((it) => (
+                    <tr key={it.itemId}>
+                      <td>{it.name}</td>
+                      <td className="dim">{it.type ?? "—"}</td>
+                      <td className="num">{it.owners.toLocaleString()}</td>
+                      <td className="num">{Math.round(it.pct * 100)}%</td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
           </div>
         </div>
-      </div>
-
-      {/* Rank-tier distribution — one bar per tier, colored by accent. */}
-      <div className="acard" style={{ padding: 20, marginTop: 14 }}>
-        <div style={{ font: "700 13px var(--sans)", color: "var(--ink-2)" }}>Rank-tier distribution <span style={{ fontWeight: 500, color: "var(--dim)" }}>· all-time</span></div>
-        <div style={{ marginTop: 16, display: "flex", flexDirection: "column", gap: 12 }}>
-          {d.rankTiers.map((t) => (
-            <div key={t.key}>
-              <div style={{ display: "flex", justifyContent: "space-between", font: "600 12px var(--sans)", color: "var(--ink-3)" }}>
-                <span>{t.label}</span>
-                <span className="mono dim">{t.count.toLocaleString()} · {Math.round(t.pct * 100)}%</span>
-              </div>
-              <div style={{ height: 8, borderRadius: 5, overflow: "hidden", marginTop: 4, background: "var(--bg-2)" }}>
-                <div style={{ width: `${(t.count / maxTier) * 100}%`, height: "100%", background: t.accent }} />
-              </div>
-            </div>
-          ))}
-        </div>
-      </div>
-
-      {/* Top cosmetics by ownership. */}
-      <div className="panel" style={{ marginTop: 14 }}>
-        <table className="tbl">
-          <thead>
-            <tr><th>Item</th><th>Type</th><th className="num">Owners</th><th className="num">% of players</th></tr>
-          </thead>
-          <tbody>
-            {d.topItems.length === 0 ? (
-              <tr><td colSpan={4} className="dim" style={{ textAlign: "center", padding: 24 }}>No inventory ownership data.</td></tr>
-            ) : (
-              d.topItems.map((it) => (
-                <tr key={it.itemId}>
-                  <td>{it.name}</td>
-                  <td className="dim">{it.type ?? "—"}</td>
-                  <td className="num">{it.owners.toLocaleString()}</td>
-                  <td className="num">{Math.round(it.pct * 100)}%</td>
-                </tr>
-              ))
-            )}
-          </tbody>
-        </table>
       </div>
 
       {/* Honesty footer — the anti-fabrication point of this page. */}
