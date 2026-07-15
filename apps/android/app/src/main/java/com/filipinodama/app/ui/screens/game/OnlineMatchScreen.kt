@@ -121,6 +121,10 @@ fun OnlineMatchScreen(
     val myTurn = gs.result == null && gs.turn == myColor && ui.status == MatchStatus.PLAYING
     val flip = myColor == PieceColors.BLUE
 
+    // Board sound effects (move / capture / king / win / lose), diffed from the
+    // live state. myColor is null for a spectator → neutral end flourish.
+    com.filipinodama.app.data.audio.GameSounds(state = gs, myColor = myColor)
+
     // Real capture counters (mockup's ×N chips): captured-by-a-side = 12 minus
     // the other side's remaining pieces.
     val redRemaining = gs.pieces.count { it.color == PieceColors.RED }

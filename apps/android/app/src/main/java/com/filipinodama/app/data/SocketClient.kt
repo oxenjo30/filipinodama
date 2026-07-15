@@ -62,7 +62,18 @@ object SocketClient {
         // is constructed directly here instead of via the fluent builder.
         val options = IO.Options().apply {
             path = SOCKET_PATH
-            transports = arrayOf("websocket")
+            // Polling-first, then upgrade to websocket — MATCHES THE WEB CLIENT
+            // (apps/web/src/lib/socket.ts). websocket-ONLY was the bug behind
+            // "matchmaking never finds a match / the 8-20s AI fallback never
+            // fires": a raw websocket upgrade could fail to carry the fd_access
+            // cookie, so the socket never authenticated and the server never
+            // received mm:join. The HTTP long-polling handshake is a normal XHR
+            // through OkHttp's cookie jar, so it reliably carries fd_access,
+            // authenticates, THEN upgrades to websocket (server has upgrades on).
+            // Matchmaking is the only realtime feature with no REST fallback, so
+            // it was the one that visibly broke; presence/chat/rooms/DM degraded
+            // silently under the same failure.
+            transports = arrayOf("polling", "websocket")
             extraHeaders = mapOf("User-Agent" to listOf(MOBILE_USER_AGENT))
             callFactory = okHttpClient
             webSocketFactory = okHttpClient

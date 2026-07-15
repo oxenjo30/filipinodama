@@ -91,16 +91,24 @@ fun PrivateRoomScreen(
     deepLinkCode: String? = null,
     deepLinkSpectate: Boolean = false,
     onBack: () -> Unit,
-    onEnterMatch: () -> Unit
+    onEnterMatch: () -> Unit,
+    // Hosting or joining a private room needs a real account (the room socket
+    // is auth'd). An anonymous user is shown a confirm prompt first, then
+    // routed to Login/Signup — instead of the old silent no-launch.
+    onRequireSignIn: () -> Unit = {}
 ) {
     val ui by RoomRepository.state.collectAsState()
     val authState by AuthRepository.state.collectAsState()
     val myUserId = authState.user?.id
+    val signedIn = authState.user != null && authState.user?.isGuest != true
     val scope = rememberCoroutineScope()
     var joinInput by remember { mutableStateOf("") }
     var mode by remember { mutableStateOf(RoomScreenMode.CHOOSE) }
     var toast by remember { mutableStateOf<String?>(null) }
     var resumeAttempted by remember { mutableStateOf(false) }
+    // When set, the "sign in to host/join a room" confirm dialog is shown; its
+    // label describes the action ("host a room" / "join a room").
+    var signInPromptAction by remember { mutableStateOf<String?>(null) }
 
     // ── Deep link: ?code=X auto-join (or auto-spectate) ──
     LaunchedEffect(deepLinkCode) {
@@ -189,7 +197,13 @@ fun PrivateRoomScreen(
                 error = (ui.error as? RoomError.NotFound)?.let { "No room found for that code." }
                     ?: (ui.error as? RoomError.Banned)?.let { "You're banned from that room." },
                 onSubmit = {
+                    // Joining a room also requires an account (owner decision
+                    // 2026-07-15): the realtime socket rejects unauthenticated
+                    // connections, so every room player must be signed in. An
+                    // anonymous user gets the same "Sign in required" prompt as
+                    // hosting rather than a silent failed connection.
                     if (isValidRoomCode(joinInput)) {
+                        if (!signedIn) { signInPromptAction = "join a room"; return@JoinState }
                         mode = RoomScreenMode.JOINING
                         scope.launch { RoomRepository.join(joinInput) }
                     }
@@ -197,8 +211,16 @@ fun PrivateRoomScreen(
                 onBack = { mode = RoomScreenMode.CHOOSE; RoomRepository.clearError() }
             )
             else -> ChooseState(
-                onCreateRoom = { scope.launch { RoomRepository.create() } },
-                onOpenJoin = { mode = RoomScreenMode.JOIN }
+                onCreateRoom = {
+                    if (!signedIn) signInPromptAction = "host a room"
+                    else scope.launch { RoomRepository.create() }
+                },
+                // Joining also needs an account (see JoinState onSubmit) — prompt
+                // sign-in before showing the code-entry screen for an anon user.
+                onOpenJoin = {
+                    if (!signedIn) signInPromptAction = "join a room"
+                    else mode = RoomScreenMode.JOIN
+                }
             )
         }
 
@@ -219,6 +241,21 @@ fun PrivateRoomScreen(
                 }
             }
         }
+    }
+
+    // Sign-in-required prompt (owner: "create a modal prompt first that
+    // creating a Host Room requires them to sign, if they click Okay, they
+    // proceed to login"). Uses the shared royal-themed SignInRequiredDialog —
+    // the same universal modal every gated action reuses.
+    signInPromptAction?.let { action ->
+        com.filipinodama.app.ui.components.SignInRequiredDialog(
+            action = action,
+            onDismiss = { signInPromptAction = null },
+            onConfirm = {
+                signInPromptAction = null
+                onRequireSignIn()
+            }
+        )
     }
 }
 

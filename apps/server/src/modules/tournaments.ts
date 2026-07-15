@@ -1,7 +1,13 @@
 /**
- * Player-facing tournament routes — browse, join, leave. requireAuth on all
- * routes; join is additionally guest-blocked (guests can't hold gold
- * meaningfully / farmable — mirrors reports.ts's GUEST_CANNOT_REPORT block).
+ * Player-facing tournament routes — browse, join, leave.
+ *
+ * BROWSE is OPEN (owner directive 2026-07-15: "tournament page should not be
+ * gated — it is when they join that they'll be asked to sign in"). The two
+ * READ routes use attachUser (optional auth): an anonymous user can list and
+ * open tournaments; their "joined"/"myEntry" flags are simply absent. The two
+ * WRITE routes (join/leave) keep requireAuth, and join stays guest-blocked
+ * (guests can't hold gold meaningfully / farmable — mirrors reports.ts's
+ * GUEST_CANNOT_REPORT block).
  *
  * join/leave delegate entirely to tournaments-core.ts, which already owns
  * every money-invariant + audit row for those two actions — this module adds
@@ -13,25 +19,30 @@
 import type { FastifyInstance } from "fastify";
 import { prisma } from "../db/client.js";
 import { ok, err } from "../lib/errors.js";
-import { requireAuth } from "../auth/guards.js";
+import { requireAuth, attachUser } from "../auth/guards.js";
 import { joinTournament, leaveTournament } from "./tournaments-core.js";
 
 export async function tournamentsRoutes(app: FastifyInstance) {
-  // GET /api/tournaments?status=OPEN|RUNNING — public list of joinable/live tournaments
-  app.get("/tournaments", { preHandler: requireAuth }, async (req) => {
+  // GET /api/tournaments?status=OPEN|RUNNING — public list of joinable/live
+  // tournaments. Optional auth (attachUser): browsable while signed out; the
+  // per-row "joined" flag is only computed when a user is present.
+  app.get("/tournaments", { preHandler: attachUser }, async (req) => {
     const q = req.query as { status?: string };
     const status = q.status === "OPEN" || q.status === "RUNNING" ? q.status : undefined;
-    const userId = req.userId!;
+    const userId = req.userId;
 
     const rows = await prisma.tournament.findMany({
       where: status ? { status } : { status: { in: ["OPEN", "RUNNING"] } },
       orderBy: [{ createdAt: "desc" }, { id: "desc" }],
     });
 
-    const myEntries = await prisma.tournamentEntry.findMany({
-      where: { tournamentId: { in: rows.map((r) => r.id) }, userId },
-      select: { tournamentId: true },
-    });
+    // Anonymous browser: no entries to look up, nothing is "joined".
+    const myEntries = userId
+      ? await prisma.tournamentEntry.findMany({
+          where: { tournamentId: { in: rows.map((r) => r.id) }, userId },
+          select: { tournamentId: true },
+        })
+      : [];
     const joinedSet = new Set(myEntries.map((e) => e.tournamentId));
 
     const items = rows.map((t) => ({
@@ -51,8 +62,10 @@ export async function tournamentsRoutes(app: FastifyInstance) {
     return ok({ items });
   });
 
-  // GET /api/tournaments/:id — detail + bracket + myEntry
-  app.get<{ Params: { id: string } }>("/tournaments/:id", { preHandler: requireAuth }, async (req) => {
+  // GET /api/tournaments/:id — detail + bracket + myEntry. Optional auth
+  // (attachUser): browsable while signed out; myEntry is null for anonymous
+  // (the .find below matches nothing when req.userId is undefined).
+  app.get<{ Params: { id: string } }>("/tournaments/:id", { preHandler: attachUser }, async (req) => {
     const t = await prisma.tournament.findUnique({ where: { id: req.params.id } });
     if (!t) throw err.notFound("NO_TOURNAMENT", "Tournament not found");
 

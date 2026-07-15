@@ -161,15 +161,34 @@ fun ProfileScreen(
     }
 
     if (me == null) {
-        Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background), contentAlignment = Alignment.Center) {
+        // Anonymous / signed-out: the Profile tab is browsable but has no data
+        // to show, so it's an empty state WITH a real call-to-action (owner:
+        // "Profile page doesn't have a login link if it's gated. Make it easier
+        // for anonymous to sign up or login"). The gold button routes to Login.
+        Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background).padding(28.dp), contentAlignment = Alignment.Center) {
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                Text("Sign in to view your profile", color = GoldLt, style = MaterialTheme.typography.titleLarge)
+                Text(
+                    "Sign in to view your profile",
+                    color = GoldLt,
+                    style = MaterialTheme.typography.titleLarge,
+                    textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                )
                 Text(
                     "Your rank, trophies, match history and achievements live on your account.",
                     color = Ink2,
                     style = MaterialTheme.typography.bodyMedium,
+                    textAlign = androidx.compose.ui.text.style.TextAlign.Center,
                     modifier = Modifier.padding(top = 8.dp)
                 )
+                Box(
+                    modifier = Modifier
+                        .padding(top = 22.dp)
+                        .clickable(onClick = onGoToSignIn)
+                        .background(Brush.verticalGradient(listOf(Color(0xFFEFC25A), Color(0xFFC9971F))), RoundedCornerShape(14.dp))
+                        .padding(horizontal = 36.dp, vertical = 14.dp)
+                ) {
+                    Text("Sign In / Create Account", color = Color(0xFF3A2405), style = MaterialTheme.typography.titleMedium)
+                }
             }
         }
         return

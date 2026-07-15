@@ -68,7 +68,7 @@ import kotlinx.coroutines.launch
  * Language tiles show an honest "—" instead of fabricating demo values.
  */
 @Composable
-fun DiscoverGuildsScreen(onBack: () -> Unit) {
+fun DiscoverGuildsScreen(onBack: () -> Unit, onRequireSignIn: () -> Unit = {}) {
     val me = AuthRepository.state.collectAsState().value.user
     val scope = rememberCoroutineScope()
 
@@ -202,7 +202,10 @@ fun DiscoverGuildsScreen(onBack: () -> Unit) {
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(top = 14.dp, bottom = 28.dp)
-                    .clickable { createOpen = true }
+                    // Creating a guild needs an account — an anonymous user is
+                    // prompted to sign in instead of opening a dialog that would
+                    // fail on submit.
+                    .clickable { if (me == null) onRequireSignIn() else createOpen = true }
                     .background(Color(0x0DE8B84B), RoundedCornerShape(14.dp))
                     .border(1.dp, Color(0x57E8B84B), RoundedCornerShape(14.dp))
                     .padding(14.dp),

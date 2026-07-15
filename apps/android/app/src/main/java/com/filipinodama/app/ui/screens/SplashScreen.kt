@@ -26,6 +26,9 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.rotate
@@ -44,6 +47,8 @@ import com.filipinodama.app.ui.theme.GoldHi
 import com.filipinodama.app.ui.theme.GoldLo
 import com.filipinodama.app.ui.theme.GoldLt
 import com.filipinodama.app.ui.theme.Ink
+import kotlinx.coroutines.async
+import kotlinx.coroutines.delay
 
 /**
  * Splash / loading screen — replaces the Phase 1 tap-to-enter placeholder
@@ -60,8 +65,36 @@ import com.filipinodama.app.ui.theme.Ink
  *   - signed-in, not yet onboarded           -> Onboarding carousel
  *   - no session                             -> Login
  */
+
+/**
+ * Minimum time the splash fill is shown before navigation, even if the session
+ * probe resolves instantly. The bar eases toward 90% across this window and the
+ * final 10% is spent the moment the probe completes, so the loader always reads
+ * as real, visible progress that reaches 100% before Home appears (rather than
+ * flashing and cutting away mid-fill on a fast probe / warm cache).
+ */
+private const val MIN_VISIBLE_MS = 1400L
+
 @Composable
 fun SplashScreen(onResolved: (SplashDestination) -> Unit) {
+    // Real, monotonic boot progress that is JOINED to the session probe — the
+    // bar must reach 100% BEFORE we navigate (owner fix: "it hasn't been 100%
+    // but it already moved to the home page"). The bar and the navigation used
+    // to be two independent timelines (an infinite decorative loop + a
+    // fire-the-instant-the-probe-returns effect), so on a fast probe the app
+    // jumped to Home while the bar sat at ~40%. Now one coroutine drives both:
+    // ease toward 90% while the probe is in flight, snap to 100% once it
+    // resolves (and never before the floor time so the fill is always visible),
+    // hold the full bar for a beat, then navigate.
+    var progress by remember { mutableFloatStateOf(0f) }
+
+    // Loading-screen music, same as the in-flow LoadingOverlay (mirrors web).
+    // Gated by the Music setting; stops when the splash leaves the composition.
+    androidx.compose.runtime.DisposableEffect(Unit) {
+        com.filipinodama.app.data.audio.SoundManager.startLoadingMusic()
+        onDispose { com.filipinodama.app.data.audio.SoundManager.stopLoadingMusic() }
+    }
+
     LaunchedEffect(Unit) {
         // OWNER POLICY (2026-07-15): NEVER auto-create a guest account and never
         // force a login wall on launch. Probe the existing session; if there is
@@ -69,8 +102,37 @@ fun SplashScreen(onResolved: (SplashDestination) -> Unit) {
         // goes straight into the app. Login is prompted ONLY at gated actions —
         // claiming rewards and playing Ranked (see ModeSelectScreen / the reward
         // screens). A returning signed-in (real) user still resolves to Home.
-        val hasUser = AuthRepository.refreshMe() != null
+
+        // Kick the session probe off concurrently with the fill animation.
+        // (coroutineScope makes `this` a scope so async can run alongside the
+        // fill loop below and be awaited once the floor time is also met.)
+        kotlinx.coroutines.coroutineScope {
+        val probe = async { runCatching { AuthRepository.refreshMe() != null }.getOrDefault(false) }
+
+        val t0 = System.currentTimeMillis()
+        // While loading, creep toward the 90% ceiling over ~MIN_VISIBLE_MS so
+        // the fill reads as real progress; the last 10% is reserved for the
+        // moment the probe actually completes.
+        while (!probe.isCompleted || (System.currentTimeMillis() - t0) < MIN_VISIBLE_MS) {
+            val elapsed = System.currentTimeMillis() - t0
+            val eased = (elapsed.toFloat() / MIN_VISIBLE_MS).coerceIn(0f, 1f)
+            progress = (eased * 0.9f).coerceAtMost(0.9f)
+            delay(32)
+        }
+        val hasUser = probe.await()
+
+        // Probe done and the minimum-visible floor is met: drive the final
+        // stretch to a full 100% so it's never a sudden jump from mid-fill.
+        while (progress < 1f) {
+            progress = (progress + 0.06f).coerceAtMost(1f)
+            delay(16)
+        }
+        progress = 1f
+        // Hold the full bar briefly so 100% actually registers before we leave.
+        delay(200)
+
         onResolved(resolveSplashDestination(hasUser = hasUser, onboarded = AuthRepository.isOnboarded()))
+        }
     }
 
     val infiniteTransition = rememberInfiniteTransition(label = "splash")
@@ -91,15 +153,6 @@ fun SplashScreen(onResolved: (SplashDestination) -> Unit) {
             repeatMode = RepeatMode.Restart
         ),
         label = "spinnerRotation"
-    )
-    val progress by infiniteTransition.animateFloat(
-        initialValue = 0f,
-        targetValue = 1f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(2600, easing = LinearEasing),
-            repeatMode = RepeatMode.Restart
-        ),
-        label = "progress"
     )
 
     Box(

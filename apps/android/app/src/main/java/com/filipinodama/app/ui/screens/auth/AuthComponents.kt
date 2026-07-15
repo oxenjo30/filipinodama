@@ -75,13 +75,26 @@ fun AuthTextField(
     enabled: Boolean = true
 ) {
     var visible by remember { mutableStateOf(false) }
+    // Password fields MUST use the Password IME type and disable autocorrect +
+    // auto-capitalization. With the plain Text keyboard the soft keyboard would
+    // silently autocorrect / capitalize the first character of a typed password
+    // (or an autofilled one), sending a DIFFERENT string than the user typed —
+    // the cause of "same password works on web but fails on mobile" (web's
+    // <input type=password> never autocorrects). Email likewise gets no
+    // capitalization. Resolved IME type: Password for secrets, else the caller's.
+    val effectiveKeyboardType = if (isPassword) KeyboardType.Password else keyboardType
+    val keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(
+        keyboardType = effectiveKeyboardType,
+        autoCorrect = false,
+        capitalization = androidx.compose.ui.text.input.KeyboardCapitalization.None
+    )
     OutlinedTextField(
         value = value,
         onValueChange = onValueChange,
         placeholder = { Text(placeholder, color = Ink2.copy(alpha = 0.7f)) },
         singleLine = true,
         enabled = enabled,
-        keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = keyboardType),
+        keyboardOptions = keyboardOptions,
         visualTransformation = if (isPassword && !visible) PasswordVisualTransformation() else VisualTransformation.None,
         trailingIcon = if (isPassword) {
             {

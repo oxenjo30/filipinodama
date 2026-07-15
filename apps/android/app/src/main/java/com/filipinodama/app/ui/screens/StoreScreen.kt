@@ -38,7 +38,14 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -61,6 +68,8 @@ import com.filipinodama.app.data.economy.storeItemDiscountPct
 import com.filipinodama.app.data.economy.storeItemIsDeal
 import com.filipinodama.app.data.economy.storeItemPrice
 import com.filipinodama.app.data.economy.storeThumbFor
+import com.filipinodama.app.ui.components.SignInRequiredDialog
+import com.filipinodama.app.ui.components.isAuthError
 import com.filipinodama.app.ui.screens.economy.BuyFlow
 import com.filipinodama.app.ui.screens.economy.BuyFlowState
 import com.filipinodama.app.ui.screens.economy.CheckoutScreen
@@ -90,10 +99,22 @@ import kotlinx.coroutines.launch
  * the same real BUNDLE/on-sale items honestly without inventing banner copy.
  */
 @Composable
-fun StoreScreen(onOpenInventory: () -> Unit = {}) {
+fun StoreScreen(
+    onOpenInventory: () -> Unit = {},
+    // Universal rule (owner directive 2026-07-15): a gated action an anonymous
+    // user attempts must show the guided SignInRequiredDialog, never a generic
+    // "not authenticated" error. This routes the modal's OK to Login/Signup.
+    onRequireSignIn: () -> Unit = {}
+) {
     val authState by AuthRepository.state.collectAsState()
     val me = authState.user
+    val signedIn = me != null && !me.isGuest
     val scope = rememberCoroutineScope()
+
+    // When set, the shared royal "Sign in required" modal is shown. Set either
+    // pre-emptively (an anonymous user taps Buy/Checkout) or reactively (a
+    // purchase 4xx came back as an auth error — see doBuy / isAuthError).
+    var signInPromptAction by remember { mutableStateOf<String?>(null) }
 
     var items by remember { mutableStateOf<List<StoreItemDto>?>(null) } // null = loading
     var loadError by remember { mutableStateOf(false) }
@@ -147,6 +168,10 @@ fun StoreScreen(onOpenInventory: () -> Unit = {}) {
                 owned = owned + purchasedIds
                 cart = cart.filter { it.id !in purchasedIds }
                 if (cart.isEmpty()) showCheckout = false
+            },
+            onRequireSignIn = {
+                showCheckout = false
+                signInPromptAction = "complete your order"
             }
         )
         return
@@ -191,6 +216,14 @@ fun StoreScreen(onOpenInventory: () -> Unit = {}) {
     val deals = remember(items) { (items ?: emptyList()).filter { storeItemIsDeal(it) } }
 
     fun doBuy(item: StoreItemDto) {
+        // Pre-empt: an anonymous user can't own anything — guide them to sign in
+        // instead of round-tripping to a 401 that would surface as a generic
+        // error (universal rule).
+        if (!signedIn) {
+            buyFlow = BuyFlow.dismiss()
+            signInPromptAction = "claim this item"
+            return
+        }
         buyFlow = BuyFlow.confirm(buyFlow)
         scope.launch {
             when (val result = EconomyRepository.purchase(item.id)) {
@@ -199,7 +232,15 @@ fun StoreScreen(onOpenInventory: () -> Unit = {}) {
                     buyFlow = BuyFlow.succeed(buyFlow)
                 }
                 is EconomyResult.Failure -> {
-                    buyFlow = BuyFlow.fail(buyFlow, result.message)
+                    // Safety net: if the failure is actually an auth error (e.g.
+                    // the session expired between load and buy), show the guided
+                    // sign-in modal, NOT the generic error overlay.
+                    if (isAuthError(result.code)) {
+                        buyFlow = BuyFlow.dismiss()
+                        signInPromptAction = "claim this item"
+                    } else {
+                        buyFlow = BuyFlow.fail(buyFlow, result.message)
+                    }
                 }
             }
         }
@@ -371,6 +412,19 @@ fun StoreScreen(onOpenInventory: () -> Unit = {}) {
         is BuyFlowState.Error -> PurchaseErrorOverlay(message = state.message, onDismiss = { buyFlow = BuyFlow.dismiss() })
         BuyFlowState.Idle -> {}
     }
+
+    // Universal sign-in prompt — shown whenever an anonymous user tries to
+    // claim/buy (pre-emptively from doBuy, or reactively on an auth 4xx).
+    signInPromptAction?.let { action ->
+        SignInRequiredDialog(
+            action = action,
+            onDismiss = { signInPromptAction = null },
+            onConfirm = {
+                signInPromptAction = null
+                onRequireSignIn()
+            }
+        )
+    }
 }
 
 @Composable
@@ -523,29 +577,34 @@ private fun StoreItemCard(
                 }
             }
             else -> {
-                Row(
+                // TWO-ROW layout (owner redesign): the price, the + (add-to-cart)
+                // and Buy no longer share one cramped line — on a 2-per-row card
+                // that squeezed the price into a two-line "36 / 00" wrap. Row 1 is
+                // the price on its own full-width line (never wraps); Row 2 is the
+                // action pair, with Buy taking the room and + sized to its content.
+                Column(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(6.dp),
-                    verticalAlignment = Alignment.CenterVertically
+                    verticalArrangement = Arrangement.spacedBy(9.dp)
                 ) {
-                    // Price takes the leftover room and yields first (weight) so
-                    // that on a narrow 2-per-row card the +/Buy action group keeps
-                    // its intrinsic width and "Buy" never gets squeezed into wrap.
-                    Box(modifier = Modifier.weight(1f)) {
-                        CurrencyAmount(
-                            kind = if (cur == "DIAMONDS") CurrencyIconKind.GEM else CurrencyIconKind.COIN,
-                            text = price.toString(),
-                            color = if (cur == "DIAMONDS") Color(0xFFFF9AA8) else Color(0xFFF2D493),
-                            style = MaterialTheme.typography.labelMedium
-                        )
-                    }
-                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
+                    CurrencyAmount(
+                        kind = if (cur == "DIAMONDS") CurrencyIconKind.GEM else CurrencyIconKind.COIN,
+                        text = price.toString(),
+                        color = if (cur == "DIAMONDS") Color(0xFFFF9AA8) else Color(0xFFF2D493),
+                        style = MaterialTheme.typography.titleSmall
+                    )
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
                         // Add-to-cart (mockup line 3780-3784): + when not yet
                         // queued, flips to a no-op ✓ once in the cart. Removal
                         // only happens on the Checkout screen, matching the
                         // mockup's addToCart-is-idempotent-by-name behavior.
                         AddToCartButton(inCart = inCart, onAdd = onAddToCart)
-                        BuyButton(onClick = onPreviewOrBuy)
+                        // Buy fills the rest of the row so it's a comfortable,
+                        // full-width primary tap target under the price.
+                        BuyButton(onClick = onPreviewOrBuy, modifier = Modifier.weight(1f))
                     }
                 }
             }
@@ -556,19 +615,18 @@ private fun StoreItemCard(
 /**
  * Primary gold "Buy" button, shared by the featured grid cards and the Daily
  * Deals rows. Centralised so every Buy button is identical AND so the label can
- * never wrap: in a 2-per-row grid card a long price + the "+" cart button used
- * to squeeze the old inline box until "Buy" broke onto two lines ("Bu"/"y").
- * maxLines=1 + softWrap=false + a min-width guarantees the label always fits on
- * one line; the price beside it ellipsizes instead of stealing the button's room.
+ * never wrap. With the two-row card redesign it's passed Modifier.weight(1f) so
+ * it fills the row beside the compact + cart button; maxLines=1 + softWrap=false
+ * keep the label on one line regardless.
  */
 @Composable
-private fun BuyButton(label: String = "Buy", onClick: () -> Unit) {
+private fun BuyButton(label: String = "Buy", modifier: Modifier = Modifier, onClick: () -> Unit) {
     Box(
-        modifier = Modifier
+        modifier = modifier
             .defaultMinSize(minWidth = 52.dp)
             .clickable(onClick = onClick)
             .background(Gold.copy(alpha = 0.85f), RoundedCornerShape(8.dp))
-            .padding(horizontal = 14.dp, vertical = 8.dp),
+            .padding(horizontal = 14.dp, vertical = 10.dp),
         contentAlignment = Alignment.Center
     ) {
         Text(
@@ -612,11 +670,11 @@ private fun PreviewLabel(onClick: () -> Unit) {
 private fun AddToCartButton(inCart: Boolean, onAdd: () -> Unit) {
     Box(
         modifier = Modifier
-            .defaultMinSize(minWidth = 38.dp)
+            .defaultMinSize(minWidth = 44.dp)
             .clickable(enabled = !inCart, onClick = onAdd)
-            .background(if (inCart) Color(0x243FBF6F) else Color(0x14E8B84B), RoundedCornerShape(11.dp))
-            .border(1.dp, if (inCart) Color(0x663FBF6F) else Color(0x4DE8B84B), RoundedCornerShape(11.dp))
-            .padding(horizontal = 10.dp, vertical = 8.dp),
+            .background(if (inCart) Color(0x243FBF6F) else Color(0x14E8B84B), RoundedCornerShape(8.dp))
+            .border(1.dp, if (inCart) Color(0x663FBF6F) else Color(0x4DE8B84B), RoundedCornerShape(8.dp))
+            .padding(horizontal = 12.dp, vertical = 10.dp),
         contentAlignment = Alignment.Center
     ) {
         Text(
@@ -695,6 +753,30 @@ private fun StoreItemPreviewSheet(
     val isSkin = item.type == "SKIN"
     var showSoldier by remember(item.id) { mutableStateOf(false) }
 
+    // Preview "bob" — the Android port of the web modal's `fdcoinbob` float
+    // (StorePreviewModal.tsx): the previewed art gently rises + falls and the
+    // glow behind it breathes, so the preview feels alive like on web (owner:
+    // "previewing an item has no animation, in web it has animation").
+    val bob = rememberInfiniteTransition(label = "preview-bob")
+    val bobY by bob.animateFloat(
+        initialValue = 0f,
+        targetValue = -10f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(1500, easing = FastOutSlowInEasing),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "preview-bobY"
+    )
+    val glowScale by bob.animateFloat(
+        initialValue = 0.94f,
+        targetValue = 1.06f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(1500, easing = FastOutSlowInEasing),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "preview-glow"
+    )
+
     Box(
         modifier = Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.6f)).clickable(onClick = onClose),
         contentAlignment = Alignment.BottomCenter
@@ -719,24 +801,35 @@ private fun StoreItemPreviewSheet(
                 }
             }
 
-            // Big preview stage (150x150, radial-gradient bg).
+            // Big preview stage (150x150, radial-gradient bg). The art inside
+            // floats (bobs) and the radial glow breathes — mirrors web.
             Box(
                 modifier = Modifier
                     .size(150.dp)
-                    .background(
-                        Brush.radialGradient(listOf(Color(0x33E8B84B), Color(0x001B1030))),
-                        RoundedCornerShape(20.dp)
-                    )
                     .clickable(enabled = isSkin, onClick = { showSoldier = !showSoldier }),
                 contentAlignment = Alignment.Center
             ) {
+                // Breathing glow layer (scales gently behind the art).
+                Box(
+                    modifier = Modifier
+                        .size(150.dp)
+                        .graphicsLayer(scaleX = glowScale, scaleY = glowScale)
+                        .background(
+                            Brush.radialGradient(listOf(Color(0x33E8B84B), Color(0x001B1030))),
+                            RoundedCornerShape(20.dp)
+                        )
+                )
                 val thumb = if (isSkin && showSoldier) {
                     val base = storeThumbFor(item)
                     if (base is StoreThumb.Image) StoreThumb.Image(base.url.replace("red-king.png", "red-man.png")) else base
                 } else {
                     storeThumbFor(item)
                 }
-                StoreThumbView(thumb, size = 96.dp)
+                // Bobbing art (translationY is in px; convert the dp bob offset).
+                val bobPx = with(androidx.compose.ui.platform.LocalDensity.current) { bobY.dp.toPx() }
+                Box(modifier = Modifier.graphicsLayer(translationY = bobPx)) {
+                    StoreThumbView(thumb, size = 96.dp)
+                }
                 if (isSkin) {
                     Box(
                         modifier = Modifier

@@ -139,7 +139,9 @@ fun TournamentDetailScreen(
                                 scope.launch {
                                     when (val r = TournamentsRepository.join(t.id)) {
                                         is EconomyResult.Success -> { actionMessage = null; load() }
-                                        is EconomyResult.Failure -> actionMessage = r.message
+                                        is EconomyResult.Failure ->
+                                            if (com.filipinodama.app.ui.components.isAuthError(r.code)) onRequireSignIn()
+                                            else actionMessage = r.message
                                     }
                                     busy = false
                                 }
@@ -149,7 +151,9 @@ fun TournamentDetailScreen(
                                 scope.launch {
                                     when (val r = TournamentsRepository.leave(t.id)) {
                                         is EconomyResult.Success -> { actionMessage = null; load() }
-                                        is EconomyResult.Failure -> actionMessage = r.message
+                                        is EconomyResult.Failure ->
+                                            if (com.filipinodama.app.ui.components.isAuthError(r.code)) onRequireSignIn()
+                                            else actionMessage = r.message
                                     }
                                     busy = false
                                 }

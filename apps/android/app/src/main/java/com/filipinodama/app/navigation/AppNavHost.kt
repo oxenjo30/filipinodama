@@ -285,6 +285,13 @@ fun AppNavHost() {
             }
 
             composable(AppDestinations.LOGIN) {
+                // Login is reached two ways: (a) from Splash as the app's entry
+                // when it's the start of the stack — then there's nothing behind
+                // it, so no back chevron; (b) pushed on top of a browsable screen
+                // by a gated ACTION (Ranked, claim reward, host room, join guild)
+                // — then an anonymous user must be able to back out. previousBackStackEntry
+                // is null only in case (a).
+                val canGoBack = navController.previousBackStackEntry != null
                 LoginScreen(
                     onLoginSuccess = {
                         // A returning, already-onboarded user goes straight to
@@ -293,7 +300,8 @@ fun AppNavHost() {
                         goClearingStack(AppDestinations.HOME)
                     },
                     onCreateAccount = { navController.navigate(AppDestinations.CREATE_ACCOUNT) },
-                    onForgotPassword = { navController.navigate(AppDestinations.FORGOT_PASSWORD) }
+                    onForgotPassword = { navController.navigate(AppDestinations.FORGOT_PASSWORD) },
+                    onBack = if (canGoBack) ({ navController.popBackStack() }) else null
                 )
             }
 
@@ -345,13 +353,18 @@ fun AppNavHost() {
                 )
             }
             composable(AppDestinations.STORE) {
-                StoreScreen(onOpenInventory = { navController.navigate(AppDestinations.INVENTORY) })
+                StoreScreen(
+                    onOpenInventory = { navController.navigate(AppDestinations.INVENTORY) },
+                    onRequireSignIn = { navController.navigate(AppDestinations.LOGIN) }
+                )
             }
             composable(AppDestinations.GUILD) {
                 GuildHallScreen(
                     onOpenProfile = { userId -> navController.navigate(AppDestinations.publicProfile(userId)) },
                     onOpenDiscover = { navController.navigate(AppDestinations.DISCOVER_GUILDS) },
-                    onPlayRanked = { playRankedOrLogin() }
+                    onPlayRanked = { playRankedOrLogin() },
+                    // Anonymous user acting (Create guild) — prompt sign-in.
+                    onRequireSignIn = { navController.navigate(AppDestinations.LOGIN) }
                 )
             }
             composable(AppDestinations.PROFILE) {
@@ -385,7 +398,10 @@ fun AppNavHost() {
                 WalletScreen(onBack = { navController.popBackStack() })
             }
             composable(AppDestinations.DISCOVER_GUILDS) {
-                DiscoverGuildsScreen(onBack = { navController.popBackStack() })
+                DiscoverGuildsScreen(
+                    onBack = { navController.popBackStack() },
+                    onRequireSignIn = { navController.navigate(AppDestinations.LOGIN) }
+                )
             }
 
             // ---- Phase 7: settings, legal, delete account, system states ----
@@ -663,6 +679,7 @@ fun AppNavHost() {
                     onBack = {
                         navController.popBackStack(AppDestinations.MODE_SELECT, inclusive = false)
                     },
+                    onRequireSignIn = { navController.navigate(AppDestinations.LOGIN) },
                     onEnterMatch = {
                         // The match/spectate state is already live in MatchRepository
                         // (RoomRepository's EV.roomStart handler called
