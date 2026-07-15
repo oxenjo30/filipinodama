@@ -1,6 +1,7 @@
 package com.filipinodama.app.ui.screens.game
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -8,6 +9,8 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.MaterialTheme
@@ -22,12 +25,18 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import com.filipinodama.app.data.AuthRepository
+import com.filipinodama.app.data.engine.AiDifficulties
 import com.filipinodama.app.data.engine.PieceColors
+import com.filipinodama.app.data.engine.RankTiers
 import com.filipinodama.app.data.match.GameRepository
 import com.filipinodama.app.data.match.OfflineStatus
+import com.filipinodama.app.ui.screens.profile.AvatarView
 import com.filipinodama.app.ui.theme.Gold
 import com.filipinodama.app.ui.theme.GoldLt
 import com.filipinodama.app.ui.theme.Green
@@ -46,6 +55,7 @@ import com.filipinodama.app.ui.theme.Panel
 @Composable
 fun OfflineGameScreen(difficulty: String, onChangeDifficulty: () -> Unit, onHome: () -> Unit) {
     val ui by GameRepository.state.collectAsState()
+    val me = AuthRepository.state.collectAsState().value.user
     var showResignConfirm by remember { mutableStateOf(false) }
 
     DisposableEffect(difficulty) {
@@ -71,6 +81,17 @@ fun OfflineGameScreen(difficulty: String, onChangeDifficulty: () -> Unit, onHome
             modifier = Modifier.padding(top = 4.dp, bottom = 10.dp)
         )
 
+        // Opponent card (the AI, plays BLUE) — mirrors the mockup's board-screen
+        // opponent bar. No trophies/timer: the AI has no rank or clock.
+        OfflinePlayerBar(
+            name = "AI Opponent",
+            subLine = "${difficultyLabel(difficulty)} difficulty",
+            avatarUrl = null,
+            frameId = null,
+            blueTint = true,
+            modifier = Modifier.padding(top = 8.dp)
+        )
+
         AiTurnBanner(status = ui.status, myTurn = myTurn, mustCapture = ui.mustCapture)
 
         BoardView(
@@ -85,8 +106,19 @@ fun OfflineGameScreen(difficulty: String, onChangeDifficulty: () -> Unit, onHome
             modifier = Modifier.padding(top = 10.dp)
         )
 
+        // Self card (you, play RED) — shows your name + rank, or "Guest" for an
+        // anonymous user (owner directive: anonymous shows "Guest", not blank).
+        OfflinePlayerBar(
+            name = if (me == null || me.isGuest) "Guest" else me.displayName,
+            subLine = if (me == null || me.isGuest) "Practice offline" else "${RankTiers.forTrophies(me.trophies).label} · ${me.trophies} 🏆",
+            avatarUrl = me?.avatarUrl,
+            frameId = me?.frameId,
+            blueTint = false,
+            modifier = Modifier.padding(top = 12.dp)
+        )
+
         Row(
-            modifier = Modifier.fillMaxWidth().padding(top = 16.dp),
+            modifier = Modifier.fillMaxWidth().padding(top = 12.dp),
             horizontalArrangement = Arrangement.spacedBy(10.dp)
         ) {
             GameButton(
@@ -128,6 +160,53 @@ fun OfflineGameScreen(difficulty: String, onChangeDifficulty: () -> Unit, onHome
             onChangeDifficulty = onChangeDifficulty,
             onHome = onHome
         )
+    }
+}
+
+/** "Easy"/"Normal"/"Hard" for a difficulty key. */
+private fun difficultyLabel(difficulty: String): String = when (difficulty) {
+    AiDifficulties.EASY -> "Easy"
+    AiDifficulties.HARD -> "Hard"
+    else -> "Normal"
+}
+
+/**
+ * Board-screen player card (mockup Mobile.dc.html isBoard bars): avatar+frame,
+ * Cinzel name, sub-line. Blue seat (the AI) = blue-tinted; red seat (you) = the
+ * crimson gradient. No capture counter/timer here — the offline vs-AI mode has
+ * no clock and captures aren't surfaced per-seat in this local mode.
+ */
+@Composable
+private fun OfflinePlayerBar(
+    name: String,
+    subLine: String,
+    avatarUrl: String?,
+    frameId: String?,
+    blueTint: Boolean,
+    modifier: Modifier = Modifier
+) {
+    val bg = if (blueTint) Brush.linearGradient(listOf(Color(0x332E6BC6), Color(0x8C1B1030)))
+    else Brush.linearGradient(listOf(Color(0x38D93B52), Color(0x8C1B1030)))
+    val borderColor = if (blueTint) Color(0x4D5A96FF) else Color(0x73D93B52)
+    val nameColor = if (blueTint) Color(0xFFDBE6FF) else Color(0xFFFFD9D9)
+    val subColor = if (blueTint) Color(0xFF8FB3FF) else Color(0xFFF0A0A0)
+    val seatColor = if (blueTint) Color(0xFF5A96FF) else Color(0xFFD93B52)
+
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .background(bg, RoundedCornerShape(15.dp))
+            .border(1.dp, borderColor, RoundedCornerShape(15.dp))
+            .padding(horizontal = 12.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(10.dp)
+    ) {
+        AvatarView(avatarUrl = avatarUrl, size = 38.dp, frameId = frameId, ring = false)
+        Column(modifier = Modifier.weight(1f)) {
+            Text(name, color = nameColor, style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.ExtraBold))
+            Text(subLine, color = subColor, style = MaterialTheme.typography.labelSmall)
+        }
+        Box(modifier = Modifier.size(14.dp).background(seatColor, CircleShape))
     }
 }
 
