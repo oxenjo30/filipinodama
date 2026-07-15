@@ -7,6 +7,13 @@
     <link rel="icon" href="/assets/brand/favicon.ico" sizes="any" />
     <link rel="icon" type="image/png" href="/assets/brand/favicon-96x96.png" sizes="96x96" />
     <link rel="apple-touch-icon" href="/assets/brand/apple-touch-icon.png" />
+    <!-- iOS "Add to Home Screen" (standalone PWA) — iOS Safari reads these, not
+         the web manifest. Run fullscreen (no Safari chrome), keep the status bar
+         translucent over the dark royal background, and label the icon "Dama". -->
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="Dama" />
+    <meta name="mobile-web-app-capable" content="yes" />
     <title>FilipinoDama Royal — Play Filipino Dama Online</title>
     <meta name="description" content="FilipinoDama Royal — a premium, real-time multiplayer Filipino Dama (checkers) game. Play ranked, challenge the AI, and rise through the ranks." />
     <link rel="canonical" href="https://filipinodama.com/" />
