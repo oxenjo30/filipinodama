@@ -23,12 +23,42 @@ object Ai {
         AiDifficulties.HARD to 0.0
     )
 
+    /**
+     * Positional evaluation (higher = better for [me]). Kept IDENTICAL to the
+     * shared TS engine (packages/game-engine/src/ai.ts) so Android and web play
+     * at equal strength. Beyond raw material this rewards the ideas a strong
+     * Dama player uses — which is what makes Hard feel "calculating":
+     *  - Kings worth much more than men (mobile in all directions).
+     *  - Central squares > edge squares (rim pieces have half the moves).
+     *  - Men advancing toward promotion gain value (squared, so the last steps
+     *    matter most).
+     *  - Holding your own back rank denies the opponent easy promotions.
+     * Board is 8x8; red starts at the bottom (rows 5-7) moving UP (toward r=0),
+     * blue starts at the top moving DOWN (toward r=7).
+     */
     private fun evaluate(state: GameState, me: PieceColor): Double {
         var score = 0.0
         for (p in state.pieces) {
-            val v = if (p.king) 3.0 else 1.0
-            val adv = if (p.king) 0.0 else if (p.color == PieceColors.RED) (7 - p.square.r) * 0.05 else p.square.r * 0.05
-            score += (if (p.color == me) 1 else -1) * (v + adv)
+            var v = if (p.king) 5.0 else 1.0
+
+            if (!p.king) {
+                // Advancement toward promotion (0..1), squared so the final
+                // steps before kinging matter most.
+                val rowsToPromote = if (p.color == PieceColors.RED) p.square.r else 7 - p.square.r
+                val progress = (7 - rowsToPromote) / 7.0
+                v += progress * progress * 0.9
+
+                // Back-rank hold: a man on its own home row guards two promotion
+                // squares.
+                val homeRow = if (p.color == PieceColors.RED) 7 else 0
+                if (p.square.r == homeRow) v += 0.35
+            }
+
+            // Central control: closer to centre (3.5, 3.5) = more mobility.
+            val centreDist = kotlin.math.abs(p.square.r - 3.5) + kotlin.math.abs(p.square.c - 3.5)
+            v += (7 - centreDist) * 0.03
+
+            score += (if (p.color == me) 1 else -1) * v
         }
         return score
     }
