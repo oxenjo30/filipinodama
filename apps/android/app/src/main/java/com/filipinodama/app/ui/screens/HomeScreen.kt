@@ -131,7 +131,22 @@ fun HomeScreen(
     var season by remember { mutableStateOf<SeasonCurrentResponse?>(null) }
     var tournaments by remember { mutableStateOf<List<TournamentListItemDto>>(emptyList()) }
 
-    LaunchedEffect(me?.id) {
+    // Re-fetch the active-match ("Continue Playing") card whenever Home is
+    // resumed — not just once — so a match that ended or was ABANDONED (the
+    // server forfeits after a 90s disconnect window) drops its stale card as
+    // soon as the player returns to Home, instead of lingering and then dead-
+    // ending on "Loading match…". Bumped by the ON_RESUME observer below.
+    var activeMatchRefreshTick by remember { mutableStateOf(0) }
+    val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
+    androidx.compose.runtime.DisposableEffect(lifecycleOwner) {
+        val obs = androidx.lifecycle.LifecycleEventObserver { _, event ->
+            if (event == androidx.lifecycle.Lifecycle.Event.ON_RESUME) activeMatchRefreshTick++
+        }
+        lifecycleOwner.lifecycle.addObserver(obs)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(obs) }
+    }
+
+    LaunchedEffect(me?.id, activeMatchRefreshTick) {
         if (me == null) {
             loadingActive = false
             return@LaunchedEffect

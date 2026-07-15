@@ -92,6 +92,29 @@ export function leaveAllQueues(userId: string): boolean {
   return true;
 }
 
+/**
+ * The user's CURRENT live socket (any of them if multiple), resolved via the
+ * `presence:<userId>` room every socket joins (presence.ts) — so a reconnect
+ * between mm:join and pairing doesn't leave us holding a stale socketId. Returns
+ * null when the user has no connected socket. Prefers a socket that is NOT
+ * already in an active match room, but any live socket is fine for matchmaking.
+ */
+async function currentSocketForUser(io: IOServer, userId: string) {
+  const sockets = await io.in(`presence:${userId}`).fetchSockets();
+  return sockets[0] ?? null;
+}
+
+/**
+ * Tell a user their matchmaking attempt was dropped (their socket went away
+ * before pairing), so the client leaves the "Finding opponent…" state instead
+ * of spinning forever. Targets the presence room so it reaches whatever socket
+ * they currently have; a truly-offline user simply receives nothing.
+ */
+function notifyDropped(io: IOServer, userId: string): void {
+  leaveAllQueues(userId);
+  io.to(`presence:${userId}`).emit(EV.mmCancelled, { reason: "dropped" });
+}
+
 type PublicUser = {
   id: string;
   username: string;
@@ -154,16 +177,32 @@ async function tryMatch(io: IOServer, mode: QueueMode): Promise<void> {
     cancelBotTimer(a.userId);
     cancelBotTimer(b.userId);
 
-    // Both sockets must still be connected; if one dropped, requeue the other.
-    const sa = io.sockets.sockets.get(a.socketId);
-    const sb = io.sockets.sockets.get(b.socketId);
-    if (!sa && !sb) continue;
+    // Resolve each player's CURRENT live socket by userId — NOT the socketId
+    // captured at mm:join. Mobile sockets reconnect routinely (network changes,
+    // the polling→websocket upgrade), so the stored socketId is frequently stale
+    // by pairing time. Using the presence room (`presence:<userId>`, joined by
+    // every socket in presence.ts) gives the user's real current socket, so a
+    // reconnect between join and pairing no longer strands them. (Bug: the old
+    // code looked up the stale socketId, found it dead, and SILENTLY DROPPED that
+    // player from the queue with no signal → "stuck on Finding opponent forever".)
+    const sa = await currentSocketForUser(io, a.userId);
+    const sb = await currentSocketForUser(io, b.userId);
+    if (!sa && !sb) {
+      // Both genuinely gone — tell each (harmless if truly offline) and move on.
+      notifyDropped(io, a.userId);
+      notifyDropped(io, b.userId);
+      continue;
+    }
     if (!sa) {
+      // a is gone: requeue b (still searching) and tell a it was dropped so its
+      // client can leave the "searching" state instead of spinning forever.
       requeueFront(mode, b);
+      notifyDropped(io, a.userId);
       continue;
     }
     if (!sb) {
       requeueFront(mode, a);
+      notifyDropped(io, b.userId);
       continue;
     }
 
@@ -246,9 +285,12 @@ function requeueFront(mode: QueueMode, w: Waiting) {
  * engine (see match.ts maybePlayBotMove). Trophies/gold settle normally for the
  * human; the bot user's stats move too but are never surfaced.
  */
-async function startBotMatch(io: IOServer, userId: string, socketId: string, mode: QueueMode, colorPref: ColorPref): Promise<void> {
-  // Still connected + still the sole waiter for this mode?
-  const socket = io.sockets.sockets.get(socketId);
+async function startBotMatch(io: IOServer, userId: string, mode: QueueMode, colorPref: ColorPref): Promise<void> {
+  // Resolve the user's CURRENT socket by userId (not a stored socketId) so a
+  // reconnect during the 7-20s bot-fill wait doesn't make the fill silently fail
+  // and strand the player on "Finding opponent" (same stale-socketId class of
+  // bug the human-pairing path had).
+  const socket = await currentSocketForUser(io, userId);
   if (!socket) {
     leaveAllQueues(userId);
     return;
@@ -363,7 +405,7 @@ export function registerMatchmaking(io: IOServer, socket: Socket) {
         botTimers.delete(userId);
         // Re-check we're still the sole waiter for this mode before botting.
         if (queuedIn.get(userId) !== mode) return;
-        void startBotMatch(io, userId, socket.id, mode, colorPref).catch((err) =>
+        void startBotMatch(io, userId, mode, colorPref).catch((err) =>
           console.error("[matchmaking] startBotMatch failed", err),
         );
       }, botFillDelay());
