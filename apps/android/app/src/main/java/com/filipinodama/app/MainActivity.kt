@@ -12,11 +12,17 @@ import com.filipinodama.app.ui.theme.FilipinoDamaTheme
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        ApiClient.init(applicationContext)
+        // Pre-UI startup init must NEVER throw uncaught — an exception here dies
+        // before any UI draws, which shows up as "installs but won't open,
+        // nothing happens" on the affected device (this bit some newer Android
+        // 14+/16 flagships via EncryptedSharedPreferences; now hardened in
+        // SecureStore, and guarded here defensively too so no future startup
+        // init can silently brick launch). A degraded launch beats a dead app.
+        runCatching { ApiClient.init(applicationContext) }
         // Push readiness (Phase 7): create the notification channel up front
         // so it exists before any future notification (local or FCM-based)
         // is ever posted into it. Idempotent — see PushNotifications kdoc.
-        PushNotifications.ensureChannel(applicationContext)
+        runCatching { PushNotifications.ensureChannel(applicationContext) }
         enableEdgeToEdge()
         setContent {
             FilipinoDamaTheme {
