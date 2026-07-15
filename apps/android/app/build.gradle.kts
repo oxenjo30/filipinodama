@@ -35,9 +35,22 @@ android {
         // fills to 100% before the board (no mid-jump); 10 = CRASH FIX — harden
         // EncryptedSharedPreferences init (was crashing launch on newer devices
         // e.g. Galaxy S25) + exclude the encrypted prefs from backup; 11 =
-        // re-upload of the same crash fix (10 was already used on Play).
-        versionCode = 11
-        versionName = "0.1.10"
+        // re-upload of the same crash fix (10 was already used on Play); 12 =
+        // SPLASH loader now fills to 100% before Home (was jumping early) +
+        // AI-difficulty/Mode-Select screens scroll (Start Match was unreachable)
+        // + smaller AI cards + Login back button + Profile/Guild un-gated for
+        // anonymous browsing + UNIVERSAL "Sign in required" modal replacing the
+        // generic "not authenticated" error on gated actions (store/room/etc);
+        // 13 = matchmaking now connects cross-platform (SocketClient polling+ws,
+        // was websocket-only → mobile never authenticated → no human/AI match) +
+        // tournament browsing un-gated (server attachUser; join still gated) +
+        // store card redesigned (price on its own row above +/Buy, no more
+        // cramped wrap) + AUDIO added (looping loading-screen music + board SFX:
+        // move/capture/king/win/lose, gated by Sound/Music settings) + store
+        // item preview now animates (bob + breathing glow) + joining a room now
+        // prompts sign-in (realtime socket rejects anonymous).
+        versionCode = 13
+        versionName = "0.1.12"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 

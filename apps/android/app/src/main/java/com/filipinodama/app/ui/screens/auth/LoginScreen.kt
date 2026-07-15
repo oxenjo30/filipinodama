@@ -55,7 +55,12 @@ import kotlinx.coroutines.launch
 fun LoginScreen(
     onLoginSuccess: () -> Unit,
     onCreateAccount: () -> Unit,
-    onForgotPassword: () -> Unit
+    onForgotPassword: () -> Unit,
+    // Present when Login was reached from a gated ACTION (Ranked, claim a
+    // reward, host a room, join a guild) so an anonymous user can back out and
+    // keep browsing instead of being trapped. Null only for the (unused) case
+    // where Login is a hard entry point with nothing behind it.
+    onBack: (() -> Unit)? = null
 ) {
     var email by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
@@ -122,9 +127,17 @@ fun LoginScreen(
             .fillMaxSize()
             .background(Bg)
             .verticalScroll(rememberScrollState())
-            .padding(horizontal = 28.dp, vertical = 40.dp),
+            .padding(horizontal = 28.dp, vertical = 24.dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
+        // Back chevron — only when there's somewhere to return to (a gated
+        // action that pushed Login on top of the browsable app). Left-aligned
+        // above the centered wordmark, matching the app's other screen headers.
+        if (onBack != null) {
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Start) {
+                com.filipinodama.app.ui.components.MockupBackButton(onClick = onBack)
+            }
+        }
         Image(
             painter = painterResource(id = R.drawable.logo_sun),
             contentDescription = null,

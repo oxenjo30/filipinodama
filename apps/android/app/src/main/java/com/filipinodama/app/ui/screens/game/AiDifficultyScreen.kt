@@ -11,8 +11,10 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -60,11 +62,15 @@ fun AiDifficultyScreen(onBack: () -> Unit, onStart: (String) -> Unit) {
         DifficultyLevel(AiDifficulties.HARD, "Hard", "A ruthless tactician that hunts every capture. Bring your best game.", 3, R.drawable.diff_hard, androidx.compose.ui.graphics.Color(0xFFD63B52))
     )
 
+    // Scrollable: the 3 difficulty cards + the Start Match CTA overflow a phone
+    // viewport, so the whole screen scrolls and the button is always reachable
+    // (owner: "I can't scroll down to press the start button").
     Column(
         modifier = Modifier
             .fillMaxSize()
             .background(MaterialTheme.colorScheme.background)
-            .padding(24.dp),
+            .verticalScroll(rememberScrollState())
+            .padding(horizontal = 24.dp, vertical = 20.dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Start) {
@@ -80,7 +86,7 @@ fun AiDifficultyScreen(onBack: () -> Unit, onStart: (String) -> Unit) {
         )
         Text("Choose your opponent's strength, then start the match.", color = androidx.compose.ui.graphics.Color(0xFF9A8BBF), style = MaterialTheme.typography.bodyMedium)
 
-        Column(modifier = Modifier.padding(top = 24.dp).fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        Column(modifier = Modifier.padding(top = 16.dp).fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             levels.forEach { level ->
                 DifficultyCard(level = level, selected = selected == level.key, onClick = { selected = level.key })
             }
@@ -90,7 +96,7 @@ fun AiDifficultyScreen(onBack: () -> Unit, onStart: (String) -> Unit) {
             text = "⚔ Start Match · ${levels.first { it.key == selected }.label}",
             onClick = { onStart(selected) },
             variant = GameButtonVariant.RED,
-            modifier = Modifier.padding(top = 26.dp)
+            modifier = Modifier.padding(top = 18.dp, bottom = 8.dp)
         )
     }
 }
@@ -110,25 +116,28 @@ private fun DifficultyCard(level: DifficultyLevel, selected: Boolean, onClick: (
                 if (selected) level.accent.copy(alpha = 0.5f) else Gold.copy(alpha = 0.16f),
                 RoundedCornerShape(16.dp)
             )
-            .padding(18.dp),
+            .padding(horizontal = 16.dp, vertical = 14.dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
         Image(
             painter = painterResource(id = level.emblem),
             contentDescription = null,
-            modifier = Modifier
-                .size(58.dp)
-                .padding(bottom = 4.dp)
+            modifier = Modifier.size(46.dp)
         )
-        Text(level.label, color = GoldLt, style = MaterialTheme.typography.titleLarge)
+        Text(
+            level.label,
+            color = GoldLt,
+            style = MaterialTheme.typography.titleMedium,
+            modifier = Modifier.padding(top = 6.dp)
+        )
         Text(
             level.desc,
             color = Ink,
             style = MaterialTheme.typography.bodySmall,
-            modifier = Modifier.padding(top = 5.dp),
+            modifier = Modifier.padding(top = 4.dp),
             textAlign = androidx.compose.ui.text.style.TextAlign.Center
         )
-        Row(modifier = Modifier.padding(top = 10.dp), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+        Row(modifier = Modifier.padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
             repeat(3) { i ->
                 androidx.compose.foundation.layout.Box(
                     modifier = Modifier

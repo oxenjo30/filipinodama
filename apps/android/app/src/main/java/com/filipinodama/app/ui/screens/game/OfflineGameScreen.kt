@@ -66,6 +66,10 @@ fun OfflineGameScreen(difficulty: String, onChangeDifficulty: () -> Unit, onHome
     val gs = ui.gameState
     val myTurn = gs.result == null && gs.turn == PieceColors.RED && ui.status == OfflineStatus.PLAYING
 
+    // Board sound effects (move / capture / king / win / lose), diffed from the
+    // live state — the human plays RED in offline practice.
+    com.filipinodama.app.data.audio.GameSounds(state = gs, myColor = PieceColors.RED)
+
     Column(
         modifier = Modifier
             .fillMaxSize()

@@ -5,6 +5,7 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import com.filipinodama.app.data.ApiClient
+import com.filipinodama.app.data.audio.SoundManager
 import com.filipinodama.app.data.push.PushNotifications
 import com.filipinodama.app.navigation.AppNavHost
 import com.filipinodama.app.ui.theme.FilipinoDamaTheme
@@ -23,6 +24,9 @@ class MainActivity : ComponentActivity() {
         // so it exists before any future notification (local or FCM-based)
         // is ever posted into it. Idempotent — see PushNotifications kdoc.
         runCatching { PushNotifications.ensureChannel(applicationContext) }
+        // Audio (loading music + board SFX). Init is just stashing the context;
+        // playback is always gated by the Sound/Music settings toggles.
+        runCatching { SoundManager.init(applicationContext) }
         enableEdgeToEdge()
         setContent {
             FilipinoDamaTheme {

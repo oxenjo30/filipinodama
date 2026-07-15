@@ -209,11 +209,29 @@ fun <T, R> unwrapEnvelope(envelope: ApiEnvelope<T>, map: (T) -> R): R {
     return map(envelope.data)
 }
 
-/** Maps any thrown failure from an auth action into a user-facing [AuthResult.Failure]. */
+/**
+ * Maps any thrown failure from an auth action into a user-facing
+ * [AuthResult.Failure] carrying the SERVER'S REAL message.
+ *
+ * The auth [AuthApi] methods return the `ApiEnvelope` payload DIRECTLY (not
+ * `Response<…>`), so Retrofit throws [retrofit2.HttpException] on any non-2xx
+ * status (e.g. 401 BAD_CREDENTIALS on a wrong password) BEFORE unwrapEnvelope
+ * ever runs. That HttpException is not an [AuthApiException], so it used to fall
+ * into the generic "Something went wrong. Please try again." branch — masking
+ * every real login error (wrong password, account has no password / is
+ * Google-only, banned, rate-limited). Decode the HttpException's error envelope
+ * first (same mechanism the economy/social repos use via [apiErrorFrom]) so the
+ * user sees the actual reason; only a true transport failure (no HTTP response
+ * at all — offline/DNS/timeout) falls back to a network message.
+ */
 fun throwableToAuthFailure(throwable: Throwable): AuthResult.Failure {
     val message = when (throwable) {
-        is AuthApiException -> throwable.message ?: "Something went wrong. Please try again."
-        else -> "Something went wrong. Please try again."
+        is AuthApiException -> throwable.message
+        else -> {
+            val apiError = apiErrorFrom(throwable)
+            apiError?.message
+                ?: "Couldn't reach the server. Check your connection and try again."
+        }
     }
     return AuthResult.Failure(message)
 }

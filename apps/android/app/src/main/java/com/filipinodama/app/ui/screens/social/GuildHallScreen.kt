@@ -82,7 +82,16 @@ import kotlinx.coroutines.launch
  * inventory's Wars tab rows are therefore deferred pending a real backend.
  */
 @Composable
-fun GuildHallScreen(onOpenProfile: (String) -> Unit, onOpenDiscover: () -> Unit = {}, onPlayRanked: () -> Unit = {}) {
+fun GuildHallScreen(
+    onOpenProfile: (String) -> Unit,
+    onOpenDiscover: () -> Unit = {},
+    onPlayRanked: () -> Unit = {},
+    // Anonymous users browse the Guild Hall freely (owner directive: "guild
+    // page should not be gated. If they want to join a guild that's the time
+    // they will be asked to login"). Acting — Create a guild or Discover→Join —
+    // routes here to prompt sign-in instead of failing silently.
+    onRequireSignIn: () -> Unit = {}
+) {
     val me = AuthRepository.state.collectAsState().value.user
     val scope = rememberCoroutineScope()
 
@@ -217,15 +226,18 @@ fun GuildHallScreen(onOpenProfile: (String) -> Unit, onOpenDiscover: () -> Unit 
             }
         }
 
-        if (me == null) {
-            SectionCard(title = "") {
-                Text("Sign in to join the alliance", color = GoldLt, style = MaterialTheme.typography.titleLarge)
-                Text("Guilds war together, share perks, and climb the ranks as one.", color = Ink2, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(top = 8.dp))
-            }
-            return@Column
-        }
+        // NOTE: anonymous users (me == null) are NOT stopped here anymore — they
+        // fall through to the browsable "not in a guild yet" state below and can
+        // open Discover Guilds. Sign-in is prompted only when they try to
+        // Create or Join (owner directive). `inGuild` is false when me == null,
+        // and `membershipChecked` is set true synchronously by loadMembership().
 
-        if (inGuild && detail != null) {
+        if (inGuild && detail != null && me != null) {
+            // `me` is guaranteed non-null in this branch (membership implies a
+            // signed-in user), but the compiler can't prove it now that the
+            // anonymous early-return is gone — bind a non-null local for the
+            // handful of me.id reads below.
+            val meUser = me
             val g = detail!!.guild
             val crest = resolveGuildCrest(g.crestKey, g.id)
             val level = (g.weeklyPoints.coerceAtLeast(0) / 1000) + 1
@@ -333,7 +345,7 @@ fun GuildHallScreen(onOpenProfile: (String) -> Unit, onOpenDiscover: () -> Unit 
                             if (!busy) {
                                 busy = true
                                 scope.launch {
-                                    GuildsRepository.removeMember(g.id, me.id)
+                                    GuildsRepository.removeMember(g.id, meUser.id)
                                     myGuildId = null
                                     detail = null
                                     requests = null
@@ -368,8 +380,8 @@ fun GuildHallScreen(onOpenProfile: (String) -> Unit, onOpenDiscover: () -> Unit 
                     detail!!.roster.sortedByDescending { it.weeklyContribution }.forEach { m ->
                         RosterRow(
                             member = m,
-                            mine = m.userId == me.id,
-                            manageable = canManage && m.userId != me.id && (GUILD_ROLE_RANK[myRole] ?: 0) > (GUILD_ROLE_RANK[m.role] ?: 0),
+                            mine = m.userId == meUser.id,
+                            manageable = canManage && m.userId != meUser.id && (GUILD_ROLE_RANK[myRole] ?: 0) > (GUILD_ROLE_RANK[m.role] ?: 0),
                             onOpenProfile = { onOpenProfile(m.userId) },
                             onManage = { manageMember = m }
                         )
@@ -410,8 +422,13 @@ fun GuildHallScreen(onOpenProfile: (String) -> Unit, onOpenDiscover: () -> Unit 
                 }
             }
         } else if (membershipChecked) {
+            val anon = me == null
             SectionCard(title = "") {
-                Text("You are not in a guild yet", color = GoldLt, style = MaterialTheme.typography.titleLarge)
+                Text(
+                    if (anon) "Join an alliance" else "You are not in a guild yet",
+                    color = GoldLt,
+                    style = MaterialTheme.typography.titleLarge
+                )
                 Text(
                     "Guilds are alliances of players who war together, share perks, and climb the ranks as one. Discover active guilds to find your people, or found your own.",
                     color = Ink2,
@@ -419,8 +436,14 @@ fun GuildHallScreen(onOpenProfile: (String) -> Unit, onOpenDiscover: () -> Unit 
                     modifier = Modifier.padding(top = 8.dp)
                 )
                 Row(modifier = Modifier.padding(top = 14.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    // Discover is browsable by anyone; the sign-in prompt happens
+                    // at the actual Join inside DiscoverGuildsScreen.
                     ActionChip("✦ Discover Guilds", modifier = Modifier.weight(1f), onClick = onOpenDiscover)
-                    ActionChip("＋ Create Guild", modifier = Modifier.weight(1f)) { createOpen = true }
+                    // Creating a guild requires an account — prompt sign-in for
+                    // an anonymous user instead of opening the create dialog.
+                    ActionChip("＋ Create Guild", modifier = Modifier.weight(1f)) {
+                        if (anon) onRequireSignIn() else createOpen = true
+                    }
                 }
             }
         }

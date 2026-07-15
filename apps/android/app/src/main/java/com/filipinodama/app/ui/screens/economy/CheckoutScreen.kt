@@ -75,7 +75,10 @@ fun CheckoutScreen(
     onBrowseStore: () -> Unit,
     onBack: () -> Unit,
     onOpenTopUp: () -> Unit,
-    onOrderPlaced: (purchasedIds: Set<String>) -> Unit
+    onOrderPlaced: (purchasedIds: Set<String>) -> Unit,
+    // Universal rule: if placing the order fails because the user isn't signed
+    // in, prompt sign-in instead of showing a generic error.
+    onRequireSignIn: () -> Unit = {}
 ) {
     val scope = rememberCoroutineScope()
     var placeState by remember { mutableStateOf(PlaceOrderState.IDLE) }
@@ -99,22 +102,37 @@ fun CheckoutScreen(
         scope.launch {
             val purchased = mutableSetOf<String>()
             var failMessage: String? = null
+            var authFailed = false
             for (item in cart) {
                 when (val result = EconomyRepository.purchase(item.id)) {
                     is EconomyResult.Success -> purchased += item.id
                     is EconomyResult.Failure -> {
-                        failMessage = result.message
+                        if (com.filipinodama.app.ui.components.isAuthError(result.code)) {
+                            authFailed = true
+                        } else {
+                            failMessage = result.message
+                        }
                         break
                     }
                 }
             }
-            if (failMessage == null) {
-                placeState = PlaceOrderState.IDLE
-                onOrderPlaced(purchased)
-            } else {
-                if (purchased.isNotEmpty()) onOrderPlaced(purchased)
-                errorMessage = failMessage
-                placeState = PlaceOrderState.ERROR
+            when {
+                authFailed -> {
+                    // Not signed in — hand off to the guided sign-in prompt
+                    // instead of showing a generic error (universal rule).
+                    if (purchased.isNotEmpty()) onOrderPlaced(purchased)
+                    placeState = PlaceOrderState.IDLE
+                    onRequireSignIn()
+                }
+                failMessage == null -> {
+                    placeState = PlaceOrderState.IDLE
+                    onOrderPlaced(purchased)
+                }
+                else -> {
+                    if (purchased.isNotEmpty()) onOrderPlaced(purchased)
+                    errorMessage = failMessage
+                    placeState = PlaceOrderState.ERROR
+                }
             }
         }
     }

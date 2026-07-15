@@ -92,7 +92,12 @@ fun DailyRewardsScreen(onBack: () -> Unit = {}, onRequireSignIn: () -> Unit = {}
                     justClaimed = result.data
                     status = status?.copy(claimedToday = true)
                 }
-                is EconomyResult.Failure -> error = result.message
+                // Universal rule: an auth failure (session expired between load
+                // and claim) routes to the guided sign-in prompt, not a generic
+                // error message.
+                is EconomyResult.Failure ->
+                    if (com.filipinodama.app.ui.components.isAuthError(result.code)) onRequireSignIn()
+                    else error = result.message
             }
             claiming = false
         }

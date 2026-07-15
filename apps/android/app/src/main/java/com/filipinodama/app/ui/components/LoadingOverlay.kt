@@ -102,6 +102,14 @@ fun LoadingOverlay(
     var pct by remember(context) { mutableFloatStateOf(0f) }
     var tipIdx by remember(context) { mutableIntStateOf(0) }
 
+    // Loading-screen music (mirrors the web's startLoadingMusic on its loader).
+    // Plays while this overlay is on screen, stops when it leaves. Gated by the
+    // Music setting inside SoundManager, so it's silent if the user turned it off.
+    androidx.compose.runtime.DisposableEffect(Unit) {
+        com.filipinodama.app.data.audio.SoundManager.startLoadingMusic()
+        onDispose { com.filipinodama.app.data.audio.SoundManager.stopLoadingMusic() }
+    }
+
     // One-shot smooth fill 0->100 over durationMs, guaranteed to REACH 100 and
     // hold briefly before finishing, so the board never appears mid-fill (owner
     // fix: "it needs to reach 100% before the match shows up", no sudden jump
