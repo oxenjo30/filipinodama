@@ -34,9 +34,10 @@ android {
         // offline vs-AI player cards (AI Opponent / Guest); 9 = loader always
         // fills to 100% before the board (no mid-jump); 10 = CRASH FIX — harden
         // EncryptedSharedPreferences init (was crashing launch on newer devices
-        // e.g. Galaxy S25) + exclude the encrypted prefs from backup.
-        versionCode = 10
-        versionName = "0.1.9"
+        // e.g. Galaxy S25) + exclude the encrypted prefs from backup; 11 =
+        // re-upload of the same crash fix (10 was already used on Play).
+        versionCode = 11
+        versionName = "0.1.10"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
