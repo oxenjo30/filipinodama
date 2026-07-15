@@ -178,6 +178,19 @@ fun AppNavHost() {
         }
     }
 
+    /**
+     * Ranked requires a REAL account (owner policy). A guest or an anonymous
+     * user (no session) is routed to Login instead of into matchmaking. Used by
+     * every Ranked entry point — the Home card, the Mode Select card, and the
+     * Guild "play ranked" action — so none of them can start ranked without one.
+     */
+    fun playRankedOrLogin() {
+        val u = AuthRepository.state.value.user
+        val hasRealAccount = u != null && !u.isGuest
+        if (hasRealAccount) navController.navigate(AppDestinations.matchmaking("RANKED"))
+        else navController.navigate(AppDestinations.LOGIN)
+    }
+
     // ── System states (Phase 7): maintenance gate + offline banner ──
     //
     // Maintenance takeover (SYSTEM_STATES.md z-index 380, highest full-screen
@@ -279,12 +292,6 @@ fun AppNavHost() {
                         // fresh registration (see OnboardingScreen kdoc).
                         goClearingStack(AppDestinations.HOME)
                     },
-                    onGuestSuccess = {
-                        // Guests skip onboarding entirely (mirrors the web
-                        // client: OnboardingFlow only triggers for a
-                        // non-guest justRegistered session).
-                        goClearingStack(AppDestinations.HOME)
-                    },
                     onCreateAccount = { navController.navigate(AppDestinations.CREATE_ACCOUNT) },
                     onForgotPassword = { navController.navigate(AppDestinations.FORGOT_PASSWORD) }
                 )
@@ -319,7 +326,7 @@ fun AppNavHost() {
             composable(AppDestinations.HOME) {
                 HomeScreen(
                     onQuickMatch = { navController.navigate(AppDestinations.matchmaking("CASUAL")) },
-                    onRanked = { navController.navigate(AppDestinations.matchmaking("RANKED")) },
+                    onRanked = { playRankedOrLogin() },
                     onPlayAi = { navController.navigate(AppDestinations.AI_DIFFICULTY) },
                     onPlayFriend = { navController.navigate(AppDestinations.privateRoom()) },
                     onDailyReward = { navController.navigate(AppDestinations.DAILY_REWARD) },
@@ -344,7 +351,7 @@ fun AppNavHost() {
                 GuildHallScreen(
                     onOpenProfile = { userId -> navController.navigate(AppDestinations.publicProfile(userId)) },
                     onOpenDiscover = { navController.navigate(AppDestinations.DISCOVER_GUILDS) },
-                    onPlayRanked = { navController.navigate(AppDestinations.matchmaking("RANKED")) }
+                    onPlayRanked = { playRankedOrLogin() }
                 )
             }
             composable(AppDestinations.PROFILE) {
@@ -499,13 +506,22 @@ fun AppNavHost() {
                 )
             }
             composable(AppDestinations.DAILY_REWARD) {
-                DailyRewardsScreen(onBack = { navController.popBackStack() })
+                DailyRewardsScreen(
+                    onBack = { navController.popBackStack() },
+                    onRequireSignIn = { navController.navigate(AppDestinations.LOGIN) }
+                )
             }
             composable(AppDestinations.QUESTS) {
-                QuestsScreen(onBack = { navController.popBackStack() })
+                QuestsScreen(
+                    onBack = { navController.popBackStack() },
+                    onRequireSignIn = { navController.navigate(AppDestinations.LOGIN) }
+                )
             }
             composable(AppDestinations.SEASON) {
-                SeasonScreen(onBack = { navController.popBackStack() })
+                SeasonScreen(
+                    onBack = { navController.popBackStack() },
+                    onRequireSignIn = { navController.navigate(AppDestinations.LOGIN) }
+                )
             }
             composable(AppDestinations.TOURNAMENTS) {
                 TournamentsListScreen(
@@ -533,15 +549,15 @@ fun AppNavHost() {
                     onBack = { navController.popBackStack() },
                     onPlayAi = { navController.navigate(AppDestinations.AI_DIFFICULTY) },
                     onPlayCasual = { navController.navigate(AppDestinations.matchmaking("CASUAL")) },
-                    onPlayRanked = { navController.navigate(AppDestinations.matchmaking("RANKED")) },
+                    onPlayRanked = { playRankedOrLogin() },
                     onPrivateRoom = { navController.navigate(AppDestinations.privateRoom()) },
                     onWatchLive = { navController.navigate(AppDestinations.LIVE_MATCH_BROWSER) },
                     onRankedGuestBlocked = {
-                        // Mirrors web's isGuest toast + stay-on-casual behavior:
-                        // Android has no toast primitive yet in this scaffold, so
-                        // this is a no-op stay-put (the card itself already shows
-                        // "Requires a free account" as the meta line) rather than
-                        // inventing a new UI primitive out of scope for this phase.
+                        // Owner policy: Ranked requires a real account. A guest or
+                        // an anonymous user tapping Ranked is sent to Login to sign
+                        // in / create an account (same as the Tournaments gate's
+                        // onRequireSignIn just above).
+                        navController.navigate(AppDestinations.LOGIN)
                     }
                 )
             }

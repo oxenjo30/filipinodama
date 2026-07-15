@@ -29,9 +29,10 @@ android {
         // 4 = system-bar insets fix + new onboarding art; 5 = real 4xx error
         // messages + Match Detail scroll + Store Buy button + owner onboarding
         // banners + Profile overview logout; 6 = universal guild approval + Store
-        // preview affordance.
-        versionCode = 6
-        versionName = "0.1.5"
+        // preview affordance; 7 = anonymous mode (no auto-guest; login gated to
+        // rewards + Ranked; "Continue as guest" removed).
+        versionCode = 7
+        versionName = "0.1.6"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 

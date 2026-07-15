@@ -54,7 +54,6 @@ import kotlinx.coroutines.launch
 @Composable
 fun LoginScreen(
     onLoginSuccess: () -> Unit,
-    onGuestSuccess: () -> Unit,
     onCreateAccount: () -> Unit,
     onForgotPassword: () -> Unit
 ) {
@@ -112,18 +111,6 @@ fun LoginScreen(
         scope.launch {
             when (val result = AuthRepository.login(cleanEmail, cleanPass)) {
                 is AuthResult.Success -> onLoginSuccess()
-                is AuthResult.Failure -> error = result.message
-            }
-            busy = false
-        }
-    }
-
-    fun playAsGuest() {
-        error = null
-        busy = true
-        scope.launch {
-            when (val result = AuthRepository.guest()) {
-                is AuthResult.Success -> onGuestSuccess()
                 is AuthResult.Failure -> error = result.message
             }
             busy = false
@@ -221,13 +208,10 @@ fun LoginScreen(
             onDisabledClick = { error = "Google sign-in is not configured yet." }
         )
 
-        Box(modifier = Modifier.height(12.dp))
-
-        AuthSecondaryButton(
-            text = "Continue as guest",
-            onClick = { playAsGuest() },
-            enabled = !busy && !googleBusy
-        )
+        // "Continue as guest" removed (owner policy 2026-07-15): the app never
+        // creates a guest account. Anonymous browsing is reached by simply not
+        // signing in (Splash routes an unauthenticated launch to Home); this
+        // screen is only shown when a real account is required.
 
         Text(
             text = "Don't have an account?",
