@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { RANK_TIERS } from "@dama/shared";
 import { api } from "../lib/api";
 import { useAdminMutation } from "../lib/ui";
+import { Pagination, usePagination } from "../components/Pagination";
 
 type Campaign = {
   id: string;
@@ -44,6 +45,8 @@ const STATUS_STYLE: Record<string, { color: string; background: string; borderCo
 export function Campaigns() {
   const [rows, setRows] = useState<Campaign[]>([]);
   const [loading, setLoading] = useState(true);
+  // Client-side pagination of the (already fully fetched) campaign history.
+  const pg = usePagination(rows, 10);
 
   const load = () => {
     setLoading(true);
@@ -240,7 +243,7 @@ export function Campaigns() {
               ) : rows.length === 0 ? (
                 <tr><td colSpan={7} className="dim" style={{ textAlign: "center", padding: 24 }}>No campaigns yet.</td></tr>
               ) : (
-                rows.map((c) => {
+                pg.pageItems.map((c) => {
                   const st = STATUS_STYLE[c.status] ?? STATUS_STYLE.draft!;
                   return (
                     <tr key={c.id} className="arow">
@@ -262,6 +265,7 @@ export function Campaigns() {
               )}
             </tbody>
           </table>
+          {!loading && <Pagination {...pg} noun="campaigns" />}
         </div>
       </div>
     </>

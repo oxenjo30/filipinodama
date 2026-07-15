@@ -6,6 +6,7 @@ import { api } from "../lib/api";
 import { useAuth } from "../lib/auth";
 import { useAdminMutation, useToast } from "../lib/ui";
 import { avatar, frameArt } from "../lib/assets";
+import { Pagination, usePagination } from "../components/Pagination";
 
 type PlayerRow = {
   id: string; username: string; displayName: string; tag: string; email: string | null;
@@ -109,6 +110,8 @@ export function PlayersPage() {
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
   const [selId, setSelId] = useState<string | null>(null);
+  // Client-side pagination of the (already fully fetched) player list.
+  const pg = usePagination(rows, 10);
   // Deep-link from the header global search (handoffv3 row 16): a player
   // result routes to `?open=<id>`, which opens this same detail drawer.
   // Consumed once on mount, then stripped from the URL.
@@ -182,7 +185,7 @@ export function PlayersPage() {
             ) : rows.length === 0 ? (
               <tr><td colSpan={7} className="dim" style={{ textAlign: "center", padding: 40, fontSize: 13, fontWeight: 600 }}>No players match your search.</td></tr>
             ) : (
-              rows.map((p) => {
+              pg.pageItems.map((p) => {
                 const tier = RANK_TIERS.find((t) => t.key === p.rankTier);
                 return (
                   <tr key={p.id} className="arow" style={{ cursor: "pointer" }} onClick={() => setSelId(p.id)}>
@@ -211,6 +214,7 @@ export function PlayersPage() {
           </tbody>
         </table>
         </div>
+        {!loading && <Pagination {...pg} noun="players" />}
       </div>
 
       {selId && <PlayerDrawer id={selId} onClose={() => setSelId(null)} onChanged={() => load(q)} />}

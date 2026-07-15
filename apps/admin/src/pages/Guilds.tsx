@@ -3,6 +3,7 @@ import { useSearchParams } from "react-router-dom";
 import { api } from "../lib/api";
 import { useAuth } from "../lib/auth";
 import { useAdminMutation } from "../lib/ui";
+import { Pagination, usePagination } from "../components/Pagination";
 
 type GuildRow = {
   id: string;
@@ -72,6 +73,8 @@ export function GuildsPage() {
   const [loading, setLoading] = useState(true);
   const [selId, setSelId] = useState<string | null>(null);
   const [apps, setApps] = useState<JoinRequestRow[]>([]);
+  // Client-side pagination of the (already fully fetched) guild list.
+  const pg = usePagination(rows, 10);
   // Deep-link from the header global search (handoffv3 row 16): a guild
   // result routes to `?open=<id>`, which opens this same detail drawer.
   // Consumed once on mount, then stripped from the URL.
@@ -233,7 +236,7 @@ export function GuildsPage() {
               ) : rows.length === 0 ? (
                 <tr><td colSpan={5} className="dim" style={{ textAlign: "center", padding: 24 }}>No guilds match your search.</td></tr>
               ) : (
-                rows.map((g) => (
+                pg.pageItems.map((g) => (
                   <tr key={g.id} className="arow" style={{ cursor: "pointer" }} onClick={() => setSelId(g.id)}>
                     <td>
                       <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
@@ -257,6 +260,7 @@ export function GuildsPage() {
             </tbody>
           </table>
         </div>
+        {!loading && <Pagination {...pg} noun="guilds" />}
       </div>
 
       {selId && <GuildDrawer id={selId} onClose={() => setSelId(null)} onChanged={() => load(q)} />}
