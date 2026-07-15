@@ -102,16 +102,23 @@ fun LoadingOverlay(
     var pct by remember(context) { mutableFloatStateOf(0f) }
     var tipIdx by remember(context) { mutableIntStateOf(0) }
 
-    // One-shot linear fill 0->100 over durationMs, then hold — mirrors the
-    // mockup's `duration` prop branch (not the standalone looping-demo branch).
-    LaunchedEffect(context) {
+    // One-shot smooth fill 0->100 over durationMs, guaranteed to REACH 100 and
+    // hold briefly before finishing, so the board never appears mid-fill (owner
+    // fix: "it needs to reach 100% before the match shows up", no sudden jump
+    // from ~66%). Keyed on durationMs (not context) so a context flip mid-fill
+    // doesn't restart the bar; the last frame is pinned to exactly 100.
+    LaunchedEffect(durationMs) {
         val t0 = System.currentTimeMillis()
         while (true) {
             val elapsed = System.currentTimeMillis() - t0
             pct = (elapsed.toFloat() / durationMs * 100f).coerceAtMost(100f)
             if (elapsed >= durationMs) break
-            delay(60)
+            delay(32)
         }
+        pct = 100f
+        // Hold the full bar visibly for a beat so 100% actually registers on
+        // screen before we hand off to the board.
+        delay(180)
         onFinished()
     }
     // Tips rotate every 3800ms regardless of duration (mockup componentDidMount).
