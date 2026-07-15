@@ -1,6 +1,7 @@
 import type { Server as IOServer, Socket } from "socket.io";
 import { EV } from "@dama/shared";
 import { prisma } from "../db/client.js";
+import { recordDailyActivity } from "../lib/activity.js";
 
 /**
  * Live presence. Tracks which users have at least one connected socket, and
@@ -65,6 +66,9 @@ export function registerPresence(io: IOServer, socket: Socket) {
     prisma.user
       .update({ where: { id: userId }, data: { lastSeenAt: new Date() } })
       .catch(() => {});
+    // Record today's active day (once/user/day) for real retention analytics.
+    // Best-effort: a failure here must never affect presence.
+    recordDailyActivity(userId).catch(() => {});
     void broadcastToFriends(io, userId, "online");
   }
 

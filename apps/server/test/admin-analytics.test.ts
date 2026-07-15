@@ -67,6 +67,17 @@ describe("admin-analytics RBAC", () => {
     expect(data).toHaveProperty("matchOutcomes");
     expect(data).toHaveProperty("rankTiers");
     expect(data).toHaveProperty("topItems");
+    // New real-data panels (regions, funnel, gold-by-category, retention).
+    expect(data).toHaveProperty("topRegions");
+    expect(data).toHaveProperty("funnel");
+    expect(data).toHaveProperty("goldByCategory");
+    expect(data).toHaveProperty("retention");
+    expect(data).toHaveProperty("retentionTracked");
+    // funnel has the 4 ordered stages; retention has the 3 horizons.
+    expect(Array.isArray(data.funnel)).toBe(true);
+    expect(data.funnel).toHaveLength(4);
+    expect(Array.isArray(data.retention)).toBe(true);
+    expect(data.retention.map((r: { day: number }) => r.day)).toEqual([1, 7, 30]);
     await app.close();
   });
 
