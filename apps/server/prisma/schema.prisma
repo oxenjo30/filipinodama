@@ -94,8 +94,28 @@ model User {
   tournamentsCreated Tournament[]      @relation("tournamentsCreated")
   tournamentEntries  TournamentEntry[] @relation("tournamentEntries")
   liveEventsCreated  LiveEvent[]       @relation("liveEventsCreated")
+  dailyActivity      DailyActivity[]
 
   @@index([trophies])
+}
+
+// One row per user per active (UTC) day — the durable per-day activity log that
+// true retention (D1/D7/D30, cohorts) needs. `lastSeenAt` on User is a single
+// mutable timestamp and can't reconstruct which days a user was active, so this
+// table records each active day exactly once (upserted from the presence hook
+// that also touches lastSeenAt). `day` is a date at UTC midnight.
+//
+// NOTE: this only accrues from the day it deploys — there is no back-history,
+// so retention charts are sparse at first and become meaningful over ~weeks.
+model DailyActivity {
+  id     String   @id @default(cuid())
+  userId String
+  user   User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  day    DateTime // UTC-midnight date of the active day
+  createdAt DateTime @default(now())
+
+  @@unique([userId, day])
+  @@index([day])
 }
 
 model OAuthAccount {

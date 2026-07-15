@@ -75,6 +75,14 @@ export async function adminAnalyticsRoutes(app: FastifyInstance) {
       matchOutcomeCounts,
       rankGroups,
       inventoryGroups,
+      regionGroups,
+      cohortSignups,
+      cohortActivity,
+      funnelCohortCount,
+      funnelMatchPlayers,
+      funnelPurchasers,
+      funnelRetained,
+      purchaseRows,
     ] = await Promise.all([
       prisma.user.count({ where: { isBot: false, isGuest: false, deletedAt: null } }),
       prisma.user.count({ where: { isBot: false, isGuest: false, deletedAt: null, createdAt: { gte: since } } }),
@@ -111,6 +119,53 @@ export async function adminAnalyticsRoutes(app: FastifyInstance) {
         _count: { _all: true },
         orderBy: { _count: { itemId: "desc" } },
         take: 10,
+      }),
+      // Top regions: real players grouped by self-reported countryCode.
+      prisma.user.groupBy({
+        by: ["countryCode"],
+        where: { isBot: false, isGuest: false, deletedAt: null },
+        _count: { _all: true },
+      }),
+      // Retention cohorts: real signups in the window (id + createdAt) …
+      prisma.user.findMany({
+        where: { isBot: false, isGuest: false, deletedAt: null, createdAt: { gte: since } },
+        select: { id: true, createdAt: true },
+      }),
+      // … and each cohort user's recorded active days (from DailyActivity).
+      prisma.dailyActivity.findMany({
+        where: { user: { isBot: false, isGuest: false, deletedAt: null, createdAt: { gte: since } } },
+        select: { userId: true, day: true },
+      }),
+      // Acquisition funnel over the window's signup cohort.
+      prisma.user.count({ where: { isBot: false, isGuest: false, deletedAt: null, createdAt: { gte: since } } }),
+      // …distinct cohort users who played ≥1 match (as red or blue).
+      prisma.user.count({
+        where: {
+          isBot: false, isGuest: false, deletedAt: null, createdAt: { gte: since },
+          OR: [{ matchesRed: { some: {} } }, { matchesBlue: { some: {} } }],
+        },
+      }),
+      // …distinct cohort users who made ≥1 in-game (gold) purchase.
+      prisma.user.count({
+        where: {
+          isBot: false, isGuest: false, deletedAt: null, createdAt: { gte: since },
+          orders: { some: {} },
+        },
+      }),
+      // …cohort users still active (seen in the last 7 days).
+      prisma.user.count({
+        where: {
+          isBot: false, isGuest: false, deletedAt: null, createdAt: { gte: since },
+          lastSeenAt: { gte: new Date(now.getTime() - 7 * DAY_MS) },
+        },
+      }),
+      // Gold spent on item purchases in the window, for spend-by-category.
+      // Use the ledger's purchase sinks (reason "purchase", refType "item"):
+      // each carries the item id (refId) and the gold amount (negative), which
+      // we join to StoreItem.type below. More reliable than parsing Order.items.
+      prisma.ledgerEntry.findMany({
+        where: { currency: "GOLD", reason: "purchase", refType: "item", createdAt: { gte: since } },
+        select: { amount: true, refId: true },
       }),
     ]);
 
@@ -193,6 +248,74 @@ export async function adminAnalyticsRoutes(app: FastifyInstance) {
       };
     });
 
+    // ── §10 topRegions (all-time, by self-reported countryCode) ─────────────
+    // Countries only (no finer region field). Null countryCode → "Unknown".
+    const regionSorted = regionGroups
+      .map((g) => ({ code: g.countryCode ?? "Unknown", count: g._count._all }))
+      .sort((a, b) => b.count - a.count);
+    const topRegions = regionSorted.slice(0, 10).map((r) => ({
+      code: r.code,
+      count: r.count,
+      pct: totalPlayers > 0 ? r.count / totalPlayers : 0,
+    }));
+
+    // ── §11 acquisition funnel (this window's signup cohort) ────────────────
+    // Signed up → played a match → made a gold purchase → still active (7d).
+    // Each stage is a real subset count; note "purchase" is in-game gold spend
+    // (real money is disabled), and "active" is a lastSeenAt proxy.
+    const funnel = [
+      { stage: "Signed up", count: funnelCohortCount },
+      { stage: "Played a match", count: funnelMatchPlayers },
+      { stage: "Made a purchase", count: funnelPurchasers },
+      { stage: "Still active (7d)", count: funnelRetained },
+    ].map((s) => ({ ...s, pct: funnelCohortCount > 0 ? s.count / funnelCohortCount : 0 }));
+
+    // ── §12 gold spend by item category (window) ────────────────────────────
+    // Join each purchase sink's refId → StoreItem.type, sum the gold spent.
+    const purchaseItemIds = [...new Set(purchaseRows.map((r) => r.refId).filter((id): id is string => !!id))];
+    const purchasedItems = purchaseItemIds.length
+      ? await prisma.storeItem.findMany({ where: { id: { in: purchaseItemIds } }, select: { id: true, type: true } })
+      : [];
+    const typeById = new Map(purchasedItems.map((i) => [i.id, i.type]));
+    const spendByCat = new Map<string, number>();
+    let totalGoldSpend = 0;
+    for (const r of purchaseRows) {
+      const spent = r.amount < 0 ? -r.amount : 0;
+      if (spent === 0) continue;
+      const cat = (r.refId && typeById.get(r.refId)) || "OTHER";
+      spendByCat.set(cat, (spendByCat.get(cat) ?? 0) + spent);
+      totalGoldSpend += spent;
+    }
+    const goldByCategory = [...spendByCat.entries()]
+      .map(([category, gold]) => ({ category, gold, pct: totalGoldSpend > 0 ? gold / totalGoldSpend : 0 }))
+      .sort((a, b) => b.gold - a.gold);
+
+    // ── §13 retention (D1/D7/D30) from the DailyActivity log ─────────────────
+    // For the window's signup cohort, a user is "retained at day N" if they have
+    // a recorded active day on or after their signup-day + N. Only accrues from
+    // when DailyActivity started logging, so it's sparse until data builds up.
+    const activeDaysByUser = new Map<string, Set<number>>();
+    for (const a of cohortActivity) {
+      const set = activeDaysByUser.get(a.userId) ?? new Set<number>();
+      set.add(Math.floor(a.day.getTime() / DAY_MS));
+      activeDaysByUser.set(a.userId, set);
+    }
+    const retentionHorizons = [1, 7, 30];
+    const retention = retentionHorizons.map((n) => {
+      // Cohort eligible for horizon N = users who signed up at least N days ago
+      // (otherwise day N hasn't happened yet, so they can't count either way).
+      const cutoff = now.getTime() - n * DAY_MS;
+      const eligible = cohortSignups.filter((u) => u.createdAt.getTime() <= cutoff);
+      let retained = 0;
+      for (const u of eligible) {
+        const signupDayIdx = Math.floor(u.createdAt.getTime() / DAY_MS);
+        const days = activeDaysByUser.get(u.id);
+        if (days && [...days].some((d) => d >= signupDayIdx + n)) retained += 1;
+      }
+      return { day: n, eligible: eligible.length, retained, pct: eligible.length > 0 ? retained / eligible.length : 0 };
+    });
+    const retentionTracked = cohortActivity.length > 0;
+
     return ok({
       window,
       days,
@@ -214,6 +337,11 @@ export async function adminAnalyticsRoutes(app: FastifyInstance) {
       matchOutcomes,
       rankTiers,
       topItems,
+      topRegions,
+      funnel,
+      goldByCategory,
+      retention,
+      retentionTracked,
     });
   });
 }
