@@ -176,7 +176,9 @@ export async function adminRoutes(app: FastifyInstance) {
           : q.filter === "active"
             ? { AND: [{ OR: [{ bannedUntil: null }, { bannedUntil: { lte: now } }] }, { OR: [{ mutedUntil: null }, { mutedUntil: { lte: now } }] }] }
             : {};
-    const where: Prisma.UserWhereInput = { deletedAt: null, isBot: false, ...search, ...filterWhere };
+    // Owner directive: the Players page lists REAL accounts only — exclude
+    // anonymous/guest sessions (isGuest) as well as bots and deleted users.
+    const where: Prisma.UserWhereInput = { deletedAt: null, isBot: false, isGuest: false, ...search, ...filterWhere };
     const [total, rows] = await Promise.all([
       prisma.user.count({ where }),
       prisma.user.findMany({
