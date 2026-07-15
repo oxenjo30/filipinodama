@@ -23,6 +23,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -62,8 +63,9 @@ import kotlinx.coroutines.launch
  * checkmark/Today badge) rather than folded into the uniform grid.
  */
 @Composable
-fun DailyRewardsScreen(onBack: () -> Unit = {}) {
+fun DailyRewardsScreen(onBack: () -> Unit = {}, onRequireSignIn: () -> Unit = {}) {
     val scope = rememberCoroutineScope()
+    val signedIn = com.filipinodama.app.data.AuthRepository.state.collectAsState().value.user != null
     var status by remember { mutableStateOf<DailyLoginStatusResponse?>(null) }
     var claiming by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
@@ -79,6 +81,9 @@ fun DailyRewardsScreen(onBack: () -> Unit = {}) {
     }
 
     fun claim() {
+        // Owner policy: claiming a reward requires an account. An anonymous
+        // user (no session) is sent to Login instead of silently 401ing.
+        if (!signedIn) { onRequireSignIn(); return }
         if (claiming) return
         claiming = true
         scope.launch {
@@ -119,6 +124,24 @@ fun DailyRewardsScreen(onBack: () -> Unit = {}) {
         )
 
         when {
+            // Anonymous user (owner policy: no auto-guest) — the reward track is
+            // account-bound, so show a clean "sign in to claim" state instead of
+            // the raw "Not authenticated" 401 error.
+            !signedIn -> Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.fillMaxWidth().padding(top = 40.dp)) {
+                Text("Sign in to claim your daily reward", color = GoldLt, style = MaterialTheme.typography.titleMedium)
+                Text(
+                    "Daily login bonuses are saved to your account.",
+                    color = Ink2,
+                    style = MaterialTheme.typography.bodyMedium,
+                    modifier = Modifier.padding(top = 8.dp, bottom = 16.dp)
+                )
+                Box(
+                    modifier = Modifier
+                        .clickable(onClick = onRequireSignIn)
+                        .background(Gold, RoundedCornerShape(12.dp))
+                        .padding(horizontal = 28.dp, vertical = 13.dp)
+                ) { Text("Sign In", color = Color(0xFF2A1607), style = MaterialTheme.typography.titleMedium) }
+            }
             // Only the INITIAL load failing (status still null) gets a full
             // retry affordance here — a claim() failure with status already
             // loaded is surfaced inline near the claim button below instead,

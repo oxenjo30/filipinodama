@@ -63,24 +63,14 @@ import com.filipinodama.app.ui.theme.Ink
 @Composable
 fun SplashScreen(onResolved: (SplashDestination) -> Unit) {
     LaunchedEffect(Unit) {
-        // Probe the existing session. If none, AUTO-CREATE A GUEST and go straight
-        // into the app (Home, or Onboarding on a true first run) — matching the
-        // web, which never forces a login wall on launch. Login is only required
-        // at gated actions (Ranked already gates guests). Only fall back to the
-        // Auth screen if guest creation itself fails (e.g. offline) so a network
-        // error isn't a black hole.
-        var hasUser = AuthRepository.refreshMe() != null
-        var guestFailed = false
-        if (!hasUser) {
-            hasUser = AuthRepository.guest() is com.filipinodama.app.data.AuthResult.Success
-            guestFailed = !hasUser
-        }
-        onResolved(
-            when {
-                guestFailed -> SplashDestination.Auth
-                else -> resolveSplashDestination(hasUser = hasUser, onboarded = AuthRepository.isOnboarded())
-            }
-        )
+        // OWNER POLICY (2026-07-15): NEVER auto-create a guest account and never
+        // force a login wall on launch. Probe the existing session; if there is
+        // none the user browses ANONYMOUSLY (user == null, no server record) and
+        // goes straight into the app. Login is prompted ONLY at gated actions —
+        // claiming rewards and playing Ranked (see ModeSelectScreen / the reward
+        // screens). A returning signed-in (real) user still resolves to Home.
+        val hasUser = AuthRepository.refreshMe() != null
+        onResolved(resolveSplashDestination(hasUser = hasUser, onboarded = AuthRepository.isOnboarded()))
     }
 
     val infiniteTransition = rememberInfiniteTransition(label = "splash")
@@ -218,13 +208,17 @@ enum class SplashDestination { Auth, Onboarding, Home }
 
 /**
  * Pure decision function for where Splash sends the user, kept separate
- * from the composable so it's unit-testable without an Android Context:
- *   - no session                    -> Auth (Login)
- *   - session + onboarded           -> Home
- *   - session + NOT yet onboarded   -> Onboarding
+ * from the composable so it's unit-testable without an Android Context.
+ *
+ * Launch NEVER routes to the login wall — an anonymous user (no session)
+ * browses freely, so routing depends only on whether onboarding has been
+ * seen, NOT on whether a user is signed in:
+ *   - NOT yet onboarded (anyone)    -> Onboarding
+ *   - onboarded (anyone)            -> Home
+ * [hasUser] is retained for the signature/tests but no longer sends anyone to
+ * Auth; login is prompted later, only at gated actions (rewards / Ranked).
  */
 fun resolveSplashDestination(hasUser: Boolean, onboarded: Boolean): SplashDestination = when {
-    !hasUser -> SplashDestination.Auth
     onboarded -> SplashDestination.Home
     else -> SplashDestination.Onboarding
 }

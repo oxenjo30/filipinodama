@@ -20,6 +20,7 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -64,8 +65,9 @@ import kotlinx.coroutines.launch
  * hardcoded mapping, not a fabrication of server data.
  */
 @Composable
-fun QuestsScreen(onBack: () -> Unit = {}) {
+fun QuestsScreen(onBack: () -> Unit = {}, onRequireSignIn: () -> Unit = {}) {
     val scope = rememberCoroutineScope()
+    val signedIn = com.filipinodama.app.data.AuthRepository.state.collectAsState().value.user != null
     var daily by remember { mutableStateOf<List<QuestDto>>(emptyList()) }
     var seasonal by remember { mutableStateOf<List<QuestDto>>(emptyList()) }
     var loaded by remember { mutableStateOf(false) }
@@ -87,6 +89,8 @@ fun QuestsScreen(onBack: () -> Unit = {}) {
     LaunchedEffect(Unit) { load() }
 
     fun claim(id: String) {
+        // Owner policy: claiming requires an account — anonymous → Login.
+        if (!signedIn) { onRequireSignIn(); return }
         if (claiming != null) return
         claiming = id
         scope.launch {
@@ -124,7 +128,26 @@ fun QuestsScreen(onBack: () -> Unit = {}) {
             modifier = Modifier.padding(bottom = 20.dp)
         )
 
-        if (!loaded) {
+        if (!signedIn) {
+            // Anonymous user (owner policy) — quests are account-bound; show a
+            // clean sign-in prompt instead of a load error.
+            Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.fillMaxWidth().padding(top = 40.dp)) {
+                Text("Sign in to track quests", color = GoldLt, style = MaterialTheme.typography.titleMedium)
+                Text(
+                    "Complete quests and claim gold once you have an account.",
+                    color = Ink2,
+                    style = MaterialTheme.typography.bodyMedium,
+                    modifier = Modifier.padding(top = 8.dp, bottom = 16.dp),
+                    textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                )
+                Box(
+                    modifier = Modifier
+                        .clickable(onClick = onRequireSignIn)
+                        .background(Gold, RoundedCornerShape(12.dp))
+                        .padding(horizontal = 28.dp, vertical = 13.dp)
+                ) { Text("Sign In", color = Color(0xFF2A1607), style = MaterialTheme.typography.titleMedium) }
+            }
+        } else if (!loaded) {
             Box(Modifier.fillMaxWidth().padding(top = 40.dp), contentAlignment = Alignment.Center) { CircularProgressIndicator(color = Gold) }
         } else if (loadError) {
             Box(Modifier.fillMaxWidth().padding(top = 40.dp), contentAlignment = Alignment.Center) {

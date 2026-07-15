@@ -22,6 +22,7 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -64,8 +65,9 @@ import kotlinx.coroutines.launch
  * hardcoded diamond price, per task instructions.
  */
 @Composable
-fun SeasonScreen(onBack: () -> Unit = {}) {
+fun SeasonScreen(onBack: () -> Unit = {}, onRequireSignIn: () -> Unit = {}) {
     val scope = rememberCoroutineScope()
+    val signedIn = com.filipinodama.app.data.AuthRepository.state.collectAsState().value.user != null
     var data by remember { mutableStateOf<SeasonCurrentResponse?>(null) }
     var error by remember { mutableStateOf<String?>(null) }
     var busyTier by remember { mutableStateOf<Int?>(null) }
@@ -189,8 +191,11 @@ fun SeasonScreen(onBack: () -> Unit = {}) {
                                 hasPass = s.hasPass,
                                 busy = busyTier == tier.tier,
                                 onClaimFree = {
-                                    busyTier = tier.tier
-                                    scope.launch { EconomyRepository.claimSeasonTier(tier.tier); load(); busyTier = null }
+                                    // Owner policy: claiming requires an account.
+                                    if (!signedIn) { onRequireSignIn() } else {
+                                        busyTier = tier.tier
+                                        scope.launch { EconomyRepository.claimSeasonTier(tier.tier); load(); busyTier = null }
+                                    }
                                 }
                             )
                         }

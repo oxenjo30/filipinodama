@@ -25,19 +25,27 @@ class AuthRepositoryLogicTest {
 
     // ---- resolveSplashDestination ----
 
+    // Launch NEVER routes to the login wall (owner policy: no auto-guest, no
+    // forced login). An anonymous user (no session) browses freely, so routing
+    // depends ONLY on the onboarded flag, never on hasUser.
+
     @Test
-    fun `no session routes to Auth regardless of onboarded flag`() {
-        assertEquals(SplashDestination.Auth, resolveSplashDestination(hasUser = false, onboarded = false))
-        assertEquals(SplashDestination.Auth, resolveSplashDestination(hasUser = false, onboarded = true))
+    fun `anonymous (no session) never routes to Auth — onboarded goes Home`() {
+        assertEquals(SplashDestination.Home, resolveSplashDestination(hasUser = false, onboarded = true))
     }
 
     @Test
-    fun `session plus onboarded routes to Home`() {
+    fun `anonymous (no session) not-yet-onboarded routes to Onboarding, not Auth`() {
+        assertEquals(SplashDestination.Onboarding, resolveSplashDestination(hasUser = false, onboarded = false))
+    }
+
+    @Test
+    fun `signed-in plus onboarded routes to Home`() {
         assertEquals(SplashDestination.Home, resolveSplashDestination(hasUser = true, onboarded = true))
     }
 
     @Test
-    fun `session plus not-yet-onboarded routes to Onboarding`() {
+    fun `signed-in plus not-yet-onboarded routes to Onboarding`() {
         assertEquals(SplashDestination.Onboarding, resolveSplashDestination(hasUser = true, onboarded = false))
     }
 

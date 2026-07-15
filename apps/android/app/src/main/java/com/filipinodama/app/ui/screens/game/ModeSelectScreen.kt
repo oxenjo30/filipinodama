@@ -60,7 +60,11 @@ fun ModeSelectScreen(
     onRankedGuestBlocked: () -> Unit
 ) {
     val authState by AuthRepository.state.collectAsState()
-    val isGuest = authState.user?.isGuest ?: false
+    // Ranked requires a real account. That means EITHER a guest account OR an
+    // anonymous user (no session at all). A plain `user?.isGuest ?: false` would
+    // wrongly treat an anonymous user (user == null) as permitted, so gate on
+    // "no real account" = user is null OR user.isGuest.
+    val needsAccountForRanked = authState.user?.let { it.isGuest } ?: true
     // Watch Live PAGE gate (owner directive 2026-07-12) — safe-off: the card
     // only renders after /api/config/public explicitly says "true". Room/match
     // spectate deep links elsewhere are NOT gated by this.
@@ -126,11 +130,11 @@ fun ModeSelectScreen(
                 title = "Ranked",
                 tag = "RANKED",
                 desc = "Climb the ladder. Trophies and gold are on the line.",
-                meta = if (isGuest) "Requires a free account" else "Affects your rank",
+                meta = if (needsAccountForRanked) "Requires a free account" else "Affects your rank",
                 accent = Color(0xFFD93B52),
                 border = Color(0x66D93B52),
                 bg = Brush.linearGradient(listOf(Color(0xFF3A1C2A), Color(0xFF1A1030))),
-                onClick = { if (isGuest) onRankedGuestBlocked() else onPlayRanked() }
+                onClick = { if (needsAccountForRanked) onRankedGuestBlocked() else onPlayRanked() }
             )
             ModeCardRow(
                 icon = "👥",
