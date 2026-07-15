@@ -48,9 +48,23 @@ android {
         // cramped wrap) + AUDIO added (looping loading-screen music + board SFX:
         // move/capture/king/win/lose, gated by Sound/Music settings) + store
         // item preview now animates (bob + breathing glow) + joining a room now
-        // prompts sign-in (realtime socket rejects anonymous).
-        versionCode = 13
-        versionName = "0.1.12"
+        // prompts sign-in (realtime socket rejects anonymous); 14 = online Quick
+        // Match now gated behind sign-in too (was letting a not-logged-in user
+        // start a search that can never pair — the socket rejects anonymous, so
+        // no human match AND no AI fallback; offline Play-vs-AI stays open) +
+        // code/security-review hardening: bounded SFX audio thread pool + music
+        // start/stop race fixed, plaintext-secure-store fallback now flagged +
+        // kdoc corrected, RefreshAuthenticator startsWith + single-flight refresh,
+        // cookie jar uses RFC-6265 Cookie.matches, Discover-Guilds join failure
+        // surfaced instead of swallowed. (14 was built but NEVER uploaded — 15
+        // supersedes it and contains everything in 14.) 15 = LATENCY: online
+        // moves now apply OPTIMISTICALLY (your piece moves the instant you tap,
+        // reconciled/rolled-back by the server's authoritative echo) so a laggy
+        // connection no longer freezes the board waiting for the round-trip;
+        // "Sending move…" hint while a move is in flight. (Pairs with a server-
+        // side connectionStateRecovery change that deploys with the API.)
+        versionCode = 15
+        versionName = "0.1.14"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 

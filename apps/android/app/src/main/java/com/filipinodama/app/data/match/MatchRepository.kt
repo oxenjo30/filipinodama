@@ -130,6 +130,10 @@ object MatchRepository {
                     gameState = payload.state,
                     myColor = myColor,
                     selected = null,
+                    // A full resync is authoritative — discard any in-flight
+                    // optimistic move so a reconnect can't strand the pending flag.
+                    pendingBaseState = null,
+                    pendingMove = false,
                     connectionLost = false
                 ).withHighlights()
             }
@@ -152,7 +156,18 @@ object MatchRepository {
 
         s.on(EV.matchMoved) { args ->
             val payload = decode<MatchMovedDto>(args) ?: return@on
-            _state.update { st -> st.copy(gameState = payload.state, selected = null).withHighlights() }
+            // Authoritative state from the server ALWAYS wins — this reconciles
+            // our optimistic apply (they'll be identical for our own move; for
+            // the opponent's move this is the only update). Clear the pending
+            // markers: the move (ours or theirs) is now confirmed.
+            _state.update { st ->
+                st.copy(
+                    gameState = payload.state,
+                    selected = null,
+                    pendingBaseState = null,
+                    pendingMove = false
+                ).withHighlights()
+            }
         }
 
         s.on(EV.matchIllegal) { args ->
@@ -176,7 +191,20 @@ object MatchRepository {
                 }
                 return@on
             }
-            _state.update { st -> st.copy(selected = null, error = payload?.reason).withHighlights() }
+            // Server rejected the move — ROLL BACK our optimistic apply to the
+            // pre-move state (latency fix #1). Common benign reasons here are a
+            // race (opponent moved / match ended between our tap and the server
+            // seeing it); the rollback + the authoritative state keep us in sync.
+            _state.update { st ->
+                val rolledBack = st.pendingBaseState ?: st.gameState
+                st.copy(
+                    gameState = rolledBack,
+                    selected = null,
+                    pendingBaseState = null,
+                    pendingMove = false,
+                    error = payload?.reason
+                ).withHighlights()
+            }
         }
 
         s.on(EV.matchEnded) { args ->
@@ -346,8 +374,30 @@ object MatchRepository {
             val options = Rules.legalMoves(gs).filter { it.from.sameAs(selected) }
             val chosen = options.find { it.landing.sameAs(square) }
             if (chosen != null) {
+                // Optimistic apply (latency fix #1): render OUR move immediately
+                // using the same engine the server uses, so the board never
+                // freezes for the round-trip. Stash the pre-move state to roll
+                // back to if the server rejects it (matchIllegal); the server's
+                // matchMoved echo replaces this with the authoritative state.
+                // Guard: don't optimistically stack a second move while one is
+                // still in flight (wait for the echo first).
+                if (st.pendingMove) return
+                val optimistic = runCatching { Rules.applyMove(gs, chosen) }.getOrNull()
                 emitPayload(EV.matchMove, MatchMoveRequest(st.matchId, chosen))
-                _state.update { it.copy(selected = null, moveTargets = emptyList(), captureTargets = emptyList()) }
+                _state.update {
+                    if (optimistic != null) {
+                        it.copy(
+                            gameState = optimistic,
+                            pendingBaseState = gs, // roll-back target
+                            pendingMove = true,
+                            selected = null
+                        ).withHighlights()
+                    } else {
+                        // Local apply failed (shouldn't happen for a legal move) —
+                        // fall back to the old behavior: just clear + await echo.
+                        it.copy(selected = null, moveTargets = emptyList(), captureTargets = emptyList())
+                    }
+                }
                 return
             }
         }
@@ -466,7 +516,14 @@ data class MatchUiState(
     val offeredByMe: Boolean = false,
     val offeredByOpponent: Boolean = false,
     val rematchDeclined: Boolean = false,
-    val viewers: Int? = null
+    val viewers: Int? = null,
+    // Optimistic move (latency fix #1): when YOU tap a legal move we apply it to
+    // [gameState] immediately (so the board never freezes waiting for the server
+    // round-trip) and stash the pre-move state in [pendingBaseState] to roll back
+    // to if the server rejects it. [pendingMove] is true while our own move is in
+    // flight (server echo not yet received) — drives the "sending…" indicator #2.
+    val pendingBaseState: GameState? = null,
+    val pendingMove: Boolean = false
 ) {
     /** Recomputes moveTargets/captureTargets/mustCapture from [gameState] +
      *  [selected] using the read-only Kotlin Rules helper — mirrors

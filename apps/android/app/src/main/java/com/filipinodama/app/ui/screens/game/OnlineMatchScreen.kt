@@ -233,6 +233,13 @@ fun OnlineMatchScreen(
                     text = "Your turn",
                     dot = Color(0xFFF0CF72), bg = Color(0x1FE8B84B), borderColor = Color(0x59E8B84B), textColor = Color(0xFFF4D886)
                 )
+                // Our move is applied locally but not yet confirmed by the server
+                // (latency fix #2): on a laggy link, show it's SYNCING rather than
+                // silently reading as the opponent's turn.
+                ui.pendingMove -> TurnPill(
+                    text = "Sending move…",
+                    dot = Color(0xFFF0CF72), bg = Panel.copy(alpha = 0.7f), borderColor = Color(0x33E8B84B), textColor = Ink
+                )
                 else -> TurnPill(
                     text = "Opponent's move…",
                     dot = Ink2, bg = Panel.copy(alpha = 0.7f), borderColor = Color(0x33E8B84B), textColor = Ink

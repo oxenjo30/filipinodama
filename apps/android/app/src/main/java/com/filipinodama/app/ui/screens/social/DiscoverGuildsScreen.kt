@@ -77,6 +77,8 @@ fun DiscoverGuildsScreen(onBack: () -> Unit, onRequireSignIn: () -> Unit = {}) {
     var busy by remember { mutableStateOf(false) }
     var createOpen by remember { mutableStateOf(false) }
     var previewGuildId by remember { mutableStateOf<String?>(null) }
+    // Review M2: surface a join failure instead of swallowing it silently.
+    var toast by remember { mutableStateOf<String?>(null) }
 
     fun loadBrowse(q: String) {
         scope.launch {
@@ -183,12 +185,21 @@ fun DiscoverGuildsScreen(onBack: () -> Unit, onRequireSignIn: () -> Unit = {}) {
                             onOpenPreview = { previewGuildId = card.id },
                             onJoin = {
                                 if (me == null) {
-                                    previewGuildId = card.id
+                                    // Anonymous — prompt sign-in (join needs an account).
+                                    onRequireSignIn()
                                 } else {
                                     busy = true
                                     scope.launch {
-                                        GuildsRepository.join(card.id)
-                                        loadBrowse(query)
+                                        // Review M2: the join result was previously
+                                        // SWALLOWED — a failure left a dead button with
+                                        // no feedback. Now surface it (and route an auth
+                                        // error to the sign-in prompt).
+                                        when (val r = GuildsRepository.join(card.id)) {
+                                            is SocialResult.Success -> { toast = null; loadBrowse(query) }
+                                            is SocialResult.Failure ->
+                                                if (com.filipinodama.app.ui.components.isAuthError(r.code)) onRequireSignIn()
+                                                else toast = r.message
+                                        }
                                         busy = false
                                     }
                                 }
@@ -237,6 +248,21 @@ fun DiscoverGuildsScreen(onBack: () -> Unit, onRequireSignIn: () -> Unit = {}) {
                 onClose = { previewGuildId = null },
                 onJoined = { loadBrowse(query) }
             )
+        }
+
+        // Join-failure toast (review M2) — auto-dismisses; bottom-anchored.
+        toast?.let { msg ->
+            LaunchedEffect(msg) { kotlinx.coroutines.delay(3000); toast = null }
+            Box(modifier = Modifier.fillMaxSize().padding(20.dp), contentAlignment = Alignment.BottomCenter) {
+                Box(
+                    modifier = Modifier
+                        .background(Color(0xF21B1030), RoundedCornerShape(12.dp))
+                        .border(1.dp, Color(0x59E8B84B), RoundedCornerShape(12.dp))
+                        .padding(horizontal = 16.dp, vertical = 12.dp)
+                ) {
+                    Text(msg, color = GoldLt, style = MaterialTheme.typography.bodyMedium)
+                }
+            }
         }
     }
 }
