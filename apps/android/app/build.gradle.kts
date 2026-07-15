@@ -90,6 +90,17 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
+            // NOTE on the two Play upload warnings (both advisory-only, never
+            // block an upload):
+            //  1. "no deobfuscation file" — expected: R8/minify is OFF (enabling
+            //     it needs keep rules for Retrofit / kotlinx.serialization /
+            //     socket.io / Coil / Google credentials or the release crashes).
+            //  2. "no native debug symbols" — the app's ONLY native lib is the
+            //     prebuilt, already-stripped androidx.graphics.path .so (Compose
+            //     path rendering). It carries no symbols to bundle, so
+            //     ndk { debugSymbolLevel } has nothing to attach and the warning
+            //     persists regardless — left off to keep this config minimal. If
+            //     first-party native code is ever added, revisit debugSymbolLevel.
             // Sign with the upload key when keystore.properties is present.
             if (keystorePropsFile.exists()) {
                 signingConfig = signingConfigs.getByName("release")
