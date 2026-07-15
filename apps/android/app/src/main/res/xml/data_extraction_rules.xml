@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Android 12+ (API 31+) equivalent of backup_rules.xml. Exclude the
+  keystore-bound encrypted session prefs from BOTH cloud backup and
+  device-to-device transfer, so a restored/transferred blob can never make
+  EncryptedSharedPreferences.create() throw at launch on the target device.
+-->
+<data-extraction-rules>
+    <cloud-backup>
+        <exclude domain="sharedpref" path="fd_secure_prefs.xml" />
+        <exclude domain="sharedpref" path="fd_secure_prefs_plain.xml" />
+    </cloud-backup>
+    <device-transfer>
+        <exclude domain="sharedpref" path="fd_secure_prefs.xml" />
+        <exclude domain="sharedpref" path="fd_secure_prefs_plain.xml" />
+    </device-transfer>
+</data-extraction-rules>

@@ -32,9 +32,11 @@ android {
         // preview affordance; 7 = anonymous mode (no auto-guest; login gated to
         // rewards + Ranked; "Continue as guest" removed); 8 = smarter Hard AI +
         // offline vs-AI player cards (AI Opponent / Guest); 9 = loader always
-        // fills to 100% before the board (no mid-jump).
-        versionCode = 9
-        versionName = "0.1.8"
+        // fills to 100% before the board (no mid-jump); 10 = CRASH FIX — harden
+        // EncryptedSharedPreferences init (was crashing launch on newer devices
+        // e.g. Galaxy S25) + exclude the encrypted prefs from backup.
+        versionCode = 10
+        versionName = "0.1.9"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 

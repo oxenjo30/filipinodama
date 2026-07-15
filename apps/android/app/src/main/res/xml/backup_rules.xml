@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Exclude the keystore-bound encrypted session prefs from cloud/D2D backup.
+  The MasterKey behind EncryptedSharedPreferences is device/Keystore-bound, so a
+  restored blob can't be decrypted on a new device and makes
+  EncryptedSharedPreferences.create() throw AEADBadTagException at launch (a
+  launch-crash trigger on newer devices). Never back these up. Used on Android 11
+  and below via android:fullBackupContent.
+-->
+<full-backup-content>
+    <exclude domain="sharedpref" path="fd_secure_prefs.xml" />
+    <exclude domain="sharedpref" path="fd_secure_prefs_plain.xml" />
+</full-backup-content>

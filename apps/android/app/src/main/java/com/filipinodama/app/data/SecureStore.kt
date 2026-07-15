@@ -36,18 +36,47 @@ interface KeyValueStore {
  */
 class SecureStore(context: Context) : KeyValueStore {
 
-    private val prefs: SharedPreferences = run {
-        val masterKey = MasterKey.Builder(context)
-            .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
-            .build()
+    // EncryptedSharedPreferences (androidx.security-crypto, now deprecated) is
+    // built at app start from MainActivity.onCreate. On some devices — notably
+    // newer Android 14+/16 flagships (e.g. Galaxy S25) — MasterKey/Keystore or a
+    // corrupt encrypted prefs file can throw here, which used to crash the app
+    // instantly on launch ("installs but won't open, nothing happens"). Build it
+    // defensively: try once, on failure DELETE the corrupt encrypted file and
+    // retry, and if it STILL fails fall back to plain SharedPreferences so the
+    // app always launches. (The stored values are non-sensitive session
+    // metadata + an httpOnly-cookie blob the app can never read raw anyway; a
+    // fresh unencrypted store simply means the user re-authenticates.)
+    private val prefs: SharedPreferences = createPrefs(context.applicationContext)
 
-        EncryptedSharedPreferences.create(
-            context,
-            PREFS_FILE_NAME,
-            masterKey,
-            EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
-            EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
-        )
+    private fun createPrefs(context: Context): SharedPreferences {
+        fun buildEncrypted(): SharedPreferences {
+            val masterKey = MasterKey.Builder(context)
+                .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
+                .build()
+            return EncryptedSharedPreferences.create(
+                context,
+                PREFS_FILE_NAME,
+                masterKey,
+                EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
+                EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
+            )
+        }
+        return try {
+            buildEncrypted()
+        } catch (_: Throwable) {
+            // Likely a corrupt encrypted store or a keystore key that no longer
+            // matches the file. Wipe the encrypted prefs and try a clean rebuild.
+            runCatching {
+                context.deleteSharedPreferences(PREFS_FILE_NAME)
+            }
+            try {
+                buildEncrypted()
+            } catch (_: Throwable) {
+                // Encryption is unavailable on this device/state — never crash the
+                // app for it. Use a plain prefs file so the session layer works.
+                context.getSharedPreferences(PREFS_FILE_NAME + "_plain", Context.MODE_PRIVATE)
+            }
+        }
     }
 
     override fun getString(key: String): String? = prefs.getString(key, null)
