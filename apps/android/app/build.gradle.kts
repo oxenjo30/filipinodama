@@ -31,9 +31,10 @@ android {
         // banners + Profile overview logout; 6 = universal guild approval + Store
         // preview affordance; 7 = anonymous mode (no auto-guest; login gated to
         // rewards + Ranked; "Continue as guest" removed); 8 = smarter Hard AI +
-        // offline vs-AI player cards (AI Opponent / Guest).
-        versionCode = 8
-        versionName = "0.1.7"
+        // offline vs-AI player cards (AI Opponent / Guest); 9 = loader always
+        // fills to 100% before the board (no mid-jump).
+        versionCode = 9
+        versionName = "0.1.8"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
