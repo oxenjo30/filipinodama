@@ -88,7 +88,7 @@ export function OnlineMatchPage() {
   const {
     status, matchId, myColor, opponent, state,
     selected, moveTargets, captureTargets, mustCapture, end, error,
-    connectionLost, chat, offeredByMe, offeredByOpponent, rematchDeclined, viewers,
+    connectionLost, pendingMove, chat, offeredByMe, offeredByOpponent, rematchDeclined, viewers,
     joinQueue, leaveQueue, resync, spectate, onSquareClick, resign, reset,
     sendChat: sendMatchChat, sendEmote, offerRematch, acceptRematch, declineRematch,
   } = useOnlineStore();
@@ -555,7 +555,11 @@ export function OnlineMatchPage() {
         }}>
           {isSpectating
             ? state.result ? "Match ended" : `${state.turn === "red" ? "Red" : "Blue"} to move`
-            : myTurn ? (mustCapture ? "⚠ You must capture" : "● Your move") : "Opponent's move…"}
+            : myTurn ? (mustCapture ? "⚠ You must capture" : "● Your move")
+            // Our move is applied locally but not yet server-confirmed (latency
+            // fix #2): show it's syncing rather than silently reading as the
+            // opponent's turn on a laggy link.
+            : pendingMove ? "Sending move…" : "Opponent's move…"}
         </div>
 
         {/* Connection-lost banner — non-blocking hint that the socket dropped

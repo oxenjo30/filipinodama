@@ -154,6 +154,17 @@ async function main() {
   const io = new IOServer(app.server, {
     path: "/rt",
     cors: { origin: corsOrigins.length > 1 ? corsOrigins : corsOrigins[0], credentials: true },
+    // Connection State Recovery (latency/robustness fix #2): on a BRIEF network
+    // drop (a mobile client changing towers / a tunnel blip), the client
+    // reconnects with the SAME session and Socket.IO replays the events it
+    // missed while gone AND restores its rooms — instead of the connection being
+    // treated as brand-new (which forced a full match:resync round-trip and a
+    // visible stall). The window is bounded so a genuinely-gone client still
+    // frees its seat via the normal disconnect path.
+    connectionStateRecovery: {
+      maxDisconnectionDuration: 2 * 60 * 1000, // 2 min grace to recover
+      skipMiddlewares: false, // still run the auth io.use() guard on recovery
+    },
   });
   registerRealtime(io);
 

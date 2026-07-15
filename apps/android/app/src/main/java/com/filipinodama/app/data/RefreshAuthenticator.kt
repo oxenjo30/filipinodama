@@ -44,18 +44,46 @@ class RefreshAuthenticator(
             .build()
     }
 
+    // Single-flight state (review L2): concurrent 401s (common on cold start /
+    // token-expiry bursts) must NOT each fire their own POST /api/auth/refresh —
+    // with server-side refresh-token ROTATION the first call rotates fd_refresh
+    // and the racers then present a consumed token → spurious logout / reuse
+    // alarms. [refreshLock] serialises refreshes; [refreshGen] counts completed
+    // refreshes so a thread that blocked on the lock can tell a refresh already
+    // happened *after it started waiting* and just retry with the fresh cookie
+    // instead of firing a redundant one.
+    private val refreshLock = Any()
+    @Volatile private var refreshGen = 0L
+
     override fun authenticate(route: Route?, response: Response): Request? {
         // Never try to refresh auth endpoints themselves (matches the web
         // client's `!path.startsWith("/api/auth/")` guard) — a 401 from
         // /api/auth/login or /api/auth/refresh is a real credential failure,
-        // not a "session expired" case.
+        // not a "session expired" case. (Review L1: startsWith, not contains —
+        // contains would also skip refresh for any path merely CONTAINING the
+        // substring, and the guard is meant to match only the auth route prefix.)
         val path = response.request.url.encodedPath
-        if (path.contains("/api/auth/")) return null
+        if (path.startsWith("/api/auth/")) return null
 
         // Already retried once for this request chain — stop, don't loop.
         if (responseCount(response) >= 2) return null
 
-        val refreshed = runCatching { attemptRefresh() }.getOrDefault(false)
+        // Snapshot the generation BEFORE contending for the lock: if another
+        // thread completes a refresh while we wait, our snapshot is stale and we
+        // should just retry (the cookie is already fresh) rather than refresh
+        // again. The snapshot read and the refresh decision are a single
+        // critical section so the compare is race-free.
+        val genBefore = refreshGen // volatile-ish read; re-checked under the lock
+        val refreshed = synchronized(refreshLock) {
+            if (refreshGen != genBefore) {
+                // A refresh completed while we were waiting for the lock — reuse it.
+                true
+            } else {
+                runCatching { attemptRefresh() }.getOrDefault(false).also { ok ->
+                    if (ok) refreshGen++
+                }
+            }
+        }
         if (!refreshed) return null
 
         // Cookies were rotated by attemptRefresh() via the shared cookieJar;

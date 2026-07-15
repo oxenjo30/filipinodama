@@ -16,8 +16,14 @@ import okhttp3.HttpUrl
  *
  * Implementation: an in-memory `Map<host, List<SerializableCookie>>`,
  * mirrored to a single JSON blob in EncryptedSharedPreferences on every
- * `saveFromResponse`. Kept intentionally simple for Phase 1 — no per-cookie
- * expiry sweep beyond what OkHttp's own Cookie.expiresAt already encodes.
+ * `saveFromResponse`. The cookies are keyed by their RESPONSE host for storage
+ * only; on send, matching is delegated to OkHttp's own [Cookie.matches] (review
+ * L4), which enforces RFC-6265 domain, path AND Secure matching — so a Secure
+ * cookie is never replayed over cleartext, a cookie is never sent to a host it
+ * doesn't domain-match, and path scoping is honoured. (The prior version keyed
+ * purely on exact host and only filtered by expiry, re-implementing matching
+ * loosely; the exact-host keying happened to prevent cross-origin send, but the
+ * Secure/path checks were missing.)
  */
 class PersistentCookieJar(private val secureStore: SecureStore) : CookieJar {
 
@@ -41,17 +47,26 @@ class PersistentCookieJar(private val secureStore: SecureStore) : CookieJar {
     }
 
     override fun loadForRequest(url: HttpUrl): List<Cookie> {
-        val host = url.host
         val now = System.currentTimeMillis()
-        val stored = memoryCache[host] ?: return emptyList()
+        var sweptAny = false
+        val result = mutableListOf<Cookie>()
 
-        val (valid, expired) = stored.partition { it.expiresAt > now }
-        if (expired.isNotEmpty()) {
-            memoryCache[host] = valid.toMutableList()
-            persist()
+        // Iterate every stored bucket; OkHttp's Cookie.matches(url) decides
+        // domain/path/Secure eligibility for THIS request. Expired cookies are
+        // swept out as we go.
+        for ((host, stored) in memoryCache) {
+            val (valid, expired) = stored.partition { it.expiresAt > now }
+            if (expired.isNotEmpty()) {
+                memoryCache[host] = valid.toMutableList()
+                sweptAny = true
+            }
+            valid.forEach { sc ->
+                val cookie = sc.toCookie(host) ?: return@forEach
+                if (cookie.matches(url)) result.add(cookie)
+            }
         }
-
-        return valid.mapNotNull { it.toCookie(host) }
+        if (sweptAny) persist()
+        return result
     }
 
     /** Wipes every persisted + in-memory cookie (used by logout). */

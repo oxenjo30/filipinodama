@@ -3,11 +3,14 @@ package com.filipinodama.app.data.audio
 import android.content.Context
 import android.media.AudioAttributes
 import android.media.AudioFormat
-import android.media.AudioManager
 import android.media.AudioTrack
 import android.media.MediaPlayer
 import com.filipinodama.app.R
 import com.filipinodama.app.data.settings.SettingsStore
+import java.util.concurrent.LinkedBlockingQueue
+import java.util.concurrent.ThreadPoolExecutor
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicInteger
 import kotlin.concurrent.thread
 import kotlin.math.PI
 import kotlin.math.exp
@@ -58,15 +61,34 @@ object SoundManager {
 
     private const val SAMPLE_RATE = 44100
 
+    // Bounded playback pool (review H1): SFX used to spawn ONE new daemon thread
+    // + a fresh hardware AudioTrack per call, unbounded. A long forced-capture
+    // chain fires several CAPTUREs sub-second, so N overlapping tracks could
+    // exhaust a mid-range device's limited active-track count (build() then
+    // fails). Cap concurrency at MAX_CONCURRENT_SFX threads; a bounded queue
+    // that DISCARDS overflow means a burst plays a few sounds and drops the rest
+    // (correct for a game "click" — you never want 12 stacked capture sounds).
+    private const val MAX_CONCURRENT_SFX = 4
+    private val sfxThreadNo = AtomicInteger(0)
+    private val sfxExecutor: ThreadPoolExecutor by lazy {
+        ThreadPoolExecutor(
+            MAX_CONCURRENT_SFX, MAX_CONCURRENT_SFX,
+            2, TimeUnit.SECONDS,
+            LinkedBlockingQueue(MAX_CONCURRENT_SFX), // small backlog, then drop
+            { r -> Thread(r, "sfx-${sfxThreadNo.incrementAndGet()}").apply { isDaemon = true } },
+            ThreadPoolExecutor.DiscardPolicy() // overflow SFX are silently dropped
+        ).apply { allowCoreThreadTimeOut(true) }
+    }
+
     /**
      * Play a short synthesized effect for a board event. No-op when the Sound
-     * effects toggle is off. Fire-and-forget on a throwaway thread so a burst
-     * of captures never blocks the caller/UI.
+     * effects toggle is off. Runs on the bounded [sfxExecutor] so a burst of
+     * captures never spawns unbounded threads/AudioTracks or blocks the UI.
      */
     fun playSfx(sfx: Sfx) {
         if (!soundEnabled()) return
-        thread(isDaemon = true, name = "sfx-${sfx.name.lowercase()}") {
-            runCatching { renderAndPlay(sfx) }
+        runCatching {
+            sfxExecutor.execute { runCatching { renderAndPlay(sfx) } }
         }
     }
 
@@ -168,8 +190,11 @@ object SoundManager {
         try {
             track.write(samples, 0, samples.size)
             track.play()
-            // Hold the thread until playback finishes, then release.
-            val durMs = (samples.size.toLong() * 1000 / SAMPLE_RATE) + 40
+            // Hold the thread until playback finishes, then release. The cushion
+            // (review M3) is generous enough that the tail of the longest clips
+            // (win/lose flourishes ~280-320ms) isn't cut off by stop()/release()
+            // on a loaded device.
+            val durMs = (samples.size.toLong() * 1000 / SAMPLE_RATE) + 120
             Thread.sleep(durMs)
         } finally {
             runCatching { track.stop() }
@@ -179,56 +204,82 @@ object SoundManager {
 
     // ─────────────────────────── Loading music ───────────────────────────
 
+    // Review H2: start/stop used to race. stopLoadingMusic nulled the field
+    // synchronously but faded+released on a detached thread; a start firing in
+    // that window passed the null-check and created a SECOND player → two
+    // overlapping loops. All access to loadingPlayer is now under [musicLock],
+    // and every start/stop bumps [musicGen] — a fade aborts as soon as it sees a
+    // newer generation, so a stop's fade-out can never fight a later start (and
+    // a superseded player is never touched again). The two loaders (Splash +
+    // pre-match LoadingOverlay) hand off back-to-back, so this window is real.
+    private val musicLock = Any()
     private var loadingPlayer: MediaPlayer? = null
+    private val musicGen = AtomicInteger(0)
 
     /**
      * Start the looping loading-screen theme (idempotent). No-op when the Music
-     * toggle is off. Mirrors the web's startLoadingMusic(): a single looping
-     * track that never stacks, faded up so it doesn't pop.
+     * toggle is off. A single looping track that never stacks, faded up so it
+     * doesn't pop.
      */
     fun startLoadingMusic() {
         if (!musicEnabled()) return
-        if (loadingPlayer != null) return // never stack
-        runCatching {
-            val mp = MediaPlayer.create(appContext, R.raw.loading_theme) ?: return
-            mp.isLooping = true
-            mp.setVolume(0f, 0f)
-            mp.setAudioAttributes(
-                AudioAttributes.Builder()
-                    .setUsage(AudioAttributes.USAGE_MEDIA)
-                    .setContentType(AudioAttributes.CONTENT_TYPE_MUSIC)
-                    .build()
-            )
-            mp.start()
+        synchronized(musicLock) {
+            if (loadingPlayer != null) return // never stack
+            val gen = musicGen.incrementAndGet()
+            val mp = runCatching {
+                MediaPlayer.create(appContext, R.raw.loading_theme)?.apply {
+                    isLooping = true
+                    setVolume(0f, 0f)
+                    setAudioAttributes(
+                        AudioAttributes.Builder()
+                            .setUsage(AudioAttributes.USAGE_MEDIA)
+                            .setContentType(AudioAttributes.CONTENT_TYPE_MUSIC)
+                            .build()
+                    )
+                    start()
+                }
+            }.getOrNull() ?: return
             loadingPlayer = mp
-            // Fade in over ~500ms.
-            fadeVolume(mp, from = 0f, to = 0.75f, durationMs = 500)
+            // Fade in over ~500ms, abandoning if a stop/restart supersedes us.
+            fadeVolume(mp, gen, from = 0f, to = 0.75f, durationMs = 500)
         }
     }
 
     /** Stop the loading theme (fade out then release). Safe to call any time. */
     fun stopLoadingMusic() {
-        val mp = loadingPlayer ?: return
-        loadingPlayer = null
+        val mp: MediaPlayer
+        synchronized(musicLock) {
+            mp = loadingPlayer ?: return
+            loadingPlayer = null
+            musicGen.incrementAndGet() // supersede any in-flight fade-in
+        }
         thread(isDaemon = true, name = "music-stop") {
             runCatching {
-                fadeVolumeBlocking(mp, from = 0.75f, to = 0f, durationMs = 350)
+                // Fade out unconditionally (gen check not needed — this player is
+                // already detached from the field and will never be reused).
+                fadeVolumeBlocking(mp, from = 0.75f, to = 0f, durationMs = 350, gen = null)
                 mp.stop()
                 mp.release()
             }.onFailure { runCatching { mp.release() } }
         }
     }
 
-    private fun fadeVolume(mp: MediaPlayer, from: Float, to: Float, durationMs: Int) {
+    private fun fadeVolume(mp: MediaPlayer, gen: Int, from: Float, to: Float, durationMs: Int) {
         thread(isDaemon = true, name = "music-fade") {
-            runCatching { fadeVolumeBlocking(mp, from, to, durationMs) }
+            runCatching { fadeVolumeBlocking(mp, from, to, durationMs, gen) }
         }
     }
 
-    private fun fadeVolumeBlocking(mp: MediaPlayer, from: Float, to: Float, durationMs: Int) {
+    /**
+     * Ramp [mp]'s volume. If [gen] is non-null, the fade aborts the instant the
+     * current [musicGen] moves past it (i.e. this player was stopped/replaced),
+     * so we never keep calling setVolume on a player that's being torn down.
+     */
+    private fun fadeVolumeBlocking(mp: MediaPlayer, from: Float, to: Float, durationMs: Int, gen: Int?) {
         val steps = 16
         val stepMs = (durationMs / steps).toLong().coerceAtLeast(1)
         for (i in 0..steps) {
+            if (gen != null && musicGen.get() != gen) return // superseded — stop touching mp
             val v = from + (to - from) * (i.toFloat() / steps)
             runCatching { mp.setVolume(v, v) }
             Thread.sleep(stepMs)

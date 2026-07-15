@@ -1,7 +1,7 @@
 import { create } from "zustand";
 import type { GameState, Move, Square, PieceColor, GameResult } from "@dama/shared";
 import { EV, sameSquare } from "@dama/shared";
-import { legalMoves } from "@dama/game-engine";
+import { legalMoves, applyMove } from "@dama/game-engine";
 import { connectSocket, getSocket } from "../lib/socket";
 
 /**
@@ -72,6 +72,17 @@ export type OnlineStore = {
   mustCapture: boolean;
   end: EndInfo;
   error: string | null;
+
+  /**
+   * Optimistic move (latency fix): when YOU tap a legal move we apply it to
+   * `state` immediately (so the board never freezes for the server round-trip)
+   * and stash the pre-move state in `pendingBaseState` to roll back to if the
+   * server rejects it. `pendingMove` is true while our own move is in flight
+   * (echo not yet received) — drives a "sending…" hint. The server's authoritative
+   * matchMoved/matchState always wins on arrival and clears both.
+   */
+  pendingBaseState: GameState | null;
+  pendingMove: boolean;
 
   /**
    * Transient flag: the socket dropped mid-match and we're trying to reconnect.
@@ -167,6 +178,9 @@ export const useOnlineStore = create<OnlineStore>((set, get) => {
         state: p.state,
         myColor: p.yourColor ?? st.myColor,
         selected: null,
+        // A full resync is authoritative — discard any in-flight optimistic move.
+        pendingBaseState: null,
+        pendingMove: false,
         // A fresh authoritative state means we're back in sync — drop the banner.
         connectionLost: false,
         ...derive(p.state, null, p.yourColor ?? st.myColor),
@@ -195,9 +209,14 @@ export const useOnlineStore = create<OnlineStore>((set, get) => {
     });
 
     s.on(EV.matchMoved, (p: { matchId: string; move: Move; state: GameState }) => {
+      // Authoritative server state ALWAYS wins — reconciles our optimistic apply
+      // (identical for our own move; the only update for the opponent's). Clear
+      // the pending markers: the move is now confirmed.
       set((st) => ({
         state: p.state,
         selected: null,
+        pendingBaseState: null,
+        pendingMove: false,
         ...derive(p.state, null, st.myColor),
       }));
     });
@@ -225,8 +244,21 @@ export const useOnlineStore = create<OnlineStore>((set, get) => {
         }));
         return;
       }
-      // Any other rejection (e.g. an illegal move) — clear selection, keep state.
-      set((st) => ({ selected: null, ...derive(st.state, null, st.myColor), error: p?.reason ?? null }));
+      // Any other rejection (e.g. an illegal move, or a race where the opponent
+      // moved / the match ended between our tap and the server seeing it) — ROLL
+      // BACK our optimistic apply to the pre-move state, then let the next
+      // authoritative event (matchMoved/matchState) reconcile.
+      set((st) => {
+        const rolledBack = st.pendingBaseState ?? st.state;
+        return {
+          state: rolledBack,
+          selected: null,
+          pendingBaseState: null,
+          pendingMove: false,
+          ...derive(rolledBack, null, st.myColor),
+          error: p?.reason ?? null,
+        };
+      });
     });
 
     s.on(EV.matchEnded, (p: { result: GameResult; winnerId: string | null; redTrophyDelta: number; blueTrophyDelta: number; goldReward: number; state: GameState }) => {
@@ -340,6 +372,8 @@ export const useOnlineStore = create<OnlineStore>((set, get) => {
     mustCapture: false,
     end: null,
     error: null,
+    pendingBaseState: null,
+    pendingMove: false,
     connectionLost: false,
     chat: [],
     offeredByMe: false,
@@ -418,8 +452,30 @@ export const useOnlineStore = create<OnlineStore>((set, get) => {
         const options = legalMoves(state).filter((m) => sameSquare(m.from, selected));
         const chosen = options.find((m) => sameSquare(landing(m), sq));
         if (chosen) {
+          // Don't stack a second optimistic move while one is still in flight.
+          if (get().pendingMove) return;
+          // Optimistic apply (latency fix): render OUR move immediately with the
+          // same engine the server uses, so the board never freezes for the
+          // round-trip. Stash the pre-move state to roll back to on rejection;
+          // the server's matchMoved echo replaces it with the authoritative state.
+          let optimistic: GameState | null = null;
+          try {
+            optimistic = applyMove(state, chosen);
+          } catch {
+            optimistic = null;
+          }
           getSocket().emit(EV.matchMove, { matchId, move: chosen });
-          set({ selected: null, moveTargets: [], captureTargets: [] });
+          if (optimistic) {
+            set((st) => ({
+              state: optimistic!,
+              pendingBaseState: state,
+              pendingMove: true,
+              selected: null,
+              ...derive(optimistic!, null, st.myColor),
+            }));
+          } else {
+            set({ selected: null, moveTargets: [], captureTargets: [] });
+          }
           return;
         }
       }

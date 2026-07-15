@@ -29,10 +29,16 @@ interface KeyValueStore {
  * strings: e.g. a serialized cookie blob (see PersistentCookieJar) and
  * simple session metadata like an "isGuest" flag or last-known user id.
  *
- * The httpOnly `fd_access` / `fd_refresh` cookies themselves are primarily
- * managed by OkHttp's CookieJar (app code never reads their raw values,
- * matching how JS can't touch them either) — this store just persists
- * whatever the app needs across process death.
+ * SENSITIVITY (review M1 — the prior comment here was WRONG): the serialized
+ * cookie blob under KEY_COOKIE_JAR_BLOB contains the RAW `value` of the
+ * `fd_access` (~15-min JWT) and `fd_refresh` (rotation) cookies. "httpOnly"
+ * only stops *browser JavaScript* from reading a cookie; it does NOT stop this
+ * native app from serialising the value to disk — PersistentCookieJar does
+ * exactly that. So this blob IS a bearer token at rest and must live in
+ * EncryptedSharedPreferences. When encryption is unavailable and the store
+ * falls back to plain prefs (see [createPrefs]), those bearer tokens are on
+ * disk in cleartext (app-private sandbox); [usingPlaintextFallback] is exposed
+ * so callers have VISIBILITY into that state instead of it being silent.
  */
 class SecureStore(context: Context) : KeyValueStore {
 
@@ -46,6 +52,16 @@ class SecureStore(context: Context) : KeyValueStore {
     // app always launches. (The stored values are non-sensitive session
     // metadata + an httpOnly-cookie blob the app can never read raw anyway; a
     // fresh unencrypted store simply means the user re-authenticates.)
+    /**
+     * True when this store is running on the UNENCRYPTED fallback (encryption
+     * was unavailable on this device/state). Exposed for visibility (review M1):
+     * a caller can read this to log/telemeter how many installs run unencrypted,
+     * or to force re-auth rather than persist bearer tokens in cleartext. Never
+     * silently swallow the fallback again — surface it.
+     */
+    var usingPlaintextFallback: Boolean = false
+        private set
+
     private val prefs: SharedPreferences = createPrefs(context.applicationContext)
 
     private fun createPrefs(context: Context): SharedPreferences {
@@ -74,6 +90,9 @@ class SecureStore(context: Context) : KeyValueStore {
             } catch (_: Throwable) {
                 // Encryption is unavailable on this device/state — never crash the
                 // app for it. Use a plain prefs file so the session layer works.
+                // Flag it (review M1) so the plaintext-at-rest state is VISIBLE,
+                // never silent — a caller can log/telemeter or force re-auth.
+                usingPlaintextFallback = true
                 context.getSharedPreferences(PREFS_FILE_NAME + "_plain", Context.MODE_PRIVATE)
             }
         }

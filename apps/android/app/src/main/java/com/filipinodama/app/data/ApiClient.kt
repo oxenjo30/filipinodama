@@ -57,6 +57,18 @@ object ApiClient {
             this.secureStore = secureStore
             this.cookieJar = cookieJar
 
+            // Review M1: make the unencrypted-session-store fallback VISIBLE
+            // rather than silent. In debug this warns; a real telemetry sink can
+            // read secureStore.usingPlaintextFallback to measure how many installs
+            // run without Keystore-backed encryption (bearer tokens then sit in
+            // cleartext app-private storage).
+            if (secureStore.usingPlaintextFallback && BuildConfig.DEBUG) {
+                android.util.Log.w(
+                    "SecureStore",
+                    "EncryptedSharedPreferences unavailable — session tokens are on the PLAINTEXT fallback."
+                )
+            }
+
             val loggingInterceptor = HttpLoggingInterceptor().apply {
                 level = if (BuildConfig.DEBUG) {
                     HttpLoggingInterceptor.Level.BASIC

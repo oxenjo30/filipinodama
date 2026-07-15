@@ -179,17 +179,27 @@ fun AppNavHost() {
     }
 
     /**
-     * Ranked requires a REAL account (owner policy). A guest or an anonymous
-     * user (no session) is routed to Login instead of into matchmaking. Used by
-     * every Ranked entry point — the Home card, the Mode Select card, and the
-     * Guild "play ranked" action — so none of them can start ranked without one.
+     * ALL ONLINE matchmaking requires a REAL account. The realtime socket
+     * rejects unauthenticated connections (server io.use guard), so a guest /
+     * anonymous user who starts an online search would just sit in "Finding
+     * opponent…" FOREVER — mm:join never reaches the server, no human match and
+     * no AI-fallback ever fires (owner-reported: "quick match never pairs me,
+     * and it doesn't ask me to log in"). So Quick Match (CASUAL) is gated exactly
+     * like Ranked: no account → Login. Offline "Play vs AI" stays open to all.
+     *
+     * [mode] is "CASUAL" or "RANKED". Used by every online entry point (Home
+     * cards, Mode Select cards, Guild play-ranked) so none can start a doomed
+     * anonymous search.
      */
-    fun playRankedOrLogin() {
+    fun playOnlineOrLogin(mode: String) {
         val u = AuthRepository.state.value.user
         val hasRealAccount = u != null && !u.isGuest
-        if (hasRealAccount) navController.navigate(AppDestinations.matchmaking("RANKED"))
+        if (hasRealAccount) navController.navigate(AppDestinations.matchmaking(mode))
         else navController.navigate(AppDestinations.LOGIN)
     }
+
+    /** Ranked-specific shorthand (kept for existing call sites). */
+    fun playRankedOrLogin() = playOnlineOrLogin("RANKED")
 
     // ── System states (Phase 7): maintenance gate + offline banner ──
     //
@@ -333,7 +343,7 @@ fun AppNavHost() {
 
             composable(AppDestinations.HOME) {
                 HomeScreen(
-                    onQuickMatch = { navController.navigate(AppDestinations.matchmaking("CASUAL")) },
+                    onQuickMatch = { playOnlineOrLogin("CASUAL") },
                     onRanked = { playRankedOrLogin() },
                     onPlayAi = { navController.navigate(AppDestinations.AI_DIFFICULTY) },
                     onPlayFriend = { navController.navigate(AppDestinations.privateRoom()) },
@@ -564,7 +574,7 @@ fun AppNavHost() {
                 ModeSelectScreen(
                     onBack = { navController.popBackStack() },
                     onPlayAi = { navController.navigate(AppDestinations.AI_DIFFICULTY) },
-                    onPlayCasual = { navController.navigate(AppDestinations.matchmaking("CASUAL")) },
+                    onPlayCasual = { playOnlineOrLogin("CASUAL") },
                     onPlayRanked = { playRankedOrLogin() },
                     onPrivateRoom = { navController.navigate(AppDestinations.privateRoom()) },
                     onWatchLive = { navController.navigate(AppDestinations.LIVE_MATCH_BROWSER) },
