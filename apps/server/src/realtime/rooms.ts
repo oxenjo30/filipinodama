@@ -5,6 +5,16 @@ import { prisma } from "../db/client.js";
 import { isMuted } from "../lib/mute.js";
 import { createLiveMatch, onMatchEnd, addSpectatorSocket, removeSpectatorSocket, spectatorCount } from "./match.js";
 import { allow } from "./rate-limit.js";
+import {
+  redis,
+  RT_TTL,
+  getRoomJSON,
+  putRoomJSON,
+  delRoomJSON,
+  setUserRoom,
+  getUserRoom,
+  withLock,
+} from "./store.js";
 
 /**
  * Sanitize a client-proposed settings patch into a SAFE GameSettings — bounded
@@ -28,45 +38,77 @@ function sanitizeSettings(base: GameSettings, patch: unknown): GameSettings {
 }
 
 /**
- * Private rooms — in-memory (single-instance), like live matches. A host creates
- * a room (6-char code); one guest and any number of spectators can join by code.
- * The host controls settings, can kick/ban, and starts the match (which seeds a
- * real server-authoritative Match for host + guest). Room chat is relayed live.
- * Rooms are ephemeral: an UNSTARTED lobby vanishes when the host leaves; once a
- * match has started the room is kept alive (so its spectate code keeps resolving)
- * and is reclaimed when that match ends. All rooms vanish on server restart.
+ * Private rooms — Redis-authoritative (rt: prefix), so any instance in the
+ * cluster can serve any room member. A host creates a room (6-char code); one
+ * guest and any number of spectators can join by code. The host controls
+ * settings, can kick/ban, and starts the match (which seeds a real
+ * server-authoritative Match for host + guest). Room chat is relayed live. Rooms
+ * are ephemeral: an UNSTARTED lobby vanishes when the host leaves; once a match
+ * has started the room is kept alive (so its spectate code keeps resolving) and
+ * is reclaimed when that match ends. Each room has a 24h TTL safety net.
+ *
+ * Every multi-step room mutation runs inside `withLock("room:<code>", ...)` with
+ * a single get→mutate→put so two instances (or two sockets on one instance)
+ * cannot corrupt a room. Rooms carry NO version field — the lock alone serializes
+ * them (they never move money, so an expired-lock racer is harmless).
  */
 
+// The Redis prefix for all Classic-room state (spec: "rt:").
+const RP = "rt:";
+// SET of every active room code (for listOpenRooms enumeration) + a matchId→code
+// index (for O(1) clearRoomForMatch on settle) — both TTL'd like the room JSON.
+const ROOMS_SET = "rt:rooms";
+const roomForMatchKey = (matchId: string) => `rt:roomForMatch:${matchId}`;
+
 // A member tracks ALL of a user's sockets in this room (multi-tab), so one tab
-// closing doesn't evict a user who is still connected on another.
-type Member = { userId: string; sockets: Set<string>; name: string; avatarUrl: string | null; tag: string };
+// closing doesn't evict a user who is still connected on another. `sockets` is a
+// plain string[] (JSON-safe) with Set semantics (dedupe via includes/filter).
+type Member = { userId: string; sockets: string[]; name: string; avatarUrl: string | null; tag: string };
 type Room = {
   code: string;
   hostId: string;
   host: Member;
   guest: Member | null;
-  spectators: Map<string, Member>; // userId → member
-  banned: Set<string>;
+  spectators: Record<string, Member>; // userId → member (JSON-safe object)
+  banned: string[]; // JSON-safe Set of banned userIds
   settings: GameSettings;
   mode: PrismaMatchMode;
   matchId: string | null; // set once started
 };
 
-const rooms = new Map<string, Room>(); // code → room
-const userRoom = new Map<string, string>(); // userId → code they're in
-
 // Reclaim a private room once its match settles (it's kept alive during play so
 // spectators can still resolve the code — see removeMember). Registered once at
-// module load; match.ts fires it with no import back to this module.
-onMatchEnd((matchId) => clearRoomForMatch(matchId));
+// module load on EVERY instance; the settling instance fires it and the hook's
+// room mutations flow through Redis, so the reclaim is cluster-visible.
+onMatchEnd((matchId) => {
+  void clearRoomForMatch(matchId).catch((e) => console.error("[rooms] clearRoomForMatch failed", matchId, e));
+});
 
 const ROOM_PREFIX = (code: string) => `room:${code}`;
 const CODE_CHARS = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"; // no ambiguous chars
 
-function makeCode(rng: () => number): string {
-  let c = "";
-  for (let i = 0; i < 6; i++) c += CODE_CHARS[Math.floor(rng() * CODE_CHARS.length)];
-  return rooms.has(c) ? makeCode(rng) : c;
+// ─── Redis room helpers (thin wrappers over the store, plus the two indexes) ──
+async function loadRoom(code: string): Promise<Room | null> {
+  return getRoomJSON<Room>(RP, code);
+}
+async function storeRoom(room: Room): Promise<void> {
+  await putRoomJSON(RP, room.code, room);
+  await redis.sadd(ROOMS_SET, room.code);
+  await redis.expire(ROOMS_SET, RT_TTL);
+}
+/** Fully delete a room + drop it from the enumeration set and any match index. */
+async function deleteRoom(room: Room): Promise<void> {
+  await delRoomJSON(RP, room.code);
+  await redis.srem(ROOMS_SET, room.code);
+  if (room.matchId) await redis.del(roomForMatchKey(room.matchId));
+}
+
+async function makeCode(rng: () => number): Promise<string> {
+  for (;;) {
+    let c = "";
+    for (let i = 0; i < 6; i++) c += CODE_CHARS[Math.floor(rng() * CODE_CHARS.length)];
+    if (!(await redis.sismember(ROOMS_SET, c))) return c;
+  }
 }
 
 async function memberFor(userId: string, socketId: string): Promise<Member> {
@@ -74,14 +116,14 @@ async function memberFor(userId: string, socketId: string): Promise<Member> {
     where: { id: userId },
     select: { displayName: true, avatarUrl: true, tag: true },
   });
-  return { userId, sockets: new Set([socketId]), name: u?.displayName ?? "Player", avatarUrl: u?.avatarUrl ?? null, tag: u?.tag ?? "" };
+  return { userId, sockets: [socketId], name: u?.displayName ?? "Player", avatarUrl: u?.avatarUrl ?? null, tag: u?.tag ?? "" };
 }
 
 /** Find a user's member record in a room (host/guest/spectator), or null. */
 function memberIn(room: Room, userId: string): Member | null {
   if (room.host.userId === userId) return room.host;
   if (room.guest?.userId === userId) return room.guest;
-  return room.spectators.get(userId) ?? null;
+  return room.spectators[userId] ?? null;
 }
 
 /** Force every one of a user's sockets to leave the room's socket-room. */
@@ -96,7 +138,7 @@ function roomState(room: Room) {
     hostId: room.hostId,
     host: publicMember(room.host),
     guest: room.guest ? publicMember(room.guest) : null,
-    spectators: [...room.spectators.values()].map(publicMember),
+    spectators: Object.values(room.spectators).map(publicMember),
     settings: room.settings,
     mode: room.mode,
     matchId: room.matchId,
@@ -113,57 +155,65 @@ function emitState(io: IOServer, room: Room) {
 /**
  * Fully remove a user from THEIR current room (all their sockets), tearing the
  * room down if they were the host. Intended for an explicit leave/kick/ban.
+ *
+ * Serialized on the room lock: reads the user's room, mutates, writes back (or
+ * deletes) atomically. `userRoom` is cleared first (it's a per-user pointer, not
+ * part of the room doc). Broadcasts happen after the write lands.
  */
-function removeMember(io: IOServer, userId: string) {
-  const code = userRoom.get(userId);
+async function removeMember(io: IOServer, userId: string): Promise<void> {
+  const code = await getUserRoom(RP, userId);
   if (!code) return;
-  const room = rooms.get(code);
-  userRoom.delete(userId);
-  if (!room) return;
-  const member = memberIn(room, userId);
-  if (member) detachSockets(io, room, member);
+  await setUserRoom(RP, userId, null);
+  await withLock(`room:${code}`, async () => {
+    const room = await loadRoom(code);
+    if (!room) return;
+    const member = memberIn(room, userId);
+    if (member) detachSockets(io, room, member);
 
-  // Once the match has STARTED, the live-match layer (match.ts) is the sole owner
-  // of that match's lifecycle — including disconnect/abandonment (its 45s abandon
-  // timer forfeits a player who truly drops and doesn't reconnect). Leaving the
-  // room here must therefore NEVER settle, forfeit, or tear down the match — and,
-  // crucially, must NOT destroy the ROOM either: clicking "Start" navigates the
-  // room page → /play/online, which unmounts the page and fires this exact
-  // leave() for the host AND the guest. Two failures came from tearing down here:
-  //   • forfeiting the just-started match ended the game the instant it began, and
-  //     (by deleting the live match before the host could resync into it) showed
-  //     up as "Connection Lost / 0 moves";
-  //   • deleting the ROOM made its shareable spectate link resolve to a
-  //     non-existent room, so watching broke the moment the match actually started.
-  // While the match is live we KEEP the room (its `matchId` is what a late
-  // spectator's code resolves to) and only detach the leaving user's own
-  // membership. The room is reclaimed when the match ENDS (see clearRoomForMatch,
-  // wired into match settlement) or on server restart.
-  if (room.matchId) {
-    if (room.guest?.userId === userId) {
-      room.guest = null;
-    } else {
-      room.spectators.delete(userId);
-      // Drop this user's sockets from the real spectator count too (harmless
-      // no-op for the host/guest, who were never added to it).
-      if (member) for (const sid of member.sockets) removeSpectatorSocket(io, room.matchId, userId, sid);
+    // Once the match has STARTED, the live-match layer (match.ts) is the sole owner
+    // of that match's lifecycle — including disconnect/abandonment (its abandon
+    // timer forfeits a player who truly drops and doesn't reconnect). Leaving the
+    // room here must therefore NEVER settle, forfeit, or tear down the match — and,
+    // crucially, must NOT destroy the ROOM either: clicking "Start" navigates the
+    // room page → /play/online, which unmounts the page and fires this exact
+    // leave() for the host AND the guest. Two failures came from tearing down here:
+    //   • forfeiting the just-started match ended the game the instant it began, and
+    //     (by deleting the live match before the host could resync into it) showed
+    //     up as "Connection Lost / 0 moves";
+    //   • deleting the ROOM made its shareable spectate link resolve to a
+    //     non-existent room, so watching broke the moment the match actually started.
+    // While the match is live we KEEP the room (its `matchId` is what a late
+    // spectator's code resolves to) and only detach the leaving user's own
+    // membership. The room is reclaimed when the match ENDS (see clearRoomForMatch,
+    // wired into match settlement) or via TTL.
+    if (room.matchId) {
+      if (room.guest?.userId === userId) {
+        room.guest = null;
+      } else {
+        delete room.spectators[userId];
+        // Drop this user's sockets from the real spectator count too (harmless
+        // no-op for the host/guest, who were never added to it).
+        if (member) for (const sid of member.sockets) await removeSpectatorSocket(io, room.matchId, userId, sid);
+      }
+      // Host leaving the room page after start is normal (they're now in the match);
+      // the room lives on for spectators. Persist the membership change; never touch the match.
+      await storeRoom(room);
+      return;
     }
-    // Host leaving the room page after start is normal (they're now in the match);
-    // the room lives on for spectators. Nothing else to do — never touch the match.
-    return;
-  }
 
-  if (room.hostId === userId) {
-    // Unstarted lobby: the host leaving closes the room for everyone. No match
-    // exists yet, so there is nothing to settle.
-    io.to(ROOM_PREFIX(code)).emit(EV.roomState, { code, closed: true });
-    for (const m of [room.guest, ...room.spectators.values()]) if (m) userRoom.delete(m.userId);
-    rooms.delete(code);
-    return;
-  }
-  if (room.guest?.userId === userId) room.guest = null;
-  room.spectators.delete(userId);
-  emitState(io, room);
+    if (room.hostId === userId) {
+      // Unstarted lobby: the host leaving closes the room for everyone. No match
+      // exists yet, so there is nothing to settle.
+      io.to(ROOM_PREFIX(code)).emit(EV.roomState, { code, closed: true });
+      for (const m of [room.guest, ...Object.values(room.spectators)]) if (m) await setUserRoom(RP, m.userId, null);
+      await deleteRoom(room);
+      return;
+    }
+    if (room.guest?.userId === userId) room.guest = null;
+    delete room.spectators[userId];
+    await storeRoom(room);
+    emitState(io, room);
+  });
 }
 
 /**
@@ -178,27 +228,34 @@ function removeMember(io: IOServer, userId: string) {
  * moment its match ends (clearRoomForMatch). So `userRoom` only ever points
  * at a room that is genuinely still active right now.
  */
-export function myRoomCode(userId: string): string | null {
-  const code = userRoom.get(userId);
+export async function myRoomCode(userId: string): Promise<string | null> {
+  const code = await getUserRoom(RP, userId);
   if (!code) return null;
-  return rooms.has(code) ? code : null;
+  return (await loadRoom(code)) ? code : null;
 }
 
 /**
  * Reclaim the room that hosted `matchId` once its match has ended. Called from
- * match settlement so a room kept alive for spectating during play doesn't leak
- * after the game is over. No-op if no room maps to this match (matchmade games,
- * already-cleaned rooms). Frees each remaining member's userRoom mapping too.
+ * match settlement (via the onMatchEnd hook) so a room kept alive for spectating
+ * during play doesn't leak after the game is over. No-op if no room maps to this
+ * match (matchmade games, already-cleaned rooms). Frees each remaining member's
+ * userRoom mapping too. O(1) via the rt:roomForMatch index (no full scan).
  */
-export function clearRoomForMatch(matchId: string): void {
-  for (const [code, room] of rooms) {
-    if (room.matchId !== matchId) continue;
-    for (const m of [room.host, room.guest, ...room.spectators.values()]) {
-      if (m && userRoom.get(m.userId) === code) userRoom.delete(m.userId);
+export async function clearRoomForMatch(matchId: string): Promise<void> {
+  const code = await redis.get(roomForMatchKey(matchId));
+  if (!code) return;
+  await withLock(`room:${code}`, async () => {
+    const room = await loadRoom(code);
+    if (!room || room.matchId !== matchId) {
+      // Stale index entry — clean it up and stop.
+      await redis.del(roomForMatchKey(matchId));
+      return;
     }
-    rooms.delete(code);
-    return;
-  }
+    for (const m of [room.host, room.guest, ...Object.values(room.spectators)]) {
+      if (m && (await getUserRoom(RP, m.userId)) === code) await setUserRoom(RP, m.userId, null);
+    }
+    await deleteRoom(room);
+  });
 }
 
 /** A room surfaced as a synthetic "Live Matches" entry — see /api/matches/live.
@@ -220,12 +277,22 @@ export type OpenRoom = {
  * code) OR an unstarted lobby that has both a host AND a guest seated (about to
  * play — visible so a viewer can catch the very start once it goes live).
  * A lobby with only a host (nobody to watch yet) is never listed. Viewer counts
- * are the REAL spectator total tracked in match.ts (0 for an unstarted lobby,
- * since there is no match room yet to spectate).
+ * are the REAL cluster-wide spectator total tracked in match.ts (0 for an
+ * unstarted lobby, since there is no match room yet to spectate).
+ *
+ * Enumerates the rt:rooms code set and loads each room JSON. Stale set members
+ * (a room deleted without its code being removed — should not happen, but be
+ * defensive) whose JSON is gone are pruned from the set here.
  */
-export function listOpenRooms(): OpenRoom[] {
+export async function listOpenRooms(): Promise<OpenRoom[]> {
+  const codes = await redis.smembers(ROOMS_SET);
   const out: OpenRoom[] = [];
-  for (const room of rooms.values()) {
+  for (const code of codes) {
+    const room = await loadRoom(code);
+    if (!room) {
+      await redis.srem(ROOMS_SET, code); // prune a stale index entry
+      continue;
+    }
     if (!room.matchId && !room.guest) continue; // nothing to watch yet
     out.push({
       code: room.code,
@@ -235,7 +302,7 @@ export function listOpenRooms(): OpenRoom[] {
       guest: room.guest
         ? { userId: room.guest.userId, displayName: room.guest.name, avatarUrl: room.guest.avatarUrl, tag: room.guest.tag }
         : null,
-      viewers: room.matchId ? spectatorCount(room.matchId) : 0,
+      viewers: room.matchId ? await spectatorCount(room.matchId) : 0,
     });
   }
   return out;
@@ -244,16 +311,26 @@ export function listOpenRooms(): OpenRoom[] {
 /**
  * Handle ONE socket disconnecting. Only actually removes the user from the room
  * when that was their LAST socket in the room (multi-tab safe) — a user with
- * another open tab keeps their seat.
+ * another open tab keeps their seat. The socket removal + last-socket check run
+ * under the room lock; the actual teardown (removeMember) re-acquires the lock
+ * with a fresh read, which is safe (removeMember is idempotent for an
+ * already-detached user).
  */
-function socketLeft(io: IOServer, userId: string, socketId: string) {
-  const code = userRoom.get(userId);
-  const room = code ? rooms.get(code) : null;
-  if (!room) return;
-  const member = memberIn(room, userId);
-  if (!member) return;
-  member.sockets.delete(socketId);
-  if (member.sockets.size === 0) removeMember(io, userId);
+async function socketLeft(io: IOServer, userId: string, socketId: string): Promise<void> {
+  const code = await getUserRoom(RP, userId);
+  if (!code) return;
+  let lastSocket = false;
+  await withLock(`room:${code}`, async () => {
+    const room = await loadRoom(code);
+    if (!room) return;
+    const member = memberIn(room, userId);
+    if (!member) return;
+    if (!member.sockets.includes(socketId)) return;
+    member.sockets = member.sockets.filter((s) => s !== socketId);
+    lastSocket = member.sockets.length === 0;
+    await storeRoom(room);
+  });
+  if (lastSocket) await removeMember(io, userId);
 }
 
 export function registerRooms(io: IOServer, socket: Socket) {
@@ -265,16 +342,25 @@ export function registerRooms(io: IOServer, socket: Socket) {
     if (!allow(socket, "room:create", 5, 10_000)) return; // anti-spam
     // If the host already hosts a room, a second tab re-attaches instead of
     // orphaning the first room.
-    const existingCode = userRoom.get(userId);
-    const existingRoom = existingCode ? rooms.get(existingCode) : null;
-    if (existingRoom && existingRoom.hostId === userId) {
-      existingRoom.host.sockets.add(socket.id);
-      void socket.join(ROOM_PREFIX(existingCode!));
-      socket.emit(EV.roomState, roomState(existingRoom));
-      return;
+    const existingCode = await getUserRoom(RP, userId);
+    if (existingCode) {
+      let reattached: Room | null = null;
+      await withLock(`room:${existingCode}`, async () => {
+        const existingRoom = await loadRoom(existingCode);
+        if (existingRoom && existingRoom.hostId === userId) {
+          if (!existingRoom.host.sockets.includes(socket.id)) existingRoom.host.sockets.push(socket.id);
+          await storeRoom(existingRoom);
+          reattached = existingRoom;
+        }
+      });
+      if (reattached) {
+        void socket.join(ROOM_PREFIX(existingCode));
+        socket.emit(EV.roomState, roomState(reattached));
+        return;
+      }
     }
-    removeMember(io, userId); // one room at a time (explicit leave of any prior room)
-    const code = makeCode(rng);
+    await removeMember(io, userId); // one room at a time (explicit leave of any prior room)
+    const code = await makeCode(rng);
     const host = await memberFor(userId, socket.id);
     const mode = (payload?.mode === "RANKED" ? "RANKED" : "PRIVATE") as PrismaMatchMode;
     const room: Room = {
@@ -282,14 +368,16 @@ export function registerRooms(io: IOServer, socket: Socket) {
       hostId: userId,
       host,
       guest: null,
-      spectators: new Map(),
-      banned: new Set(),
+      spectators: {},
+      banned: [],
       settings: { ...DEFAULT_SETTINGS },
       mode,
       matchId: null,
     };
-    rooms.set(code, room);
-    userRoom.set(userId, code);
+    await withLock(`room:${code}`, async () => {
+      await storeRoom(room);
+      await setUserRoom(RP, userId, code);
+    });
     void socket.join(ROOM_PREFIX(code));
     socket.emit(EV.roomState, roomState(room));
   });
@@ -298,129 +386,189 @@ export function registerRooms(io: IOServer, socket: Socket) {
     if (!allow(socket, "room:join", 15, 10_000)) return; // anti-brute-force on codes
     const code = typeof payload?.code === "string" ? payload.code.trim().toUpperCase() : null;
     if (!code) return;
-    const room = rooms.get(code);
-    if (!room) {
+    // Peek before locking so a not-found/banned reply doesn't need the lock.
+    const peek = await loadRoom(code);
+    if (!peek) {
       socket.emit(EV.roomState, { code, error: "not-found" });
       return;
     }
-    if (room.banned.has(userId)) {
+    if (peek.banned.includes(userId)) {
       socket.emit(EV.roomState, { code, error: "banned" });
       return;
     }
-    void socket.join(ROOM_PREFIX(code));
     // Multi-tab: if already in THIS room, just attach the new socket to the same
     // member (keep their seat); otherwise leave any prior room and take a slot.
-    const existing = userRoom.get(userId) === code ? memberIn(room, userId) : null;
-    if (existing) {
-      existing.sockets.add(socket.id);
-    } else {
-      removeMember(io, userId);
-      const member = await memberFor(userId, socket.id);
-      userRoom.set(userId, code);
-      if (!room.guest && room.hostId !== userId) room.guest = member;
-      else if (room.hostId !== userId) room.spectators.set(userId, member);
-    }
-    emitState(io, room);
+    const prior = await getUserRoom(RP, userId);
+    const alreadyHere = prior === code && !!memberIn(peek, userId);
+    if (!alreadyHere) await removeMember(io, userId); // leave any OTHER room first (outside this lock)
+    const member = alreadyHere ? null : await memberFor(userId, socket.id);
+    void socket.join(ROOM_PREFIX(code));
+    let out: Room | null = null;
+    await withLock(`room:${code}`, async () => {
+      const room = await loadRoom(code);
+      if (!room || room.banned.includes(userId)) return;
+      const existing = memberIn(room, userId);
+      if (existing) {
+        if (!existing.sockets.includes(socket.id)) existing.sockets.push(socket.id);
+      } else if (member) {
+        await setUserRoom(RP, userId, code);
+        if (!room.guest && room.hostId !== userId) room.guest = member;
+        else if (room.hostId !== userId) room.spectators[userId] = member;
+      }
+      await storeRoom(room);
+      out = room;
+    });
+    if (out) emitState(io, out);
   });
 
   socket.on(EV.roomSpectate, async (payload: { code?: unknown } = {}) => {
     const code = typeof payload?.code === "string" ? payload.code.trim().toUpperCase() : null;
-    const room = code ? rooms.get(code) : null;
-    if (!room || room.banned.has(userId)) return;
-    void socket.join(ROOM_PREFIX(code!));
-    const existing = userRoom.get(userId) === code ? memberIn(room, userId) : null;
-    if (existing) {
-      existing.sockets.add(socket.id);
-    } else {
-      removeMember(io, userId);
-      const member = await memberFor(userId, socket.id);
-      userRoom.set(userId, code!);
-      room.spectators.set(userId, member);
-    }
+    if (!code) return;
+    const peek = await loadRoom(code);
+    if (!peek || peek.banned.includes(userId)) return;
+    const prior = await getUserRoom(RP, userId);
+    const alreadyHere = prior === code && !!memberIn(peek, userId);
+    if (!alreadyHere) await removeMember(io, userId);
+    const member = alreadyHere ? null : await memberFor(userId, socket.id);
+    void socket.join(ROOM_PREFIX(code));
+    let out: Room | null = null;
+    let liveMatchId: string | null = null;
+    await withLock(`room:${code}`, async () => {
+      const room = await loadRoom(code);
+      if (!room || room.banned.includes(userId)) return;
+      const existing = memberIn(room, userId);
+      if (existing) {
+        if (!existing.sockets.includes(socket.id)) existing.sockets.push(socket.id);
+      } else if (member) {
+        await setUserRoom(RP, userId, code);
+        room.spectators[userId] = member;
+      }
+      await storeRoom(room);
+      out = room;
+      liveMatchId = room.matchId;
+    });
+    if (!out) return;
     // Late spectator: if a match is already live in this room, join this socket to
     // the match channel and tell it to open the board read-only. The client then
     // resyncs to pull the current board state. This socket also counts toward the
     // match's REAL spectator total (same counter the by-id /watch path feeds).
-    if (room.matchId) {
-      void socket.join(room.matchId);
-      addSpectatorSocket(io, room.matchId, userId, socket.id);
-      socket.emit(EV.roomStart, { matchId: room.matchId, yourColor: null });
+    if (liveMatchId) {
+      void socket.join(liveMatchId);
+      await addSpectatorSocket(io, liveMatchId, userId, socket.id);
+      socket.emit(EV.roomStart, { matchId: liveMatchId, yourColor: null });
     }
-    emitState(io, room);
+    emitState(io, out);
   });
 
-  socket.on(EV.roomSettings, (payload: { settings?: Partial<GameSettings> } = {}) => {
-    const code = userRoom.get(userId);
-    const room = code ? rooms.get(code) : null;
-    if (!room || room.hostId !== userId) return; // host only
-    if (payload.settings) room.settings = sanitizeSettings(room.settings, payload.settings);
-    emitState(io, room);
+  socket.on(EV.roomSettings, async (payload: { settings?: Partial<GameSettings> } = {}) => {
+    const code = await getUserRoom(RP, userId);
+    if (!code) return;
+    let out: Room | null = null;
+    await withLock(`room:${code}`, async () => {
+      const room = await loadRoom(code);
+      if (!room || room.hostId !== userId) return; // host only
+      if (payload.settings) room.settings = sanitizeSettings(room.settings, payload.settings);
+      await storeRoom(room);
+      out = room;
+    });
+    if (out) emitState(io, out);
   });
 
-  socket.on(EV.roomKick, (payload: { userId?: unknown } = {}) => {
-    const code = userRoom.get(userId);
-    const room = code ? rooms.get(code) : null;
+  socket.on(EV.roomKick, async (payload: { userId?: unknown } = {}) => {
+    const code = await getUserRoom(RP, userId);
     const target = typeof payload?.userId === "string" ? payload.userId : null;
-    // Host only, AND the target must actually be in THIS room (scoped — a host of
-    // one room cannot kick a user out of a different room).
-    if (!room || room.hostId !== userId || !target || target === userId) return;
-    if (userRoom.get(target) !== code || !memberIn(room, target)) return;
+    if (!code || !target || target === userId) return;
+    let doRemove = false;
+    await withLock(`room:${code}`, async () => {
+      const room = await loadRoom(code);
+      // Host only, AND the target must actually be in THIS room (scoped — a host of
+      // one room cannot kick a user out of a different room).
+      if (!room || room.hostId !== userId) return;
+      if ((await getUserRoom(RP, target)) !== code || !memberIn(room, target)) return;
+      doRemove = true;
+    });
+    if (!doRemove) return;
     io.to(`presence:${target}`).emit(EV.roomState, { code, kicked: target });
-    removeMember(io, target); // detaches their sockets from the room too
+    await removeMember(io, target); // detaches their sockets from the room too
   });
 
-  socket.on(EV.roomBan, (payload: { userId?: unknown } = {}) => {
-    const code = userRoom.get(userId);
-    const room = code ? rooms.get(code) : null;
+  socket.on(EV.roomBan, async (payload: { userId?: unknown } = {}) => {
+    const code = await getUserRoom(RP, userId);
     const target = typeof payload?.userId === "string" ? payload.userId : null;
-    if (!room || room.hostId !== userId || !target || target === userId) return;
-    if (userRoom.get(target) !== code || !memberIn(room, target)) return;
-    room.banned.add(target);
+    if (!code || !target || target === userId) return;
+    let doBan = false;
+    await withLock(`room:${code}`, async () => {
+      const room = await loadRoom(code);
+      if (!room || room.hostId !== userId) return;
+      if ((await getUserRoom(RP, target)) !== code || !memberIn(room, target)) return;
+      if (!room.banned.includes(target)) room.banned.push(target);
+      await storeRoom(room);
+      doBan = true;
+    });
+    if (!doBan) return;
     io.to(`presence:${target}`).emit(EV.roomState, { code, banned: target });
-    removeMember(io, target);
+    await removeMember(io, target);
   });
 
   socket.on(EV.roomStart, async () => {
-    const code = userRoom.get(userId);
-    const room = code ? rooms.get(code) : null;
-    if (!room || room.hostId !== userId || !room.guest || room.matchId) return; // need a guest
-    // Seed a real match: host = red, guest = blue.
-    try {
-      const match = await prisma.match.create({
-        data: {
-          mode: room.mode,
-          redId: room.hostId,
-          blueId: room.guest.userId,
-          settings: room.settings as unknown as object,
-          moves: [] as unknown as object,
-        },
-        select: { id: true },
-      });
-      room.matchId = match.id;
-      createLiveMatch(match.id, room.hostId, room.guest.userId, room.mode, room.settings);
-      // Put both players' sockets into the match room.
-      for (const uid of [room.hostId, room.guest.userId]) {
-        const r = io.sockets.adapter.rooms.get(`presence:${uid}`);
-        if (r) for (const sid of r) io.sockets.sockets.get(sid)?.join(match.id);
+    const code = await getUserRoom(RP, userId);
+    if (!code) return;
+    // Create the DB match + claim the room's matchId under the lock (idempotent:
+    // a second Start finds matchId already set and aborts). The live-match seed +
+    // socket wiring + broadcasts run AFTER we own the matchId, using a snapshot.
+    let started: Room | null = null;
+    let createErr = false;
+    await withLock(`room:${code}`, async () => {
+      const room = await loadRoom(code);
+      if (!room || room.hostId !== userId || !room.guest || room.matchId) return; // need a guest, not already started
+      try {
+        const match = await prisma.match.create({
+          data: {
+            mode: room.mode,
+            redId: room.hostId,
+            blueId: room.guest.userId,
+            settings: room.settings as unknown as object,
+            moves: [] as unknown as object,
+          },
+          select: { id: true },
+        });
+        room.matchId = match.id;
+        await storeRoom(room);
+        // Index this match → room so clearRoomForMatch can reclaim it O(1) on settle.
+        await redis.set(roomForMatchKey(match.id), code, "EX", RT_TTL);
+        started = room;
+      } catch (e) {
+        console.error("[rooms] start failed", e);
+        createErr = true;
       }
-      io.to(`presence:${room.hostId}`).emit(EV.roomStart, { matchId: match.id, yourColor: "red" });
-      io.to(`presence:${room.guest.userId}`).emit(EV.roomStart, { matchId: match.id, yourColor: "blue" });
-      // Spectators watch READ-ONLY: join their sockets to the match room so they
-      // receive matchMoved/matchState, and tell them to open the board with
-      // yourColor:null. They can never move — the match move handlers gate on
-      // colorOf(), and a spectator has no color. Each socket also joins the real
-      // spectator count for this match.
-      for (const spec of room.spectators.values()) {
-        for (const sid of spec.sockets) {
-          io.sockets.sockets.get(sid)?.join(match.id);
-          addSpectatorSocket(io, match.id, spec.userId, sid);
-        }
-        io.to(`presence:${spec.userId}`).emit(EV.roomStart, { matchId: match.id, yourColor: null });
-      }
-      emitState(io, room); // spectators see matchId now
-    } catch (e) {
-      console.error("[rooms] start failed", e);
+    });
+    if (createErr || !started) return;
+    const room = started as Room;
+    const matchId = room.matchId as string;
+    // Seed the live match in Redis BEFORE the first move can arrive. Awaited (the
+    // T5-deferred fix): not awaiting races the host's first matchMove ahead of the
+    // Redis write → getMatch null → matchIllegal no-such-match.
+    await createLiveMatch(matchId, room.hostId, room.guest!.userId, room.mode, room.settings);
+    // Put both players' sockets into the match room.
+    for (const uid of [room.hostId, room.guest!.userId]) {
+      const r = io.sockets.adapter.rooms.get(`presence:${uid}`);
+      if (r) for (const sid of r) io.sockets.sockets.get(sid)?.join(matchId);
     }
+    io.to(`presence:${room.hostId}`).emit(EV.roomStart, { matchId, yourColor: "red" });
+    io.to(`presence:${room.guest!.userId}`).emit(EV.roomStart, { matchId, yourColor: "blue" });
+    // Spectators watch READ-ONLY: join their sockets to the match room so they
+    // receive matchMoved/matchState, and tell them to open the board with
+    // yourColor:null. They can never move — the match move handlers gate on
+    // colorOf(), and a spectator has no color. Each socket also joins the real
+    // spectator count for this match.
+    for (const spec of Object.values(room.spectators)) {
+      for (const sid of spec.sockets) {
+        io.sockets.sockets.get(sid)?.join(matchId);
+        await addSpectatorSocket(io, matchId, spec.userId, sid);
+      }
+      io.to(`presence:${spec.userId}`).emit(EV.roomStart, { matchId, yourColor: null });
+    }
+    emitState(io, room); // spectators see matchId now
   });
 
   // Room chat — relay to everyone in the room (ephemeral; not persisted).
@@ -430,13 +578,13 @@ export function registerRooms(io: IOServer, socket: Socket) {
 
   socket.on("room:chat", async (payload: { body?: unknown } = {}) => {
     if (!allow(socket, "room:chat", 8, 4000)) return; // anti-flood
-    const code = userRoom.get(userId);
-    const room = code ? rooms.get(code) : null;
+    const code = await getUserRoom(RP, userId);
+    const room = code ? await loadRoom(code) : null;
     if (!room) return;
     const body = typeof payload?.body === "string" ? payload.body.trim().slice(0, 300) : "";
     if (!body) return;
     if (await isMuted(userId)) return; // admin-muted players can't chat in rooms
-    const from = room.host.userId === userId ? room.host : room.guest?.userId === userId ? room.guest : room.spectators.get(userId);
+    const from = memberIn(room, userId);
     io.to(ROOM_PREFIX(code!)).emit("room:chat", {
       from: from ? publicMember(from) : { userId, name: "Player", avatarUrl: null, tag: "" },
       body,
@@ -444,6 +592,10 @@ export function registerRooms(io: IOServer, socket: Socket) {
     });
   });
 
-  socket.on(EV.roomLeave, () => removeMember(io, userId));
-  socket.on("disconnect", () => socketLeft(io, userId, socket.id));
+  socket.on(EV.roomLeave, () => {
+    void removeMember(io, userId).catch((e) => console.error("[rooms] leave failed", e));
+  });
+  socket.on("disconnect", () => {
+    void socketLeft(io, userId, socket.id).catch((e) => console.error("[rooms] socketLeft failed", e));
+  });
 }

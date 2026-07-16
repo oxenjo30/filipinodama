@@ -167,7 +167,7 @@ export async function matchRoutes(app: FastifyInstance) {
   //     isn't shown twice.
   app.get("/matches/live", { preHandler: requireAuth }, async (_req) => {
     const STALE_MS = 6 * 60 * 60 * 1000; // 6h — matches this old are effectively dead/orphaned
-    const openRooms = listOpenRooms();
+    const openRooms = await listOpenRooms();
     const roomMatchIds = new Set(openRooms.map((r) => r.matchId).filter((id): id is string => !!id));
 
     const rows = await prisma.match.findMany({
@@ -186,7 +186,9 @@ export async function matchRoutes(app: FastifyInstance) {
       take: 30,
       include: { red: playerSelect, blue: playerSelect },
     });
-    const matchItems = rows.map((m) => ({ ...serializeMatch(m), viewers: spectatorCount(m.id) }));
+    const matchItems = await Promise.all(
+      rows.map(async (m) => ({ ...serializeMatch(m), viewers: await spectatorCount(m.id) })),
+    );
 
     // Started rooms need their real moveCount + startedAt — a lightweight
     // second lookup (excluded from `rows` above so it's never double-fetched
