@@ -47,6 +47,7 @@ import { tournamentsRoutes } from "./modules/tournaments.js";
 import { registerRealtime, rtJobHandlers } from "./realtime/index.js";
 import { makeRedisClient } from "./realtime/store.js";
 import { startJobPoller } from "./realtime/jobs.js";
+import { sweepAbandonedMatches } from "./realtime/match.js";
 import { runDueCampaigns } from "./modules/campaign-scheduler.js";
 import { runWarResetTick } from "./lib/guild-wars.js";
 
@@ -205,6 +206,16 @@ async function main() {
   runWarResetTick().catch((e) => app.log.error({ err: e }, "guild-war init tick failed"));
   setInterval(() => {
     runWarResetTick().catch((e) => app.log.error({ err: e }, "guild-war reset tick failed"));
+  }, 60_000);
+
+  // Abandoned-match sweeper (final-review backstop) — the Redis job queue is
+  // at-most-once, so an abandon-forfeit job whose poller claimed it then died is
+  // lost. This slow reconciliation force-settles any still-open match past the
+  // stranded window whose players are offline, through the same DB-gated settle
+  // (money-safe, idempotent). Same setInterval-on-boot pattern; a cheap no-op
+  // when nothing is stranded. Every 60s is ample given the 5-min stranded window.
+  setInterval(() => {
+    sweepAbandonedMatches(io).catch((e) => app.log.error({ err: e }, "abandon-sweep tick failed"));
   }, 60_000);
 
   app.log.info(`FilipinoDama server listening on :${env.PORT}`);

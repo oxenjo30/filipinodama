@@ -158,6 +158,17 @@ const matchEndHooks: Array<(matchId: string) => void> = [];
 export function onMatchEnd(hook: (matchId: string) => void): void {
   matchEndHooks.push(hook);
 }
+/** Fire every registered match-end hook for `matchId`. Best-effort — a throwing
+ *  hook never breaks the caller. Used by settleMatch and the abandon sweeper. */
+function runMatchEndHooks(matchId: string): void {
+  for (const hook of matchEndHooks) {
+    try {
+      hook(matchId);
+    } catch (e) {
+      console.error("[match] onMatchEnd hook failed", matchId, e);
+    }
+  }
+}
 
 /**
  * Abandonment: if a human player's sockets all disconnect mid-match and they do
@@ -179,6 +190,96 @@ const abandonKey = (matchId: string, userId: string) => `${matchId}:${userId}`;
  *  job key mirrors the abandonKey used when arming it. */
 function clearAbandon(matchId: string, userId: string): void {
   void cancelJob("abandon-forfeit", abandonKey(matchId, userId));
+}
+
+/**
+ * Backstop sweeper for the abandon-forfeit job (final-review finding #3).
+ *
+ * The Redis job queue is AT-MOST-ONCE, not exactly-once: a poller that CLAIMs
+ * (ZREMs) an abandon-forfeit job and then dies mid-handler loses it — no instance
+ * retries, so a genuinely-abandoned match would stay endedAt:null forever (the
+ * waiting opponent stranded, a ranked loss dodged). Money never doubles (the
+ * settle DB-gate is the wall), but liveness/fairness would break without a
+ * backstop. This sweep is that backstop: a slow, periodic reconciliation that
+ * force-settles matches the job pipeline dropped.
+ *
+ * It queries the DB (the durable source of truth — `Match` has @@index([mode,
+ * endedAt]) so open matches are cheap to find) for still-open matches older than
+ * a grace window, and for each:
+ *   • if the Redis state is still present with no result and a player is offline
+ *     cluster-wide → route through handleAbandonForfeit (the SAME lock+CAS+DB-
+ *     gated settle every outcome uses — idempotent + money-safe by construction);
+ *   • if the Redis state is GONE (fully lost) but the row is still open → close it
+ *     with a DB-GATED draw/abandon. We can't reconstruct who was winning, so we
+ *     never award a win to an unknowable player; a draw moves no trophies and no
+ *     gold. Settling the row is what unstrands the opponent.
+ *
+ * The grace window (STRANDED_MS) is deliberately well past ABANDON_MS so a match
+ * being settled by the normal job path in real time is never swept out from under
+ * it — the sweep only ever catches matches the pipeline already failed to close.
+ */
+const STRANDED_MS = 5 * 60_000; // 5 min: comfortably past ABANDON_MS (90s) + poll jitter
+const SWEEP_BATCH = 50; // cap work per tick; the next tick catches the rest
+
+export async function sweepAbandonedMatches(io: IOServer): Promise<{ swept: number; closed: number }> {
+  const cutoff = new Date(Date.now() - STRANDED_MS);
+  const open = await prisma.match.findMany({
+    where: { endedAt: null, startedAt: { lt: cutoff } },
+    select: { id: true, mode: true, redId: true, blueId: true },
+    take: SWEEP_BATCH,
+    orderBy: { startedAt: "asc" },
+  });
+  let swept = 0;
+  let closed = 0;
+  for (const row of open) {
+    try {
+      const lm = await getMatch(row.id);
+      if (lm && !lm.state.result) {
+        // Live state present — is either seated player offline cluster-wide? If so
+        // the normal forfeit path applies (it re-checks presence + settles safely).
+        const players = [lm.redId, lm.blueId].filter((x): x is string => !!x);
+        let offlinePlayer: string | null = null;
+        for (const uid of players) {
+          const socks = await io.in(`presence:${uid}`).fetchSockets();
+          if (socks.length === 0) { offlinePlayer = uid; break; }
+        }
+        if (offlinePlayer) {
+          await handleAbandonForfeit(io, { matchId: row.id, userId: offlinePlayer });
+          swept++;
+        }
+        // Both players online + no result + very old = a genuinely long game still
+        // in progress; leave it alone.
+        continue;
+      }
+      // Redis state is gone but the DB row is still open — a fully-stranded match
+      // (state lost with its abandon job). Close it as a draw/abandon through the
+      // same gate so a racing settle can't double-close it, and no win is invented.
+      const gate = await prisma.match.updateMany({
+        where: { id: row.id, endedAt: null },
+        data: { winner: "draw", reason: "abandon", goldReward: 0, endedAt: new Date() },
+      });
+      if (gate.count > 0) {
+        closed++;
+        // Tell any still-connected opponent to leave the board, then free Redis
+        // remnants + fire lifetime hooks (rooms.ts reclaims a lingering room).
+        io.to(row.id).emit(EV.matchEnded, {
+          matchId: row.id,
+          result: { winner: "draw", reason: "abandon" },
+          winnerId: null,
+          loserId: null,
+          redTrophyDelta: 0,
+          blueTrophyDelta: 0,
+          goldReward: 0,
+          state: null,
+        });
+        runMatchEndHooks(row.id);
+      }
+    } catch (e) {
+      console.error("[match] sweep failed for", row.id, e);
+    }
+  }
+  if (swept || closed) console.log(`[match] abandon sweep: ${swept} forfeited, ${closed} stranded-closed`);
+  return { swept, closed };
 }
 
 /**
@@ -641,13 +742,7 @@ async function settleMatch(io: IOServer, lm: StoredMatch): Promise<void> {
 
   // Notify lifetime-bound listeners (e.g. rooms.ts reclaims a private room kept
   // alive for spectators). Best-effort — a throwing hook must not break anything.
-  for (const hook of matchEndHooks) {
-    try {
-      hook(lm.matchId);
-    } catch (e) {
-      console.error("[match] onMatchEnd hook failed", lm.matchId, e);
-    }
-  }
+  runMatchEndHooks(lm.matchId);
 }
 
 export function registerMatch(io: IOServer, socket: Socket) {

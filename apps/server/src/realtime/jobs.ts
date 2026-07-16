@@ -4,9 +4,21 @@ import { redis } from "./store.js";
  * Cluster-safe delayed jobs (spec §4). ZSET `rt:jobs` scored by fire-at ms;
  * member = JSON {type,key,payload}. A companion HASH `rt:jobs:byKey`
  * (`type:key` -> member) makes cancel/replace O(1). The claim Lua pops due
- * members and their byKey entries atomically, so exactly one instance wins each
- * job even with N pollers. Jobs survive instance death - the whole point:
- * today's in-process setTimeout dies with its instance.
+ * members and their byKey entries atomically, so AT MOST ONE instance claims
+ * each job even with N pollers (no duplicate handler runs). A job scheduled by
+ * one instance is claimable by any other, so it survives the SCHEDULING
+ * instance dying — unlike today's in-process setTimeout, which dies with it.
+ *
+ * DELIVERY IS AT-MOST-ONCE, NOT EXACTLY-ONCE: the claim (ZREM) happens BEFORE the
+ * handler runs, so a poller that claims a job and then dies mid-handler loses it
+ * — no instance retries. For the money path this is fine (settle is DB-gated, so
+ * a lost job can never mis-award). For the only liveness-critical job,
+ * abandon-forfeit, the backstop is the periodic sweepAbandonedMatches reconciler
+ * (match.ts, wired in index.ts): it force-settles any still-open match past the
+ * stranded window whose players are offline, catching exactly the jobs this queue
+ * drops. Bot-fill/bot-move losses are self-healing (the player simply keeps
+ * waiting / it's the bot's turn forever only if lost — acceptable, and the next
+ * human action re-drives state).
  */
 export type RtJobType = "bot-fill" | "abandon-forfeit" | "bot-move" | "d-bot-move";
 export type RtJobHandler = (payload: Record<string, unknown>) => Promise<void>;
