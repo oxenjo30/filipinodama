@@ -1,9 +1,11 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { api, ApiError } from "../../lib/api";
 import { useAuthStore } from "../../stores/authStore";
 import { useAppStore } from "../../stores/appStore";
 import { useSettingsStore } from "../../stores/settingsStore";
+import { useBlockedStore } from "../../stores/blockedStore";
+import { Avatar } from "../../components";
 
 /**
  * SettingsPage (/settings) — faithful port of the approved prototype
@@ -93,10 +95,31 @@ export function SettingsPage() {
 
   const s = useSettingsStore();
 
+  const blockedList = useBlockedStore((b) => b.list);
+  const loadBlocked = useBlockedStore((b) => b.load);
+  const unblockUser = useBlockedStore((b) => b.unblock);
+  const [unblockingId, setUnblockingId] = useState<string | null>(null);
+
   const [deleteShow, setDeleteShow] = useState(false);
   const [deleteConfirm, setDeleteConfirm] = useState("");
   const [deleting, setDeleting] = useState(false);
   const [exporting, setExporting] = useState(false);
+
+  useEffect(() => {
+    if (me) void loadBlocked();
+  }, [me, loadBlocked]);
+
+  const unblock = async (userId: string) => {
+    setUnblockingId(userId);
+    try {
+      await unblockUser(userId);
+      showToast("Player unblocked.");
+    } catch (e) {
+      showToast(e instanceof ApiError ? e.message : "Couldn't unblock. Try again.");
+    } finally {
+      setUnblockingId(null);
+    }
+  };
 
   // Map each device-preference row's key to the live value + setter from the store.
   const selected = (key: SettingKey): string => {
@@ -253,6 +276,59 @@ export function SettingsPage() {
               ))}
             </SettingRow>
           ))}
+        </div>
+
+        {/* Blocked Players */}
+        <div className="frame" style={{ padding: 22, marginTop: 18 }}>
+          <div className="ptitle" style={{ textAlign: "left" }}>
+            Blocked Players
+          </div>
+          {blockedList.length === 0 ? (
+            <div style={{ padding: "12px 0", font: "500 13px Inter", color: "var(--ink2)" }}>
+              You haven't blocked anyone.
+            </div>
+          ) : (
+            <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+              {blockedList.map((u) => (
+                <div
+                  key={u.id}
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 12,
+                    padding: "10px 12px",
+                    borderRadius: 11,
+                    border: "1px solid rgba(232,184,75,.18)",
+                    background: "rgba(0,0,0,.2)",
+                  }}
+                >
+                  <Avatar src={u.avatarUrl ?? "champion"} size={36} />
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ font: "700 13px Inter", color: "#efe7fb" }}>{u.displayName}</div>
+                    <div style={{ font: "600 11px 'JetBrains Mono',monospace", color: "var(--ink2)" }}>{u.tag}</div>
+                  </div>
+                  <button
+                    type="button"
+                    disabled={unblockingId === u.id}
+                    onClick={() => void unblock(u.id)}
+                    style={{
+                      flex: "none",
+                      padding: "8px 14px",
+                      borderRadius: 9,
+                      border: "1px solid rgba(232,184,75,.4)",
+                      background: "rgba(232,184,75,.12)",
+                      color: "var(--gold-lt)",
+                      font: "700 12px Inter",
+                      cursor: unblockingId === u.id ? "not-allowed" : "pointer",
+                      opacity: unblockingId === u.id ? 0.6 : 1,
+                    }}
+                  >
+                    {unblockingId === u.id ? "Unblocking…" : "Unblock"}
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
 
         {/* Account */}

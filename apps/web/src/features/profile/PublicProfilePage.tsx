@@ -2,6 +2,8 @@ import { useEffect, useState } from "react";
 import { useParams, useNavigate, Navigate } from "react-router-dom";
 import { api, ApiError } from "../../lib/api";
 import { useAuthStore } from "../../stores/authStore";
+import { useAppStore } from "../../stores/appStore";
+import { useBlockedStore } from "../../stores/blockedStore";
 import { Avatar, GuildLink } from "../../components";
 import AchievementsGrid from "./AchievementsGrid";
 import { FriendButton, type Relationship } from "./FriendButton";
@@ -10,6 +12,7 @@ import { ReplayModal } from "./ReplayModal";
 
 type PublicUser = {
   id: string;
+  username: string;
   displayName: string;
   tag: string;
   avatarUrl: string | null;
@@ -163,7 +166,10 @@ export function PublicProfilePage() {
         <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
           <FriendButton userId={user.id} relationship={user.relationship} requestId={user.requestId} isBot={user.isBot} signedIn={!!me && !me.isGuest} />
           {!user.isBot && me && !me.isGuest && me.id !== user.id && (
-            <ReportButton userId={user.id} />
+            <>
+              <BlockButton user={user} />
+              <ReportButton userId={user.id} />
+            </>
           )}
         </div>
       </div>
@@ -311,6 +317,64 @@ function ReportButton({ userId }: { userId: string }) {
       </button>
       <ReportPlayerModal open={open} accusedId={userId} context="profile" onClose={() => setOpen(false)} />
     </>
+  );
+}
+
+/** Block/Unblock — reflects the shared blockedStore, loaded lazily on first use. */
+function BlockButton({ user }: { user: PublicUser }) {
+  const showToast = useAppStore((s) => s.showToast);
+  const load = useBlockedStore((s) => s.load);
+  const blockFn = useBlockedStore((s) => s.block);
+  const unblockFn = useBlockedStore((s) => s.unblock);
+  const blocked = useBlockedStore((s) => s.isBlocked(user.id));
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  const toggle = async () => {
+    setBusy(true);
+    try {
+      if (blocked) {
+        await unblockFn(user.id);
+        showToast(`Unblocked ${user.displayName}.`);
+      } else {
+        await blockFn({
+          id: user.id,
+          username: user.username,
+          displayName: user.displayName,
+          tag: user.tag,
+          avatarUrl: user.avatarUrl,
+          blockedAt: new Date().toISOString(),
+        });
+        showToast(`Blocked ${user.displayName}.`);
+      }
+    } catch (e) {
+      showToast(e instanceof ApiError ? e.message : "Couldn't update block status.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <button
+      type="button"
+      disabled={busy}
+      onClick={() => void toggle()}
+      style={{
+        padding: "10px 16px",
+        borderRadius: 10,
+        border: blocked ? "1px solid rgba(232,184,75,.4)" : "1px solid rgba(224,85,95,.5)",
+        background: blocked ? "rgba(232,184,75,.12)" : "rgba(224,85,95,.12)",
+        color: blocked ? "var(--gold-lt)" : "#ff9aa8",
+        font: "700 13px Inter",
+        cursor: busy ? "not-allowed" : "pointer",
+        opacity: busy ? 0.6 : 1,
+      }}
+    >
+      {blocked ? "Unblock" : "Block"}
+    </button>
   );
 }
 

@@ -4,11 +4,14 @@ import { useAppStore } from "../../stores/appStore";
 
 /**
  * ReportPlayerModal — reason-picker + optional/required note, submits
- * POST /api/reports (Task 8's reportRoutes). Two entry points wire this in:
- *   - MessagesPage:  context="dm"      — a per-message report on the other
- *                    person's bubble, with a locked quote of that message.
- *   - FriendsPage:   context="profile" — from the Player Profile modal; the
- *                    server requires a non-empty note for profile reports.
+ * POST /api/reports (Task 8's reportRoutes). Entry points wire this in:
+ *   - MessagesPage:    context="dm"      — a per-message report on the other
+ *                      person's bubble, with a locked quote of that message.
+ *   - FriendsPage/
+ *     PublicProfilePage: context="profile" — from a player profile; the
+ *                      server requires a non-empty note for profile reports.
+ *   - GuildChatPanel:  context="guild"   — a per-message report in guild chat,
+ *                      with the message id + author id (like "dm").
  *
  * Styling matches the app's existing modal convention (inline styles + the
  * shared "frame" class — see EditProfileModal.tsx / the FriendsPage profile
@@ -58,7 +61,7 @@ export function ReportPlayerModal({
 }: {
   open: boolean;
   accusedId: string;
-  context: "dm" | "profile";
+  context: "dm" | "profile" | "guild";
   messageId?: string;
   quotedText?: string;
   onClose: () => void;

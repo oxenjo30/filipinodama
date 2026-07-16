@@ -1,10 +1,12 @@
 import { useEffect, useRef, useState } from "react";
 import { EV } from "@dama/shared";
 import { useAuthStore } from "../../stores/authStore";
+import { useBlockedStore } from "../../stores/blockedStore";
 import { api } from "../../lib/api";
 import { connectSocket, getSocket } from "../../lib/socket";
 import { avatar, guildCrest } from "../../lib/assets";
 import { EmotePicker } from "../shared/EmotePicker";
+import { ReportPlayerModal } from "../moderation/ReportPlayerModal";
 
 /**
  * GuildChatPanel — the slide-in guild chat drawer (handoff lines 2439-2469).
@@ -15,6 +17,12 @@ import { EmotePicker } from "../shared/EmotePicker";
  * persists the message and fans it out to the room — so every online member sees
  * it live and it survives a refresh. Nothing shown is fabricated: every line is a
  * real stored message from a real guildmate.
+ *
+ * Safety: every message can be reported (opens ReportPlayerModal, context=
+ * "guild"). Messages from authors on the viewer's block list are hidden —
+ * the server already excludes them from the initial history fetch, but live
+ * socket broadcasts are filtered client-side against the shared blockedStore
+ * (loaded once, lazily) so a blocked author's messages never appear.
  */
 
 /** Wire shape from the server (modules/guild-chat-service.ts → ChatMessage). */
@@ -86,7 +94,15 @@ export function GuildChatPanel({
   const [loading, setLoading] = useState(false);
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [reportMsg, setReportMsg] = useState<ChatMessage | null>(null);
   const scrollRef = useRef<HTMLDivElement | null>(null);
+
+  const loadBlocked = useBlockedStore((s) => s.load);
+  const isBlocked = useBlockedStore((s) => s.isBlocked);
+  useEffect(() => {
+    if (open) void loadBlocked();
+  }, [open, loadBlocked]);
+  const visibleLog = log.filter((m) => !isBlocked(m.author.id));
 
   const scrollToBottom = () => {
     const el = scrollRef.current;
@@ -169,6 +185,7 @@ export function GuildChatPanel({
   const myId = me?.id ?? "";
 
   return (
+    <>
     <div
       onClick={onClose}
       style={{
@@ -246,7 +263,7 @@ export function GuildChatPanel({
               Loading messages…
             </div>
           )}
-          {!loading && log.length === 0 && (
+          {!loading && visibleLog.length === 0 && (
             <div style={{ textAlign: "center", font: "500 13px Inter", color: "var(--ink2)", padding: "28px 0", lineHeight: 1.5 }}>
               No messages yet.
               <br />
@@ -254,7 +271,7 @@ export function GuildChatPanel({
             </div>
           )}
 
-          {log.map((m) =>
+          {visibleLog.map((m) =>
             m.author.id === myId ? (
               <div
                 key={m.id}
@@ -315,7 +332,24 @@ export function GuildChatPanel({
                   >
                     {m.body}
                   </div>
-                  <div style={{ font: "500 10px Inter", color: "var(--ink2)", marginTop: 3 }}>{clock(m.createdAt)}</div>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 3 }}>
+                    <span style={{ font: "500 10px Inter", color: "var(--ink2)" }}>{clock(m.createdAt)}</span>
+                    <button
+                      type="button"
+                      onClick={() => setReportMsg(m)}
+                      style={{
+                        border: "none",
+                        background: "none",
+                        padding: 0,
+                        font: "600 10px Inter",
+                        color: "var(--ink2)",
+                        cursor: "pointer",
+                        textDecoration: "underline",
+                      }}
+                    >
+                      Report
+                    </button>
+                  </div>
                 </div>
               </div>
             ),
@@ -371,6 +405,18 @@ export function GuildChatPanel({
         </div>
       </div>
     </div>
+
+    {reportMsg && (
+      <ReportPlayerModal
+        open={!!reportMsg}
+        accusedId={reportMsg.author.id}
+        context="guild"
+        messageId={reportMsg.id}
+        quotedText={reportMsg.body}
+        onClose={() => setReportMsg(null)}
+      />
+    )}
+    </>
   );
 }
 
