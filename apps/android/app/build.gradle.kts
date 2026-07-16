@@ -70,9 +70,14 @@ android {
         // match (exits on ENDED + an 8s resync timeout) + Home re-fetches the
         // active-match card on resume so a stale "Continue" card auto-clears +
         // Discover-Guilds join button now reads "Join" → "Request Sent ✓" with
-        // real feedback (was silent).
-        versionCode = 16
-        versionName = "0.1.15"
+        // real feedback (was silent); 17 = SESSION FIX — the app no longer logs
+        // you out after close+reopen: the ~15-min access token expires while
+        // closed and GET /api/auth/me returns 200 {user:null} (not 401) so the
+        // 401-only refresh never fired and the 30-day refresh token went unused;
+        // refreshMe() now proactively POSTs /api/auth/refresh + retries /me once
+        // before concluding you're signed out.
+        versionCode = 17
+        versionName = "0.1.16"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
