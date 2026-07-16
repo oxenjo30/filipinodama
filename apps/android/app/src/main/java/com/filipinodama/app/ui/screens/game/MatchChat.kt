@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyRow
@@ -123,14 +124,17 @@ fun MatchChat(
         }
 
         // composer — 😊 picker toggle + text input + send.
-        // BUG FIX (emote tap did nothing): the picker and the composer Row used to
-        // be plain siblings in a Box, both defaulting to TopStart, so they painted
-        // at the SAME origin and OVERLAPPED — the Row (composed last) drew on top
-        // and swallowed every tap in that region, so taps on the emoji chips never
-        // reached their .clickable. A Column stacks the picker ABOVE the Row with
-        // no overlap (mirroring web's `position:absolute; bottom:calc(100%+8px)`
-        // popover-above-composer layout), so each has its own hit area.
-        Column {
+        // BUG FIX 1 (emote tap did nothing): the picker and the composer Row used
+        // to be plain siblings in a Box, both defaulting to TopStart, so they
+        // painted at the SAME origin and OVERLAPPED — the Row (composed last) drew
+        // on top and swallowed every tap in that region, so taps on the emoji
+        // chips never reached their .clickable. A Column stacks the picker ABOVE
+        // the Row with no overlap (mirrors web's popover-above-composer layout),
+        // so each has its own hit area.
+        // BUG FIX 2 (keyboard hid the composer): OnlineMatchScreen is a non-tab
+        // game route with no other IME handling, so imePadding lifts the whole
+        // composer (picker + input + send) above the soft keyboard.
+        Column(modifier = Modifier.imePadding()) {
             if (pickerOpen) {
                 ChatPicker(
                     onEmote = { pick(emote = it) },

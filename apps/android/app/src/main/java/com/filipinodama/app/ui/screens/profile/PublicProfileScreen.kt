@@ -249,7 +249,12 @@ fun PublicProfileScreen(
                         }
                         Box(
                             modifier = Modifier
-                                .clickable { reportOpen = true }
+                                .clickable {
+                                    // An anonymous user gets the sign-in prompt
+                                    // instead of opening the report dialog and
+                                    // hitting a raw auth error on submit.
+                                    if (!signedIn) onRequireSignIn() else reportOpen = true
+                                }
                                 .background(Panel, RoundedCornerShape(10.dp))
                                 .padding(horizontal = 16.dp, vertical = 13.dp)
                         ) { Text("⚑", color = Ink2, style = MaterialTheme.typography.labelLarge) }

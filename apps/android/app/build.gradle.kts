@@ -76,8 +76,18 @@ android {
         // 401-only refresh never fired and the 30-day refresh token went unused;
         // refreshMe() now proactively POSTs /api/auth/refresh + retries /me once
         // before concluding you're signed out.
-        versionCode = 18
-        versionName = "0.1.17"
+        // 18 = UI batch (emote picker, guild preview, resign dialog, store cards,
+        // sign-in CTA) — already on main. 19 = FINAL-REVIEW DEFECTS BATCH — DM send
+        // no longer loses the draft or swallows a failure; Unlock Royal Pass gated
+        // to sign-in like Claim + surfaces purchase failures; Private Room join no
+        // longer hangs forever on a socket-connect failure (RoomError.ConnectFailed
+        // + 8s timeout); DM/Guild/in-match chat composers clear the soft keyboard
+        // (imePadding); guest predicate fixed to !isGuest in Daily/Quests/Season;
+        // OnlineMatchScreen result CTAs clear the gesture bar; Avatar Picker sheet
+        // is bottom-anchored; Report on a public profile prompts sign-in for an
+        // anonymous user instead of a raw error.
+        versionCode = 19
+        versionName = "0.1.18"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 

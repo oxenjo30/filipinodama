@@ -114,7 +114,11 @@ object RoomRepository {
             ensureConnected()
             true
         } catch (_: Exception) {
-            _state.update { it.copy(connecting = false) }
+            // Surface a real error so the screen can bail out of an
+            // indefinite "Joining…" spinner instead of hanging forever with
+            // no event ever arriving (connect failed, so room:join/spectate
+            // was never even emitted).
+            _state.update { it.copy(connecting = false, error = RoomError.ConnectFailed) }
             false
         }
     }
@@ -228,6 +232,9 @@ sealed class RoomError {
     object Closed : RoomError() // host left / room torn down
     object Kicked : RoomError()
     object YouBanned : RoomError() // host banned us
+    /** create()/join()/spectate() couldn't even establish the socket connection —
+     *  no server event will ever arrive, so the screen must not stay in JOINING. */
+    object ConnectFailed : RoomError()
 }
 
 /** A single relayed room chat line (ephemeral; server does not persist these). */

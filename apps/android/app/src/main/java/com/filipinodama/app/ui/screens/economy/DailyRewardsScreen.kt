@@ -65,7 +65,8 @@ import kotlinx.coroutines.launch
 @Composable
 fun DailyRewardsScreen(onBack: () -> Unit = {}, onRequireSignIn: () -> Unit = {}) {
     val scope = rememberCoroutineScope()
-    val signedIn = com.filipinodama.app.data.AuthRepository.state.collectAsState().value.user != null
+    val signedInUser = com.filipinodama.app.data.AuthRepository.state.collectAsState().value.user
+    val signedIn = signedInUser != null && signedInUser.isGuest != true
     var status by remember { mutableStateOf<DailyLoginStatusResponse?>(null) }
     var claiming by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }

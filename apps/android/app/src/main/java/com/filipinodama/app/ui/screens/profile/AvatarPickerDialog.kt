@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
@@ -109,6 +110,11 @@ fun AvatarPickerDialog(onClose: () -> Unit) {
     }
 
     Dialog(onDismissRequest = onClose, properties = DialogProperties(usePlatformDefaultWidth = false)) {
+        // Bottom-anchor the sheet inside the dialog window (it's styled like a
+        // bottom sheet — top-only rounded corners, sheet chrome — but a bare
+        // Dialog centers its content by default, which made it render
+        // floating/centered instead of docked to the bottom edge).
+        Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.BottomCenter) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
@@ -246,6 +252,7 @@ fun AvatarPickerDialog(onClose: () -> Unit) {
                     }
                 }
             }
+        }
         }
     }
 }
