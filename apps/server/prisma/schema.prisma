@@ -79,6 +79,8 @@ model User {
   recvReqs       FriendRequest[]  @relation("to")
   friendshipsA   Friendship[]     @relation("a")
   friendshipsB   Friendship[]     @relation("b")
+  blocksMade     Block[]          @relation("blocker")
+  blocksReceived Block[]          @relation("blocked")
   guildMember    GuildMember?
   messagesSent   Message[]
   notifications  Notification[]
@@ -319,6 +321,18 @@ model Friendship {
   createdAt DateTime @default(now())
 
   @@unique([aId, bId])
+}
+
+model Block {
+  id        String   @id @default(cuid())
+  blockerId String
+  blocker   User     @relation("blocker", fields: [blockerId], references: [id], onDelete: Cascade)
+  blockedId String
+  blocked   User     @relation("blocked", fields: [blockedId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+
+  @@unique([blockerId, blockedId])
+  @@index([blockedId])
 }
 
 enum ChannelType {
