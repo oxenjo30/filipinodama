@@ -5,7 +5,7 @@ import { ok, err } from "../lib/errors.js";
 import { isMuted } from "../lib/mute.js";
 import { requireAuth } from "../auth/guards.js";
 import { getIO } from "../realtime/io.js";
-import { EV } from "@dama/shared";
+import { EV, maskProfanity } from "@dama/shared";
 import { ensureChannel, dmRefId, loadHistory, postMessage, markRead, unreadCount } from "./chat-service.js";
 import { isBlockedBetween } from "./blocks.js";
 
@@ -108,8 +108,9 @@ export async function dmRoutes(app: FastifyInstance) {
     if (await isMuted(me)) throw err.forbidden("MUTED", "You are muted and can't send messages.");
     await assertFriends(me, other);
     const { body } = sendSchema.parse(req.body);
+    const clean = maskProfanity(body);
     const channelId = await ensureChannel("DM", dmRefId(me, other), [me, other]);
-    const message = await postMessage(channelId, me, body);
+    const message = await postMessage(channelId, me, clean);
     await markRead(channelId, me); // my own send counts as read for me
 
     // Live-deliver to the recipient's sessions (open thread + unread badge) AND

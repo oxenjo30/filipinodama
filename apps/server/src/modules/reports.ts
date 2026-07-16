@@ -10,9 +10,9 @@ const bodySchema = z.object({
   accusedId: z.string().min(1),
   reason: z.enum(["HARASSMENT", "HATE_SPEECH", "CHEATING", "INAPPROPRIATE", "SPAM", "OTHER"]),
   note: z.string().trim().max(500).optional(),
-  context: z.enum(["dm", "profile"]),
+  context: z.enum(["dm", "profile", "guild"]),
   messageId: z.string().optional(),
-}).refine((b) => b.context !== "dm" || !!b.messageId, { message: "messageId required for a DM report", path: ["messageId"] })
+}).refine((b) => (b.context !== "dm" && b.context !== "guild") || !!b.messageId, { message: "messageId required for a DM/guild report", path: ["messageId"] })
   .refine((b) => b.context !== "profile" || (b.note && b.note.length > 0), { message: "note required for a profile report", path: ["note"] });
 
 const RATE = 5;
@@ -36,6 +36,15 @@ export async function reportRoutes(app: FastifyInstance) {
       if (msg.channel.type !== "DM") throw err.badRequest("NOT_DM", "That message isn't from a DM");
       if (msg.authorId !== b.accusedId) throw err.badRequest("NOT_ACCUSED_MESSAGE", "You can only cite the reported player's own message");
       if (msg.channel.refId !== dmRefId(reporterId, b.accusedId)) throw err.badRequest("NOT_DM_PAIR", "That DM isn't between you and this player");
+      excerpt = msg.body; channelId = msg.channelId;
+    } else if (b.context === "guild") {
+      const msg = await prisma.message.findUnique({ where: { id: b.messageId! }, include: { channel: true } });
+      if (!msg) throw err.badRequest("NO_MESSAGE", "Message not found");
+      if (msg.channel.type !== "GUILD") throw err.badRequest("NOT_GUILD", "That message isn't from a guild");
+      if (msg.authorId !== b.accusedId) throw err.badRequest("NOT_ACCUSED_MESSAGE", "You can only cite the reported player's own message");
+      // reporter must be a member of that guild (channel.refId = guildId for GUILD channels)
+      const membership = await prisma.guildMember.findFirst({ where: { guildId: msg.channel.refId ?? "", userId: reporterId }, select: { userId: true } });
+      if (!membership) throw err.forbidden("NOT_GUILD_MEMBER", "You must be in this guild to report a message here");
       excerpt = msg.body; channelId = msg.channelId;
     } else {
       profileSnapshot = { displayName: accused.displayName, username: accused.username, tag: accused.tag, avatarUrl: accused.avatarUrl, bio: accused.bio };

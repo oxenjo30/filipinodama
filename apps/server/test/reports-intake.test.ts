@@ -3,13 +3,26 @@ import { prisma } from "../src/db/client.js";
 import { dmRefId } from "../src/modules/chat-service.js";
 import { buildTestApp, seedUser, authFor, truncateAll } from "./helpers.js";
 
-afterEach(truncateAll);
+afterEach(async () => {
+  await truncateAll();
+  await prisma.guild.deleteMany({ where: { name: { startsWith: "t_guild_" } } });
+});
 afterAll(async () => { await prisma.$disconnect(); });
 
 async function makeDM(a: string, b: string) {
   const ch = await prisma.channel.create({ data: { type: "DM", refId: dmRefId(a, b) } });
   await prisma.channelMember.createMany({ data: [{ channelId: ch.id, userId: a }, { channelId: ch.id, userId: b }] });
   return ch;
+}
+
+let guildSeq = 0;
+async function makeGuild() {
+  guildSeq += 1;
+  return prisma.guild.create({ data: { name: `t_guild_${guildSeq}_${process.pid}`, tag: `TG${guildSeq}${process.pid}`.slice(0, 8) } });
+}
+
+async function makeGuildChannel(guildId: string) {
+  return prisma.channel.create({ data: { type: "GUILD", refId: guildId } });
 }
 
 describe("POST /api/reports", () => {
@@ -85,6 +98,58 @@ describe("POST /api/reports", () => {
     await Promise.all(others.map((o) => app.inject({ method: "POST", url: "/api/reports", headers: { cookie: authFor({ sub: reporter.id }) }, payload: { accusedId: o.id, reason: "SPAM", context: "profile", note: "n" } })));
     const count = await prisma.report.count({ where: { reporterId: reporter.id } });
     expect(count).toBeLessThanOrEqual(5);
+    await app.close();
+  });
+
+  it("guild report succeeds for a member citing the accused's own guild message", async () => {
+    const app = await buildTestApp();
+    const reporter = await seedUser();
+    const accused = await seedUser();
+    const guild = await makeGuild();
+    await prisma.guildMember.createMany({ data: [
+      { userId: reporter.id, guildId: guild.id, role: "MEMBER" },
+      { userId: accused.id, guildId: guild.id, role: "MEMBER" },
+    ] });
+    const ch = await makeGuildChannel(guild.id);
+    const msg = await prisma.message.create({ data: { channelId: ch.id, authorId: accused.id, body: "guild trash talk" } });
+    const res = await app.inject({ method: "POST", url: "/api/reports", headers: { cookie: authFor({ sub: reporter.id }) }, payload: { accusedId: accused.id, reason: "HARASSMENT", context: "guild", messageId: msg.id } });
+    expect(res.statusCode).toBe(200);
+    const row = await prisma.report.findFirst({ where: { messageId: msg.id } });
+    expect(row!.excerpt).toBe("guild trash talk");
+    expect(row!.context).toBe("guild");
+    await app.close();
+  });
+
+  it("guild report rejects a non-member reporter", async () => {
+    const app = await buildTestApp();
+    const reporter = await seedUser(); // NOT a member of the guild
+    const accused = await seedUser();
+    const guild = await makeGuild();
+    await prisma.guildMember.create({ data: { userId: accused.id, guildId: guild.id, role: "MEMBER" } });
+    const ch = await makeGuildChannel(guild.id);
+    const msg = await prisma.message.create({ data: { channelId: ch.id, authorId: accused.id, body: "guild trash talk" } });
+    const res = await app.inject({ method: "POST", url: "/api/reports", headers: { cookie: authFor({ sub: reporter.id }) }, payload: { accusedId: accused.id, reason: "HARASSMENT", context: "guild", messageId: msg.id } });
+    expect(res.statusCode).toBe(403);
+    expect(res.json().error.code).toBe("NOT_GUILD_MEMBER");
+    await app.close();
+  });
+
+  it("guild report rejects citing a message not authored by the accused", async () => {
+    const app = await buildTestApp();
+    const reporter = await seedUser();
+    const accused = await seedUser();
+    const someoneElse = await seedUser();
+    const guild = await makeGuild();
+    await prisma.guildMember.createMany({ data: [
+      { userId: reporter.id, guildId: guild.id, role: "MEMBER" },
+      { userId: accused.id, guildId: guild.id, role: "MEMBER" },
+      { userId: someoneElse.id, guildId: guild.id, role: "MEMBER" },
+    ] });
+    const ch = await makeGuildChannel(guild.id);
+    const msg = await prisma.message.create({ data: { channelId: ch.id, authorId: someoneElse.id, body: "not the accused" } });
+    const res = await app.inject({ method: "POST", url: "/api/reports", headers: { cookie: authFor({ sub: reporter.id }) }, payload: { accusedId: accused.id, reason: "HARASSMENT", context: "guild", messageId: msg.id } });
+    expect(res.statusCode).toBe(400);
+    expect(res.json().error.code).toBe("NOT_ACCUSED_MESSAGE");
     await app.close();
   });
 });
