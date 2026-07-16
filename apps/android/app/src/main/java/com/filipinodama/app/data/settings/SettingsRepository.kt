@@ -46,6 +46,8 @@ object SettingsRepository {
 
     suspend fun myTickets(): SettingsResult<MyTicketsResponse> = call { api.myTickets() }
 
+    suspend fun ticketDetail(id: String): SettingsResult<TicketDetailResponse> = call { api.ticketDetail(id) }
+
     private suspend fun <T> call(block: suspend () -> ApiEnvelope<T>): SettingsResult<T> {
         return try {
             val envelope = block()

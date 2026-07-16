@@ -35,6 +35,9 @@ interface SettingsApi {
 
     @GET("api/support/tickets")
     suspend fun myTickets(): ApiEnvelope<MyTicketsResponse>
+
+    @GET("api/support/tickets/{id}")
+    suspend fun ticketDetail(@retrofit2.http.Path("id") id: String): ApiEnvelope<TicketDetailResponse>
 }
 
 @Serializable
@@ -68,3 +71,30 @@ data class TicketSummary(
 
 @Serializable
 data class MyTicketsResponse(val items: List<TicketSummary> = emptyList())
+
+/** GET /api/support/tickets/:id — ticket + its message thread (staff + user). */
+@Serializable
+data class TicketDetailInfo(
+    val id: String,
+    val subject: String,
+    val category: String,
+    val status: String,
+    val priority: String,
+    val createdAt: String,
+    val updatedAt: String
+)
+
+@Serializable
+data class TicketThreadMessage(
+    val id: String,
+    val isStaff: Boolean = false,
+    val authorName: String? = null,
+    val body: String,
+    val createdAt: String
+)
+
+@Serializable
+data class TicketDetailResponse(
+    val ticket: TicketDetailInfo,
+    val thread: List<TicketThreadMessage> = emptyList()
+)

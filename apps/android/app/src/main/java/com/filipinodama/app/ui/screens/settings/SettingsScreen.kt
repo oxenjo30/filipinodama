@@ -114,7 +114,8 @@ fun SettingsScreen(
     onBack: () -> Unit,
     onSignedOut: () -> Unit,
     onOpenInventory: () -> Unit,
-    onOpenLegal: (String) -> Unit
+    onOpenLegal: (String) -> Unit,
+    onOpenTickets: () -> Unit = {}
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -222,6 +223,11 @@ fun SettingsScreen(
                 NavRow(label = "Help & FAQ", onClick = { onOpenLegal("faq") })
                 NavRow(label = "Terms & Privacy", onClick = { onOpenLegal("terms") })
                 NavRow(label = "Contact Support", badge = "Ticket", onClick = { contactOpen = true })
+                // My Tickets — view filed tickets + staff replies (server rejects
+                // guests, so only show it for a real account).
+                if (me != null && !me.isGuest) {
+                    NavRow(label = "My Tickets", onClick = onOpenTickets)
+                }
             }
 
             // ── Log Out — mockup's exact button copy is "Log Out" (not

@@ -120,6 +120,10 @@ object AppDestinations {
     // apps/web's separate /terms /privacy /community /anti-cheat /data
     // routes collapsed into one screen with an in-screen tab switch.
     const val SETTINGS = "profile/settings"
+    // My Tickets — the read-only support-ticket thread view (status + staff
+    // replies), reached from Settings' "My Tickets" row. Web parity for the
+    // half the app lacked (filing existed; viewing did not).
+    const val MY_TICKETS = "profile/settings/tickets"
     const val LEGAL = "profile/legal/{doc}"
     fun legal(doc: String) = "profile/legal/$doc"
 
