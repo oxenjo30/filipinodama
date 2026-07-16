@@ -8,7 +8,9 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarHost
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -53,6 +55,8 @@ import com.filipinodama.app.ui.screens.game.OfflineGameScreen
 import com.filipinodama.app.ui.screens.game.OnlineMatchScreen
 import com.filipinodama.app.ui.components.LoadingContext
 import com.filipinodama.app.ui.components.LoadingOverlay
+import com.filipinodama.app.ui.components.LocalSnackbar
+import com.filipinodama.app.ui.components.rememberSnackbarController
 import com.filipinodama.app.ui.screens.rooms.LiveMatchBrowserScreen
 import com.filipinodama.app.ui.screens.rooms.PrivateRoomScreen
 import com.filipinodama.app.ui.screens.economy.DailyRewardsScreen
@@ -213,6 +217,9 @@ fun AppNavHost() {
     val maintenance by ConfigRepository.maintenance.collectAsState()
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
+    // App-wide transient feedback — one host, provided to the whole NavHost so any
+    // screen can `LocalSnackbar.current.show(...)` instead of a per-screen toast.
+    val snackbar = rememberSnackbarController(scope)
     val lifecycleOwner = LocalLifecycleOwner.current
 
     LaunchedEffect(Unit) { ConfigRepository.refresh() }
@@ -269,12 +276,14 @@ fun AppNavHost() {
             // Scaffold add the bottom system inset a second time (would push the
             // content up by the gesture-bar height and leave a gap).
             contentWindowInsets = WindowInsets(0, 0, 0, 0),
+            snackbarHost = { SnackbarHost(snackbar.hostState) },
             bottomBar = {
                 if (showTabBar) {
                     BottomTabBar(navController)
                 }
             }
         ) { innerPadding ->
+        CompositionLocalProvider(LocalSnackbar provides snackbar) {
         TabletWidthCap(capEnabled = !fullWidthRoute) {
         NavHost(
             navController = navController,
@@ -729,6 +738,7 @@ fun AppNavHost() {
                     }
                 )
             }
+        }
         }
         }
         }
