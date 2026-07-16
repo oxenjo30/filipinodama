@@ -3,6 +3,8 @@ import { EV, DEFAULT_SETTINGS, type GameSettings, type PieceColor } from "@dama/
 import type { MatchMode as PrismaMatchMode } from "@prisma/client";
 import { prisma } from "../db/client.js";
 import { createLiveMatch, maybePlayBotMove } from "./match.js";
+import { scheduleJob, cancelJob } from "./jobs.js";
+import { queuePush, queueUnshift, queueRemove, queuePopPair, getQueuedIn, setQueuedIn, type QueueEntry } from "./store.js";
 
 /** Mirrors ClientDevice from ./index.ts (kept as a plain union here to avoid an
  *  import cycle — index.ts registers this module). */
@@ -25,9 +27,6 @@ function botFillDelay(): number {
   return min + Math.floor(Math.random() * (max - min + 1));
 }
 
-/** Pending bot-fill timers keyed by userId, so a real match cancels the fallback. */
-const botTimers: Map<string, NodeJS.Timeout> = new Map();
-
 /** The seeded bot usernames (lowercase), kept in sync with prisma/seed.ts. These
  *  fill empty queues; the picker chooses among the nearest-rated few at random. */
 const BOT_USERNAMES = [
@@ -35,24 +34,17 @@ const BOT_USERNAMES = [
   "bathala", "magwayen", "dumakulem", "lam-ang", "kanlaon", "diwata", "panday",
 ];
 
-function cancelBotTimer(userId: string): void {
-  const t = botTimers.get(userId);
-  if (t) {
-    clearTimeout(t);
-    botTimers.delete(userId);
-  }
-}
-
 /**
- * In-memory matchmaking. Single-instance authoritative queue keyed by mode.
- * (Redis is optional for horizontal scaling later — a Map is correct for one
- * process today.) The SERVER decides pairings, colors and settings; the client
- * only asks to join/leave a queue.
+ * Matchmaking, backed by Redis (spec: 2026-07-15-realtime-redis-scale-design.md).
+ * The queue (per mode), the "which queue is this user in" pointer, and the
+ * bot-fill fallback timer are all externalized so any instance in the cluster
+ * can serve mm:join/mm:leave and the bot-fill job fires exactly once
+ * cluster-wide (jobs.ts). The SERVER decides pairings, colors and settings; the
+ * client only asks to join/leave a queue.
  */
 
 /** Only these modes are matched here; PRIVATE/LOCAL/AI use other flows. */
 type QueueMode = "CASUAL" | "RANKED";
-const QUEUE_MODES: QueueMode[] = ["CASUAL", "RANKED"];
 
 /** A player's preferred side. "either" = no preference (matches anyone). */
 type ColorPref = "red" | "blue" | "either";
@@ -60,35 +52,18 @@ function asColorPref(x: unknown): ColorPref {
   return x === "red" || x === "blue" ? x : "either";
 }
 
-type Waiting = {
-  userId: string;
-  socketId: string;
-  joinedAt: number;
-  /** preferred colour; honoured when compatible, else the player is flipped. */
-  colorPref: ColorPref;
-};
-
-/** mode -> ordered list of waiting players (FIFO). */
-const queues: Map<QueueMode, Waiting[]> = new Map(
-  QUEUE_MODES.map((m) => [m, [] as Waiting[]]),
-);
-
-/** userId -> the mode they are currently queued in (one queue at a time). */
-const queuedIn: Map<string, QueueMode> = new Map();
-
 function isQueueMode(x: unknown): x is QueueMode {
   return x === "CASUAL" || x === "RANKED";
 }
 
-/** Remove a user from every queue. Returns true if they were in one. */
-export function leaveAllQueues(userId: string): boolean {
-  cancelBotTimer(userId); // no longer waiting → drop any pending bot fallback
-  const mode = queuedIn.get(userId);
+/** Remove a user from every queue (and cancel any pending bot-fill job).
+ *  Returns true if they were in one. */
+export async function leaveAllQueues(userId: string): Promise<boolean> {
+  await cancelJob("bot-fill", userId); // no longer waiting → drop any pending bot fallback
+  const mode = await getQueuedIn(userId);
   if (!mode) return false;
-  const q = queues.get(mode)!;
-  const idx = q.findIndex((w) => w.userId === userId);
-  if (idx >= 0) q.splice(idx, 1);
-  queuedIn.delete(userId);
+  await queueRemove(mode, userId);
+  await setQueuedIn(userId, null);
   return true;
 }
 
@@ -110,8 +85,8 @@ async function currentSocketForUser(io: IOServer, userId: string) {
  * of spinning forever. Targets the presence room so it reaches whatever socket
  * they currently have; a truly-offline user simply receives nothing.
  */
-function notifyDropped(io: IOServer, userId: string): void {
-  leaveAllQueues(userId);
+async function notifyDropped(io: IOServer, userId: string): Promise<void> {
+  await leaveAllQueues(userId);
   io.to(`presence:${userId}`).emit(EV.mmCancelled, { reason: "dropped" });
 }
 
@@ -164,18 +139,15 @@ async function publicUser(userId: string): Promise<PublicUser | null> {
 /**
  * Try to pair the two longest-waiting players in `mode`. Creates the Match row +
  * seeds the live game state, joins both sockets to the match room, and emits
- * EV.mmFound to each with their own color. Runs until fewer than 2 remain.
+ * EV.mmFound to each with their own color. Runs until fewer than 2 remain
+ * (queuePopPair returns null — the Lua script only pops when the queue holds
+ * at least 2 entries).
  */
 async function tryMatch(io: IOServer, mode: QueueMode): Promise<void> {
-  const q = queues.get(mode)!;
-  while (q.length >= 2) {
-    const a = q.shift()!;
-    const b = q.shift()!;
-    queuedIn.delete(a.userId);
-    queuedIn.delete(b.userId);
-    // A real human pairing wins — cancel any pending bot fallback for both.
-    cancelBotTimer(a.userId);
-    cancelBotTimer(b.userId);
+  while (true) {
+    const pair = await queuePopPair(mode);
+    if (!pair) break;
+    const [a, b] = pair;
 
     // Resolve each player's CURRENT live socket by userId — NOT the socketId
     // captured at mm:join. Mobile sockets reconnect routinely (network changes,
@@ -189,20 +161,20 @@ async function tryMatch(io: IOServer, mode: QueueMode): Promise<void> {
     const sb = await currentSocketForUser(io, b.userId);
     if (!sa && !sb) {
       // Both genuinely gone — tell each (harmless if truly offline) and move on.
-      notifyDropped(io, a.userId);
-      notifyDropped(io, b.userId);
+      await notifyDropped(io, a.userId);
+      await notifyDropped(io, b.userId);
       continue;
     }
     if (!sa) {
       // a is gone: requeue b (still searching) and tell a it was dropped so its
       // client can leave the "searching" state instead of spinning forever.
-      requeueFront(mode, b);
-      notifyDropped(io, a.userId);
+      await requeueFront(mode, b);
+      await notifyDropped(io, a.userId);
       continue;
     }
     if (!sb) {
-      requeueFront(mode, a);
-      notifyDropped(io, b.userId);
+      await requeueFront(mode, a);
+      await notifyDropped(io, b.userId);
       continue;
     }
 
@@ -235,13 +207,13 @@ async function tryMatch(io: IOServer, mode: QueueMode): Promise<void> {
       matchId = match.id;
     } catch (e) {
       // DB failure: put both players back so they aren't silently dropped.
-      requeueFront(mode, b);
-      requeueFront(mode, a);
+      await requeueFront(mode, b);
+      await requeueFront(mode, a);
       throw e;
     }
 
-    // Seed authoritative in-memory game state and register the match loop room.
-    createLiveMatch(matchId, redId, blueId, mode, settings);
+    // Seed authoritative game state in Redis and register the match loop room.
+    await createLiveMatch(matchId, redId, blueId, mode, settings);
 
     // Both players join the io room named after the match id.
     await sa.join(matchId);
@@ -272,9 +244,9 @@ async function tryMatch(io: IOServer, mode: QueueMode): Promise<void> {
   }
 }
 
-function requeueFront(mode: QueueMode, w: Waiting) {
-  queues.get(mode)!.unshift(w);
-  queuedIn.set(w.userId, mode);
+async function requeueFront(mode: QueueMode, w: QueueEntry): Promise<void> {
+  await queueUnshift(mode, w);
+  await setQueuedIn(w.userId, mode);
 }
 
 /**
@@ -292,7 +264,7 @@ async function startBotMatch(io: IOServer, userId: string, mode: QueueMode, colo
   // bug the human-pairing path had).
   const socket = await currentSocketForUser(io, userId);
   if (!socket) {
-    leaveAllQueues(userId);
+    await leaveAllQueues(userId);
     return;
   }
 
@@ -315,7 +287,7 @@ async function startBotMatch(io: IOServer, userId: string, mode: QueueMode, colo
   const bot = nearest[Math.floor(Math.random() * nearest.length)];
 
   // Pull the human out of the queue (they're about to be matched).
-  leaveAllQueues(userId);
+  await leaveAllQueues(userId);
 
   // vs a BOT the human always gets their preferred colour (the bot takes the
   // other side); "either" → random. Then seed the match + mark the bot's colour.
@@ -344,7 +316,7 @@ async function startBotMatch(io: IOServer, userId: string, mode: QueueMode, colo
     return;
   }
 
-  createLiveMatch(matchId, redId, blueId, mode, settings, botColor);
+  await createLiveMatch(matchId, redId, blueId, mode, settings, botColor);
   await socket.join(matchId);
 
   const opponent = await publicUser(bot.id);
@@ -365,6 +337,24 @@ async function startBotMatch(io: IOServer, userId: string, mode: QueueMode, colo
   maybePlayBotMove(io, matchId);
 }
 
+/**
+ * The `bot-fill` job handler (cross-instance, exactly-once via jobs.ts). Armed
+ * by mm:join after tryMatch leaves the player still queued; re-validates the
+ * player is STILL the sole waiter for this mode before botting, since the
+ * queue state may have changed on any instance in the interim.
+ */
+export async function handleBotFill(io: IOServer, payload: Record<string, unknown>): Promise<void> {
+  const userId = payload.userId as string;
+  const mode = payload.mode as QueueMode;
+  const colorPref = payload.colorPref as ColorPref;
+  // Re-check we're still the sole waiter for this mode before botting.
+  const stillQueued = await getQueuedIn(userId);
+  if (stillQueued !== mode) return;
+  await startBotMatch(io, userId, mode, colorPref).catch((err) =>
+    console.error("[matchmaking] startBotMatch failed", err),
+  );
+}
+
 export function registerMatchmaking(io: IOServer, socket: Socket) {
   const userId = socket.data.userId as string;
 
@@ -377,13 +367,11 @@ export function registerMatchmaking(io: IOServer, socket: Socket) {
     const colorPref = asColorPref(payload?.colorPref);
 
     // A user may only be in one queue at a time — leaving any previous one first.
-    leaveAllQueues(userId);
+    await leaveAllQueues(userId);
 
-    // Guard against being matched with yourself from a second tab: if you are
-    // already the sole waiter, refresh your socket id rather than double-queue.
-    const q = queues.get(mode)!;
-    q.push({ userId, socketId: socket.id, joinedAt: Date.now(), colorPref });
-    queuedIn.set(userId, mode);
+    const entry: QueueEntry = { userId, joinedAt: Date.now(), colorPref };
+    await queuePush(mode, entry);
+    await setQueuedIn(userId, mode);
 
     socket.emit(EV.mmSearching, { mode });
 
@@ -398,27 +386,20 @@ export function registerMatchmaking(io: IOServer, socket: Socket) {
     // If a human didn't pair us during tryMatch (we're still queued), arm the
     // grace-window bot fallback: after a RANDOMIZED delay (7–20s, so the bot
     // never joins at a predictable moment), if STILL waiting, fill with a
-    // highly-skilled bot so the player is never stuck on an empty queue.
-    if (queuedIn.get(userId) === mode) {
-      cancelBotTimer(userId); // replace any stale timer from a previous join
-      const timer = setTimeout(() => {
-        botTimers.delete(userId);
-        // Re-check we're still the sole waiter for this mode before botting.
-        if (queuedIn.get(userId) !== mode) return;
-        void startBotMatch(io, userId, mode, colorPref).catch((err) =>
-          console.error("[matchmaking] startBotMatch failed", err),
-        );
-      }, botFillDelay());
-      botTimers.set(userId, timer);
+    // highly-skilled bot so the player is never stuck on an empty queue. The
+    // job is cluster-wide exactly-once (jobs.ts), so whichever instance is
+    // running when it fires handles it — not necessarily this one.
+    if ((await getQueuedIn(userId)) === mode) {
+      await scheduleJob("bot-fill", userId, botFillDelay(), { userId, mode, colorPref });
     }
   });
 
-  socket.on(EV.mmLeave, () => {
-    const was = leaveAllQueues(userId);
+  socket.on(EV.mmLeave, async () => {
+    const was = await leaveAllQueues(userId);
     if (was) socket.emit(EV.mmCancelled, { reason: "left" });
   });
 
   socket.on("disconnect", () => {
-    leaveAllQueues(userId);
+    void leaveAllQueues(userId);
   });
 }

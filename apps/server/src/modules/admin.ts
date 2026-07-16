@@ -193,11 +193,12 @@ export async function adminRoutes(app: FastifyInstance) {
         },
       }),
     ]);
+    const onlineFlags = await Promise.all(rows.map((u) => isOnline(u.id)));
     return ok({
       total,
       page: q.page,
       limit: q.limit,
-      items: rows.map((u) => ({ ...u, status: statusOf(u), online: isOnline(u.id) })),
+      items: rows.map((u, i) => ({ ...u, status: statusOf(u), online: onlineFlags[i] })),
     });
   });
 
@@ -249,7 +250,7 @@ export async function adminRoutes(app: FastifyInstance) {
     const purchases = [...itemPurchases, ...topupPurchases]
       .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())
       .slice(0, 8);
-    return ok({ ...u, status: statusOf(u), online: isOnline(u.id), ledger, openReportsAgainst, purchases });
+    return ok({ ...u, status: statusOf(u), online: await isOnline(u.id), ledger, openReportsAgainst, purchases });
   });
 
   // ── 1.3 Player recent matches (SUPPORT) ────────────────────────────────────

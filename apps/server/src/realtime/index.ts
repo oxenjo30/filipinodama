@@ -2,7 +2,7 @@ import type { Server as IOServer, Socket } from "socket.io";
 import type { RtJobType, RtJobHandler } from "./jobs.js";
 import { verifyAccess, COOKIE } from "../auth/tokens.js";
 import { prisma } from "../db/client.js";
-import { registerMatchmaking } from "./matchmaking.js";
+import { registerMatchmaking, handleBotFill } from "./matchmaking.js";
 import { registerMatch, handleAbandonForfeit, handleBotMove } from "./match.js";
 import { registerDamathMatchmaking } from "./damath-matchmaking.js";
 import { registerDamathMatch } from "./damath-match.js";
@@ -83,15 +83,17 @@ async function authenticate(socket: Socket): Promise<string | null> {
 
 /**
  * Assembles the RtJobType -> handler map for the cross-instance job poller
- * (jobs.ts) from each realtime module's job handlers. Task 5 wires the two match
- * job types (abandon-forfeit, bot-move). Task 6 merges in matchmaking's "bot-fill"
- * and Task 7+ any damath ("d-bot-move") handlers; an unmapped type is a safe no-op
- * (the poller claims the due job but skips it when no handler is registered).
+ * (jobs.ts) from each realtime module's job handlers. Task 5 wired the two match
+ * job types (abandon-forfeit, bot-move). Task 6 merges in matchmaking's
+ * "bot-fill" and Task 7+ any damath ("d-bot-move") handlers; an unmapped type is
+ * a safe no-op (the poller claims the due job but skips it when no handler is
+ * registered).
  */
 export function rtJobHandlers(io: IOServer): Partial<Record<RtJobType, RtJobHandler>> {
   return {
     "abandon-forfeit": (payload) => handleAbandonForfeit(io, payload),
     "bot-move": (payload) => handleBotMove(io, payload),
+    "bot-fill": (payload) => handleBotFill(io, payload),
   };
 }
 
