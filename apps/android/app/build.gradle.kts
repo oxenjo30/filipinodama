@@ -76,8 +76,8 @@ android {
         // 401-only refresh never fired and the 30-day refresh token went unused;
         // refreshMe() now proactively POSTs /api/auth/refresh + retries /me once
         // before concluding you're signed out.
-        versionCode = 17
-        versionName = "0.1.16"
+        versionCode = 18
+        versionName = "0.1.17"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 

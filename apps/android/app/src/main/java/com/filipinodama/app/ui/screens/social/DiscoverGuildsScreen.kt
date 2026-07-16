@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -316,7 +317,12 @@ fun GuildPreviewSheet(guildId: String, signedIn: Boolean, onClose: () -> Unit, o
                 )
                 .border(1.dp, Color(0x33E8B84B), RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp))
                 .clickable(enabled = false) {}
-                .padding(start = 18.dp, end = 18.dp, top = 14.dp, bottom = 30.dp)
+                // navigationBarsPadding (owner: "Sign in to join is too low to
+                // click") — the sheet is anchored to the very bottom, so without
+                // the system nav-bar inset the CTA sits UNDER the gesture/nav bar
+                // and is hard/impossible to tap. This lifts the whole sheet above it.
+                .navigationBarsPadding()
+                .padding(start = 18.dp, end = 18.dp, top = 14.dp, bottom = 24.dp)
         ) {
             // Drag handle (its own row so it doesn't clip the content below).
             Box(
@@ -357,31 +363,53 @@ fun GuildPreviewSheet(guildId: String, signedIn: Boolean, onClose: () -> Unit, o
                             Text("${g.tag} · ${g.memberCount} members", color = Color(0xFF9A8BBF), style = MaterialTheme.typography.labelSmall, modifier = Modifier.padding(top = 3.dp))
                         }
                     }
+                    // Quick bio (real GuildDetailDto.description).
                     if (!g.description.isNullOrBlank()) {
                         Text(g.description, color = Color(0xFFC9BCE6), style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(bottom = 16.dp))
                     }
 
-                    // Stat tiles — Guild Points / War Record / Min. Trophies / Region.
-                    Row(modifier = Modifier.fillMaxWidth().padding(bottom = 9.dp), horizontalArrangement = Arrangement.spacedBy(9.dp)) {
+                    // Stat tiles — ONLY real fields. Removed WAR RECORD / REGION /
+                    // LANGUAGE (owner: "not wired") — the Guild model has no such
+                    // columns, so those tiles showed a fabricated "—". Kept the two
+                    // real ones (weekly points + min-trophies-to-join).
+                    Row(modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp), horizontalArrangement = Arrangement.spacedBy(9.dp)) {
                         StatTile("GUILD POINTS", g.weeklyPoints.toString(), Color(0xFFF4ECD6), Modifier.weight(1f))
-                        StatTile("WAR RECORD", "—", Color(0xFFF4ECD6), Modifier.weight(1f))
-                    }
-                    Row(modifier = Modifier.fillMaxWidth().padding(bottom = 9.dp), horizontalArrangement = Arrangement.spacedBy(9.dp)) {
                         StatTile("MIN. TROPHIES", if (g.minTrophies > 0) g.minTrophies.toString() else "None", Color(0xFFF4ECD6), Modifier.weight(1f))
-                        StatTile("REGION", "—", Color(0xFFF4ECD6), Modifier.weight(1f))
                     }
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .background(Color(0x800F0820), RoundedCornerShape(12.dp))
-                            .border(1.dp, Color(0x1AE8B84B), RoundedCornerShape(12.dp))
-                            .padding(horizontal = 13.dp, vertical = 11.dp)
-                            .padding(bottom = 4.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text("LANGUAGE", color = Color(0xFF8B7CAE), style = MaterialTheme.typography.labelSmall)
-                        Box(modifier = Modifier.weight(1f))
-                        Text("—", color = Color(0xFFC9BCE6), style = MaterialTheme.typography.labelMedium)
+
+                    // Contribution ladder — real roster, top weekly contributors
+                    // (owner: "Guild Profile should show the ladder"). Server field
+                    // roster[].weeklyContribution; capped so the sheet stays compact.
+                    val ladder = detail!!.roster.sortedByDescending { it.weeklyContribution }.take(5)
+                    if (ladder.isNotEmpty()) {
+                        Text(
+                            "TOP CONTRIBUTORS",
+                            color = Color(0xFF8B7CAE),
+                            style = MaterialTheme.typography.labelSmall,
+                            modifier = Modifier.padding(bottom = 8.dp)
+                        )
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .background(Color(0x800F0820), RoundedCornerShape(12.dp))
+                                .border(1.dp, Color(0x1AE8B84B), RoundedCornerShape(12.dp))
+                                .padding(vertical = 4.dp)
+                                .padding(bottom = 4.dp)
+                        ) {
+                            ladder.forEachIndexed { i, m ->
+                                Row(
+                                    modifier = Modifier.fillMaxWidth().padding(horizontal = 13.dp, vertical = 8.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                                ) {
+                                    Text("#${i + 1}", color = if (i == 0) Color(0xFFF0CF72) else Color(0xFF8B7CAE), style = MaterialTheme.typography.labelMedium, modifier = Modifier.width(28.dp))
+                                    Text(m.user.displayName, color = Color(0xFFE6DCF5), style = MaterialTheme.typography.bodySmall, modifier = Modifier.weight(1f), maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
+                                    com.filipinodama.app.ui.components.CurrencyIcon(kind = com.filipinodama.app.ui.components.CurrencyIconKind.TROPHY, size = 12.dp)
+                                    Text("${m.weeklyContribution}", color = Color(0xFFF0CF72), style = MaterialTheme.typography.labelMedium)
+                                }
+                            }
+                        }
+                        Box(Modifier.height(16.dp))
                     }
 
                     val effectiveState = myGuildJoinState ?: if (!signedIn) "guest" else "joinable"
