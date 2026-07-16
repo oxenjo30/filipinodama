@@ -2,7 +2,7 @@ import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { prisma } from "../db/client.js";
 import { requireAuth } from "../auth/guards.js";
-import { err } from "../lib/errors.js";
+import { ok, err } from "../lib/errors.js";
 
 const blockSchema = z.object({ userId: z.string().min(1) });
 
@@ -43,14 +43,14 @@ export async function blockRoutes(app: FastifyInstance) {
         where: { OR: [{ fromId: me, toId: userId }, { fromId: userId, toId: me }] },
       }),
     ]);
-    return { ok: true };
+    return ok({ blocked: true });
   });
 
   // DELETE /api/blocks/:userId — unblock (idempotent).
   app.delete<{ Params: { userId: string } }>("/blocks/:userId", { preHandler: requireAuth }, async (req) => {
     const me = req.userId!;
     await prisma.block.deleteMany({ where: { blockerId: me, blockedId: req.params.userId } });
-    return { ok: true };
+    return ok({ unblocked: true });
   });
 
   // GET /api/blocks — the caller's blocked list.
@@ -61,6 +61,6 @@ export async function blockRoutes(app: FastifyInstance) {
       orderBy: { createdAt: "desc" },
       select: { createdAt: true, blocked: { select: { id: true, username: true, displayName: true, tag: true, avatarUrl: true } } },
     });
-    return { blocked: rows.map((r) => ({ ...r.blocked, blockedAt: r.createdAt })) };
+    return ok({ blocked: rows.map((r) => ({ ...r.blocked, blockedAt: r.createdAt })) });
   });
 }

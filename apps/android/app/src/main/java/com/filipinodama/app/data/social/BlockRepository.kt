@@ -3,6 +3,7 @@ package com.filipinodama.app.data.social
 import com.filipinodama.app.data.apiErrorFrom
 
 import com.filipinodama.app.data.ApiClient
+import com.filipinodama.app.data.ApiEnvelope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -10,10 +11,9 @@ import kotlinx.coroutines.flow.asStateFlow
 /**
  * BlockRepository — server-authoritative client for player blocking (UGC
  * safety), matching this scaffold's singleton-object convention (see
- * [FriendsRepository]). blocks.ts's success bodies are raw (not
- * envelope-wrapped, see [BlockApi]'s kdoc), so unlike FriendsRepository we
- * don't check an `envelope.ok` flag on the happy path — a non-2xx response
- * throws (caught below) and a 2xx response is always success.
+ * [FriendsRepository]). blocks.ts's success bodies are envelope-wrapped
+ * (`ok({ data })`), same as FriendsApi, so we unwrap `envelope.ok`/`.data`
+ * the same way [FriendsRepository] does.
  */
 object BlockRepository {
 
@@ -25,9 +25,14 @@ object BlockRepository {
 
     suspend fun block(userId: String): SocialResult<Unit> {
         return try {
-            api.block(BlockRequest(userId))
-            _blockedIds.value = _blockedIds.value + userId
-            SocialResult.Success(Unit)
+            val envelope = api.block(BlockRequest(userId))
+            if (envelope.ok) {
+                _blockedIds.value = _blockedIds.value + userId
+                SocialResult.Success(Unit)
+            } else {
+                val error = envelope.error
+                SocialResult.Failure(error?.code ?: "UNKNOWN", error?.message ?: "Something went wrong. Please try again.")
+            }
         } catch (e: Exception) {
             val apiError = apiErrorFrom(e)
             if (apiError != null) SocialResult.Failure(apiError.code, apiError.message)
@@ -37,9 +42,14 @@ object BlockRepository {
 
     suspend fun unblock(userId: String): SocialResult<Unit> {
         return try {
-            api.unblock(userId)
-            _blockedIds.value = _blockedIds.value - userId
-            SocialResult.Success(Unit)
+            val envelope = api.unblock(userId)
+            if (envelope.ok) {
+                _blockedIds.value = _blockedIds.value - userId
+                SocialResult.Success(Unit)
+            } else {
+                val error = envelope.error
+                SocialResult.Failure(error?.code ?: "UNKNOWN", error?.message ?: "Something went wrong. Please try again.")
+            }
         } catch (e: Exception) {
             val apiError = apiErrorFrom(e)
             if (apiError != null) SocialResult.Failure(apiError.code, apiError.message)
@@ -49,9 +59,14 @@ object BlockRepository {
 
     suspend fun list(): SocialResult<BlockListResponse> {
         return try {
-            val response = api.list()
-            _blockedIds.value = response.blocked.map { it.id }.toSet()
-            SocialResult.Success(response)
+            val envelope = api.list()
+            if (envelope.ok && envelope.data != null) {
+                _blockedIds.value = envelope.data.blocked.map { it.id }.toSet()
+                SocialResult.Success(envelope.data)
+            } else {
+                val error = envelope.error
+                SocialResult.Failure(error?.code ?: "UNKNOWN", error?.message ?: "Something went wrong. Please try again.")
+            }
         } catch (e: Exception) {
             val apiError = apiErrorFrom(e)
             if (apiError != null) SocialResult.Failure(apiError.code, apiError.message)
