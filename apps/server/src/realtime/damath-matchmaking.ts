@@ -37,12 +37,14 @@ async function getQueuedVariant(userId: string): Promise<DamathVariant> {
   return ((await redis.get(variantKey(userId))) as DamathVariant | null) ?? "whole";
 }
 
-/** Remove a user from the Damath queue. Returns true if they were in it. */
+/** Remove a user from the Damath queue. Returns true if they were in it.
+ *  Reads/writes the "damath"-family queue pointer so it never touches (or is
+ *  confused by) the Classic queue a user might also be sitting in. */
 export async function leaveDamathQueue(userId: string): Promise<boolean> {
-  const mode = await getQueuedIn(userId);
+  const mode = await getQueuedIn(userId, "damath");
   if (mode !== DAMATH_MODE) return false;
   await queueRemove(DAMATH_MODE, userId);
-  await setQueuedIn(userId, null);
+  await setQueuedIn(userId, null, "damath");
   await redis.del(variantKey(userId));
   return true;
 }
@@ -85,7 +87,7 @@ async function currentSocketForUser(io: IOServer, userId: string) {
 
 async function requeueFront(entry: QueueEntry, variant: DamathVariant): Promise<void> {
   await queueUnshift(DAMATH_MODE, entry);
-  await setQueuedIn(entry.userId, DAMATH_MODE);
+  await setQueuedIn(entry.userId, DAMATH_MODE, "damath");
   await setQueuedVariant(entry.userId, variant);
 }
 
@@ -160,7 +162,7 @@ export function registerDamathMatchmaking(io: IOServer, socket: Socket) {
     // colorPref is unused for Damath (first-joiner is always Red); store "either".
     const entry: QueueEntry = { userId, joinedAt: Date.now(), colorPref: "either" };
     await queuePush(DAMATH_MODE, entry);
-    await setQueuedIn(userId, DAMATH_MODE);
+    await setQueuedIn(userId, DAMATH_MODE, "damath");
     await setQueuedVariant(userId, variant);
     socket.emit(EV.damathMmSearching, {});
 

@@ -159,15 +159,35 @@ function emitState(io: IOServer, room: Room) {
  * Serialized on the room lock: reads the user's room, mutates, writes back (or
  * deletes) atomically. `userRoom` is cleared first (it's a per-user pointer, not
  * part of the room doc). Broadcasts happen after the write lands.
+ *
+ * `onlyIfNoSockets` guards the DISCONNECT path (socketLeft): a last-socket
+ * teardown releases its lock, then re-acquires it here. In that gap the user can
+ * RECONNECT — a fresh socket re-attaches to their member (roomCreate/join
+ * re-attach paths above). Without the guard, this second lock would still tear
+ * the seat/room down and clobber the live reconnect (the split-lock TOCTOU).
+ * When set, we re-read under THIS lock and abort the teardown if the member has
+ * re-acquired any socket. Explicit leave/kick/create/join pass it unset (they
+ * mean "leave now" regardless of sockets), preserving today's behaviour.
  */
-async function removeMember(io: IOServer, userId: string): Promise<void> {
+async function removeMember(io: IOServer, userId: string, onlyIfNoSockets = false): Promise<void> {
   const code = await getUserRoom(RP, userId);
   if (!code) return;
-  await setUserRoom(RP, userId, null);
+  // For the guarded disconnect path, DON'T pre-clear userRoom: a reconnect that
+  // won the gap must keep pointing at this room. We clear it inside the lock only
+  // once we've confirmed the teardown is really happening.
+  if (!onlyIfNoSockets) await setUserRoom(RP, userId, null);
   await withLock(`room:${code}`, async () => {
     const room = await loadRoom(code);
-    if (!room) return;
+    if (!room) {
+      if (onlyIfNoSockets) await setUserRoom(RP, userId, null); // room gone; drop the stale pointer
+      return;
+    }
     const member = memberIn(room, userId);
+    // Reconnect-during-gap guard: the member picked up a new socket after the
+    // last-socket check released the first lock. Leave everything intact — the
+    // reconnected socket owns the seat now.
+    if (onlyIfNoSockets && member && member.sockets.length > 0) return;
+    if (onlyIfNoSockets) await setUserRoom(RP, userId, null); // confirmed teardown → now clear the pointer
     if (member) detachSockets(io, room, member);
 
     // Once the match has STARTED, the live-match layer (match.ts) is the sole owner
@@ -313,8 +333,9 @@ export async function listOpenRooms(): Promise<OpenRoom[]> {
  * when that was their LAST socket in the room (multi-tab safe) — a user with
  * another open tab keeps their seat. The socket removal + last-socket check run
  * under the room lock; the actual teardown (removeMember) re-acquires the lock
- * with a fresh read, which is safe (removeMember is idempotent for an
- * already-detached user).
+ * with a fresh read. Between the two locks a reconnect can re-attach a fresh
+ * socket, so the teardown is GUARDED (onlyIfNoSockets): it aborts if the member
+ * regained any socket in the gap, so a reconnecting host is never clobbered.
  */
 async function socketLeft(io: IOServer, userId: string, socketId: string): Promise<void> {
   const code = await getUserRoom(RP, userId);
@@ -330,7 +351,7 @@ async function socketLeft(io: IOServer, userId: string, socketId: string): Promi
     lastSocket = member.sockets.length === 0;
     await storeRoom(room);
   });
-  if (lastSocket) await removeMember(io, userId);
+  if (lastSocket) await removeMember(io, userId, true);
 }
 
 export function registerRooms(io: IOServer, socket: Socket) {

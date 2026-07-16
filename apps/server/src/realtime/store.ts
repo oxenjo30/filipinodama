@@ -141,12 +141,29 @@ export async function queuePopPair(mode: string): Promise<[QueueEntry, QueueEntr
   if (!res) return null;
   return [JSON.parse(res[0]), JSON.parse(res[1])];
 }
-export async function getQueuedIn(userId: string): Promise<string | null> {
-  return redis.get(`rt:queuedIn:${userId}`);
+/**
+ * Which queue a user is currently sitting in, tracked PER matchmaking FAMILY.
+ *
+ * Classic (CASUAL/RANKED) and Damath are independent matchmaking systems that
+ * happen to key membership by userId. They MUST NOT share one pointer: if they
+ * did, a user queued for Classic then joining Damath would overwrite the Classic
+ * pointer, and each family's cancel/gate (leaveAllQueues, leaveDamathQueue, the
+ * bot-fill re-check) would read the OTHER family's mode — silently dropping the
+ * wrong queue or refusing to fill. The `family` segment isolates them.
+ *
+ * `family` defaults to "classic" so the key stays `rt:queuedIn:<userId>`
+ * verbatim for Classic — no migration for any in-flight Classic waiter. Damath
+ * passes "damath", landing on the distinct `rt:queuedIn:damath:<userId>`.
+ */
+const queuedInKey = (family: string, userId: string) =>
+  family === "classic" ? `rt:queuedIn:${userId}` : `rt:queuedIn:${family}:${userId}`;
+
+export async function getQueuedIn(userId: string, family = "classic"): Promise<string | null> {
+  return redis.get(queuedInKey(family, userId));
 }
-export async function setQueuedIn(userId: string, mode: string | null): Promise<void> {
-  if (mode) await redis.set(`rt:queuedIn:${userId}`, mode, "EX", 3600);
-  else await redis.del(`rt:queuedIn:${userId}`);
+export async function setQueuedIn(userId: string, mode: string | null, family = "classic"): Promise<void> {
+  if (mode) await redis.set(queuedInKey(family, userId), mode, "EX", 3600);
+  else await redis.del(queuedInKey(family, userId));
 }
 
 // Rooms (generic over prefix so damath reuses: prefix "rt:" or "rt:d:").

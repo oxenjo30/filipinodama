@@ -83,15 +83,26 @@ const emitState = (io: IOServer, room: DamathRoom) =>
   io.to(PREFIX(room.code)).emit(EV.damathRoomState, roomState(room));
 
 /** Remove a user from their room; tear it down if they were the host. Serialized
- *  on the room lock. `userRoom` is a per-user pointer cleared first. */
-async function removeMember(io: IOServer, userId: string): Promise<void> {
+ *  on the room lock. `userRoom` is a per-user pointer cleared first.
+ *
+ *  `onlyIfNoSockets` guards the disconnect path (socketLeft): the last-socket
+ *  teardown releases its lock, then re-acquires it here — and a reconnect can
+ *  re-attach a fresh socket in that gap. When set, we re-read under THIS lock and
+ *  abort if the member regained any socket, so a reconnecting host isn't
+ *  clobbered (the split-lock TOCTOU). Mirrors rooms.ts::removeMember. */
+async function removeMember(io: IOServer, userId: string, onlyIfNoSockets = false): Promise<void> {
   const code = await getUserRoom(RP, userId);
   if (!code) return;
-  await setUserRoom(RP, userId, null);
+  if (!onlyIfNoSockets) await setUserRoom(RP, userId, null);
   await withLock(`d-room:${code}`, async () => {
     const room = await loadRoom(code);
-    if (!room) return;
+    if (!room) {
+      if (onlyIfNoSockets) await setUserRoom(RP, userId, null);
+      return;
+    }
     const member = memberIn(room, userId);
+    if (onlyIfNoSockets && member && member.sockets.length > 0) return; // reconnect won the gap
+    if (onlyIfNoSockets) await setUserRoom(RP, userId, null);
     if (member) for (const sid of member.sockets) io.sockets.sockets.get(sid)?.leave(PREFIX(code));
 
     if (room.hostId === userId) {
@@ -122,7 +133,7 @@ async function socketLeft(io: IOServer, userId: string, socketId: string): Promi
     lastSocket = member.sockets.length === 0;
     await storeRoom(room);
   });
-  if (lastSocket) await removeMember(io, userId);
+  if (lastSocket) await removeMember(io, userId, true);
 }
 
 export function registerDamathRooms(io: IOServer, socket: Socket) {
