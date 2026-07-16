@@ -19,7 +19,7 @@ data class ReportBody(
     val accusedId: String,
     val reason: String, // HARASSMENT | HATE_SPEECH | CHEATING | INAPPROPRIATE | SPAM | OTHER
     val note: String? = null,
-    val context: String, // "dm" | "profile"
+    val context: String, // "dm" | "profile" | "guild"
     val messageId: String? = null
 )
 

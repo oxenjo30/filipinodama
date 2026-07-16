@@ -146,6 +146,7 @@ fun SettingsScreen(
 
     var contactOpen by remember { mutableStateOf(false) }
     var deleteOpen by remember { mutableStateOf(false) }
+    var blockedOpen by remember { mutableStateOf(false) }
     var exporting by remember { mutableStateOf(false) }
     var toast by remember { mutableStateOf<String?>(null) }
 
@@ -258,6 +259,7 @@ fun SettingsScreen(
                 SettingsInfoRow(label = "Email", value = me.email ?: if (me.isGuest) "Guest account" else "—")
                 SettingsInfoRow(label = "Player Tag", value = "${me.username}${me.tag}")
                 NavRow(label = "Board & Piece Skin", sub = "Equip cosmetics from your Inventory", onClick = onOpenInventory)
+                NavRow(label = "Blocked Players", sub = "Manage players you've blocked", onClick = { blockedOpen = true })
                 NavRow(label = "Privacy Policy", onClick = { onOpenLegal("privacy") })
                 NavRow(label = "Community Guidelines", onClick = { onOpenLegal("community") })
                 NavRow(label = "Fair Play & Anti-Cheat", onClick = { onOpenLegal("anticheat") })
@@ -286,6 +288,9 @@ fun SettingsScreen(
 
     if (contactOpen) {
         ContactSupportDialog(onClose = { contactOpen = false })
+    }
+    if (blockedOpen) {
+        BlockedPlayersDialog(onClose = { blockedOpen = false })
     }
     if (deleteOpen) {
         DeleteAccountDialog(

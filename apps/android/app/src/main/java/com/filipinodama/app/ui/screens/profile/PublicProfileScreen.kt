@@ -39,6 +39,7 @@ import com.filipinodama.app.data.profile.ProfileRepository
 import com.filipinodama.app.data.profile.ProfileResult
 import com.filipinodama.app.data.profile.PublicUserProfileDto
 import com.filipinodama.app.data.profile.RecentMatchDto
+import com.filipinodama.app.data.social.BlockRepository
 import com.filipinodama.app.data.social.FriendsRepository
 import com.filipinodama.app.data.social.PresenceRepository
 import com.filipinodama.app.data.social.SocialResult
@@ -93,11 +94,15 @@ fun PublicProfileScreen(
     var requestId by remember { mutableStateOf<String?>(null) }
     var friendBusy by remember { mutableStateOf(false) }
     var reportOpen by remember { mutableStateOf(false) }
+    val blockedIds by BlockRepository.blockedIds.collectAsState()
+    val blocked = blockedIds.contains(userId)
+    var blockBusy by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
     // Phase 7 retry affordance: bump to re-run both load effects below.
     var retryTick by remember { mutableStateOf(0) }
 
     LaunchedEffect(Unit) { PresenceRepository.start() }
+    LaunchedEffect(Unit) { if (signedIn) BlockRepository.list() }
 
     LaunchedEffect(userId, retryTick) {
         user = null
@@ -247,6 +252,24 @@ fun PublicProfileScreen(
                                 contentAlignment = Alignment.Center
                             ) { Text("💬 Message", color = GoldLt, style = MaterialTheme.typography.labelLarge) }
                         }
+                        Box(
+                            modifier = Modifier
+                                .clickable(enabled = !blockBusy) {
+                                    blockBusy = true
+                                    scope.launch {
+                                        val result = if (blocked) BlockRepository.unblock(userId) else BlockRepository.block(userId)
+                                        if (result is SocialResult.Success && !blocked) {
+                                            // A fresh block clears any pending friendship/requests
+                                            // server-side (blocks.ts) — reflect that immediately.
+                                            relationship = "none"
+                                            requestId = null
+                                        }
+                                        blockBusy = false
+                                    }
+                                }
+                                .background(if (blocked) Red.copy(alpha = 0.16f) else Panel, RoundedCornerShape(10.dp))
+                                .padding(horizontal = 16.dp, vertical = 13.dp)
+                        ) { Text(if (blocked) "Unblock" else "🚫", color = if (blocked) Color(0xFFFF8F9C) else Ink2, style = MaterialTheme.typography.labelLarge) }
                         Box(
                             modifier = Modifier
                                 .clickable {

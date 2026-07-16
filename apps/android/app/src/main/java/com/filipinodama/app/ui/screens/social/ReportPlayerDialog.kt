@@ -41,16 +41,19 @@ import kotlinx.coroutines.launch
 
 /**
  * ReportPlayerDialog — shared report flow, a Compose port of apps/web
- * ReportPlayerModal.tsx. Two entry points wire this in (mirrors web exactly):
+ * ReportPlayerModal.tsx. Three entry points wire this in (mirrors web exactly):
  *   - DmThreadScreen:      context="dm"      — per-message report, quoting the
  *                          reported player's own message (messageId required).
  *   - PublicProfileScreen: context="profile" — the server requires a non-empty
  *                          note for profile reports.
+ *   - GuildHallScreen:     context="guild"   — per-message report from the
+ *                          Guild Chat tab, quoting the reported player's own
+ *                          guild-chat message (messageId required, same as dm).
  */
 @Composable
 fun ReportPlayerDialog(
     accusedId: String,
-    context: String, // "dm" | "profile"
+    context: String, // "dm" | "profile" | "guild"
     messageId: String? = null,
     quotedText: String? = null,
     onClose: () -> Unit,

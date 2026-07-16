@@ -41,6 +41,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import coil.compose.AsyncImage
 import com.filipinodama.app.data.AuthRepository
+import com.filipinodama.app.data.social.BlockRepository
 import com.filipinodama.app.data.social.GUILD_CREST_KEYS
 import com.filipinodama.app.data.social.GUILD_ROLE_RANK
 import com.filipinodama.app.data.social.GuildCardDto
@@ -828,29 +829,54 @@ private fun ManageMemberDialog(member: GuildMemberDto, isLeader: Boolean, busy: 
  * timestamp; own messages right-aligned with the gold bubble. Composer is
  * the mockup's pill input + round gold ➤ send button. Real socket chat via
  * [GuildChatRepository], unchanged.
+ *
+ * UGC safety (Task 9): blocked authors' messages are dropped from the feed
+ * client-side (mirrors the DM conversation list filter — the server still
+ * stores/broadcasts the message, this is a client-side hide, matching how
+ * blocking works for chat elsewhere in the app). A per-bubble "Report" link
+ * on every other player's message (mirrors DmThreadScreen's MessageBubble)
+ * opens [ReportPlayerDialog] with context="guild", the real messageId, and
+ * accusedId = that message's author id.
  */
+private data class GuildChatReportTarget(val accusedId: String, val messageId: String, val body: String)
+
 @Composable
 private fun GuildChatPanel(guildId: String, guildName: String) {
     val state by GuildChatRepository.state.collectAsState()
     val scope = rememberCoroutineScope()
     var draft by remember { mutableStateOf("") }
     val me = AuthRepository.state.collectAsState().value.user
+    val blockedIds by BlockRepository.blockedIds.collectAsState()
+    var reportTarget by remember { mutableStateOf<GuildChatReportTarget?>(null) }
 
     LaunchedEffect(guildId) {
         GuildChatRepository.open(guildId)
     }
+    LaunchedEffect(Unit) { BlockRepository.list() }
     androidx.compose.runtime.DisposableEffect(guildId) {
         onDispose { GuildChatRepository.close() }
     }
 
+    reportTarget?.let { target ->
+        ReportPlayerDialog(
+            accusedId = target.accusedId,
+            context = "guild",
+            messageId = target.messageId,
+            quotedText = target.body,
+            onClose = { reportTarget = null }
+        )
+    }
+
+    val visibleMessages = state.messages.filter { !blockedIds.contains(it.author.id) }
+
     Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp)) {
         when {
             state.loading -> Box(Modifier.fillMaxWidth().padding(vertical = 30.dp), contentAlignment = Alignment.Center) { CircularProgressIndicator(color = Gold) }
-            state.messages.isEmpty() -> Box(Modifier.fillMaxWidth().padding(vertical = 30.dp), contentAlignment = Alignment.Center) {
+            visibleMessages.isEmpty() -> Box(Modifier.fillMaxWidth().padding(vertical = 30.dp), contentAlignment = Alignment.Center) {
                 Text("No messages yet.\nSay hello to your guild 👋", color = Ink2, style = MaterialTheme.typography.bodyMedium, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
             }
             else -> Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
-                state.messages.forEach { m ->
+                visibleMessages.forEach { m ->
                     val mine = m.author.id == me?.id
                     Row(
                         modifier = Modifier.fillMaxWidth(),
@@ -879,6 +905,16 @@ private fun GuildChatPanel(guildId: String, guildName: String) {
                                     .padding(horizontal = 13.dp, vertical = 10.dp)
                             ) {
                                 Text(m.body, color = if (mine) Color(0xFF2A1608) else Color(0xFFEFE7FB), style = MaterialTheme.typography.bodySmall)
+                            }
+                            if (!mine) {
+                                Text(
+                                    "Report",
+                                    color = Ink2,
+                                    style = MaterialTheme.typography.labelSmall,
+                                    modifier = Modifier
+                                        .padding(top = 3.dp, start = 2.dp)
+                                        .clickable { reportTarget = GuildChatReportTarget(accusedId = m.author.id, messageId = m.id, body = m.body) }
+                                )
                             }
                         }
                         if (mine) {

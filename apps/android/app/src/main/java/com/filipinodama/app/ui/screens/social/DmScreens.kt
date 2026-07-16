@@ -37,10 +37,12 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import com.filipinodama.app.data.AuthRepository
+import com.filipinodama.app.data.social.BlockRepository
 import com.filipinodama.app.data.social.DmConversationDto
 import com.filipinodama.app.data.social.DmMessageDto
 import com.filipinodama.app.data.social.DmRepository
 import com.filipinodama.app.data.social.PresenceRepository
+import com.filipinodama.app.data.social.SocialResult
 import com.filipinodama.app.ui.screens.profile.AvatarView
 import com.filipinodama.app.ui.theme.Gold
 import com.filipinodama.app.ui.theme.GoldLt
@@ -62,13 +64,16 @@ fun DmConversationListScreen(onBack: () -> Unit, onOpenThread: (String) -> Unit)
     val me = AuthRepository.state.collectAsState().value.user
     val dmState by DmRepository.state.collectAsState()
     val onlineSet by PresenceRepository.online.collectAsState()
+    val blockedIds by BlockRepository.blockedIds.collectAsState()
     val scope = rememberCoroutineScope()
 
     LaunchedEffect(me?.id) {
         if (me == null) return@LaunchedEffect
         PresenceRepository.start()
         DmRepository.loadConversations()
+        BlockRepository.list()
     }
+    val visibleConversations = dmState.conversations.filter { !blockedIds.contains(it.user.id) }
 
     Column(modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
         Row(
@@ -89,13 +94,13 @@ fun DmConversationListScreen(onBack: () -> Unit, onOpenThread: (String) -> Unit)
 
         if (dmState.loadingList && dmState.conversations.isEmpty()) {
             Box(Modifier.fillMaxSize().padding(32.dp), contentAlignment = Alignment.Center) { CircularProgressIndicator(color = Gold) }
-        } else if (dmState.conversations.isEmpty()) {
+        } else if (visibleConversations.isEmpty()) {
             Box(Modifier.fillMaxWidth().padding(32.dp), contentAlignment = Alignment.Center) {
                 Text("No conversations yet.\nMessage a friend from your Friends list to start.", color = Ink2, style = MaterialTheme.typography.bodyMedium, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
             }
         } else {
             LazyColumn(modifier = Modifier.fillMaxSize()) {
-                items(dmState.conversations, key = { it.channelId }) { c ->
+                items(visibleConversations, key = { it.channelId }) { c ->
                     ConversationRow(conversation = c, online = onlineSet.contains(c.user.id), onClick = { onOpenThread(c.user.id) })
                 }
             }
@@ -153,10 +158,14 @@ fun DmThreadScreen(userId: String, onBack: () -> Unit) {
     var reportTarget by remember { mutableStateOf<Pair<String, String>?>(null) } // id to body
     // Phase 7 retry affordance: bump to re-run the thread-open call below.
     var retryTick by remember { mutableStateOf(0) }
+    val blockedIds by BlockRepository.blockedIds.collectAsState()
+    val blocked = blockedIds.contains(userId)
+    var blockBusy by remember { mutableStateOf(false) }
 
     LaunchedEffect(userId, retryTick) {
         DmRepository.openThread(userId)
     }
+    LaunchedEffect(Unit) { BlockRepository.list() }
 
     val myId = me?.id ?: ""
     val openUser = dmState.openUser
@@ -181,6 +190,23 @@ fun DmThreadScreen(userId: String, onBack: () -> Unit) {
                 if (openUser != null) {
                     Text(if (headerOnline) "● Online now" else "○ Offline", color = if (headerOnline) Green else Ink2, style = MaterialTheme.typography.labelSmall)
                 }
+            }
+            if (openUser != null) {
+                Text(
+                    if (blocked) "Unblock" else "Block",
+                    color = if (blocked) GoldLt else Color(0xFFFF8F9C),
+                    style = MaterialTheme.typography.labelMedium,
+                    modifier = Modifier
+                        .clickable(enabled = !blockBusy) {
+                            blockBusy = true
+                            scope.launch {
+                                if (blocked) BlockRepository.unblock(userId) else BlockRepository.block(userId)
+                                blockBusy = false
+                            }
+                        }
+                        .background(Color.Black.copy(alpha = 0.25f), RoundedCornerShape(8.dp))
+                        .padding(horizontal = 10.dp, vertical = 6.dp)
+                )
             }
         }
 
