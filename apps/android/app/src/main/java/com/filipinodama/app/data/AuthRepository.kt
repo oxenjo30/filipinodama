@@ -66,15 +66,33 @@ object AuthRepository {
     }
 
     /**
-     * Boot-time / splash-time session probe. GET /api/auth/me never 401s
-     * (an anonymous caller gets `{ user: null }` with 200 per the server
-     * contract), so this either resolves to a user or to null — it does not
-     * throw on "logged out", only on a genuine network/server failure.
+     * Boot-time / splash-time session probe. GET /api/auth/me never 401s (an
+     * anonymous caller gets `{ user: null }` with 200 per the server contract),
+     * so it resolves to a user or to null — it does not throw on "logged out",
+     * only on a genuine network/server failure.
+     *
+     * BUG FIX (logout-on-restart): the ~15-min `fd_access` JWT expires while the
+     * app is closed, but the 30-day `fd_refresh` cookie is still valid. Because
+     * /api/auth/me returns 200 `{user:null}` (NOT 401) when only the access
+     * token is stale, the OkHttp RefreshAuthenticator — which fires only on a
+     * 401 — never triggers, so the refresh token went UNUSED and the user was
+     * wrongly logged out on reopen. Fix: if the first /me returns null, PROACTIVELY
+     * POST /api/auth/refresh (mints a fresh fd_access from the refresh cookie),
+     * then retry /me ONCE. Only a failed refresh + still-null /me means the user
+     * is genuinely signed out.
      */
     suspend fun refreshMe(): AuthUser? {
         return try {
-            val envelope = authApi.me()
-            val user = if (envelope.ok) envelope.data?.user else null
+            var user = authApi.me().let { if (it.ok) it.data?.user else null }
+            if (user == null) {
+                // No session from the access cookie — try the refresh cookie
+                // before giving up. A refresh failure (no/expired fd_refresh) is
+                // fine: /me stays null and the user is truly logged out.
+                val refreshed = runCatching { authApi.refresh().ok }.getOrDefault(false)
+                if (refreshed) {
+                    user = authApi.me().let { if (it.ok) it.data?.user else null }
+                }
+            }
             _state.value = _state.value.copy(user = user, checked = true)
             user
         } catch (e: Exception) {
