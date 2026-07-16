@@ -17,6 +17,7 @@ import {
   type StoredMatch,
 } from "../src/realtime/store.js";
 import { scheduleJob, cancelJob, claimDueJobs, type RtJobType } from "../src/realtime/jobs.js";
+import { flushRealtimeKeys } from "./helpers.js";
 
 /**
  * T8 — the payoff test: prove the realtime layer is cluster-safe now that all
@@ -60,6 +61,12 @@ describe("T8 cluster concurrency — exactly-once guarantees under two-instance 
 
   afterAll(async () => {
     if (spawned.length) await redis.del(...spawned);
+    // Belt-and-suspenders: this suite schedules jobs into the SHARED rt:jobs
+    // ZSET / rt:jobs:byKey HASH that rt-jobs.test.ts (which runs next,
+    // alphabetically) asserts on. Its per-test `track()` list covers the keys it
+    // knows, but a full rt:* flush guarantees ZERO residue crosses into the next
+    // suite regardless of any future edit. Scoped to rt: (no flushall).
+    await flushRealtimeKeys();
   });
 
   // ── 1. Cross-instance pairing: two pollers pop the SAME 2-person queue; the
