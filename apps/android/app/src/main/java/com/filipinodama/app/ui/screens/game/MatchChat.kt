@@ -122,8 +122,15 @@ fun MatchChat(
             }
         }
 
-        // composer — 😊 picker toggle + text input + send
-        Box {
+        // composer — 😊 picker toggle + text input + send.
+        // BUG FIX (emote tap did nothing): the picker and the composer Row used to
+        // be plain siblings in a Box, both defaulting to TopStart, so they painted
+        // at the SAME origin and OVERLAPPED — the Row (composed last) drew on top
+        // and swallowed every tap in that region, so taps on the emoji chips never
+        // reached their .clickable. A Column stacks the picker ABOVE the Row with
+        // no overlap (mirroring web's `position:absolute; bottom:calc(100%+8px)`
+        // popover-above-composer layout), so each has its own hit area.
+        Column {
             if (pickerOpen) {
                 ChatPicker(
                     onEmote = { pick(emote = it) },

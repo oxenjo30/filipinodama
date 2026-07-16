@@ -143,18 +143,10 @@ fun OfflineGameScreen(difficulty: String, onChangeDifficulty: () -> Unit, onHome
     }
 
     if (showResignConfirm) {
-        AlertDialog(
-            onDismissRequest = { showResignConfirm = false },
-            title = { Text("Resign this match?") },
-            text = { Text("The AI will be awarded the win.") },
-            confirmButton = {
-                TextButton(onClick = { showResignConfirm = false; GameRepository.resign() }) {
-                    Text("Resign", color = Color(0xFFFF8FAE))
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { showResignConfirm = false }) { Text("Cancel", color = Ink) }
-            }
+        com.filipinodama.app.ui.components.ResignConfirmDialog(
+            subtitle = "The AI will be awarded the win.",
+            onCancel = { showResignConfirm = false },
+            onResign = { showResignConfirm = false; GameRepository.resign() }
         )
     }
 

@@ -543,7 +543,20 @@ private fun StoreItemCard(
         ) {
             StoreThumbView(storeThumbFor(item), size = 60.dp)
         }
-        Text(item.name, color = androidx.compose.ui.graphics.Color.White, style = MaterialTheme.typography.titleSmall, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
+        // Name RESERVES exactly 2 lines always (owner: "some items box are long
+        // and create uneven space") — a long name like "Imperial Ebony Board"
+        // wrapped to 2 lines made that card taller than its 1-line neighbours,
+        // so the grid rows didn't line up. minLines=2 gives every card the same
+        // name-block height; maxLines=2 + ellipsis caps a 3-line name.
+        Text(
+            item.name,
+            color = androidx.compose.ui.graphics.Color.White,
+            style = MaterialTheme.typography.titleSmall,
+            textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+            minLines = 2,
+            maxLines = 2,
+            overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
+        )
         Text(meta?.sub ?: "", color = Ink2, style = MaterialTheme.typography.labelSmall, modifier = Modifier.padding(top = 2.dp, bottom = 6.dp))
 
         // Visible "Preview" affordance — matches the web card's 🔍 Preview link

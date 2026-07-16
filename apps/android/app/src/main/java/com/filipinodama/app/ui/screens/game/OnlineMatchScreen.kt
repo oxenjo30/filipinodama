@@ -387,23 +387,10 @@ fun OnlineMatchScreen(
     }
 
     if (showResignConfirm) {
-        AlertDialog(
-            onDismissRequest = { showResignConfirm = false },
-            title = { Text("Resign this match?") },
-            text = { Text("Your opponent will be awarded the win. This can't be undone.") },
-            confirmButton = {
-                androidx.compose.material3.TextButton(onClick = {
-                    showResignConfirm = false
-                    MatchRepository.resign()
-                }) {
-                    Text("Resign", color = androidx.compose.ui.graphics.Color(0xFFFF8FAE))
-                }
-            },
-            dismissButton = {
-                androidx.compose.material3.TextButton(onClick = { showResignConfirm = false }) {
-                    Text("Cancel", color = Ink)
-                }
-            }
+        com.filipinodama.app.ui.components.ResignConfirmDialog(
+            subtitle = "Your opponent will be awarded the win. This can't be undone.",
+            onCancel = { showResignConfirm = false },
+            onResign = { showResignConfirm = false; MatchRepository.resign() }
         )
     }
 
