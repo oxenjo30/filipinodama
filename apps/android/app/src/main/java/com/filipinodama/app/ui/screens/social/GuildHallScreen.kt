@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -890,11 +891,14 @@ private fun GuildChatPanel(guildId: String, guildName: String) {
             }
         }
 
-        // Composer — mockup pill input + round gold send.
+        // Composer — mockup pill input + round gold send. GuildHall is a
+        // tab route so BottomTabBar already owns the nav-bar inset — only
+        // imePadding is needed here to clear the soft keyboard.
         Row(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(top = 14.dp, bottom = 16.dp)
+                .imePadding()
                 .background(Color(0xBF0F0720), RoundedCornerShape(100.dp))
                 .border(1.dp, Color(0x29E8B84B), RoundedCornerShape(100.dp))
                 .padding(start = 15.dp, end = 8.dp, top = 8.dp, bottom = 8.dp),

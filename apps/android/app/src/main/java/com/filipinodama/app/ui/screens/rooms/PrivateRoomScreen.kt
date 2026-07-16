@@ -153,7 +153,22 @@ fun PrivateRoomScreen(
             is RoomError.YouBanned -> { toast = "You're banned from that room."; mode = RoomScreenMode.CHOOSE }
             RoomError.Kicked -> { toast = "You were removed from the room."; mode = RoomScreenMode.CHOOSE }
             RoomError.Closed -> { toast = "The host closed the room."; mode = RoomScreenMode.CHOOSE }
+            RoomError.ConnectFailed -> { toast = "Couldn't connect — check your connection."; mode = RoomScreenMode.CHOOSE }
             null -> {}
+        }
+    }
+
+    // ── Timeout safety net: if we've been stuck JOINING for ~8s with no
+    //    state and no error (e.g. a connect that neither succeeds nor throws
+    //    in a timely way), bail out instead of spinning forever. ──
+    LaunchedEffect(mode) {
+        if (mode == RoomScreenMode.JOINING) {
+            kotlinx.coroutines.delay(8000)
+            if (mode == RoomScreenMode.JOINING && RoomRepository.state.value.code == null) {
+                toast = "Couldn't connect — check your connection."
+                mode = RoomScreenMode.CHOOSE
+                RoomRepository.clearError()
+            }
         }
     }
 

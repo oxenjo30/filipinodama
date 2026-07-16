@@ -67,11 +67,15 @@ import kotlinx.coroutines.launch
 @Composable
 fun SeasonScreen(onBack: () -> Unit = {}, onRequireSignIn: () -> Unit = {}) {
     val scope = rememberCoroutineScope()
-    val signedIn = com.filipinodama.app.data.AuthRepository.state.collectAsState().value.user != null
+    val signedInUser = com.filipinodama.app.data.AuthRepository.state.collectAsState().value.user
+    val signedIn = signedInUser != null && signedInUser.isGuest != true
     var data by remember { mutableStateOf<SeasonCurrentResponse?>(null) }
     var error by remember { mutableStateOf<String?>(null) }
     var busyTier by remember { mutableStateOf<Int?>(null) }
     var buyingPass by remember { mutableStateOf(false) }
+    // Purchase-failure toast — separate from `error` (the full-screen page-load
+    // error) since a failed unlock must not blow away an already-loaded track.
+    var purchaseToast by remember { mutableStateOf<String?>(null) }
     // Standings tab (mockup seasonTabRanking) — real GET /api/leaderboard
     // global rows, the same endpoint web's LeaderboardPage uses.
     var tab by remember { mutableStateOf("rewards") }
@@ -100,6 +104,7 @@ fun SeasonScreen(onBack: () -> Unit = {}, onRequireSignIn: () -> Unit = {}) {
 
     LaunchedEffect(Unit) { load() }
 
+    Box(modifier = Modifier.fillMaxSize()) {
     Column(modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background).padding(20.dp)) {
         MockupBackButton(onClick = onBack)
         Text("✦ RANKED SEASON ✦", color = Gold, style = MaterialTheme.typography.labelMedium, modifier = Modifier.padding(top = 12.dp))
@@ -164,11 +169,24 @@ fun SeasonScreen(onBack: () -> Unit = {}, onRequireSignIn: () -> Unit = {}) {
                             currency = s.passCurrency,
                             busy = buyingPass,
                             onUnlock = {
-                                buyingPass = true
-                                scope.launch {
-                                    EconomyRepository.buySeasonPass()
-                                    load()
-                                    buyingPass = false
+                                // Mirror the claim button's gate: an anonymous user
+                                // must sign in first instead of the purchase
+                                // silently doing nothing.
+                                if (!signedIn) { onRequireSignIn() } else {
+                                    buyingPass = true
+                                    scope.launch {
+                                        when (val result = EconomyRepository.buySeasonPass()) {
+                                            is EconomyResult.Success -> load()
+                                            is EconomyResult.Failure -> {
+                                                if (com.filipinodama.app.ui.components.isAuthError(result.code)) {
+                                                    onRequireSignIn()
+                                                } else {
+                                                    purchaseToast = result.message
+                                                }
+                                            }
+                                        }
+                                        buyingPass = false
+                                    }
                                 }
                             }
                         )
@@ -203,6 +221,21 @@ fun SeasonScreen(onBack: () -> Unit = {}, onRequireSignIn: () -> Unit = {}) {
                 }
             }
         }
+    }
+
+    purchaseToast?.let { msg ->
+        LaunchedEffect(msg) { kotlinx.coroutines.delay(3000); purchaseToast = null }
+        Box(modifier = Modifier.fillMaxSize().padding(20.dp), contentAlignment = Alignment.BottomCenter) {
+            Box(
+                modifier = Modifier
+                    .background(Color(0xF21B1030), RoundedCornerShape(12.dp))
+                    .border(1.dp, Gold.copy(alpha = 0.4f), RoundedCornerShape(12.dp))
+                    .padding(horizontal = 16.dp, vertical = 12.dp)
+            ) {
+                Text(msg, color = GoldLt, style = MaterialTheme.typography.bodyMedium)
+            }
+        }
+    }
     }
 }
 

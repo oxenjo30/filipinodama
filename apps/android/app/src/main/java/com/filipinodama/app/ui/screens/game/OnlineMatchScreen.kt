@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
@@ -644,7 +645,12 @@ private fun MatchEndCard(
             modifier = Modifier
                 .fillMaxSize()
                 .verticalScroll(rememberScrollState())
-                .padding(top = 64.dp, start = 22.dp, end = 22.dp, bottom = 22.dp),
+                .padding(top = 64.dp, start = 22.dp, end = 22.dp, bottom = 22.dp)
+                // Result screen is a non-tab game route with no other bottom
+                // inset handling — the Rematch/Watch replay/Back/Report button
+                // stack below sits flush at the very bottom, so it must clear
+                // the gesture/nav bar.
+                .navigationBarsPadding(),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
             Text(

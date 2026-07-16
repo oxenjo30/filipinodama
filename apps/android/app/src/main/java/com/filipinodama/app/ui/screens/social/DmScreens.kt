@@ -8,6 +8,8 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
@@ -212,35 +214,75 @@ fun DmThreadScreen(userId: String, onBack: () -> Unit) {
             }
         }
 
-        Row(modifier = Modifier.fillMaxWidth().padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
-            OutlinedTextField(
-                value = draft,
-                onValueChange = { draft = it },
-                placeholder = { Text("Message ${openUser?.displayName ?: "your friend"}…", color = Ink2.copy(alpha = 0.6f)) },
-                modifier = Modifier.weight(1f),
-                singleLine = true,
-                colors = OutlinedTextFieldDefaults.colors(
-                    focusedTextColor = Color.White,
-                    unfocusedTextColor = Color.White,
-                    focusedBorderColor = Gold,
-                    unfocusedBorderColor = Gold.copy(alpha = 0.25f),
-                    focusedContainerColor = Color.Black.copy(alpha = 0.3f),
-                    unfocusedContainerColor = Color.Black.copy(alpha = 0.3f),
-                    cursorColor = Gold
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .imePadding()
+                .navigationBarsPadding()
+        ) {
+            // Send-failure strip — rendered independently of the empty-message-
+            // list guard above, so a failure in a NON-empty thread is no longer
+            // silently swallowed (the old empty-list-only branch never fired
+            // once messages existed).
+            if (dmState.error != null) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(start = 12.dp, top = 8.dp, end = 12.dp, bottom = 0.dp)
+                        .background(Color(0xFFA8202F).copy(alpha = 0.16f), RoundedCornerShape(8.dp))
+                        .padding(horizontal = 12.dp, vertical = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Text(
+                        dmState.error!!,
+                        color = Color(0xFFFF8FAE),
+                        style = MaterialTheme.typography.labelMedium,
+                        modifier = Modifier.weight(1f)
+                    )
+                    Text(
+                        "✕",
+                        color = Color(0xFFFF8FAE),
+                        style = MaterialTheme.typography.labelMedium,
+                        modifier = Modifier.padding(start = 8.dp).clickable { DmRepository.clearError() }
+                    )
+                }
+            }
+            Row(modifier = Modifier.fillMaxWidth().padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                OutlinedTextField(
+                    value = draft,
+                    onValueChange = { draft = it },
+                    placeholder = { Text("Message ${openUser?.displayName ?: "your friend"}…", color = Ink2.copy(alpha = 0.6f)) },
+                    modifier = Modifier.weight(1f),
+                    singleLine = true,
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedTextColor = Color.White,
+                        unfocusedTextColor = Color.White,
+                        focusedBorderColor = Gold,
+                        unfocusedBorderColor = Gold.copy(alpha = 0.25f),
+                        focusedContainerColor = Color.Black.copy(alpha = 0.3f),
+                        unfocusedContainerColor = Color.Black.copy(alpha = 0.3f),
+                        cursorColor = Gold
+                    )
                 )
-            )
-            Box(
-                modifier = Modifier
-                    .padding(start = 8.dp)
-                    .clickable(enabled = !dmState.sending && draft.isNotBlank()) {
-                        val body = draft.trim()
-                        draft = ""
-                        scope.launch { DmRepository.send(userId, body) }
-                    }
-                    .background(Gold, RoundedCornerShape(10.dp))
-                    .padding(horizontal = 16.dp, vertical = 14.dp)
-            ) {
-                Text("Send", color = Color(0xFF2A1607), style = MaterialTheme.typography.labelMedium)
+                Box(
+                    modifier = Modifier
+                        .padding(start = 8.dp)
+                        .clickable(enabled = !dmState.sending && draft.isNotBlank()) {
+                            // Keep the draft until the send actually succeeds — on
+                            // failure DmRepository.state.error is set and the draft
+                            // is restored instead of being lost.
+                            val body = draft.trim()
+                            scope.launch {
+                                DmRepository.send(userId, body)
+                                if (DmRepository.state.value.error == null) draft = ""
+                            }
+                        }
+                        .background(Gold, RoundedCornerShape(10.dp))
+                        .padding(horizontal = 16.dp, vertical = 14.dp)
+                ) {
+                    Text("Send", color = Color(0xFF2A1607), style = MaterialTheme.typography.labelMedium)
+                }
             }
         }
     }
