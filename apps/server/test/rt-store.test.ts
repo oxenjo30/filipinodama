@@ -2,7 +2,7 @@ import { describe, it, expect, afterAll } from "vitest";
 import { redis, getJSON, setJSON, delKey, casJSON, withLock, LOCK_BUSY } from "../src/realtime/store.js";
 
 describe("rt store core", () => {
-  afterAll(async () => { await redis.del("t:a", "t:cas", "rt:lock:t:l1", "rt:lock:t:l2"); await redis.quit(); });
+  afterAll(async () => { await redis.del("t:a", "t:cas", "rt:lock:t:l1", "rt:lock:t:l2"); });
 
   it("round-trips JSON with TTL", async () => {
     await setJSON("t:a", { x: 1 }, 60);
