@@ -52,11 +52,17 @@ describe("rt domain wrappers", () => {
       "rt:queuedIn:u2",
       "rt:queuedIn:u3",
       "rt:spect:tm1",
+      "rt:spectSocks:tm1:u1",
+      "rt:spectSocks:tm1:u2",
       "rt:spectByUser:u1",
       "rt:spectByUser:u2",
       "rt:online",
       "rt:onlineSocks:u1",
-      "rt:onlineSocks:u2"
+      "rt:onlineSocks:u2",
+      "rt:onlineSocks:pr",
+      "rt:spect:m",
+      "rt:spectSocks:m:su",
+      "rt:spectByUser:su"
     );
   });
 
@@ -212,5 +218,43 @@ describe("rt domain wrappers", () => {
     wentOffline = await presenceRemove("u2", "sock2");
     expect(wentOffline).toBe(true);
     expect(await presenceIsOnline("u2")).toBe(false);
+  });
+
+  it("presence: concurrent presenceAdd for the same user never loses the rt:online entry (TOCTOU race)", async () => {
+    const { presenceAdd, presenceIsOnline, presenceOnlineIds } = await import("../src/realtime/store.js");
+
+    await Promise.all([presenceAdd("pr", "s1"), presenceAdd("pr", "s2")]);
+
+    expect(await presenceIsOnline("pr")).toBe(true);
+    expect(await presenceOnlineIds()).toContain("pr");
+
+    await redis.del("rt:onlineSocks:pr");
+    await redis.srem("rt:online", "pr");
+  });
+
+  it("spectators: concurrent spectatorAdd for the same user never loses a socketId (read-modify-write race)", async () => {
+    const { spectatorAdd, spectatorRemove } = await import("../src/realtime/store.js");
+
+    await Promise.all([spectatorAdd("m", "su", "sa"), spectatorAdd("m", "su", "sb")]);
+
+    // Both sockets must have survived. Removing EITHER ONE ALONE must not drop the
+    // user out (the other socket keeps them counted); the user only disappears once
+    // BOTH are removed. A lost-write race collapses to a single surviving socket, so
+    // whichever one was actually stored gets removed by the *other* remove call and
+    // the count would drop to 0 one step early. Check both orders defensively.
+    let count = await spectatorRemove("m", "su", "sa");
+    expect(count).toBe(1); // "sb" must still be present, user still counted
+    count = await spectatorRemove("m", "su", "sb");
+    expect(count).toBe(0); // last socket removed, user gone
+
+    // Re-run with the opposite removal order to catch a race that always keeps
+    // whichever socketId happens to win the read-modify-write (order-dependent bug).
+    await Promise.all([spectatorAdd("m", "su", "sc"), spectatorAdd("m", "su", "sd")]);
+    count = await spectatorRemove("m", "su", "sd");
+    expect(count).toBe(1); // "sc" must still be present, user still counted
+    count = await spectatorRemove("m", "su", "sc");
+    expect(count).toBe(0);
+
+    await redis.del("rt:spectSocks:m:su", "rt:spect:m", "rt:spectByUser:su");
   });
 });

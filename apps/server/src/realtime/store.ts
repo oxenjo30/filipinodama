@@ -95,9 +95,8 @@ export async function getMatch(matchId: string): Promise<StoredMatch | null> {
 export async function createMatch(m: Omit<StoredMatch, "version">): Promise<void> {
   await casJSON(matchKey(m.matchId), { ...m, version: 0 }, RT_TTL);
   const p = redis.pipeline();
-  if (m.redId) p.sadd(userMatchKey(m.redId), m.matchId);
-  if (m.blueId) p.sadd(userMatchKey(m.blueId), m.matchId);
-  p.expire(userMatchKey(m.redId ?? ""), RT_TTL);
+  if (m.redId) { p.sadd(userMatchKey(m.redId), m.matchId); p.expire(userMatchKey(m.redId), RT_TTL); }
+  if (m.blueId) { p.sadd(userMatchKey(m.blueId), m.matchId); p.expire(userMatchKey(m.blueId), RT_TTL); }
   await p.exec();
 }
 export async function saveMatch(m: StoredMatch): Promise<boolean> {
@@ -168,31 +167,66 @@ export async function getUserRoom(prefix: string, userId: string): Promise<strin
   return redis.get(`${prefix}userRoom:${userId}`);
 }
 
-// Spectators: HASH rt:spect:<matchId> field userId -> JSON string[] of socketIds.
-// Count = unique users (HLEN). Also index rt:spectByUser:<userId> -> SET matchIds
-// so a disconnecting socket can find its matches without scanning.
+// Spectators: SET rt:spectSocks:<matchId>:<userId> of socketIds (per-user socket
+// set, atomic add/remove) + SET rt:spect:<matchId> of userIds currently spectating
+// (added on first socket, removed on last). Count = unique users (SCARD rt:spect).
+// Also index rt:spectByUser:<userId> -> SET matchIds so a disconnecting socket can
+// find its matches without scanning. Add/remove are single Lua scripts so the
+// "first/last socket" check and the rt:spect/rt:spectByUser membership updates
+// happen atomically — a JSON-array read-modify-write (the old design) silently
+// drops a socketId when two adds/removes for the same user race.
+const SPECTATOR_ADD_LUA = `
+redis.call('SADD', KEYS[1], ARGV[1])
+redis.call('EXPIRE', KEYS[1], ARGV[2])
+if redis.call('SCARD', KEYS[1]) == 1 then
+  redis.call('SADD', KEYS[2], ARGV[3])
+  redis.call('SADD', KEYS[3], ARGV[4])
+  redis.call('EXPIRE', KEYS[3], ARGV[2])
+end
+redis.call('EXPIRE', KEYS[2], ARGV[2])
+return redis.call('SCARD', KEYS[2])
+`;
 export async function spectatorAdd(matchId: string, userId: string, socketId: string): Promise<number> {
-  const key = `rt:spect:${matchId}`;
-  const cur = JSON.parse((await redis.hget(key, userId)) ?? "[]") as string[];
-  if (!cur.includes(socketId)) cur.push(socketId);
-  await redis.pipeline().hset(key, userId, JSON.stringify(cur)).expire(key, RT_TTL)
-    .sadd(`rt:spectByUser:${userId}`, matchId).expire(`rt:spectByUser:${userId}`, RT_TTL).exec();
-  return redis.hlen(key);
+  return (await redis.eval(
+    SPECTATOR_ADD_LUA,
+    3,
+    `rt:spectSocks:${matchId}:${userId}`,
+    `rt:spect:${matchId}`,
+    `rt:spectByUser:${userId}`,
+    socketId,
+    String(RT_TTL),
+    userId,
+    matchId
+  )) as number;
 }
+const SPECTATOR_REMOVE_LUA = `
+redis.call('SREM', KEYS[1], ARGV[1])
+if redis.call('SCARD', KEYS[1]) == 0 then
+  redis.call('SREM', KEYS[2], ARGV[2])
+  redis.call('SREM', KEYS[3], ARGV[3])
+  redis.call('DEL', KEYS[1])
+end
+return redis.call('SCARD', KEYS[2])
+`;
 export async function spectatorRemove(matchId: string, userId: string, socketId: string): Promise<number> {
-  const key = `rt:spect:${matchId}`;
-  const cur = JSON.parse((await redis.hget(key, userId)) ?? "[]") as string[];
-  const next = cur.filter((s) => s !== socketId);
-  const p = redis.pipeline();
-  if (next.length === 0) { p.hdel(key, userId); p.srem(`rt:spectByUser:${userId}`, matchId); }
-  else p.hset(key, userId, JSON.stringify(next));
-  await p.exec();
-  return redis.hlen(key);
+  return (await redis.eval(
+    SPECTATOR_REMOVE_LUA,
+    3,
+    `rt:spectSocks:${matchId}:${userId}`,
+    `rt:spect:${matchId}`,
+    `rt:spectByUser:${userId}`,
+    socketId,
+    userId,
+    matchId
+  )) as number;
 }
 export async function spectatorCount(matchId: string): Promise<number> {
-  return redis.hlen(`rt:spect:${matchId}`);
+  return redis.scard(`rt:spect:${matchId}`);
 }
 export async function spectatorClear(matchId: string): Promise<void> {
+  // Per-user socket sets (rt:spectSocks:<matchId>:*) are left to expire via their
+  // own RT_TTL rather than scanned/deleted here — match end is the common case and
+  // this keeps the clear a single O(1) DEL.
   await delKey(`rt:spect:${matchId}`);
 }
 export async function spectatorMatchesForSocket(userId: string): Promise<string[]> {
@@ -200,20 +234,51 @@ export async function spectatorMatchesForSocket(userId: string): Promise<string[
 }
 
 // Presence: SET rt:onlineSocks:<userId> of socketIds + SET rt:online of userIds.
+// Add/remove are single Lua scripts so the "is this the first/last socket" check
+// and the rt:online membership update happen atomically — otherwise two concurrent
+// sockets for the same user can both observe SCARD != 1 and neither one flips
+// rt:online (TOCTOU race between the SADD/SREM and the follow-up SCARD).
+const PRESENCE_ADD_LUA = `
+redis.call('SADD', KEYS[1], ARGV[1])
+redis.call('EXPIRE', KEYS[1], ARGV[2])
+local n = redis.call('SCARD', KEYS[1])
+if n == 1 then
+  redis.call('SADD', KEYS[2], ARGV[3])
+  return 1
+end
+return 0
+`;
 export async function presenceAdd(userId: string, socketId: string): Promise<boolean> {
-  const n = await redis.sadd(`rt:onlineSocks:${userId}`, socketId);
-  await redis.expire(`rt:onlineSocks:${userId}`, RT_TTL);
-  if (n === 1 && (await redis.scard(`rt:onlineSocks:${userId}`)) === 1) {
-    await redis.sadd("rt:online", userId);
-    return true;
-  }
-  return false;
+  const ok = (await redis.eval(
+    PRESENCE_ADD_LUA,
+    2,
+    `rt:onlineSocks:${userId}`,
+    "rt:online",
+    socketId,
+    String(RT_TTL),
+    userId
+  )) as number;
+  return ok === 1;
 }
+const PRESENCE_REMOVE_LUA = `
+redis.call('SREM', KEYS[1], ARGV[1])
+local n = redis.call('SCARD', KEYS[1])
+if n == 0 then
+  redis.call('SREM', KEYS[2], ARGV[2])
+  return 1
+end
+return 0
+`;
 export async function presenceRemove(userId: string, socketId: string): Promise<boolean> {
-  await redis.srem(`rt:onlineSocks:${userId}`, socketId);
-  const left = await redis.scard(`rt:onlineSocks:${userId}`);
-  if (left === 0) { await redis.srem("rt:online", userId); return true; }
-  return false;
+  const ok = (await redis.eval(
+    PRESENCE_REMOVE_LUA,
+    2,
+    `rt:onlineSocks:${userId}`,
+    "rt:online",
+    socketId,
+    userId
+  )) as number;
+  return ok === 1;
 }
 export async function presenceIsOnline(userId: string): Promise<boolean> {
   return (await redis.scard(`rt:onlineSocks:${userId}`)) > 0;
