@@ -7,6 +7,7 @@ import { ReportPlayerModal } from "../moderation/ReportPlayerModal";
 import { useAuthStore } from "../../stores/authStore";
 import { usePresenceStore } from "../../stores/presenceStore";
 import { useDmStore } from "../../stores/dmStore";
+import { useBlockedStore } from "../../stores/blockedStore";
 
 /**
  * MessagesPage — a two-pane Direct Messages messenger (handoff chat styling).
@@ -20,6 +21,10 @@ import { useDmStore } from "../../stores/dmStore";
  * to /messages/:userId. All chat is REAL and PERSISTED — the dmStore loads from
  * REST and appends live inbound DMs from the shared socket. Only friends can be
  * messaged (the server enforces it); a NOT_FRIENDS error surfaces inline.
+ *
+ * Safety: conversations with a blocked user are hidden from the list (mirrors
+ * GuildChatPanel's client-side filter against the shared blockedStore, loaded
+ * once, lazily).
  */
 
 /** Format an ISO timestamp as a short local clock time (e.g. "2:05 PM"). */
@@ -106,6 +111,10 @@ export function MessagesPage() {
 
   const isOnline = usePresenceStore((s) => s.isOnline);
 
+  const loadBlocked = useBlockedStore((s) => s.load);
+  const isBlocked = useBlockedStore((s) => s.isBlocked);
+  const visibleConversations = conversations.filter((c) => !isBlocked(c.user.id));
+
   const [draft, setDraft] = useState("");
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const [reportMsg, setReportMsg] = useState<{ id: string; body: string } | null>(null);
@@ -115,7 +124,8 @@ export function MessagesPage() {
     if (!me) return;
     void loadConversations();
     void unreadTotal();
-  }, [me, loadConversations, unreadTotal]);
+    void loadBlocked();
+  }, [me, loadConversations, unreadTotal, loadBlocked]);
 
   // Open (or close) the thread the route points at.
   useEffect(() => {
@@ -197,7 +207,7 @@ export function MessagesPage() {
           </div>
 
           <div style={{ flex: 1, overflowY: "auto", minHeight: 0 }}>
-            {loadingList && conversations.length === 0 && (
+            {loadingList && visibleConversations.length === 0 && (
               <div
                 style={{
                   textAlign: "center",
@@ -210,7 +220,7 @@ export function MessagesPage() {
               </div>
             )}
 
-            {!loadingList && conversations.length === 0 && (
+            {!loadingList && visibleConversations.length === 0 && (
               <div
                 style={{
                   textAlign: "center",
@@ -226,7 +236,7 @@ export function MessagesPage() {
               </div>
             )}
 
-            {conversations.map((c) => {
+            {visibleConversations.map((c) => {
               const active = c.user.id === userId;
               const online = isOnline(c.user.id);
               return (

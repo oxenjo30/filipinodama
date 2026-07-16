@@ -170,7 +170,9 @@ export const useDmStore = create<DmStore>((set, get) => {
         const message =
           code === "NOT_FRIENDS"
             ? "You can only message friends. Add them first."
-            : "Couldn't open this conversation.";
+            : code === "BLOCKED"
+              ? "You can't message this player."
+              : "Couldn't open this conversation.";
         set({ error: message });
       } finally {
         if (get().openUserId === userId) set({ loadingThread: false });
@@ -204,7 +206,9 @@ export const useDmStore = create<DmStore>((set, get) => {
           error:
             code === "NOT_FRIENDS"
               ? "You can only message friends."
-              : "Message failed to send.",
+              : code === "BLOCKED"
+                ? "You can't message this player."
+                : "Message failed to send.",
         });
       } finally {
         set({ sending: false });

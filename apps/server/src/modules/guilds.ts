@@ -114,6 +114,8 @@ export async function guildRoutes(app: FastifyInstance) {
       throw err.badRequest("INAPPROPRIATE_LANGUAGE", "That guild name contains inappropriate language.");
     if (input.tag && containsProfanity(input.tag))
       throw err.badRequest("INAPPROPRIATE_LANGUAGE", "That guild tag contains inappropriate language.");
+    if (input.description && containsProfanity(input.description))
+      throw err.badRequest("INAPPROPRIATE_LANGUAGE", "That guild description contains inappropriate language.");
 
     // a user can only belong to one guild (GuildMember.userId is @unique)
     const anyMembership = await prisma.guildMember.findUnique({ where: { userId: me } });
@@ -246,6 +248,8 @@ export async function guildRoutes(app: FastifyInstance) {
       // creation), so only `name` is checked here; `tag` is rejected at create.
       if (input.name && containsProfanity(input.name))
         throw err.badRequest("INAPPROPRIATE_LANGUAGE", "That guild name contains inappropriate language.");
+      if (input.description && containsProfanity(input.description))
+        throw err.badRequest("INAPPROPRIATE_LANGUAGE", "That guild description contains inappropriate language.");
 
       if (input.name) {
         const clash = await prisma.guild.findFirst({
