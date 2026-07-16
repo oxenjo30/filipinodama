@@ -57,6 +57,12 @@ interface EconomyApi {
     @POST("api/season/pass")
     suspend fun buySeasonPass(): ApiEnvelope<SeasonPassResponse>
 
+    @GET("api/season/end-status")
+    suspend fun seasonEndStatus(): ApiEnvelope<SeasonEndStatusResponse>
+
+    @POST("api/season/end-claim")
+    suspend fun claimSeasonEnd(): ApiEnvelope<SeasonEndClaimResponse>
+
     @GET("api/matches/active")
     suspend fun activeMatch(): ApiEnvelope<ActiveMatchResponse>
 

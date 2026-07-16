@@ -138,6 +138,19 @@ object EconomyRepository {
         return result
     }
 
+    suspend fun seasonEndStatus(): EconomyResult<SeasonEndStatusResponse> =
+        call { api.seasonEndStatus() }
+
+    suspend fun claimSeasonEnd(): EconomyResult<SeasonEndClaimResponse> {
+        val result = call { api.claimSeasonEnd() }
+        if (result is EconomyResult.Success) {
+            // Reflect the season-end payout into the cached balances (gold always,
+            // diamonds only for a top-bracket placement that grants any).
+            patchBalances(gold = result.data.goldBalance, diamonds = result.data.diamondBalance)
+        }
+        return result
+    }
+
     // ── Home hub: continue-playing ──
 
     suspend fun activeMatch(): EconomyResult<ActiveMatchResponse> =

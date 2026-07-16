@@ -38,6 +38,7 @@ import androidx.compose.ui.unit.sp
 import com.filipinodama.app.data.economy.EconomyRepository
 import com.filipinodama.app.data.economy.EconomyResult
 import com.filipinodama.app.data.economy.SeasonCurrentResponse
+import com.filipinodama.app.data.economy.SeasonEndStatusResponse
 import com.filipinodama.app.data.economy.SeasonRewardDto
 import com.filipinodama.app.data.economy.SeasonTierDto
 import com.filipinodama.app.data.leaderboard.LbRowDto
@@ -48,6 +49,7 @@ import com.filipinodama.app.R
 import com.filipinodama.app.ui.components.CurrencyAmount
 import com.filipinodama.app.ui.components.CurrencyIcon
 import com.filipinodama.app.ui.components.CurrencyIconKind
+import com.filipinodama.app.ui.components.LocalSnackbar
 import com.filipinodama.app.ui.components.MockupBackButton
 import com.filipinodama.app.ui.theme.Gold
 import com.filipinodama.app.ui.theme.GoldLt
@@ -67,12 +69,18 @@ import kotlinx.coroutines.launch
 @Composable
 fun SeasonScreen(onBack: () -> Unit = {}, onRequireSignIn: () -> Unit = {}) {
     val scope = rememberCoroutineScope()
+    val snackbar = LocalSnackbar.current
     val signedInUser = com.filipinodama.app.data.AuthRepository.state.collectAsState().value.user
     val signedIn = signedInUser != null && signedInUser.isGuest != true
     var data by remember { mutableStateOf<SeasonCurrentResponse?>(null) }
     var error by remember { mutableStateOf<String?>(null) }
     var busyTier by remember { mutableStateOf<Int?>(null) }
     var buyingPass by remember { mutableStateOf(false) }
+    // Season-end reward (parity with web's "Claim All Rewards"). Only rendered
+    // when the current season has ended and the one-time placement bonus is
+    // unclaimed. Null until the end-status probe returns.
+    var endStatus by remember { mutableStateOf<SeasonEndStatusResponse?>(null) }
+    var claimingEnd by remember { mutableStateOf(false) }
     // Purchase-failure toast — separate from `error` (the full-screen page-load
     // error) since a failed unlock must not blow away an already-loaded track.
     var purchaseToast by remember { mutableStateOf<String?>(null) }
@@ -102,7 +110,55 @@ fun SeasonScreen(onBack: () -> Unit = {}, onRequireSignIn: () -> Unit = {}) {
         }
     }
 
-    LaunchedEffect(Unit) { load() }
+    // Shared claim handler for BOTH the free and premium (Royal) tier buttons.
+    // The server's POST /api/season/claim { tier } grants the free reward AND the
+    // premium reward together when the user owns the pass (seasons.ts), so a single
+    // call per tier covers both tracks — the premium button just triggers the same
+    // claim. Previously the premium button was wired to an empty lambda (dead: a
+    // paid reward couldn't be collected) and the free path discarded its result.
+    suspend fun loadEndStatus() {
+        when (val r = EconomyRepository.seasonEndStatus()) {
+            is EconomyResult.Success -> endStatus = r.data
+            is EconomyResult.Failure -> { /* non-blocking: the end banner just stays hidden */ }
+        }
+    }
+
+    // Claim the one-time season-end placement reward (parity with web).
+    fun claimEnd() {
+        if (!signedIn) { onRequireSignIn(); return }
+        if (claimingEnd) return
+        claimingEnd = true
+        scope.launch {
+            when (val r = EconomyRepository.claimSeasonEnd()) {
+                is EconomyResult.Success -> {
+                    snackbar.show("Season rewards claimed!")
+                    loadEndStatus()
+                }
+                is EconomyResult.Failure ->
+                    if (com.filipinodama.app.ui.components.isAuthError(r.code)) onRequireSignIn()
+                    else snackbar.show(r.message)
+            }
+            claimingEnd = false
+        }
+    }
+
+    fun claimTier(tier: Int) {
+        // Owner policy: claiming requires an account.
+        if (!signedIn) { onRequireSignIn(); return }
+        if (busyTier != null) return
+        busyTier = tier
+        scope.launch {
+            when (val r = EconomyRepository.claimSeasonTier(tier)) {
+                is EconomyResult.Success -> load()
+                is EconomyResult.Failure ->
+                    if (com.filipinodama.app.ui.components.isAuthError(r.code)) onRequireSignIn()
+                    else snackbar.show(r.message)
+            }
+            busyTier = null
+        }
+    }
+
+    LaunchedEffect(Unit) { load(); loadEndStatus() }
 
     Box(modifier = Modifier.fillMaxSize()) {
     Column(modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background).padding(20.dp)) {
@@ -163,6 +219,22 @@ fun SeasonScreen(onBack: () -> Unit = {}, onRequireSignIn: () -> Unit = {}) {
                         return@Column
                     }
 
+                    // Season-end reward banner (parity with web "Claim All Rewards").
+                    // Only when the season has ended and the one-time placement
+                    // bonus is unclaimed. `endStatus.ended` also implies the reward
+                    // is present per the server contract.
+                    endStatus?.let { es ->
+                        if (es.ended && es.reward != null) {
+                            SeasonEndBanner(
+                                reward = es.reward!!,
+                                claimed = es.claimed,
+                                busy = claimingEnd,
+                                onClaim = { claimEnd() }
+                            )
+                            Box(Modifier.height(16.dp))
+                        }
+                    }
+
                     if (!s.hasPass) {
                         RoyalPassBanner(
                             price = s.passPrice,
@@ -208,13 +280,7 @@ fun SeasonScreen(onBack: () -> Unit = {}, onRequireSignIn: () -> Unit = {}) {
                                 tier = tier,
                                 hasPass = s.hasPass,
                                 busy = busyTier == tier.tier,
-                                onClaimFree = {
-                                    // Owner policy: claiming requires an account.
-                                    if (!signedIn) { onRequireSignIn() } else {
-                                        busyTier = tier.tier
-                                        scope.launch { EconomyRepository.claimSeasonTier(tier.tier); load(); busyTier = null }
-                                    }
-                                }
+                                onClaim = { claimTier(tier.tier) }
                             )
                         }
                     }
@@ -342,6 +408,73 @@ private fun StandingsYouRow(r: LbRowDto) {
     }
 }
 
+/**
+ * Season-end reward banner — mirrors web's end-of-season "Claim All Rewards".
+ * Shows final placement + the gold (and diamonds, if any) payout with a claim
+ * button; once claimed, a passive confirmation. Rendered only when the season
+ * has ended and the placement reward exists.
+ */
+@Composable
+private fun SeasonEndBanner(
+    reward: com.filipinodama.app.data.economy.SeasonEndRewardDto,
+    claimed: Boolean,
+    busy: Boolean,
+    onClaim: () -> Unit
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(
+                androidx.compose.ui.graphics.Brush.verticalGradient(listOf(Color(0x33E8B84B), Color(0x140F0820))),
+                RoundedCornerShape(14.dp)
+            )
+            .border(1.dp, Color(0x55E8B84B), RoundedCornerShape(14.dp))
+            .padding(16.dp)
+    ) {
+        Text("🏆 Season Ended", color = GoldLt, style = MaterialTheme.typography.titleMedium)
+        Text(
+            "Final placement: #${reward.rank}",
+            color = Ink,
+            style = MaterialTheme.typography.bodyMedium,
+            modifier = Modifier.padding(top = 4.dp)
+        )
+        Row(
+            modifier = Modifier.padding(top = 8.dp),
+            horizontalArrangement = Arrangement.spacedBy(14.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            if (reward.gold > 0) {
+                CurrencyAmount(kind = CurrencyIconKind.COIN, text = reward.gold.toString(), color = GoldLt, style = MaterialTheme.typography.titleSmall)
+            }
+            if (reward.diamonds > 0) {
+                CurrencyAmount(kind = CurrencyIconKind.GEM, text = reward.diamonds.toString(), color = Color(0xFF8FD0FF), style = MaterialTheme.typography.titleSmall)
+            }
+        }
+        Box(Modifier.height(12.dp))
+        if (claimed) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                Text("✓ Season rewards claimed", color = Color(0xFF7EE6A4), style = MaterialTheme.typography.labelLarge)
+            }
+        } else {
+            Box(
+                modifier = Modifier
+                    .clickable(enabled = !busy, onClick = onClaim)
+                    .background(Gold, RoundedCornerShape(10.dp))
+                    .padding(horizontal = 20.dp, vertical = 12.dp)
+            ) {
+                Text(
+                    if (busy) "…" else "Claim All Rewards",
+                    color = Color(0xFF2A1607),
+                    style = MaterialTheme.typography.labelLarge
+                )
+            }
+        }
+    }
+}
+
 @Composable
 private fun RoyalPassBanner(price: Int, currency: String, busy: Boolean, onUnlock: () -> Unit) {
     Column(
@@ -376,7 +509,7 @@ private fun RoyalPassBanner(price: Int, currency: String, busy: Boolean, onUnloc
 }
 
 @Composable
-private fun SeasonTierCard(tier: SeasonTierDto, hasPass: Boolean, busy: Boolean, onClaimFree: () -> Unit) {
+private fun SeasonTierCard(tier: SeasonTierDto, hasPass: Boolean, busy: Boolean, onClaim: () -> Unit) {
     Column(
         modifier = Modifier.width(140.dp).background(Panel, RoundedCornerShape(12.dp)).padding(12.dp),
         horizontalAlignment = Alignment.CenterHorizontally
@@ -393,7 +526,7 @@ private fun SeasonTierCard(tier: SeasonTierDto, hasPass: Boolean, busy: Boolean,
             unlocked = tier.unlocked,
             claimed = tier.claimed,
             busy = busy,
-            onClaim = onClaimFree
+            onClaim = onClaim
         )
         Box(Modifier.height(12.dp))
         // ROYAL (premium) track.
@@ -415,7 +548,11 @@ private fun SeasonTierCard(tier: SeasonTierDto, hasPass: Boolean, busy: Boolean,
                 Text("🔒 Royal", color = Color(0xFFC79A4E), style = MaterialTheme.typography.labelSmall)
             }
         } else {
-            TierActionButton(unlocked = tier.unlocked, claimed = tier.claimed, busy = false, onClaim = {})
+            // Premium (Royal) claim — was a dead empty lambda. Routes to the SAME
+            // claim as the free button: one POST /api/season/claim grants both
+            // tracks when the pass is owned. `busy` is shared so both buttons show
+            // the spinner during the in-flight claim.
+            TierActionButton(unlocked = tier.unlocked, claimed = tier.claimed, busy = busy, onClaim = onClaim)
         }
     }
 }

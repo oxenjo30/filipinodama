@@ -269,6 +269,43 @@ data class SeasonPassResponse(
     val balance: Int = 0
 )
 
+// ── Season-end reward (seasons.ts GET /season/end-status, POST /season/end-claim) ──
+// When a season has ended a player claims a ONE-TIME bonus scaled to final ladder
+// placement. Mirrors apps/web's "Claim All Rewards" end-of-season flow.
+
+/** End-status/end-claim season shape — only {id,name,endsAt} (no startsAt/number). */
+@Serializable
+data class SeasonEndSeasonDto(
+    val id: String,
+    val name: String,
+    val endsAt: String
+)
+
+/** Final placement + reward brackets (seasons.ts seasonEndReward). */
+@Serializable
+data class SeasonEndRewardDto(
+    val rank: Int = 0,
+    val gold: Int = 0,
+    val diamonds: Int = 0,
+    val seasonId: String = ""
+)
+
+@Serializable
+data class SeasonEndStatusResponse(
+    val ended: Boolean = false,
+    val season: SeasonEndSeasonDto? = null,
+    val claimed: Boolean = false,
+    val reward: SeasonEndRewardDto? = null
+)
+
+@Serializable
+data class SeasonEndClaimResponse(
+    val claimed: Boolean = false,
+    val reward: SeasonEndRewardDto? = null,
+    val goldBalance: Int = 0,
+    val diamondBalance: Int = 0
+)
+
 // ── Ledger / recent activity (apps/server/src/modules/users.ts GET /users/me/ledger) ──
 // Wallet screen's "Recent activity" list — real LedgerEntry rows (gold/diamond
 // changes with reason + timestamp + signed amount), the same rows the GDPR
