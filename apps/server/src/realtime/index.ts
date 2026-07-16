@@ -1,4 +1,5 @@
 import type { Server as IOServer, Socket } from "socket.io";
+import type { RtJobType, RtJobHandler } from "./jobs.js";
 import { verifyAccess, COOKIE } from "../auth/tokens.js";
 import { prisma } from "../db/client.js";
 import { registerMatchmaking } from "./matchmaking.js";
@@ -78,6 +79,17 @@ async function authenticate(socket: Socket): Promise<string | null> {
   if (!user || user.deletedAt) return null;
   if (user.bannedUntil && user.bannedUntil > new Date()) return null;
   return user.id;
+}
+
+/**
+ * Assembles the RtJobType -> handler map for the cross-instance job poller
+ * (jobs.ts) from each realtime module's job handlers. Placeholder for now —
+ * Tasks 5-6 fill this in from match.ts/matchmaking.ts/damath-match.ts once
+ * those modules expose their job handlers; an empty map is a safe no-op (the
+ * poller claims due jobs but skips any type with no registered handler).
+ */
+export function rtJobHandlers(_io: IOServer): Partial<Record<RtJobType, RtJobHandler>> {
+  return {};
 }
 
 export function registerRealtime(io: IOServer) {

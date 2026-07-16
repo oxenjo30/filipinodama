@@ -6,6 +6,7 @@ import helmet from "@fastify/helmet";
 import rateLimit from "@fastify/rate-limit";
 import { ZodError } from "zod";
 import { Server as IOServer } from "socket.io";
+import { createAdapter } from "@socket.io/redis-adapter";
 import { env, isProd } from "./config/env.js";
 import { prisma } from "./db/client.js";
 import { ApiError, fail } from "./lib/errors.js";
@@ -43,7 +44,9 @@ import { dmRoutes } from "./modules/dm.js";
 import { reportRoutes } from "./modules/reports.js";
 import { supportRoutes } from "./modules/support.js";
 import { tournamentsRoutes } from "./modules/tournaments.js";
-import { registerRealtime } from "./realtime/index.js";
+import { registerRealtime, rtJobHandlers } from "./realtime/index.js";
+import { makeRedisClient } from "./realtime/store.js";
+import { startJobPoller } from "./realtime/jobs.js";
 import { runDueCampaigns } from "./modules/campaign-scheduler.js";
 import { runWarResetTick } from "./lib/guild-wars.js";
 
@@ -166,7 +169,24 @@ async function main() {
       skipMiddlewares: false, // still run the auth io.use() guard on recovery
     },
   });
+
+  // Redis adapter (feat/realtime-redis-scale, Task 4): lets Socket.IO fan
+  // events out across multiple server instances by relaying them through
+  // Redis pub/sub. At one instance this is a no-op passthrough — behavior is
+  // unchanged — but it's required before scaling past a single instance.
+  // Must be set BEFORE registerRealtime() wires up any handlers/rooms.
+  const rtPub = makeRedisClient();
+  const rtSub = makeRedisClient();
+  io.adapter(createAdapter(rtPub, rtSub));
+
   registerRealtime(io);
+
+  // Cross-instance job poller (Task 2/4): claims due jobs (bot-fill,
+  // abandon-forfeit, bot moves, etc.) from the shared Redis schedule so any
+  // instance can pick up work — safe at one instance too. Handlers are
+  // assembled per-io from realtime/index.ts (filled in by Tasks 5-6; a
+  // placeholder no-op map today).
+  startJobPoller(rtJobHandlers(io));
 
   // Due-campaign poller — sends any admin-scheduled Campaign once its
   // scheduledFor has passed (campaign-scheduler.ts). Started here, AFTER
