@@ -82,6 +82,37 @@ export async function withLock<T>(key: string, fn: () => Promise<T>): Promise<T 
   return LOCK_BUSY;
 }
 
+/**
+ * withLock for critical sections that MUST run — teardown/cleanup paths where a
+ * silent LOCK_BUSY no-op would leave dangling state (a room's member.sockets
+ * still referencing a dead socket, a userRoom pointer never cleared). withLock
+ * already makes 3 short attempts; this wraps it in `rounds` more full attempts
+ * (each a fresh 3-attempt window) before giving up, and — unlike a bare
+ * withLock — LOGS when it ultimately can't acquire the lock instead of pretending
+ * the section ran. Returns true if `fn` executed, false if the lock stayed busy
+ * across every round. Callers that leave persistent state on failure should
+ * inspect the boolean; fire-and-forget callers at least get a log line.
+ *
+ * `label` names the operation in the give-up log. Read-modify-write correctness
+ * still rides on withLock + casJSON inside `fn`; this only governs whether `fn`
+ * gets to run at all under contention.
+ */
+export async function withLockRetry(
+  key: string,
+  label: string,
+  fn: () => Promise<void>,
+  rounds = 3,
+): Promise<boolean> {
+  for (let round = 0; round < rounds; round++) {
+    const res = await withLock(key, fn);
+    if (res !== LOCK_BUSY) return true;
+    // Back off a touch longer between whole rounds than withLock's inner jitter.
+    await new Promise((r) => setTimeout(r, 100 + Math.floor(Math.random() * 150)));
+  }
+  console.error(`[rt] withLockRetry gave up on ${label} (lock ${key} busy after ${rounds} rounds)`);
+  return false;
+}
+
 // ─── Domain wrappers ────────────────────────────────────────────────────────
 export const RT_TTL = 86_400; // 24h safety net on match/room JSON
 

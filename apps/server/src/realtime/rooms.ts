@@ -14,6 +14,7 @@ import {
   setUserRoom,
   getUserRoom,
   withLock,
+  withLockRetry,
 } from "./store.js";
 
 /**
@@ -176,7 +177,12 @@ async function removeMember(io: IOServer, userId: string, onlyIfNoSockets = fals
   // won the gap must keep pointing at this room. We clear it inside the lock only
   // once we've confirmed the teardown is really happening.
   if (!onlyIfNoSockets) await setUserRoom(RP, userId, null);
-  await withLock(`room:${code}`, async () => {
+  // withLockRetry (not bare withLock): this teardown MUST run — a silent
+  // LOCK_BUSY no-op would leave a dead socket in member.sockets and a stale
+  // userRoom pointer, and (on the guarded disconnect path) would defeat the
+  // reconnect guard by simply never checking it. Retry the whole lock; log if it
+  // truly can't be acquired instead of pretending the section ran.
+  await withLockRetry(`room:${code}`, `removeMember(${userId})`, async () => {
     const room = await loadRoom(code);
     if (!room) {
       if (onlyIfNoSockets) await setUserRoom(RP, userId, null); // room gone; drop the stale pointer
@@ -341,7 +347,10 @@ async function socketLeft(io: IOServer, userId: string, socketId: string): Promi
   const code = await getUserRoom(RP, userId);
   if (!code) return;
   let lastSocket = false;
-  await withLock(`room:${code}`, async () => {
+  // withLockRetry: dropping the dead socket from member.sockets MUST run — a
+  // silent LOCK_BUSY no-op would leave the room doc referencing a socket that
+  // socket.io already tore down, and never trigger the last-socket teardown.
+  await withLockRetry(`room:${code}`, `socketLeft(${userId})`, async () => {
     const room = await loadRoom(code);
     if (!room) return;
     const member = memberIn(room, userId);

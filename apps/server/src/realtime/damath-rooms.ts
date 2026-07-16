@@ -4,7 +4,7 @@ import { prisma } from "../db/client.js";
 import { isMuted } from "../lib/mute.js";
 import { createLiveDamathMatch } from "./damath-match.js";
 import { allow } from "./rate-limit.js";
-import { RT_TTL, redis, getRoomJSON, putRoomJSON, delRoomJSON, setUserRoom, getUserRoom, withLock } from "./store.js";
+import { RT_TTL, redis, getRoomJSON, putRoomJSON, delRoomJSON, setUserRoom, getUserRoom, withLock, withLockRetry } from "./store.js";
 
 /**
  * Math Dama private rooms — invite a friend by 6-char code and play on two
@@ -94,7 +94,10 @@ async function removeMember(io: IOServer, userId: string, onlyIfNoSockets = fals
   const code = await getUserRoom(RP, userId);
   if (!code) return;
   if (!onlyIfNoSockets) await setUserRoom(RP, userId, null);
-  await withLock(`d-room:${code}`, async () => {
+  // withLockRetry: teardown MUST run (see rooms.ts::removeMember) — a silent
+  // LOCK_BUSY no-op would strand a dead socket + stale userRoom pointer and, on
+  // the guarded disconnect path, skip the reconnect check entirely.
+  await withLockRetry(`d-room:${code}`, `d-removeMember(${userId})`, async () => {
     const room = await loadRoom(code);
     if (!room) {
       if (onlyIfNoSockets) await setUserRoom(RP, userId, null);
@@ -123,7 +126,7 @@ async function socketLeft(io: IOServer, userId: string, socketId: string): Promi
   const code = await getUserRoom(RP, userId);
   if (!code) return;
   let lastSocket = false;
-  await withLock(`d-room:${code}`, async () => {
+  await withLockRetry(`d-room:${code}`, `d-socketLeft(${userId})`, async () => {
     const room = await loadRoom(code);
     if (!room) return;
     const member = memberIn(room, userId);
