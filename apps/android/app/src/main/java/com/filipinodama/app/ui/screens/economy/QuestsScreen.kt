@@ -37,7 +37,9 @@ import com.filipinodama.app.data.economy.EconomyResult
 import com.filipinodama.app.data.economy.QuestDto
 import com.filipinodama.app.ui.components.CurrencyAmount
 import com.filipinodama.app.ui.components.CurrencyIconKind
+import com.filipinodama.app.ui.components.LocalSnackbar
 import com.filipinodama.app.ui.components.MockupBackButton
+import com.filipinodama.app.ui.components.isAuthError
 import com.filipinodama.app.ui.theme.Gold
 import com.filipinodama.app.ui.theme.GoldLt
 import com.filipinodama.app.ui.theme.Ink
@@ -67,6 +69,7 @@ import kotlinx.coroutines.launch
 @Composable
 fun QuestsScreen(onBack: () -> Unit = {}, onRequireSignIn: () -> Unit = {}) {
     val scope = rememberCoroutineScope()
+    val snackbar = LocalSnackbar.current
     val signedInUser = com.filipinodama.app.data.AuthRepository.state.collectAsState().value.user
     val signedIn = signedInUser != null && signedInUser.isGuest != true
     var daily by remember { mutableStateOf<List<QuestDto>>(emptyList()) }
@@ -95,9 +98,11 @@ fun QuestsScreen(onBack: () -> Unit = {}, onRequireSignIn: () -> Unit = {}) {
         if (claiming != null) return
         claiming = id
         scope.launch {
-            when (EconomyRepository.claimQuest(id)) {
+            when (val r = EconomyRepository.claimQuest(id)) {
                 is EconomyResult.Success -> load()
-                is EconomyResult.Failure -> { /* the row's own claim button will simply remain visible; server message not surfaced as a toast in this scaffold's screen-local model */ }
+                is EconomyResult.Failure ->
+                    if (isAuthError(r.code)) onRequireSignIn()
+                    else snackbar.show(r.message)
             }
             claiming = null
         }

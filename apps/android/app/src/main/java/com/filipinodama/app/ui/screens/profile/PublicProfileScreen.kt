@@ -43,6 +43,8 @@ import com.filipinodama.app.data.social.BlockRepository
 import com.filipinodama.app.data.social.FriendsRepository
 import com.filipinodama.app.data.social.PresenceRepository
 import com.filipinodama.app.data.social.SocialResult
+import com.filipinodama.app.ui.components.LocalSnackbar
+import com.filipinodama.app.ui.components.isAuthError
 import com.filipinodama.app.ui.screens.social.ReportPlayerDialog
 import com.filipinodama.app.ui.theme.Gold
 import com.filipinodama.app.ui.theme.GoldLt
@@ -98,6 +100,7 @@ fun PublicProfileScreen(
     val blocked = blockedIds.contains(userId)
     var blockBusy by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
+    val snackbar = LocalSnackbar.current
     // Phase 7 retry affordance: bump to re-run both load effects below.
     var retryTick by remember { mutableStateOf(0) }
 
@@ -236,7 +239,9 @@ fun PublicProfileScreen(
                                             is SocialResult.Success -> {
                                                 relationship = if (result.data.status == "accepted") "friends" else "request-sent"
                                             }
-                                            is SocialResult.Failure -> {}
+                                            is SocialResult.Failure ->
+                                                if (isAuthError(result.code)) onRequireSignIn()
+                                                else snackbar.show(result.message)
                                         }
                                         friendBusy = false
                                     }
@@ -257,12 +262,16 @@ fun PublicProfileScreen(
                                 .clickable(enabled = !blockBusy) {
                                     blockBusy = true
                                     scope.launch {
-                                        val result = if (blocked) BlockRepository.unblock(userId) else BlockRepository.block(userId)
-                                        if (result is SocialResult.Success && !blocked) {
-                                            // A fresh block clears any pending friendship/requests
-                                            // server-side (blocks.ts) — reflect that immediately.
-                                            relationship = "none"
-                                            requestId = null
+                                        when (val result = if (blocked) BlockRepository.unblock(userId) else BlockRepository.block(userId)) {
+                                            is SocialResult.Success -> if (!blocked) {
+                                                // A fresh block clears any pending friendship/requests
+                                                // server-side (blocks.ts) — reflect that immediately.
+                                                relationship = "none"
+                                                requestId = null
+                                            }
+                                            is SocialResult.Failure ->
+                                                if (isAuthError(result.code)) onRequireSignIn()
+                                                else snackbar.show(result.message)
                                         }
                                         blockBusy = false
                                     }

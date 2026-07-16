@@ -45,6 +45,8 @@ import com.filipinodama.app.ui.screens.game.GameButtonVariant
 import com.filipinodama.app.ui.screens.profile.AvatarView
 import com.filipinodama.app.ui.components.CurrencyAmount
 import com.filipinodama.app.ui.components.CurrencyIconKind
+import com.filipinodama.app.ui.components.LocalSnackbar
+import com.filipinodama.app.ui.components.isAuthError
 import com.filipinodama.app.ui.theme.Gold
 import com.filipinodama.app.ui.theme.GoldLt
 import com.filipinodama.app.ui.theme.Green
@@ -73,8 +75,13 @@ fun FriendsScreen(
     val me = AuthRepository.state.collectAsState().value.user
     val onlineSet by PresenceRepository.online.collectAsState()
     val scope = rememberCoroutineScope()
+    val snackbar = LocalSnackbar.current
 
     var loading by remember { mutableStateOf(true) }
+    // True when the friends list load itself failed — so a network error renders a
+    // distinct "couldn't load — retry" state instead of the genuine-empty "no
+    // friends yet" copy (they were previously indistinguishable).
+    var loadFailed by remember { mutableStateOf(false) }
     var friends by remember { mutableStateOf<List<FriendUserDto>>(emptyList()) }
     var incoming by remember { mutableStateOf<List<FriendRequestDto>>(emptyList()) }
     var suggested by remember { mutableStateOf<List<FriendUserDto>>(emptyList()) }
@@ -87,9 +94,12 @@ fun FriendsScreen(
     fun refresh() {
         scope.launch {
             loading = true
+            // The friends list is the primary content; a failure there drives the
+            // error state. Requests/suggested are secondary — their failure just
+            // leaves those sections empty (not worth an error banner).
             when (val f = FriendsRepository.friends()) {
-                is SocialResult.Success -> friends = f.data.friends
-                is SocialResult.Failure -> {}
+                is SocialResult.Success -> { friends = f.data.friends; loadFailed = false }
+                is SocialResult.Failure -> loadFailed = true
             }
             when (val r = FriendsRepository.requests()) {
                 is SocialResult.Success -> incoming = r.data.incoming
@@ -112,16 +122,22 @@ fun FriendsScreen(
         refresh()
     }
 
+    // Surface a failed social action instead of settling as if nothing happened.
+    fun surface(result: SocialResult.Failure) {
+        if (isAuthError(result.code)) return  // gated actions are already login-guarded upstream
+        snackbar.show(result.message)
+    }
+
     fun accept(req: FriendRequestDto) {
         if (busyIds.contains(req.id)) return
         busyIds = busyIds + req.id
         scope.launch {
-            when (FriendsRepository.acceptRequest(req.id)) {
+            when (val r = FriendsRepository.acceptRequest(req.id)) {
                 is SocialResult.Success -> {
                     incoming = incoming.filter { it.id != req.id }
                     friends = listOf(req.user) + friends
                 }
-                is SocialResult.Failure -> {}
+                is SocialResult.Failure -> surface(r)
             }
             busyIds = busyIds - req.id
         }
@@ -131,9 +147,9 @@ fun FriendsScreen(
         if (busyIds.contains(req.id)) return
         busyIds = busyIds + req.id
         scope.launch {
-            when (FriendsRepository.declineRequest(req.id)) {
+            when (val r = FriendsRepository.declineRequest(req.id)) {
                 is SocialResult.Success -> incoming = incoming.filter { it.id != req.id }
-                is SocialResult.Failure -> {}
+                is SocialResult.Failure -> surface(r)
             }
             busyIds = busyIds - req.id
         }
@@ -148,7 +164,7 @@ fun FriendsScreen(
                     suggested = suggested.filter { it.id != u.id }
                     if (result.data.status == "accepted") friends = listOf(u) + friends
                 }
-                is SocialResult.Failure -> {}
+                is SocialResult.Failure -> surface(result)
             }
             busyIds = busyIds - u.id
         }
@@ -157,9 +173,9 @@ fun FriendsScreen(
     fun removeFriend(u: FriendUserDto) {
         swipeState = swipeState.close(u.id)
         scope.launch {
-            when (FriendsRepository.removeFriend(u.id)) {
+            when (val r = FriendsRepository.removeFriend(u.id)) {
                 is SocialResult.Success -> friends = friends.filter { it.id != u.id }
-                is SocialResult.Failure -> {}
+                is SocialResult.Failure -> surface(r)
             }
         }
     }
@@ -250,7 +266,15 @@ fun FriendsScreen(
                 }
             }
 
-            if (friends.isEmpty()) {
+            if (loadFailed && friends.isEmpty()) {
+                // A load failure is NOT an empty circle — show a distinct error +
+                // Retry so the user knows the list didn't load (was previously
+                // indistinguishable from having no friends).
+                SectionCard(title = "Friends") {
+                    Text("Couldn't load your friends. Check your connection and try again.", color = Ink2, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(vertical = 12.dp))
+                    GameButton("Retry", { refresh() })
+                }
+            } else if (friends.isEmpty()) {
                 SectionCard(title = "Friends · 0") {
                     Text("You haven't added any friends yet. Add players to challenge them to matches and climb together.", color = Ink2, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(vertical = 12.dp))
                     GameButton("＋ Add a Friend", { addOpen = true })

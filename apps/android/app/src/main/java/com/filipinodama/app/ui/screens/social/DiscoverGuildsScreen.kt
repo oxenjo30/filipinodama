@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -84,11 +85,15 @@ fun DiscoverGuildsScreen(onBack: () -> Unit, onRequireSignIn: () -> Unit = {}) {
     // "Request Sent ✓" button state so a tap gives immediate feedback.
     var requestedIds by remember { mutableStateOf(setOf<String>()) }
 
+    // True when the browse load failed — drives a distinct "couldn't load — retry"
+    // state instead of the genuine-empty "be the first to found one" copy.
+    var browseFailed by remember { mutableStateOf(false) }
+
     fun loadBrowse(q: String) {
         scope.launch {
             when (val r = GuildsRepository.browse(q)) {
-                is SocialResult.Success -> browse = r.data.guilds
-                is SocialResult.Failure -> browse = emptyList()
+                is SocialResult.Success -> { browse = r.data.guilds; browseFailed = false }
+                is SocialResult.Failure -> { browse = emptyList(); browseFailed = true }
             }
         }
     }
@@ -166,6 +171,24 @@ fun DiscoverGuildsScreen(onBack: () -> Unit, onRequireSignIn: () -> Unit = {}) {
             Spacer()
             when {
                 browse == null -> Box(Modifier.fillMaxWidth().padding(30.dp), contentAlignment = Alignment.Center) { CircularProgressIndicator(color = Gold) }
+                browseFailed && browse!!.isEmpty() -> Column(
+                    modifier = Modifier.fillMaxWidth().padding(vertical = 44.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    Text(
+                        "Couldn't load guilds. Check your connection and try again.",
+                        color = Ink2,
+                        style = MaterialTheme.typography.bodyMedium,
+                        textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                    )
+                    Box(
+                        modifier = Modifier
+                            .clickable { loadBrowse(query) }
+                            .background(Gold.copy(alpha = 0.16f), RoundedCornerShape(10.dp))
+                            .padding(horizontal = 20.dp, vertical = 10.dp)
+                    ) { Text("Retry", color = GoldLt, style = MaterialTheme.typography.labelLarge) }
+                }
                 browse!!.isEmpty() && query.isNotBlank() -> Text(
                     "No guilds match “$query”.",
                     color = Ink2,
@@ -289,15 +312,19 @@ private fun Spacer() {
 @Composable
 fun GuildPreviewSheet(guildId: String, signedIn: Boolean, onClose: () -> Unit, onJoined: () -> Unit) {
     val scope = rememberCoroutineScope()
+    val snackbar = com.filipinodama.app.ui.components.LocalSnackbar.current
     var detail by remember(guildId) { mutableStateOf<GuildDetailResponse?>(null) }
+    // Distinguish "still loading" from "load failed" so the sheet doesn't spin
+    // forever on an error (it previously left detail == null == loading).
+    var detailError by remember(guildId) { mutableStateOf(false) }
     var busy by remember { mutableStateOf(false) }
     var joined by remember(guildId) { mutableStateOf(false) }
     var requested by remember(guildId) { mutableStateOf(false) }
 
     LaunchedEffect(guildId) {
         when (val r = GuildsRepository.detail(guildId)) {
-            is SocialResult.Success -> detail = r.data
-            is SocialResult.Failure -> detail = null
+            is SocialResult.Success -> { detail = r.data; detailError = false }
+            is SocialResult.Failure -> detailError = true
         }
     }
 
@@ -335,8 +362,20 @@ fun GuildPreviewSheet(guildId: String, signedIn: Boolean, onClose: () -> Unit, o
             )
             // Content wrapper MUST be a Column — a Box would stack the crest,
             // name, stat tiles, and Join button all on top of each other.
-            Column(modifier = Modifier.fillMaxWidth().padding(top = 4.dp)) {
-                if (detail == null) {
+            // Capped + scrollable so a tall guild card (long description, large
+            // accessibility font) can't push the Join CTA off the top of the sheet.
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(max = 560.dp)
+                    .verticalScroll(rememberScrollState())
+                    .padding(top = 4.dp)
+            ) {
+                if (detailError) {
+                    Box(Modifier.fillMaxWidth().padding(40.dp), contentAlignment = Alignment.Center) {
+                        Text("Couldn't load this guild. Please try again.", color = Ink2, style = MaterialTheme.typography.bodyMedium)
+                    }
+                } else if (detail == null) {
                     Box(Modifier.fillMaxWidth().padding(40.dp), contentAlignment = Alignment.Center) {
                         CircularProgressIndicator(color = Gold)
                     }
@@ -441,7 +480,9 @@ fun GuildPreviewSheet(guildId: String, signedIn: Boolean, onClose: () -> Unit, o
                                             if (res.data.status == "joined") joined = true else requested = true
                                             onJoined()
                                         }
-                                        is SocialResult.Failure -> {}
+                                        is SocialResult.Failure ->
+                                            if (com.filipinodama.app.ui.components.isAuthError(res.code)) onClose()
+                                            else snackbar.show(res.message)
                                     }
                                     busy = false
                                 }

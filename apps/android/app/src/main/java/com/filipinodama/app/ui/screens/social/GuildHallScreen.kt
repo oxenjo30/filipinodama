@@ -57,6 +57,8 @@ import com.filipinodama.app.data.social.resolveGuildCrest
 import com.filipinodama.app.ui.screens.profile.AvatarView
 import com.filipinodama.app.ui.components.CurrencyAmount
 import com.filipinodama.app.ui.components.CurrencyIconKind
+import com.filipinodama.app.ui.components.LocalSnackbar
+import com.filipinodama.app.ui.components.isAuthError
 import com.filipinodama.app.ui.theme.Gold
 import com.filipinodama.app.ui.theme.GoldLt
 import com.filipinodama.app.ui.theme.Green
@@ -96,10 +98,16 @@ fun GuildHallScreen(
 ) {
     val me = AuthRepository.state.collectAsState().value.user
     val scope = rememberCoroutineScope()
+    val snackbar = LocalSnackbar.current
 
     var membershipChecked by remember { mutableStateOf(false) }
     var myGuildId by remember { mutableStateOf<String?>(null) }
     var detail by remember { mutableStateOf<GuildDetailResponse?>(null) }
+    // True when the membership/detail probe FAILED (vs. genuinely having no guild)
+    // so a network error doesn't render the "You are not in a guild yet" empty copy.
+    var guildLoadError by remember { mutableStateOf(false) }
+    // True when the officer join-requests load failed (vs. genuinely zero requests).
+    var requestsError by remember { mutableStateOf(false) }
     var requests by remember { mutableStateOf<List<GuildJoinRequestDto>?>(null) }
     var busy by remember { mutableStateOf(false) }
     var createOpen by remember { mutableStateOf(false) }
@@ -112,17 +120,18 @@ fun GuildHallScreen(
             when (val d = GuildsRepository.detail(guildId)) {
                 is SocialResult.Success -> {
                     detail = d.data
+                    guildLoadError = false
                     val role = d.data.myRole ?: roleHint
                     if (role != null && guildRoleAtLeast(role, "OFFICER")) {
                         when (val r = GuildsRepository.requests(guildId)) {
-                            is SocialResult.Success -> requests = r.data.requests
-                            is SocialResult.Failure -> requests = emptyList()
+                            is SocialResult.Success -> { requests = r.data.requests; requestsError = false }
+                            is SocialResult.Failure -> { requests = emptyList(); requestsError = true }
                         }
                     } else {
                         requests = null
                     }
                 }
-                is SocialResult.Failure -> detail = null
+                is SocialResult.Failure -> { detail = null; guildLoadError = true }
             }
         }
     }
@@ -150,6 +159,7 @@ fun GuildHallScreen(
                 is com.filipinodama.app.data.profile.ProfileResult.Success -> {
                     val gid = userResult.data.user.guild?.id
                     myGuildId = gid
+                    guildLoadError = false
                     if (gid != null) loadDetail(gid, userResult.data.user.guild?.role)
                     else {
                         detail = null
@@ -157,8 +167,11 @@ fun GuildHallScreen(
                     }
                 }
                 is com.filipinodama.app.data.profile.ProfileResult.Failure -> {
+                    // A failed membership probe is NOT "no guild" — flag the error so
+                    // the render shows a retry state, not the empty "not in a guild" copy.
                     myGuildId = null
                     detail = null
+                    guildLoadError = true
                 }
             }
             membershipChecked = true
@@ -202,18 +215,22 @@ fun GuildHallScreen(
             onChangeRole = { role ->
                 busy = true
                 scope.launch {
-                    GuildsRepository.setMemberRole(myGuildId!!, manageMember!!.userId, role)
-                    manageMember = null
-                    loadDetail(myGuildId!!, myRole)
+                    when (val r = GuildsRepository.setMemberRole(myGuildId!!, manageMember!!.userId, role)) {
+                        is SocialResult.Success -> { manageMember = null; loadDetail(myGuildId!!, myRole) }
+                        is SocialResult.Failure ->
+                            if (isAuthError(r.code)) onRequireSignIn() else snackbar.show(r.message)
+                    }
                     busy = false
                 }
             },
             onKick = {
                 busy = true
                 scope.launch {
-                    GuildsRepository.removeMember(myGuildId!!, manageMember!!.userId)
-                    manageMember = null
-                    loadDetail(myGuildId!!, myRole)
+                    when (val r = GuildsRepository.removeMember(myGuildId!!, manageMember!!.userId)) {
+                        is SocialResult.Success -> { manageMember = null; loadDetail(myGuildId!!, myRole) }
+                        is SocialResult.Failure ->
+                            if (isAuthError(r.code)) onRequireSignIn() else snackbar.show(r.message)
+                    }
                     busy = false
                 }
             }
@@ -347,10 +364,15 @@ fun GuildHallScreen(
                             if (!busy) {
                                 busy = true
                                 scope.launch {
-                                    GuildsRepository.removeMember(g.id, meUser.id)
-                                    myGuildId = null
-                                    detail = null
-                                    requests = null
+                                    when (val r = GuildsRepository.removeMember(g.id, meUser.id)) {
+                                        is SocialResult.Success -> {
+                                            myGuildId = null
+                                            detail = null
+                                            requests = null
+                                        }
+                                        is SocialResult.Failure ->
+                                            if (isAuthError(r.code)) onRequireSignIn() else snackbar.show(r.message)
+                                    }
                                     busy = false
                                 }
                             }
@@ -395,6 +417,7 @@ fun GuildHallScreen(
                 SectionCard(title = "Join Requests" + (requests?.let { " · ${it.size}" } ?: "")) {
                     when {
                         requests == null -> Box(Modifier.fillMaxWidth().padding(20.dp), contentAlignment = Alignment.Center) { CircularProgressIndicator(color = Gold) }
+                        requestsError && requests!!.isEmpty() -> Text("Couldn't load join requests. Pull to refresh or try again shortly.", color = Ink2, style = MaterialTheme.typography.bodyMedium)
                         requests!!.isEmpty() -> Text("No pending requests.", color = Ink2, style = MaterialTheme.typography.bodyMedium)
                         else -> requests!!.forEach { r ->
                             JoinRequestRow(
@@ -404,23 +427,46 @@ fun GuildHallScreen(
                                 onAccept = {
                                     busy = true
                                     scope.launch {
-                                        GuildsRepository.acceptRequest(g.id, r.id)
-                                        requests = requests?.filter { it.id != r.id }
-                                        loadDetail(g.id, myRole)
+                                        when (val res = GuildsRepository.acceptRequest(g.id, r.id)) {
+                                            is SocialResult.Success -> {
+                                                requests = requests?.filter { it.id != r.id }
+                                                loadDetail(g.id, myRole)
+                                            }
+                                            is SocialResult.Failure ->
+                                                if (isAuthError(res.code)) onRequireSignIn() else snackbar.show(res.message)
+                                        }
                                         busy = false
                                     }
                                 },
                                 onDecline = {
                                     busy = true
                                     scope.launch {
-                                        GuildsRepository.declineRequest(g.id, r.id)
-                                        requests = requests?.filter { it.id != r.id }
+                                        when (val res = GuildsRepository.declineRequest(g.id, r.id)) {
+                                            is SocialResult.Success -> requests = requests?.filter { it.id != r.id }
+                                            is SocialResult.Failure ->
+                                                if (isAuthError(res.code)) onRequireSignIn() else snackbar.show(res.message)
+                                        }
                                         busy = false
                                     }
                                 }
                             )
                         }
                     }
+                }
+            }
+        } else if (membershipChecked && guildLoadError && me != null) {
+            // A real load failure for a signed-in user — NOT the "no guild" empty
+            // state. Offer a retry instead of implying they have no guild.
+            SectionCard(title = "") {
+                Text("Couldn't load your guild", color = GoldLt, style = MaterialTheme.typography.titleLarge)
+                Text(
+                    "Check your connection and try again.",
+                    color = Ink2,
+                    style = MaterialTheme.typography.bodyMedium,
+                    modifier = Modifier.padding(top = 8.dp)
+                )
+                Row(modifier = Modifier.padding(top = 14.dp)) {
+                    ActionChip("Retry", modifier = Modifier.weight(1f)) { loadMembership() }
                 }
             }
         } else if (membershipChecked) {
