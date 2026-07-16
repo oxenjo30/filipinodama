@@ -1,7 +1,7 @@
 import type { FastifyInstance } from "fastify";
 import type { GuildRole } from "@prisma/client";
 import { z } from "zod";
-import { createGuildSchema, updateGuildSchema, guildChatSendSchema } from "@dama/shared";
+import { createGuildSchema, updateGuildSchema, guildChatSendSchema, containsProfanity } from "@dama/shared";
 import { prisma } from "../db/client.js";
 import { ok, err } from "../lib/errors.js";
 import { isMuted } from "../lib/mute.js";
@@ -110,6 +110,10 @@ export async function guildRoutes(app: FastifyInstance) {
   app.post("/guilds", { preHandler: requireAuth }, async (req) => {
     const me = req.userId!;
     const input = createGuildSchema.parse(req.body);
+    if (input.name && containsProfanity(input.name))
+      throw err.badRequest("INAPPROPRIATE_LANGUAGE", "That guild name contains inappropriate language.");
+    if (input.tag && containsProfanity(input.tag))
+      throw err.badRequest("INAPPROPRIATE_LANGUAGE", "That guild tag contains inappropriate language.");
 
     // a user can only belong to one guild (GuildMember.userId is @unique)
     const anyMembership = await prisma.guildMember.findUnique({ where: { userId: me } });
@@ -238,6 +242,10 @@ export async function guildRoutes(app: FastifyInstance) {
       const guildId = req.params.id;
       await requireGuildRole(me, guildId, "OFFICER");
       const input = updateGuildSchema.parse(req.body);
+      // NOTE: updateGuildSchema has no `tag` field (tag is immutable after
+      // creation), so only `name` is checked here; `tag` is rejected at create.
+      if (input.name && containsProfanity(input.name))
+        throw err.badRequest("INAPPROPRIATE_LANGUAGE", "That guild name contains inappropriate language.");
 
       if (input.name) {
         const clash = await prisma.guild.findFirst({

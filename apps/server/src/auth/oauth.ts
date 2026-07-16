@@ -1,5 +1,6 @@
 import { randomBytes } from "node:crypto";
 import type { User } from "@prisma/client";
+import { containsProfanity } from "@dama/shared";
 import { prisma } from "../db/client.js";
 import { env, features } from "../config/env.js";
 import { randomTag } from "./tokens.js";
@@ -179,8 +180,11 @@ export async function verifyGoogleIdToken(idToken: string): Promise<Profile> {
 
 async function uniqueUsername(base: string): Promise<string> {
   const clean = base.toLowerCase().replace(/[^a-z0-9_]/g, "").slice(0, 14) || "player";
+  // OAuth must never hard-fail sign-in over a profane provider-derived name —
+  // neutralize (fall back to a safe base) rather than reject.
+  const safeBase = containsProfanity(clean) ? "player" : clean;
   for (let i = 0; i < 20; i++) {
-    const candidate = i === 0 ? clean : `${clean}${Math.floor(Math.random() * 9999)}`;
+    const candidate = i === 0 ? safeBase : `${safeBase}${Math.floor(Math.random() * 9999)}`;
     if (!(await prisma.user.findUnique({ where: { username: candidate } }))) return candidate;
   }
   return `player${Date.now().toString().slice(-6)}`;
@@ -215,12 +219,16 @@ export async function findOrCreateOAuthUser(p: OAuthProvider, profile: Profile):
   }
 
   const username = await uniqueUsername(profile.name ?? (profile.email?.split("@")[0] ?? "player"));
+  // Same neutralize-not-reject rule for the display name shown to other players:
+  // a profane provider-supplied name falls back to the (already-sanitized) username.
+  const safeDisplayName =
+    profile.name && !containsProfanity(profile.name) ? profile.name : username;
   const user = await prisma.user.create({
     data: {
       email: profile.email?.toLowerCase() ?? null,
       emailVerified: profile.email ? new Date() : null, // OAuth email is provider-verified
       username,
-      displayName: profile.name ?? username,
+      displayName: safeDisplayName,
       tag: await uniqueTag(),
       avatarUrl: profile.avatar ?? null,
       oauthAccounts: { create: { provider: p, providerId: profile.providerId } },

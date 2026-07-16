@@ -1,4 +1,5 @@
 import type { PrismaClient, User } from "@prisma/client";
+import { containsProfanity } from "@dama/shared";
 import { hashPassword, verifyPassword, opaqueToken, randomTag, newRefreshToken } from "./tokens.js";
 import { err } from "../lib/errors.js";
 import { env } from "../config/env.js";
@@ -125,6 +126,8 @@ export async function register(prisma: PrismaClient, input: { email: string; pas
   if (await prisma.user.findUnique({ where: { email } })) throw err.conflict("EMAIL_TAKEN", "Email already registered");
   if (await prisma.user.findUnique({ where: { username: input.username } }))
     throw err.conflict("USERNAME_TAKEN", "Username already taken");
+  if (containsProfanity(input.username))
+    throw err.badRequest("INAPPROPRIATE_LANGUAGE", "That name contains inappropriate language. Please choose another.");
 
   const passwordHash = await hashPassword(input.password);
   const verifyToken = opaqueToken();

@@ -1,6 +1,13 @@
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
-import { updateProfileSchema, equipSchema, equipEmoteSchema, deleteAccountSchema, rankTierFor } from "@dama/shared";
+import {
+  updateProfileSchema,
+  equipSchema,
+  equipEmoteSchema,
+  deleteAccountSchema,
+  rankTierFor,
+  containsProfanity,
+} from "@dama/shared";
 import type { Currency } from "@prisma/client";
 import { prisma } from "../db/client.js";
 import { ok, err } from "../lib/errors.js";
@@ -254,6 +261,10 @@ export async function userRoutes(app: FastifyInstance) {
   // PATCH /api/users/me — update own profile
   app.patch("/users/me", { preHandler: requireAuth }, async (req) => {
     const input = updateProfileSchema.parse(req.body);
+    if (input.displayName && containsProfanity(input.displayName))
+      throw err.badRequest("INAPPROPRIATE_LANGUAGE", "That display name contains inappropriate language. Please choose another.");
+    if (input.bio && containsProfanity(input.bio))
+      throw err.badRequest("INAPPROPRIATE_LANGUAGE", "Your bio contains inappropriate language. Please revise it.");
     const user = await prisma.user.update({
       where: { id: req.userId! },
       data: {
