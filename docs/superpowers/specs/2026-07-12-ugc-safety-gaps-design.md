@@ -33,36 +33,72 @@ model Block {
   @@index([blockedId])
 }
 ```
-Directional (blocker → blocked). Add the two back-relations to `User`.
+Directional (blocker → blocked). **BLOCKER FIX: Prisma requires the opposite
+sides on `User` explicitly** (every relation in this schema does — cf.
+`friendshipsA`/`friendshipsB`, `sentReqs`/`recvReqs`). Add these two array fields
+to the `User` model or the migration will not generate:
+```
+  blocksMade     Block[] @relation("blocker")
+  blocksReceived Block[] @relation("blocked")
+```
+`@@index([blockedId])` is sufficient — `blockerId`-only lookups (`GET /api/blocks`)
+are served by the leading column of the `@@unique([blockerId, blockedId])`.
 
 ### Server routes — new `apps/server/src/modules/blocks.ts`
 - **`POST /api/blocks { userId }`** (`requireAuth`, guest-blocked like reports):
-  in one transaction — create the `Block` (idempotent via the unique key: a
-  duplicate is a no-op, not a 409), delete any `Friendship` between the pair
-  (sorted `aId/bId` key like `friends.ts:64`), and delete any pending
-  `FriendRequest` in either direction. Reject self-block, bot, deleted.
-- **`DELETE /api/blocks/:userId`** — remove the block (idempotent).
+  Reject self-block, bot, deleted first. Then in one `$transaction`:
+  - **Create the block via `upsert`** (`where: { blockerId_blockedId }`,
+    `update: {}`, `create: {...}`) — idempotent, no P2002 500 on a double-tap.
+    (This mirrors the `Friendship` upsert at `friends.ts:180-184`; do NOT use a
+    bare `create()`, which 500s on a duplicate.)
+  - **`deleteMany`** (NOT `delete`) the `Friendship` for the sorted pair
+    (`aId < bId`, cf. `friends.ts:63-64`) — `deleteMany` returns `count:0` when
+    there's no friendship (the common case: most blocked users were never
+    friends), whereas `delete` throws `P2025`.
+  - **`deleteMany`** any pending `FriendRequest` in either direction.
+  - Deleting the `Friendship` automatically stops presence updates between the
+    pair — presence derives friend ids live from the table at broadcast time
+    (`realtime/presence.ts`), so no extra cleanup is needed.
+- **`DELETE /api/blocks/:userId`** — `deleteMany` the block (idempotent).
 - **`GET /api/blocks`** — the caller's blocked list (id + public user fields),
   for the Settings management screen.
 - Register the module in the server's route wiring (mirror how `reportRoutes` is
-  registered).
+  registered in `apps/server/src/index.ts`).
 
 ### Enforcement (server)
-- **DM** (`dm.ts` `assertFriends`): also throw if a `Block` exists in **either**
-  direction between the two (blocked users are, by definition, not friends after
-  a block, but a block placed while a request was pending must still hard-stop
-  DM open/send). New error `BLOCKED`.
 - **Friend request** (`friends.ts createFriendRequest`): reject if either side
-  has blocked the other (`BLOCKED`).
-- **Guild chat history + live relay** (`guild-chat-service.loadGuildHistory` and
-  the live `postGuildMessage` fan-out): filter OUT messages authored by a user
-  the **viewer** has blocked. History filter is per-request (needs the viewer
-  id); live relay: the client also drops incoming messages from blocked authors
-  (the server relay is room-wide, so the viewer-side filter is the reliable
-  layer — apply BOTH: server omits from history, client omits from live).
-- **Match chat:** match chat is emote/phrase-only, low risk; blocked-author
-  filtering applies client-side on the incoming feed for consistency (no server
-  change needed there beyond what already exists).
+  has blocked the other (`BLOCKED`). This is the PRIMARY hard-stop — a block
+  deletes the friendship, so re-friending is the only way back to DM access, and
+  this closes it.
+- **DM** (`dm.ts` `assertFriends`): also throw `BLOCKED` if a `Block` exists in
+  either direction. NOTE (corrected reasoning): since a block deletes the
+  `Friendship` in the same transaction, `assertFriends` already throws
+  `NOT_FRIENDS` after a block — so this check is mostly a **clearer error
+  message** ("you blocked this player" vs. generic "friends only"), not a new
+  reachable hole. Include it for the message + defense-in-depth, but don't rely
+  on it as the sole gate (the friend-request + friendship-deletion above are).
+- **Guild chat history** (`guild-chat-service.loadGuildHistory`): **its signature
+  changes** from `loadGuildHistory(guildId, limit=50)` to accept the viewer id
+  (`loadGuildHistory(guildId, viewerId, limit=50)`); update the ONE call site
+  (`guilds.ts:284`) to pass `me`. **Filter BEFORE the limit** (either add
+  `authorId: { notIn: blockedIds }` to the Prisma `where`, or overfetch and
+  truncate) — filtering after `take:50` under-fills the page when a blocked user
+  posted recently. `blockedIds` = the viewer's `blocksMade` ids.
+- **Live guild-chat relay** (`guilds.ts:304` → room-wide `emit`): the socket
+  broadcast is room-wide with no per-viewer filter, so a blocked author's live
+  message DOES reach the blocker's socket; the **client drops it** on receipt.
+  This is a KNOWN RESIDUAL EXPOSURE (a modified client could still read it) —
+  acceptable for a harassment-mitigation UX control (the blocker doesn't see it),
+  documented here rather than hidden. Server-side per-viewer live filtering would
+  require per-recipient emits (larger change) — deferred.
+- **Match chat:** emote/phrase-only, low risk; blocked-author filtering applies
+  client-side on the incoming feed for consistency (no server change).
+- **Directionality (stated plainly):** DM + friend-request checks are BOTH
+  directions (neither can DM/request the other). Guild/match chat hiding is
+  ONE direction (the blocker stops seeing the blocked user; the blocked user
+  still sees the blocker's guild messages). Full mutual invisibility is out of
+  scope (see Out of scope) — this is an intentional scope boundary, noted so
+  it isn't mistaken for a bug.
 
 ### Clients
 - **Android:** `BlockRepository` + API (`POST/DELETE/GET /api/blocks`); a
@@ -86,11 +122,18 @@ Directional (blocker → blocked). Add the two back-relations to `User`.
     context-dependent words to avoid false positives (per the "curated strong
     list" decision).
 - **Normalization** before matching: lowercase; map leetspeak `@→a 0→o 1→i
-  3→e 4→a 5→s $→s 7→t`; collapse 3+ repeated letters (`fuuuck`→`fuck`); strip
-  separators between letters used to evade (`f.u.c.k`, `f u c k`) for the
-  match pass only (not for the returned/stored text).
-- **Matching:** WHOLE-WORD against the normalized text (word boundaries) so
-  `assassin`, `Scunthorpe`, `class`, `analysis` never trip.
+  3→e 4→a 5→s $→s 7→t`; collapse 3+ repeated letters (`fuuuck`→`fuck`).
+  **FALSE-POSITIVE FIX:** do NOT globally strip all separators (spaces/dots)
+  before matching — that would collapse innocent multi-word text into a match
+  (e.g. "class sizes" → "classsizes", or spaced letters across real word
+  boundaries forming a slur). Instead: tokenize on whitespace, then within each
+  TOKEN only, strip intra-word punctuation used to evade (`f.u.c.k`, `f*ck`) —
+  bounded to a single token, never across spaces. Match the word-list against
+  each normalized token.
+- **Matching:** WHOLE-TOKEN / word-boundary match against the normalized tokens
+  so `assassin`, `Scunthorpe`, `class`, `analysis`, `bass` never trip.
+  **Honesty note:** a curated list is never exhaustive — this reduces obvious
+  abuse, it is not complete moderation. Report + block remain the backstop.
 - **Exports:**
   - `containsProfanity(text: string): boolean`
   - `maskProfanity(text: string): string` — replaces each matched word with
@@ -101,12 +144,17 @@ Directional (blocker → blocked). Add the two back-relations to `User`.
 **Names REJECTED** (permanent/public) — validation throws a friendly
 `INAPPROPRIATE_LANGUAGE` 400 ("That name contains inappropriate language.
 Please choose another."):
-- Username — `register()` (`service.ts`) and OAuth `uniqueUsername()`
-  (`oauth.ts`): after the existing format/uniqueness checks, reject if
-  `containsProfanity(username)`. (For OAuth auto-derived usernames, if the
-  derived base is profane, fall through to the numeric-suffix path / a neutral
-  default rather than erroring the whole sign-in — OAuth must not hard-fail on a
-  profane provider name; documented in the plan.)
+- Username — `register()` (`service.ts`): after the format/uniqueness checks,
+  reject if `containsProfanity(username)` (`INAPPROPRIATE_LANGUAGE`).
+- OAuth `uniqueUsername(base)` (`oauth.ts:180`): this DERIVES a username from the
+  provider name and must NEVER hard-fail sign-in. Fix in place: if the cleaned
+  `clean` base is profane, replace it with the neutral `"player"` base BEFORE the
+  uniqueness loop (the function already falls back to `player${timestamp}` at the
+  end) — so a user named e.g. a slur on their Google account still signs in, just
+  with a neutral generated handle. Also mask/neutralize the derived `displayName`
+  if the provider `profile.name` is profane (OAuth sets `displayName` from the
+  provider name at `oauth.ts` create) — reject would break sign-in, so mask it
+  or fall back to the username.
 - Display name + bio — `updateProfileSchema` handler (`users.ts`): reject if
   `containsProfanity(displayName)` or `containsProfanity(bio)`.
 - Guild name + tag — `createGuildSchema`/`updateGuildSchema` handlers
@@ -139,10 +187,17 @@ like DMs.
   `channelId`. Preserve the existing atomic advisory-lock rate limit unchanged.
 
 ### Clients
-- **Android:** long-press / overflow **Report** on a guild-chat message (in the
-  guild hall chat) → opens the existing `ReportPlayerDialog` with
-  `context="guild"` + `messageId` + `accusedId` (the message author).
-- **Web:** same in-context Report on a guild chat message.
+The `context` type is a string union in BOTH clients — updating the server enum
+alone breaks their typecheck. Update all three:
+- **Shared/server:** the zod enum (above).
+- **Web:** `ReportPlayerModal.tsx:61` `context: "dm" | "profile"` → add `"guild"`;
+  `noteRequired` stays `context === "profile"` (guild uses messageId, not note).
+  Then add an in-context **Report** on a guild chat message (web guild hall)
+  that opens `ReportPlayerModal` with `context="guild"`, `messageId`, `accusedId`.
+- **Android:** `ReportApi.kt:22` comment `// "dm" | "profile"` → include `guild`;
+  add long-press / overflow **Report** on a guild-chat message (guild hall chat)
+  opening the existing `ReportPlayerDialog` with `context="guild"` + `messageId`
+  + `accusedId` (the message author).
 
 ## Data flow
 
@@ -170,10 +225,16 @@ existing rate-limited pipeline with the new `guild` context.
   - Block: create removes friendship + pending requests; duplicate is a no-op;
     DM open/send throws `BLOCKED` when blocked either direction; friend-request
     rejected when blocked; `GET /api/blocks` lists them.
+  - Block idempotency: a double `POST /api/blocks` for the same pair does NOT
+    500 (upsert no-ops); blocking a non-friend does NOT throw P2025 (deleteMany);
+    unblock twice is a no-op.
   - Profanity: `containsProfanity` true for representative English + Tagalog +
-    Cebuano words + leetspeak variants; FALSE for Scunthorpe/assassin/class/
-    analysis (false-positive guard); `maskProfanity` masks the word and keeps
-    the rest; name routes reject; chat routes deliver masked.
+    Cebuano words + leetspeak variants (`sh1t`, `p*tangina`, `f.u.c.k`); FALSE
+    for Scunthorpe/assassin/class/analysis/bass AND for innocent multi-word text
+    like "class sizes" / "pass the ball" (the tokenization false-positive guard);
+    `maskProfanity` masks the word and keeps the rest; name routes reject; chat
+    routes deliver masked. OAuth `uniqueUsername` with a profane base returns a
+    neutral handle (no throw, sign-in succeeds).
   - Guild report: a valid guild-message report succeeds; wrong-guild / wrong-
     author / non-member rejected.
 - **Web:** `pnpm --filter web typecheck && lint && build`; manual — Block/Unblock
