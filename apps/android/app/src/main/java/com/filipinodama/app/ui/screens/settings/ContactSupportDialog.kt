@@ -8,7 +8,9 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
@@ -58,7 +60,9 @@ fun ContactSupportDialog(onClose: () -> Unit) {
 
     Dialog(onDismissRequest = { if (!sending) onClose() }) {
         Column(
-            modifier = Modifier.fillMaxWidth().background(Panel, RoundedCornerShape(18.dp)).padding(22.dp),
+            // Scroll so the form's CTA stays reachable with the keyboard open or a
+            // large accessibility font (versionCode-12 unreachable-CTA bug class).
+            modifier = Modifier.fillMaxWidth().background(Panel, RoundedCornerShape(18.dp)).verticalScroll(rememberScrollState()).padding(22.dp),
             verticalArrangement = Arrangement.spacedBy(14.dp)
         ) {
             if (sentTicketId != null) {

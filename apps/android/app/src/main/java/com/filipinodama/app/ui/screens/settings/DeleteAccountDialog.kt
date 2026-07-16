@@ -6,7 +6,9 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
@@ -55,7 +57,9 @@ fun DeleteAccountDialog(onClose: () -> Unit, onDeleted: () -> Unit) {
 
     Dialog(onDismissRequest = { if (!deleting) onClose() }) {
         Column(
-            modifier = Modifier.fillMaxWidth().background(Panel, RoundedCornerShape(18.dp)).padding(22.dp),
+            // Scroll so the typed-DELETE confirm + buttons stay reachable with the
+            // keyboard open / large font (versionCode-12 unreachable-CTA bug class).
+            modifier = Modifier.fillMaxWidth().background(Panel, RoundedCornerShape(18.dp)).verticalScroll(rememberScrollState()).padding(22.dp),
             verticalArrangement = Arrangement.spacedBy(14.dp)
         ) {
             Text("⚠️ Delete Your Account?", color = Red, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)

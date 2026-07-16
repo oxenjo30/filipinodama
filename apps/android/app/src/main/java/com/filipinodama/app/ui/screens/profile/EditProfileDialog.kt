@@ -7,7 +7,9 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
@@ -67,6 +69,9 @@ fun EditProfileDialog(onClose: () -> Unit, onChangeAvatar: () -> Unit) {
             modifier = Modifier
                 .fillMaxWidth()
                 .background(Panel, RoundedCornerShape(20.dp))
+                // Scroll so a large accessibility font / open keyboard can't push
+                // the Save CTA off-screen (the versionCode-12 unreachable-CTA class).
+                .verticalScroll(rememberScrollState())
                 .padding(24.dp)
         ) {
             Text("Your profile", color = Gold, style = MaterialTheme.typography.labelMedium)
