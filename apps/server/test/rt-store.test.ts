@@ -39,3 +39,178 @@ describe("rt store core", () => {
     expect(await redis.get("rt:lock:t:l2")).toBeNull();
   });
 });
+
+describe("rt domain wrappers", () => {
+  afterAll(async () => {
+    await redis.del(
+      "rt:match:tm1",
+      "rt:userMatch:u1",
+      "rt:userMatch:u2",
+      "rt:mmq:CASUAL",
+      "rt:mmqMeta:CASUAL",
+      "rt:queuedIn:u1",
+      "rt:queuedIn:u2",
+      "rt:queuedIn:u3",
+      "rt:spect:tm1",
+      "rt:spectByUser:u1",
+      "rt:spectByUser:u2",
+      "rt:online",
+      "rt:onlineSocks:u1",
+      "rt:onlineSocks:u2"
+    );
+  });
+
+  it("match: create, get, save (CAS), remove + matchIdsForUser", async () => {
+    const { createMatch, getMatch, saveMatch, removeMatch, matchIdsForUser } = await import("../src/realtime/store.js");
+
+    // Create with a valid GameState
+    const mockState = {
+      id: "game-1",
+      pieces: [],
+      turn: "red" as const,
+      moveNumber: 0,
+      history: [],
+      settings: { forcedMaxCapture: true, drawMoveLimit: 40 }
+    };
+    await createMatch({
+      matchId: "tm1",
+      redId: "u1",
+      blueId: "u2",
+      mode: "CASUAL",
+      state: mockState
+    });
+
+    // Get
+    let stored = await getMatch("tm1");
+    expect(stored).not.toBeNull();
+    expect(stored!.matchId).toBe("tm1");
+    expect(stored!.redId).toBe("u1");
+    expect(stored!.blueId).toBe("u2");
+    expect(stored!.version).toBe(1); // incremented from 0
+
+    // matchIdsForUser reflects the create
+    expect(await matchIdsForUser("u1")).toContain("tm1");
+    expect(await matchIdsForUser("u2")).toContain("tm1");
+
+    // Save (CAS with correct version)
+    stored!.state = { ...mockState, moveNumber: 1 };
+    const saveOk = await saveMatch(stored!);
+    expect(saveOk).toBe(true);
+    const after = await getMatch("tm1");
+    expect(after!.version).toBe(2);
+    expect(after!.state.moveNumber).toBe(1);
+
+    // CAS conflict: stale version rejected
+    const staleOk = await saveMatch({ ...stored!, version: 1 });
+    expect(staleOk).toBe(false);
+
+    // Remove
+    await removeMatch(after!);
+    expect(await getMatch("tm1")).toBeNull();
+    expect(await matchIdsForUser("u1")).not.toContain("tm1");
+    expect(await matchIdsForUser("u2")).not.toContain("tm1");
+  });
+
+  it("queue: queuePopPair null with 1 entry, FIFO pair with 2+", async () => {
+    const { queuePush, queuePopPair, getQueuedIn } = await import("../src/realtime/store.js");
+
+    // Pop from empty → null
+    let pair = await queuePopPair("CASUAL");
+    expect(pair).toBeNull();
+
+    // Push 1 entry
+    await queuePush("CASUAL", { userId: "u1", joinedAt: 100, colorPref: "red" });
+    // Pop with 1 entry → null
+    pair = await queuePopPair("CASUAL");
+    expect(pair).toBeNull();
+
+    // Push 2 more (now 2 total: u1 and u2, u3)
+    await queuePush("CASUAL", { userId: "u2", joinedAt: 200, colorPref: "blue" });
+    // Pop with 2 entries → FIFO pair
+    pair = await queuePopPair("CASUAL");
+    expect(pair).not.toBeNull();
+    expect(pair![0].userId).toBe("u1");
+    expect(pair![1].userId).toBe("u2");
+  });
+
+  it("queue: queueRemove removes mid-list entry", async () => {
+    const { queuePush, queueRemove, redis: redisExport } = await import("../src/realtime/store.js");
+
+    const mode = "CASUAL-remove-test";
+    await queuePush(mode, { userId: "u1", joinedAt: 100, colorPref: "red" });
+    await queuePush(mode, { userId: "u2", joinedAt: 200, colorPref: "blue" });
+    await queuePush(mode, { userId: "u3", joinedAt: 300, colorPref: "either" });
+
+    // Remove middle entry u2
+    await queueRemove(mode, "u2");
+
+    // Verify u2 is gone from list and meta
+    const list = await redis.lrange(`rt:mmq:${mode}`, 0, -1);
+    expect(list).toEqual(["u1", "u3"]);
+    const meta = await redis.hget(`rt:mmqMeta:${mode}`, "u2");
+    expect(meta).toBeNull();
+
+    // Clean up
+    await redis.del(`rt:mmq:${mode}`, `rt:mmqMeta:${mode}`);
+  });
+
+  it("spectators: count unique users, not sockets", async () => {
+    const { spectatorAdd, spectatorRemove, spectatorCount, spectatorClear } = await import("../src/realtime/store.js");
+
+    // Add u1 with 2 sockets
+    let count = await spectatorAdd("tm1", "u1", "sock1");
+    expect(count).toBe(1); // 1 unique user
+    count = await spectatorAdd("tm1", "u1", "sock2");
+    expect(count).toBe(1); // still 1 unique user, sock2 added to u1's list
+
+    // Add u2 with 1 socket
+    count = await spectatorAdd("tm1", "u2", "sock3");
+    expect(count).toBe(2); // now 2 unique users
+
+    // Remove u1's first socket
+    count = await spectatorRemove("tm1", "u1", "sock1");
+    expect(count).toBe(2); // u1 still has sock2, u2 still there
+
+    // Remove u1's last socket
+    count = await spectatorRemove("tm1", "u1", "sock2");
+    expect(count).toBe(1); // u1 gone, u2 remains
+
+    // Clear all
+    await spectatorClear("tm1");
+    count = await spectatorCount("tm1");
+    expect(count).toBe(0);
+  });
+
+  it("presence: presenceAdd first socket returns true, second false", async () => {
+    const { presenceAdd, presenceRemove, presenceIsOnline } = await import("../src/realtime/store.js");
+
+    // First socket → offline to online (true)
+    let wasOffline = await presenceAdd("u1", "sock1");
+    expect(wasOffline).toBe(true);
+    expect(await presenceIsOnline("u1")).toBe(true);
+
+    // Second socket → already online (false)
+    wasOffline = await presenceAdd("u1", "sock2");
+    expect(wasOffline).toBe(false);
+    expect(await presenceIsOnline("u1")).toBe(true);
+  });
+
+  it("presence: presenceRemove last socket returns true", async () => {
+    const { presenceAdd, presenceRemove, presenceIsOnline } = await import("../src/realtime/store.js");
+
+    // Add two sockets
+    await presenceAdd("u2", "sock1");
+    await presenceAdd("u2", "sock2");
+    expect(await presenceIsOnline("u2")).toBe(true);
+
+    // Remove first socket → still online (false)
+    let wentOffline = await presenceRemove("u2", "sock1");
+    expect(wentOffline).toBe(false);
+    expect(await presenceIsOnline("u2")).toBe(true);
+
+    // Remove last socket → now offline (true)
+    wentOffline = await presenceRemove("u2", "sock2");
+    expect(wentOffline).toBe(true);
+    expect(await presenceIsOnline("u2")).toBe(false);
+  });
+});
