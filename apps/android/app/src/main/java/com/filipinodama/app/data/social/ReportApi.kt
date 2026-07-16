@@ -29,16 +29,18 @@ data class ReportResponse(
 )
 
 /**
- * Report reasons — mockup `reportCats` (Mobile.dc.html): exact 5-item list,
- * order, labels, and default (Cheating first/default). Server enum values
- * (HARASSMENT | HATE_SPEECH | CHEATING | INAPPROPRIATE | SPAM | OTHER) are
- * unchanged; the mockup's 5 UI reasons map onto the valid server values
- * ("Offensive name" → INAPPROPRIATE). HATE_SPEECH stays a valid server value
- * but isn't surfaced as its own row per the mockup.
+ * Report reasons — full parity with the server enum and apps/web's
+ * ReportPlayerModal (6 values: HARASSMENT | HATE_SPEECH | CHEATING |
+ * INAPPROPRIATE | SPAM | OTHER). Hate Speech is now surfaced as its own row so
+ * a mobile user can report it (previously mobile omitted it — a real gap, since
+ * a user could not report hate speech at all from the app). Default stays
+ * Cheating first (mobile's long-standing default). "Offensive name" maps to the
+ * server's INAPPROPRIATE value.
  */
 val REPORT_REASONS: List<Pair<String, String>> = listOf(
     "CHEATING" to "Cheating / bot",
     "HARASSMENT" to "Harassment / abuse",
+    "HATE_SPEECH" to "Hate speech",
     "INAPPROPRIATE" to "Offensive name",
     "SPAM" to "Spam",
     "OTHER" to "Other"

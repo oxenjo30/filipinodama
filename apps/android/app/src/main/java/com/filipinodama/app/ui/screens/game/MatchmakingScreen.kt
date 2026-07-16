@@ -19,6 +19,9 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
@@ -58,8 +61,13 @@ fun MatchmakingScreen(mode: String, onCancel: () -> Unit, onEnteredMatch: () -> 
     val authState by AuthRepository.state.collectAsState()
     val me = authState.user
 
+    // Preferred side — mirrors web OnlineMatchPage: "either" = no preference
+    // (fastest match, the default so search still starts instantly). Vs a bot you
+    // always get your pick; vs humans it's honoured when compatible.
+    var colorPref by remember { mutableStateOf("either") }
+
     LaunchedEffect(mode) {
-        MatchRepository.joinQueue(mode)
+        MatchRepository.joinQueue(mode, colorPref)
     }
 
     LaunchedEffect(ui.status) {
@@ -128,6 +136,36 @@ fun MatchmakingScreen(mode: String, onCancel: () -> Unit, onEnteredMatch: () -> 
                         color = Color(0xFFF4D886),
                         style = MaterialTheme.typography.labelMedium
                     )
+                }
+                // Preferred-side picker (parity with web) — only while searching;
+                // once found the colours are locked. Changing it re-queues with the
+                // new preference (leaveQueue → reset → joinQueue) exactly like web.
+                Text(
+                    "PREFERRED SIDE",
+                    color = Color(0xFF9A8BBF),
+                    style = MaterialTheme.typography.labelSmall,
+                    letterSpacing = 1.5.sp,
+                    modifier = Modifier.padding(top = 26.dp, bottom = 8.dp)
+                )
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    ColorPrefPill("🔴 Red", colorPref == "red") {
+                        if (colorPref != "red") {
+                            colorPref = "red"
+                            MatchRepository.leaveQueue(); MatchRepository.reset(); MatchRepository.joinQueue(mode, "red")
+                        }
+                    }
+                    ColorPrefPill("Either", colorPref == "either") {
+                        if (colorPref != "either") {
+                            colorPref = "either"
+                            MatchRepository.leaveQueue(); MatchRepository.reset(); MatchRepository.joinQueue(mode, "either")
+                        }
+                    }
+                    ColorPrefPill("🔵 Blue", colorPref == "blue") {
+                        if (colorPref != "blue") {
+                            colorPref = "blue"
+                            MatchRepository.leaveQueue(); MatchRepository.reset(); MatchRepository.joinQueue(mode, "blue")
+                        }
+                    }
                 }
             } else {
                 Text(
@@ -249,5 +287,30 @@ fun MatchmakingScreen(mode: String, onCancel: () -> Unit, onEnteredMatch: () -> 
                 Text("Cancel", color = Color(0xFFFF8F9C), style = MaterialTheme.typography.labelLarge)
             }
         }
+    }
+}
+
+/** Preferred-side pill — gold when active, matches web's pill styling. */
+@Composable
+private fun ColorPrefPill(label: String, active: Boolean, onClick: () -> Unit) {
+    Box(
+        modifier = Modifier
+            .clickable(onClick = onClick)
+            .background(
+                if (active) Color(0x24E8B84B) else Color(0x800F0820),
+                RoundedCornerShape(100.dp)
+            )
+            .border(
+                1.dp,
+                if (active) Color(0x8CE8B84B) else Color(0x33E8B84B),
+                RoundedCornerShape(100.dp)
+            )
+            .padding(horizontal = 16.dp, vertical = 8.dp)
+    ) {
+        Text(
+            label,
+            color = if (active) Color(0xFFF4D886) else Color(0xFF9A8BBF),
+            style = MaterialTheme.typography.labelMedium
+        )
     }
 }
