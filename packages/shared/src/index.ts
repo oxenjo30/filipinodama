@@ -5,3 +5,4 @@ export * from "./events.js";
 export * from "./dto.js";
 export * from "./ranks.js";
 export * from "./constants.js";
+export * from "./profanity.js";
