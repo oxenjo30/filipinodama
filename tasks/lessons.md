@@ -1,5 +1,14 @@
 # Lessons
 
+## 2026-07-17 - Patched a cached balance with a server response's 0-sentinel, wiping the real value
+
+- Mistake: `EconomyRepository.claimSeasonEnd()` called `patchBalances(gold = data.goldBalance, diamonds = data.diamondBalance)`. The server (`seasons.ts` end-claim) only runs the ledger for a currency it actually GRANTED; a currency with a 0 reward comes back as `*Balance = 0` — a SENTINEL, not the user's real balance. `patchBalances` treats `null` as "leave unchanged" but writes a real `0` through, so a player ranked outside the top-100 (diamonds reward = 0) had their cached diamonds overwritten to 0 on claim.
+- Cause: Assumed every `*Balance` field in a claim/purchase response is authoritative. It's only authoritative for the currency that was actually credited; unset ones default to 0. The sibling paths already knew this — `claimQuest` deliberately passes `diamonds = null` when no diamonds are granted — I didn't follow that established convention.
+- Rule:
+  1. When mirroring a server balance into the client cache, patch a currency ONLY when its reward/delta for THIS action was `> 0`. Gate on the reward amount (`if ((reward?.diamonds ?: 0) > 0) data.diamondBalance else null`), mirroring the server's own `if (reward.x > 0)` ledger guard.
+  2. A non-nullable numeric DTO field that defaults to 0 is a trap for "leave unchanged" logic — 0 is a legal balance, so `?:`/elvis can't distinguish "unset" from "genuinely zero." Prefer nullable response fields, or gate on a separate "was it granted" signal.
+  3. Follow the codebase's existing convention for the same operation class (here: `claimQuest`'s `diamonds = null`) rather than inventing a parallel one.
+
 ## 2026-07-12 - Commit landed on the wrong branch (concurrent session switched HEAD mid-task)
 
 - Mistake: Created + checked out `feat/monetization-dark`, worked for ~1h, then committed — and the commit landed on `feat/native-android-scaffold` because a concurrent session had switched the repo's checked-out branch (and added its own commit) in the meantime.

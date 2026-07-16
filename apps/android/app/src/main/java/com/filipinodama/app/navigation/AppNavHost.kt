@@ -451,7 +451,8 @@ fun AppNavHost() {
                 FriendsScreen(
                     onBack = { navController.popBackStack() },
                     onOpenProfile = { userId -> navController.navigate(AppDestinations.publicProfile(userId)) },
-                    onOpenChat = { userId -> navController.navigate(AppDestinations.dmThread(userId)) }
+                    onOpenChat = { userId -> navController.navigate(AppDestinations.dmThread(userId)) },
+                    onRequireSignIn = { navController.navigate(AppDestinations.LOGIN) }
                 )
             }
             composable(AppDestinations.NOTIFICATIONS) {

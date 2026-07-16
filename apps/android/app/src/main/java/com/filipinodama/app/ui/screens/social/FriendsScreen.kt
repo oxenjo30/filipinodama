@@ -70,7 +70,8 @@ import kotlinx.coroutines.launch
 fun FriendsScreen(
     onBack: () -> Unit,
     onOpenProfile: (String) -> Unit,
-    onOpenChat: (String) -> Unit
+    onOpenChat: (String) -> Unit,
+    onRequireSignIn: () -> Unit = {}
 ) {
     val me = AuthRepository.state.collectAsState().value.user
     val onlineSet by PresenceRepository.online.collectAsState()
@@ -123,9 +124,11 @@ fun FriendsScreen(
     }
 
     // Surface a failed social action instead of settling as if nothing happened.
+    // A mid-session token expiry surfaces an auth code here (the me==null gate only
+    // fires at load) — route those to the sign-in prompt like every other screen,
+    // rather than swallowing them silently.
     fun surface(result: SocialResult.Failure) {
-        if (isAuthError(result.code)) return  // gated actions are already login-guarded upstream
-        snackbar.show(result.message)
+        if (isAuthError(result.code)) onRequireSignIn() else snackbar.show(result.message)
     }
 
     fun accept(req: FriendRequestDto) {

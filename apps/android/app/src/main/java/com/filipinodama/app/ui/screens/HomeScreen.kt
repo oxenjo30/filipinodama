@@ -209,7 +209,11 @@ fun HomeScreen(
                     onClick = onOpenLeaderboard,
                     modifier = Modifier.weight(1f)
                 )
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                // Tighter gap between the trailing icons so the enlarged 48dp
+                // touch targets + the added Messages icon don't over-squeeze the
+                // weighted identity block on narrow (~360dp) screens. The 48dp
+                // targets already provide visual separation via their padding.
+                Row(horizontalArrangement = Arrangement.spacedBy(2.dp), verticalAlignment = Alignment.CenterVertically) {
                     WalletChip(gold = me.gold, diamonds = me.diamonds, onClick = onOpenWallet)
                     RoundIconButton(onClick = onOpenSearch, contentDescription = "Search players") {
                         SearchGlyph()

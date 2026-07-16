@@ -72,6 +72,9 @@ fun MyTicketsScreen(onBack: () -> Unit = {}) {
     LaunchedEffect(Unit) { load() }
 
     if (openId != null) {
+        // System/gesture back should return to the ticket LIST (matching the
+        // in-app back button), not pop the whole destination out to Settings.
+        androidx.activity.compose.BackHandler { openId = null }
         TicketThreadView(ticketId = openId!!, onBack = { openId = null })
         return
     }

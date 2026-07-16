@@ -144,9 +144,19 @@ object EconomyRepository {
     suspend fun claimSeasonEnd(): EconomyResult<SeasonEndClaimResponse> {
         val result = call { api.claimSeasonEnd() }
         if (result is EconomyResult.Success) {
-            // Reflect the season-end payout into the cached balances (gold always,
-            // diamonds only for a top-bracket placement that grants any).
-            patchBalances(gold = result.data.goldBalance, diamonds = result.data.diamondBalance)
+            // Reflect the season-end payout into the cached balances. The server
+            // only runs the ledger (and returns a real *Balance) for a currency it
+            // actually granted; a currency with a 0 reward comes back as
+            // *Balance = 0, which is a SENTINEL, not the user's real balance. So we
+            // must patch a currency ONLY when its reward was > 0 — otherwise we'd
+            // overwrite a real balance with 0. Gold always has a >=500 floor;
+            // diamonds are 0 outside the top-100 bracket. patchBalances treats null
+            // as "leave unchanged" (same convention as claimQuest).
+            val reward = result.data.reward
+            patchBalances(
+                gold = if ((reward?.gold ?: 0) > 0) result.data.goldBalance else null,
+                diamonds = if ((reward?.diamonds ?: 0) > 0) result.data.diamondBalance else null
+            )
         }
         return result
     }

@@ -81,9 +81,6 @@ fun SeasonScreen(onBack: () -> Unit = {}, onRequireSignIn: () -> Unit = {}) {
     // unclaimed. Null until the end-status probe returns.
     var endStatus by remember { mutableStateOf<SeasonEndStatusResponse?>(null) }
     var claimingEnd by remember { mutableStateOf(false) }
-    // Purchase-failure toast — separate from `error` (the full-screen page-load
-    // error) since a failed unlock must not blow away an already-loaded track.
-    var purchaseToast by remember { mutableStateOf<String?>(null) }
     // Standings tab (mockup seasonTabRanking) — real GET /api/leaderboard
     // global rows, the same endpoint web's LeaderboardPage uses.
     var tab by remember { mutableStateOf("rewards") }
@@ -253,7 +250,7 @@ fun SeasonScreen(onBack: () -> Unit = {}, onRequireSignIn: () -> Unit = {}) {
                                                 if (com.filipinodama.app.ui.components.isAuthError(result.code)) {
                                                     onRequireSignIn()
                                                 } else {
-                                                    purchaseToast = result.message
+                                                    snackbar.show(result.message)
                                                 }
                                             }
                                         }
@@ -285,20 +282,6 @@ fun SeasonScreen(onBack: () -> Unit = {}, onRequireSignIn: () -> Unit = {}) {
                         }
                     }
                 }
-            }
-        }
-    }
-
-    purchaseToast?.let { msg ->
-        LaunchedEffect(msg) { kotlinx.coroutines.delay(3000); purchaseToast = null }
-        Box(modifier = Modifier.fillMaxSize().padding(20.dp), contentAlignment = Alignment.BottomCenter) {
-            Box(
-                modifier = Modifier
-                    .background(Color(0xF21B1030), RoundedCornerShape(12.dp))
-                    .border(1.dp, Gold.copy(alpha = 0.4f), RoundedCornerShape(12.dp))
-                    .padding(horizontal = 16.dp, vertical = 12.dp)
-            ) {
-                Text(msg, color = GoldLt, style = MaterialTheme.typography.bodyMedium)
             }
         }
     }
