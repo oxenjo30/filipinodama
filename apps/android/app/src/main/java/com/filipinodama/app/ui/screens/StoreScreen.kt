@@ -163,7 +163,14 @@ fun StoreScreen(
             onClear = { cart = emptyList() },
             onBrowseStore = { showCheckout = false },
             onBack = { showCheckout = false },
-            onOpenTopUp = { /* dark while diamondTopUpEnabled is false; nav target TBD when diamonds go live */ },
+            // Intentional no-op. This affordance only renders when
+            // diamondTopUpEnabled is true, and diamond top-up is DARK on Android
+            // by owner directive: diamonds must NEVER be sold via an external
+            // checkout on mobile (Google Play Billing policy). If diamonds are ever
+            // enabled on Android it MUST route through Play Billing
+            // (data/billing/BillingRepository.kt), NOT an external web checkout —
+            // do not wire a web/PayMongo top-up here.
+            onOpenTopUp = { /* no-op — see comment above; Play Billing only if ever enabled */ },
             onOrderPlaced = { purchasedIds ->
                 owned = owned + purchasedIds
                 cart = cart.filter { it.id !in purchasedIds }

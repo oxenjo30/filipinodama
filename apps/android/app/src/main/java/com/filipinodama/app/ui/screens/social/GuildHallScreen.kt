@@ -37,6 +37,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import coil.compose.AsyncImage
@@ -757,8 +759,13 @@ private fun JoinRequestRow(request: GuildJoinRequestDto, busy: Boolean, onOpenPr
             CurrencyAmount(kind = CurrencyIconKind.TROPHY, text = request.user.trophies.toString(), prefix = "${request.user.tag} · ", color = Ink2, style = MaterialTheme.typography.labelSmall)
         }
         Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-            Box(modifier = Modifier.clickable(enabled = !busy, onClick = onDecline).background(Color(0x33E85D73), RoundedCornerShape(8.dp)).size(36.dp), contentAlignment = Alignment.Center) { Text("✕", color = Color(0xFFFF8398)) }
-            Box(modifier = Modifier.clickable(enabled = !busy, onClick = onAccept).background(Color(0x335FD48A), RoundedCornerShape(8.dp)).size(36.dp), contentAlignment = Alignment.Center) { Text("✓", color = Green) }
+            // 48dp min touch target (visible chip stays 36dp) + screen-reader labels.
+            Box(modifier = Modifier.size(48.dp).clickable(enabled = !busy, onClick = onDecline).semantics { contentDescription = "Decline request" }, contentAlignment = Alignment.Center) {
+                Box(modifier = Modifier.background(Color(0x33E85D73), RoundedCornerShape(8.dp)).size(36.dp), contentAlignment = Alignment.Center) { Text("✕", color = Color(0xFFFF8398)) }
+            }
+            Box(modifier = Modifier.size(48.dp).clickable(enabled = !busy, onClick = onAccept).semantics { contentDescription = "Accept request" }, contentAlignment = Alignment.Center) {
+                Box(modifier = Modifier.background(Color(0x335FD48A), RoundedCornerShape(8.dp)).size(36.dp), contentAlignment = Alignment.Center) { Text("✓", color = Green) }
+            }
         }
     }
 }

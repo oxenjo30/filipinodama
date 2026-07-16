@@ -35,6 +35,8 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.dp
@@ -118,7 +120,8 @@ fun HomeScreen(
     onOpenLeaderboard: () -> Unit = {},
     onOpenNotifications: () -> Unit = {},
     onOpenSearch: () -> Unit = {},
-    onOpenWallet: () -> Unit = {}
+    onOpenWallet: () -> Unit = {},
+    onOpenMessages: () -> Unit = {}
 ) {
     val authState by AuthRepository.state.collectAsState()
     val me = authState.user
@@ -210,6 +213,12 @@ fun HomeScreen(
                     WalletChip(gold = me.gold, diamonds = me.diamonds, onClick = onOpenWallet)
                     RoundIconButton(onClick = onOpenSearch, contentDescription = "Search players") {
                         SearchGlyph()
+                    }
+                    // Messages inbox entry point — the DM_LIST screen was built +
+                    // registered but had NO way in (threads only opened from
+                    // Friends/Profile). This surfaces the consolidated inbox.
+                    RoundIconButton(onClick = onOpenMessages, contentDescription = "Messages") {
+                        Text("✉", color = GoldLt, style = MaterialTheme.typography.titleMedium)
                     }
                     NotificationBell(unreadCount = unreadNotifs, onClick = onOpenNotifications)
                 }
@@ -385,15 +394,24 @@ private fun formatK(value: Int): String {
 
 @Composable
 private fun RoundIconButton(onClick: () -> Unit, contentDescription: String, content: @Composable () -> Unit) {
+    // 48dp min touch target (the visible circle stays 36dp) + the previously
+    // unused contentDescription is now announced to screen readers.
     Box(
         modifier = Modifier
-            .size(36.dp)
+            .size(48.dp)
             .clickable(onClick = onClick)
-            .clip(CircleShape)
-            .background(Color.White.copy(alpha = 0.05f)),
+            .semantics { this.contentDescription = contentDescription },
         contentAlignment = Alignment.Center
     ) {
-        content()
+        Box(
+            modifier = Modifier
+                .size(36.dp)
+                .clip(CircleShape)
+                .background(Color.White.copy(alpha = 0.05f)),
+            contentAlignment = Alignment.Center
+        ) {
+            content()
+        }
     }
 }
 

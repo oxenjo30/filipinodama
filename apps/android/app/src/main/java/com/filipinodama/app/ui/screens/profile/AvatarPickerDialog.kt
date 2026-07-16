@@ -35,6 +35,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
@@ -134,13 +136,20 @@ fun AvatarPickerDialog(onClose: () -> Unit) {
                     Text("Edit Avatar", color = Color(0xFFF4D886), style = MaterialTheme.typography.titleLarge)
                     Text("Choose your look & profile frame", color = Color(0xFF9A8BBF), style = MaterialTheme.typography.labelSmall, modifier = Modifier.padding(top = 2.dp))
                 }
+                // 48dp min touch target (visible chip stays 34dp) + a11y label.
                 Box(
-                    modifier = Modifier.size(34.dp)
+                    modifier = Modifier.size(48.dp)
                         .clickable(onClick = onClose)
-                        .background(Color(0x4D000000), RoundedCornerShape(10.dp))
-                        .border(1.dp, Color(0x33E8B84B), RoundedCornerShape(10.dp)),
+                        .semantics { contentDescription = "Close" },
                     contentAlignment = Alignment.Center
-                ) { Text("✕", color = Color(0xFF9A8BBF), style = MaterialTheme.typography.titleMedium) }
+                ) {
+                    Box(
+                        modifier = Modifier.size(34.dp)
+                            .background(Color(0x4D000000), RoundedCornerShape(10.dp))
+                            .border(1.dp, Color(0x33E8B84B), RoundedCornerShape(10.dp)),
+                        contentAlignment = Alignment.Center
+                    ) { Text("✕", color = Color(0xFF9A8BBF), style = MaterialTheme.typography.titleMedium) }
+                }
             }
 
             when {

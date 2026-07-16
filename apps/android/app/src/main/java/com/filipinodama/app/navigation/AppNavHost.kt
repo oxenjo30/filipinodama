@@ -73,6 +73,7 @@ import com.filipinodama.app.ui.screens.profile.MatchDetailScreen
 import com.filipinodama.app.ui.screens.profile.PublicProfileScreen
 import com.filipinodama.app.ui.screens.profile.ReplayViewerScreen
 import com.filipinodama.app.ui.screens.settings.LegalScreen
+import com.filipinodama.app.ui.screens.settings.MyTicketsScreen
 import com.filipinodama.app.ui.screens.settings.SettingsScreen
 import com.filipinodama.app.ui.screens.system.MaintenanceScreen
 import com.filipinodama.app.ui.screens.system.OfflineBanner
@@ -368,7 +369,8 @@ fun AppNavHost() {
                     onOpenLeaderboard = { navController.navigate(AppDestinations.LEADERBOARD) },
                     onOpenNotifications = { navController.navigate(AppDestinations.NOTIFICATIONS) },
                     onOpenSearch = { navController.navigate(AppDestinations.GLOBAL_SEARCH) },
-                    onOpenWallet = { navController.navigate(AppDestinations.WALLET) }
+                    onOpenWallet = { navController.navigate(AppDestinations.WALLET) },
+                    onOpenMessages = { navController.navigate(AppDestinations.DM_LIST) }
                 )
             }
             composable(AppDestinations.STORE) {
@@ -429,8 +431,12 @@ fun AppNavHost() {
                     onBack = { navController.popBackStack() },
                     onSignedOut = { goClearingStack(AppDestinations.LOGIN) },
                     onOpenInventory = { navController.navigate(AppDestinations.INVENTORY) },
-                    onOpenLegal = { doc -> navController.navigate(AppDestinations.legal(doc)) }
+                    onOpenLegal = { doc -> navController.navigate(AppDestinations.legal(doc)) },
+                    onOpenTickets = { navController.navigate(AppDestinations.MY_TICKETS) }
                 )
+            }
+            composable(AppDestinations.MY_TICKETS) {
+                MyTicketsScreen(onBack = { navController.popBackStack() })
             }
             composable(
                 route = AppDestinations.LEGAL,

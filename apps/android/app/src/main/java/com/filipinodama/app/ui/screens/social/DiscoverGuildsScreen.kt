@@ -36,6 +36,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
@@ -154,14 +156,21 @@ fun DiscoverGuildsScreen(onBack: () -> Unit, onRequireSignIn: () -> Unit = {}) {
                     )
                 }
                 if (query.isNotEmpty()) {
+                    // 48dp min touch target (the visible chip stays 20dp); labelled
+                    // for screen readers.
                     Box(
                         modifier = Modifier
-                            .size(20.dp)
+                            .size(48.dp)
                             .clickable { query = ""; loadBrowse("") }
-                            .background(Color(0x29C9A4FF), CircleShape),
+                            .semantics { contentDescription = "Clear search" },
                         contentAlignment = Alignment.Center
                     ) {
-                        Text("×", color = Color(0xFFC9A4FF), style = MaterialTheme.typography.labelMedium)
+                        Box(
+                            modifier = Modifier.size(20.dp).background(Color(0x29C9A4FF), CircleShape),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text("×", color = Color(0xFFC9A4FF), style = MaterialTheme.typography.labelMedium)
+                        }
                     }
                 }
             }
