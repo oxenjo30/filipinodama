@@ -216,7 +216,7 @@ describe("real spectator counts", () => {
     // listOpenRooms() (exercised indirectly here via the REST-facing contract:
     // the same spectatorCount the module reads) must report the same real count.
     const { spectatorCount } = await import("../src/realtime/match.js");
-    expect(spectatorCount(matchId)).toBe(1);
+    expect(await spectatorCount(matchId)).toBe(1);
   }, 15000);
 });
 

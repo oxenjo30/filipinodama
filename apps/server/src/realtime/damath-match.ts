@@ -14,30 +14,101 @@ import {
 } from "@dama/game-engine";
 import { prisma } from "../db/client.js";
 import { allow } from "./rate-limit.js";
+import { redis, getJSON, casJSON, delKey, withLock, LOCK_BUSY, RT_TTL } from "./store.js";
 
 /**
- * SERVER-AUTHORITATIVE Math Dama match loop. Parallel to match.ts but its OWN
- * file so Classic is never destabilised, and deliberately SIMPLER: Damath is
- * unranked with no economy at launch (spec §7). No trophies/gold/ledger, no
- * quests, no rematch/chat. The server holds the one true DamathGameState per
- * match, validates every intent with the engine, broadcasts new state + scores,
+ * SERVER-AUTHORITATIVE Math Dama match loop (Redis-scaled). Parallel to match.ts
+ * but its OWN file so Classic is never destabilised, and deliberately SIMPLER:
+ * Damath is unranked with no economy at launch (spec §7). No trophies/gold/ledger,
+ * no quests, no rematch/chat. The one true DamathGameState per match lives in
+ * REDIS (rt:d:match:<id>), so any instance in the cluster can serve any player.
+ * The server validates every intent with the engine, broadcasts new state + scores,
  * and persists a DamathMatch row (scores + history) for replay/stats on settle.
+ *
+ * Every state change flows through `mutateDamath` (withLock + versioned CAS) so
+ * two instances can never corrupt a match. Settlement is DB-gated
+ * (`damathMatch.updateMany({ where:{id, endedAt:null} })`) so it happens exactly
+ * once cluster-wide — the in-memory `settled` boolean is gone.
  */
 
-type LiveDamathMatch = {
+// A version field is added for CAS (mirrors StoredMatch in match.ts). Damath is
+// web-only product-wise, but shares this binary, so it must be replica-safe.
+type StoredDamathMatch = {
   matchId: string;
   redId: string | null;
   blueId: string | null;
   variant: DamathVariant;
   state: DamathGameState;
-  settled: boolean;
+  version: number;
 };
 
-/** matchId -> authoritative live state. */
-const live: Map<string, LiveDamathMatch> = new Map();
+const RD_TTL = RT_TTL;
+const dMatchKey = (id: string) => `rt:d:match:${id}`;
+// Per-user index of live Damath matchIds (mirrors classic rt:userMatch) so a
+// disconnecting socket can find its matches without an in-memory scan.
+const dUserMatchKey = (uid: string) => `rt:d:userMatch:${uid}`;
 
-/** Abandonment: forfeit to the opponent if a player disconnects and does not
- *  reconnect (resync) within the window. Keyed `matchId:userId`. */
+async function getDamathMatch(matchId: string): Promise<StoredDamathMatch | null> {
+  return getJSON<StoredDamathMatch>(dMatchKey(matchId));
+}
+async function saveDamathMatch(m: StoredDamathMatch): Promise<boolean> {
+  return casJSON(dMatchKey(m.matchId), m, RD_TTL);
+}
+async function removeDamathMatch(m: StoredDamathMatch | string): Promise<void> {
+  // Accept a full match (so we can drop the per-user index) or a bare id.
+  if (typeof m === "string") {
+    await delKey(dMatchKey(m));
+    return;
+  }
+  const p = redis.pipeline();
+  p.del(dMatchKey(m.matchId));
+  if (m.redId) p.srem(dUserMatchKey(m.redId), m.matchId);
+  if (m.blueId) p.srem(dUserMatchKey(m.blueId), m.matchId);
+  await p.exec();
+}
+async function damathMatchIdsForUser(userId: string): Promise<string[]> {
+  return redis.smembers(dUserMatchKey(userId));
+}
+
+/**
+ * mutateDamath — the ONE path for every Damath state change (move, resign,
+ * abandon). Serializes on a Redis lock, reads the authoritative state, runs
+ * `mutate` (returns the NEXT DamathGameState or null to abort), CAS-writes it,
+ * then runs `afterSave` (broadcast + settle) once the write landed. Retries ONCE
+ * on a CAS conflict with a fresh read. Returns "ok"/"busy"/"gone"/"aborted".
+ */
+async function mutateDamath(
+  matchId: string,
+  mutate: (lm: StoredDamathMatch) => DamathGameState | null,
+  afterSave: (lm: StoredDamathMatch) => Promise<void>,
+): Promise<"ok" | "busy" | "gone" | "aborted"> {
+  for (let round = 0; round < 2; round++) {
+    const res = await withLock(`d-match:${matchId}`, async () => {
+      const lm = await getDamathMatch(matchId);
+      if (!lm) return "gone" as const;
+      const next = mutate(lm);
+      if (!next) return "aborted" as const;
+      const updated: StoredDamathMatch = { ...lm, state: next };
+      if (!(await saveDamathMatch(updated))) return "conflict" as const;
+      await afterSave(updated);
+      return "ok" as const;
+    });
+    if (res === LOCK_BUSY) return "busy";
+    if (res !== "conflict") return res;
+  }
+  return "busy";
+}
+
+/**
+ * Abandonment: forfeit to the opponent if a player disconnects and does not
+ * reconnect (resync) within the window. Kept as an in-process timer registry
+ * (Damath has no durable job type of its own, and this is a best-effort forfeit
+ * on an unranked/no-economy mode) whose CALLBACK is Redis-authoritative:
+ * it re-checks presence cluster-wide and settles through the lock+CAS+DB-gated
+ * path, so a reconnect anywhere cancels it and it can never double-settle. Keyed
+ * `matchId:userId`. If the arming instance dies the forfeit won't fire from
+ * another instance — acceptable for Damath (see T8 concern in the report).
+ */
 const ABANDON_MS = 45_000;
 const abandonTimers: Map<string, NodeJS.Timeout> = new Map();
 const abandonKey = (matchId: string, userId: string) => `${matchId}:${userId}`;
@@ -50,25 +121,34 @@ function clearAbandon(matchId: string, userId: string): void {
   }
 }
 
-/** Seed a live Damath match. Called by damath matchmaking on pairing. */
-export function createLiveDamathMatch(
+/**
+ * Seed a live Damath match into Redis. Called by damath matchmaking / rooms on
+ * pairing. ASYNC now (state lives in Redis): callers must `await`.
+ */
+export async function createLiveDamathMatch(
   matchId: string,
   redId: string | null,
   blueId: string | null,
   variant: DamathVariant,
-): LiveDamathMatch {
+): Promise<StoredDamathMatch> {
   const state = createInitialDamathState(variant, matchId);
-  const lm: LiveDamathMatch = { matchId, redId, blueId, variant, state, settled: false };
-  live.set(matchId, lm);
-  return lm;
+  const lm: StoredDamathMatch = { matchId, redId, blueId, variant, state, version: 0 };
+  await casJSON(dMatchKey(matchId), lm, RD_TTL);
+  const p = redis.pipeline();
+  if (redId) { p.sadd(dUserMatchKey(redId), matchId); p.expire(dUserMatchKey(redId), RD_TTL); }
+  if (blueId) { p.sadd(dUserMatchKey(blueId), matchId); p.expire(dUserMatchKey(blueId), RD_TTL); }
+  await p.exec();
+  return { ...lm, version: 1 };
 }
 
 /** Drop a live match's state without settling (e.g. never started). */
-export function endLiveDamathMatch(matchId: string): void {
-  live.delete(matchId);
+export async function endLiveDamathMatch(matchId: string): Promise<void> {
+  const lm = await getDamathMatch(matchId);
+  if (lm) await removeDamathMatch(lm);
+  else await removeDamathMatch(matchId);
 }
 
-const colorOf = (lm: LiveDamathMatch, userId: string): DamathPlayerId | null =>
+const colorOf = (lm: StoredDamathMatch, userId: string): DamathPlayerId | null =>
   lm.redId === userId ? "red" : lm.blueId === userId ? "blue" : null;
 
 /** Has the side to move any legal reply / any pieces? */
@@ -80,20 +160,21 @@ function terminalReason(next: DamathGameState) {
 }
 
 /**
- * Settle a finished Damath match exactly once: persist the DamathMatch row
- * (final scores incl. chip bonus, score events, move history) and broadcast
- * damathEnded. No economy. Then drop from memory.
+ * Settle a finished Damath match exactly once, cluster-wide: a DB gate
+ * (`updateMany({ where:{id, endedAt:null} })`) means only the instance whose
+ * write lands persists scores/history + broadcasts damathEnded; any racer sees
+ * count===0 and returns. Then drop from Redis. No economy. Expects `lm.state`
+ * to already carry `.result`.
  */
-async function settleDamathMatch(io: IOServer, lm: LiveDamathMatch): Promise<void> {
-  if (lm.settled) return;
+async function settleDamathMatch(io: IOServer, lm: StoredDamathMatch): Promise<void> {
   const result = lm.state.result;
   if (!result) return;
-  lm.settled = true;
 
   const scoreHistory = lm.state.history.flatMap((r) => r.scoreEvents);
+  let gateCount = 0;
   try {
-    await prisma.damathMatch.update({
-      where: { id: lm.matchId },
+    const gate = await prisma.damathMatch.updateMany({
+      where: { id: lm.matchId, endedAt: null },
       data: {
         redScore: result.redScore,
         blueScore: result.blueScore,
@@ -104,31 +185,19 @@ async function settleDamathMatch(io: IOServer, lm: LiveDamathMatch): Promise<voi
         endedAt: new Date(),
       },
     });
+    gateCount = gate.count;
   } catch (e) {
     console.error("[damath-match] failed to persist result", lm.matchId, e);
+    return; // DB failure ⇒ we did NOT win the gate — don't broadcast an unpersisted settle
+  }
+  if (gateCount === 0) {
+    // Another instance already settled — still drop our Redis copy defensively.
+    await removeDamathMatch(lm);
+    return;
   }
 
   io.to(lm.matchId).emit(EV.damathEnded, { matchId: lm.matchId, result, state: lm.state });
-  live.delete(lm.matchId);
-}
-
-/** Apply a validated move, persist running history, broadcast, settle if over. */
-async function commitDamathMove(io: IOServer, lm: LiveDamathMatch, next: DamathGameState) {
-  const reason = terminalReason(next);
-  if (reason) {
-    lm.state = { ...next, result: checkDamathEnd(next, reason) };
-    io.to(lm.matchId).emit(EV.damathMoved, { matchId: lm.matchId, state: lm.state });
-    await settleDamathMatch(io, lm);
-    return;
-  }
-  lm.state = next;
-  prisma.damathMatch
-    .update({
-      where: { id: lm.matchId },
-      data: { moveHistory: next.history as unknown as object },
-    })
-    .catch((e) => console.error("[damath-match] move persist failed", lm.matchId, e));
-  io.to(lm.matchId).emit(EV.damathMoved, { matchId: lm.matchId, state: next });
+  await removeDamathMatch(lm);
 }
 
 export function registerDamathMatch(io: IOServer, socket: Socket) {
@@ -147,63 +216,93 @@ export function registerDamathMatch(io: IOServer, socket: Socket) {
         return;
       }
 
-      const lm = live.get(matchId);
-      if (!lm) {
+      // settle-if-terminal is decided inside mutate and carried out in afterSave.
+      let settled: StoredDamathMatch | null = null;
+      const res = await mutateDamath(
+        matchId,
+        (lm) => {
+          const myColor = colorOf(lm, userId);
+          if (!myColor) {
+            socket.emit(EV.damathIllegal, { matchId, reason: "not-a-player" });
+            return null;
+          }
+          if (lm.state.result) {
+            socket.emit(EV.damathIllegal, { matchId, reason: "match-over" });
+            return null;
+          }
+          if (lm.state.turn !== myColor) {
+            socket.emit(EV.damathIllegal, { matchId, reason: "not-your-turn" });
+            return null;
+          }
+          // Authoritative: find the legal move for this piece landing on `to`.
+          const legal = getAllLegalDamathMoves(lm.state).find((m) => {
+            if (m.pieceId !== pieceId) return false;
+            const landing = m.path[m.path.length - 1];
+            return landing.x === to.x && landing.y === to.y;
+          });
+          if (!legal) {
+            socket.emit(EV.damathIllegal, { matchId, reason: "illegal-move" });
+            return null;
+          }
+          let next: DamathGameState;
+          try {
+            next = applyDamathMove(lm.state, legal);
+          } catch {
+            socket.emit(EV.damathIllegal, { matchId, reason: "illegal-move" });
+            return null;
+          }
+          // If the move ends the game, fold the result into the state we store so
+          // afterSave broadcasts the final board and settles.
+          const reason = terminalReason(next);
+          return reason ? { ...next, result: checkDamathEnd(next, reason) } : next;
+        },
+        async (lm) => {
+          io.to(matchId).emit(EV.damathMoved, { matchId, state: lm.state });
+          if (lm.state.result) {
+            settled = lm;
+          } else {
+            prisma.damathMatch
+              .update({ where: { id: matchId }, data: { moveHistory: lm.state.history as unknown as object } })
+              .catch((e) => console.error("[damath-match] move persist failed", matchId, e));
+          }
+        },
+      );
+      if (res === "gone") {
         socket.emit(EV.damathIllegal, { matchId, reason: "no-such-match" });
         return;
       }
-      const myColor = colorOf(lm, userId);
-      if (!myColor) {
-        socket.emit(EV.damathIllegal, { matchId, reason: "not-a-player" });
+      if (res === "busy") {
+        socket.emit(EV.damathIllegal, { matchId, reason: "busy" });
         return;
       }
-      if (lm.state.result) {
-        socket.emit(EV.damathIllegal, { matchId, reason: "match-over" });
-        return;
-      }
-      if (lm.state.turn !== myColor) {
-        socket.emit(EV.damathIllegal, { matchId, reason: "not-your-turn" });
-        return;
-      }
-
-      // Authoritative: find the legal move for this piece landing on `to`.
-      const legal = getAllLegalDamathMoves(lm.state).find((m) => {
-        if (m.pieceId !== pieceId) return false;
-        const landing = m.path[m.path.length - 1];
-        return landing.x === to.x && landing.y === to.y;
-      });
-      if (!legal) {
-        socket.emit(EV.damathIllegal, { matchId, reason: "illegal-move" });
-        return;
-      }
-
-      let next: DamathGameState;
-      try {
-        next = applyDamathMove(lm.state, legal);
-      } catch {
-        socket.emit(EV.damathIllegal, { matchId, reason: "illegal-move" });
-        return;
-      }
-      await commitDamathMove(io, lm, next);
+      if (settled) await settleDamathMatch(io, settled);
     },
   );
 
   socket.on(EV.damathResign, async (payload: { matchId?: unknown } = {}) => {
     const matchId = typeof payload?.matchId === "string" ? payload.matchId : null;
     if (!matchId) return;
-    const lm = live.get(matchId);
-    if (!lm || lm.settled || lm.state.result) return;
-    const myColor = colorOf(lm, userId);
-    if (!myColor) return;
-    // Resign: the resigning side loses outright, no chip bonus.
-    lm.state = { ...lm.state, result: checkDamathEnd({ ...lm.state, turn: myColor }, "resign") };
-    await settleDamathMatch(io, lm);
+    let resigned: StoredDamathMatch | null = null;
+    await mutateDamath(
+      matchId,
+      (lm) => {
+        if (lm.state.result) return null;
+        const myColor = colorOf(lm, userId);
+        if (!myColor) return null;
+        // Resign: the resigning side loses outright, no chip bonus.
+        return { ...lm.state, result: checkDamathEnd({ ...lm.state, turn: myColor }, "resign") };
+      },
+      async (lm) => {
+        resigned = lm;
+      },
+    );
+    if (resigned) await settleDamathMatch(io, resigned);
   });
 
-  socket.on(EV.damathResync, (payload: { matchId?: unknown } = {}) => {
+  socket.on(EV.damathResync, async (payload: { matchId?: unknown } = {}) => {
     const matchId = typeof payload?.matchId === "string" ? payload.matchId : null;
     if (!matchId) return;
-    const lm = live.get(matchId);
+    const lm = await getDamathMatch(matchId);
     if (!lm) {
       socket.emit(EV.damathIllegal, { matchId, reason: "no-such-match" });
       return;
@@ -233,30 +332,50 @@ export function registerDamathMatch(io: IOServer, socket: Socket) {
   });
 
   // ── Abandonment forfeit: if this was the user's last socket and they don't
-  //    reconnect within ABANDON_MS, the opponent wins by abandonment. ──
+  //    reconnect within ABANDON_MS, the opponent wins by abandonment. Presence is
+  //    checked cluster-wide (fetchSockets) and the forfeit is applied via the
+  //    lock+CAS+DB-gated settle path. ──
   socket.on("disconnect", () => {
     setTimeout(() => {
-      const room = io.sockets.adapter.rooms.get(`presence:${userId}`);
-      if (room && room.size > 0) return; // reconnected on another socket
-      for (const lm of live.values()) {
-        if (lm.settled || lm.state.result) continue;
-        const color = colorOf(lm, userId);
-        if (!color) continue;
-        const k = abandonKey(lm.matchId, userId);
-        if (abandonTimers.has(k)) continue;
-        const t = setTimeout(() => {
-          abandonTimers.delete(k);
-          const cur = live.get(lm.matchId);
-          if (!cur || cur.settled || cur.state.result) return;
-          // Abandonment settles as a resign-style loss for the absent side, so
-          // the present opponent wins outright.
-          cur.state = { ...cur.state, result: checkDamathEnd({ ...cur.state, turn: color }, "resign") };
-          void settleDamathMatch(io, cur).catch((e) =>
-            console.error("[damath-match] abandon settle failed", e),
-          );
-        }, ABANDON_MS);
-        abandonTimers.set(k, t);
-      }
+      void (async () => {
+        const socks = await io.in(`presence:${userId}`).fetchSockets();
+        if (socks.length > 0) return; // reconnected somewhere in the cluster
+        // Find the live Damath matches this user is still playing via the
+        // per-user index (rt:d:userMatch:<uid>) — socket.rooms is already cleared
+        // by the time this deferred handler runs.
+        for (const matchId of await damathMatchIdsForUser(userId)) {
+          const lm = await getDamathMatch(matchId);
+          if (!lm || lm.state.result) continue;
+          if (!colorOf(lm, userId)) continue; // not a player in this match
+          const k = abandonKey(matchId, userId);
+          if (abandonTimers.has(k)) continue;
+          const t = setTimeout(() => {
+            abandonTimers.delete(k);
+            void (async () => {
+              // Re-check presence cluster-wide at fire time (a reconnect in the
+              // grace window cancels the forfeit).
+              const still = await io.in(`presence:${userId}`).fetchSockets();
+              if (still.length > 0) return;
+              let settled: StoredDamathMatch | null = null;
+              await mutateDamath(
+                matchId,
+                (cur) => {
+                  if (cur.state.result) return null;
+                  const color = colorOf(cur, userId);
+                  if (!color) return null;
+                  // Abandonment settles as a resign-style loss for the absent side.
+                  return { ...cur.state, result: checkDamathEnd({ ...cur.state, turn: color }, "resign") };
+                },
+                async (cur) => {
+                  settled = cur;
+                },
+              );
+              if (settled) await settleDamathMatch(io, settled);
+            })().catch((e) => console.error("[damath-match] abandon settle failed", e));
+          }, ABANDON_MS);
+          abandonTimers.set(k, t);
+        }
+      })().catch((e) => console.error("[damath-match] abandon schedule failed", e));
     }, 500);
   });
 

@@ -10,6 +10,6 @@ export async function roomRoutes(app: FastifyInstance) {
   // the realtime layer owns — see realtime/rooms.ts myRoomCode() for why no
   // recency gate is needed.
   app.get("/rooms/mine", { preHandler: requireAuth }, async (req) => {
-    return ok({ code: myRoomCode(req.userId!) });
+    return ok({ code: await myRoomCode(req.userId!) });
   });
 }

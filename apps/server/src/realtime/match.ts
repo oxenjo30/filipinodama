@@ -16,95 +16,133 @@ import { applyLedger } from "../economy/ledger.js";
 import { awardWarPointsTx } from "../lib/guild-wars.js";
 import { allow } from "./rate-limit.js";
 import { questAdvanceFor, type MatchQuestContext } from "../lib/quest-trigger.js";
+import {
+  type StoredMatch,
+  getMatch,
+  createMatch,
+  saveMatch,
+  removeMatch,
+  matchIdsForUser,
+  withLock,
+  LOCK_BUSY,
+  getJSON,
+  setJSON,
+  delKey,
+  spectatorAdd,
+  spectatorRemove,
+  spectatorCount as storeSpectatorCount,
+  spectatorClear,
+  spectatorMatchesForSocket,
+} from "./store.js";
+import { scheduleJob, cancelJob } from "./jobs.js";
 
 /**
- * SERVER-AUTHORITATIVE match loop.
+ * SERVER-AUTHORITATIVE match loop (Redis-scaled).
  *
- * The server holds the one true GameState per live match in memory (seeded at
- * match start). The client NEVER decides legality or outcome: every EV.matchMove
- * is validated with the game engine before it is applied and broadcast. When the
- * engine reports a result, the match is settled once (Match row written + trophy
- * and gold deltas applied through the ledger) and removed from memory.
+ * The one true GameState per live match lives in REDIS (rt:match:<id>), so any
+ * instance in the cluster can serve any player. The client NEVER decides legality
+ * or outcome: every EV.matchMove is validated with the game engine before it is
+ * applied and broadcast. Every state change flows through `mutateMatch`
+ * (withLock + versioned CAS) so two instances can never corrupt a match. When the
+ * engine reports a result, the match is settled EXACTLY ONCE via a DB gate
+ * (`match.updateMany({ where:{id, endedAt:null} })`): the instance whose write
+ * lands (count===1) applies the ledger grants and broadcasts matchEnded; any
+ * racer (count===0) returns before granting anything. The ledger's unique index
+ * is the second wall behind that gate.
+ *
+ * NOTE: `StoredMatch.settled` no longer exists — the DB gate replaces the old
+ * in-memory `settled` boolean cluster-wide.
  */
-
-type LiveMatch = {
-  matchId: string;
-  redId: string | null;
-  blueId: string | null;
-  mode: PrismaMatchMode;
-  state: GameState;
-  /** guards against double-settlement (result reached + resign racing). */
-  settled: boolean;
-  /**
-   * When this match was filled with a BOT (empty-queue fallback), this is the
-   * bot's colour. The server plays the bot's turns with the game engine via the
-   * same authoritative apply/broadcast path as a human. undefined = all-human.
-   */
-  botColor?: PieceColor;
-};
-
-/** matchId -> authoritative live state. */
-const live: Map<string, LiveMatch> = new Map();
 
 /**
- * Real spectator counts — matchId -> userId -> set of that user's socket ids
- * watching THIS match. Mirrors presence.ts's online-socket-set pattern
- * (multi-tab safe: a user with two tabs open on the same match still counts
- * once, and only drops when their LAST socket for that match is gone). Never
- * seeded, never bumped artificially — the count is exactly the number of
- * distinct users currently joined to the match's spectator room.
+ * mutateMatch — the ONE path for every match state change (move, resign, forfeit,
+ * abandon, bot-move, rematch-driven). Serializes on a Redis lock, reads the
+ * authoritative StoredMatch, runs `mutate` (which returns the NEXT GameState or
+ * null to abort silently), CAS-writes it, then runs `afterSave` (broadcast +
+ * settle) once the write landed. On a CAS conflict (a racer committed between our
+ * GET and SET while our lock had expired) it retries ONCE with a fresh read.
+ *
+ * Returns:
+ *   "ok"      — mutate produced a next state, the CAS write landed, afterSave ran
+ *   "busy"    — lock never acquired, or CAS lost twice (caller should tell the
+ *               client to retry; never a silent drop)
+ *   "gone"    — no such match in Redis
+ *   "aborted" — mutate returned null (validation failed / nothing to do)
  */
-const spectators: Map<string, Map<string, Set<string>>> = new Map();
-
-/** The real number of distinct users currently spectating `matchId`. */
-export function spectatorCount(matchId: string): number {
-  return spectators.get(matchId)?.size ?? 0;
+async function mutateMatch(
+  io: IOServer,
+  matchId: string,
+  mutate: (lm: StoredMatch) => GameState | null,
+  afterSave: (lm: StoredMatch) => Promise<void>,
+): Promise<"ok" | "busy" | "gone" | "aborted"> {
+  for (let round = 0; round < 2; round++) {
+    const res = await withLock(`match:${matchId}`, async () => {
+      const lm = await getMatch(matchId);
+      if (!lm) return "gone" as const;
+      const next = mutate(lm);
+      if (!next) return "aborted" as const;
+      const updated: StoredMatch = { ...lm, state: next };
+      if (!(await saveMatch(updated))) return "conflict" as const;
+      await afterSave(updated);
+      return "ok" as const;
+    });
+    if (res === LOCK_BUSY) return "busy";
+    if (res !== "conflict") return res;
+  }
+  return "busy";
 }
 
-/** Broadcast the current count to everyone in the match room (players + spectators). */
-function broadcastSpectatorCount(io: IOServer, matchId: string): void {
-  io.to(matchId).emit(EV.spectateCount, { matchId, viewers: spectatorCount(matchId) });
+/**
+ * Real spectator counts are now cluster-wide, tracked in Redis via the store's
+ * SET-based spectator wrappers (rt:spect:<matchId> of userIds + per-user socket
+ * sets). Multi-tab safe (a user with two tabs still counts once) and instance-
+ * agnostic: a viewer joined on instance A is counted by instance B. The count is
+ * exactly the number of distinct users currently joined to the match's spectator
+ * room, never seeded or bumped artificially. The store's add/remove Lua scripts
+ * return the fresh unique-user SCARD, so we broadcast the value they hand back
+ * (no separate re-read) — and only on a real membership change.
+ */
+
+/** The real number of distinct users currently spectating `matchId` (async — the
+ *  authoritative set lives in Redis). */
+export async function spectatorCount(matchId: string): Promise<number> {
+  return storeSpectatorCount(matchId);
+}
+
+/** Broadcast a spectator count to everyone in the match room (players + spectators).
+ *  Payload is byte-identical to the pre-Redis shape ({ matchId, viewers }). */
+function broadcastSpectatorCount(io: IOServer, matchId: string, viewers: number): void {
+  io.to(matchId).emit(EV.spectateCount, { matchId, viewers });
 }
 
 /**
  * Register one socket as watching `matchId`. Exported so both the by-id
  * spectate path in this module (EV.spectateJoin) and the by-room-code path
  * (rooms.ts roomSpectate, when a late spectator joins a room whose match is
- * already live) count toward the same real total — a viewer is a viewer
- * regardless of which door they came in.
+ * already live) count toward the same real cluster-wide total — a viewer is a
+ * viewer regardless of which door they came in. The store add script returns the
+ * fresh unique-user count; broadcast only when it actually changed (a repeat
+ * socket for an already-watching user must not re-emit).
  */
-export function addSpectatorSocket(io: IOServer, matchId: string, userId: string, socketId: string): void {
-  let byUser = spectators.get(matchId);
-  if (!byUser) {
-    byUser = new Map();
-    spectators.set(matchId, byUser);
-  }
-  const wasWatching = byUser.has(userId);
-  const set = byUser.get(userId) ?? new Set<string>();
-  set.add(socketId);
-  byUser.set(userId, set);
-  if (!wasWatching) broadcastSpectatorCount(io, matchId);
+export async function addSpectatorSocket(io: IOServer, matchId: string, userId: string, socketId: string): Promise<void> {
+  const before = await storeSpectatorCount(matchId);
+  const after = await spectatorAdd(matchId, userId, socketId);
+  if (after !== before) broadcastSpectatorCount(io, matchId, after);
 }
 
 /** Remove one socket from a match's spectator set; only changes the count if
  *  that was the user's LAST socket watching this match. */
-export function removeSpectatorSocket(io: IOServer, matchId: string, userId: string, socketId: string): void {
-  const byUser = spectators.get(matchId);
-  const set = byUser?.get(userId);
-  if (!set) return;
-  set.delete(socketId);
-  if (set.size === 0) {
-    byUser!.delete(userId);
-    if (byUser!.size === 0) spectators.delete(matchId);
-    broadcastSpectatorCount(io, matchId);
-  }
+export async function removeSpectatorSocket(io: IOServer, matchId: string, userId: string, socketId: string): Promise<void> {
+  const before = await storeSpectatorCount(matchId);
+  const after = await spectatorRemove(matchId, userId, socketId);
+  if (after !== before) broadcastSpectatorCount(io, matchId, after);
 }
 
 /** Drop ALL spectator tracking for a match (called on settlement/cleanup so a
  *  finished match never leaks a stale entry). No broadcast — the match room is
  *  going away (matchEnded already told everyone). */
-function clearSpectators(matchId: string): void {
-  spectators.delete(matchId);
+async function clearSpectators(matchId: string): Promise<void> {
+  await spectatorClear(matchId);
 }
 
 /**
@@ -119,6 +157,17 @@ function clearSpectators(matchId: string): void {
 const matchEndHooks: Array<(matchId: string) => void> = [];
 export function onMatchEnd(hook: (matchId: string) => void): void {
   matchEndHooks.push(hook);
+}
+/** Fire every registered match-end hook for `matchId`. Best-effort — a throwing
+ *  hook never breaks the caller. Used by settleMatch and the abandon sweeper. */
+function runMatchEndHooks(matchId: string): void {
+  for (const hook of matchEndHooks) {
+    try {
+      hook(matchId);
+    } catch (e) {
+      console.error("[match] onMatchEnd hook failed", matchId, e);
+    }
+  }
 }
 
 /**
@@ -136,15 +185,101 @@ export function onMatchEnd(hook: (matchId: string) => void): void {
  * abandoned game before the waiting opponent gives up.
  */
 const ABANDON_MS = 90_000;
-const abandonTimers: Map<string, NodeJS.Timeout> = new Map();
 const abandonKey = (matchId: string, userId: string) => `${matchId}:${userId}`;
+/** Cancel a pending abandonment forfeit (the player reconnected/resynced). The
+ *  job key mirrors the abandonKey used when arming it. */
 function clearAbandon(matchId: string, userId: string): void {
-  const k = abandonKey(matchId, userId);
-  const t = abandonTimers.get(k);
-  if (t) {
-    clearTimeout(t);
-    abandonTimers.delete(k);
+  void cancelJob("abandon-forfeit", abandonKey(matchId, userId));
+}
+
+/**
+ * Backstop sweeper for the abandon-forfeit job (final-review finding #3).
+ *
+ * The Redis job queue is AT-MOST-ONCE, not exactly-once: a poller that CLAIMs
+ * (ZREMs) an abandon-forfeit job and then dies mid-handler loses it — no instance
+ * retries, so a genuinely-abandoned match would stay endedAt:null forever (the
+ * waiting opponent stranded, a ranked loss dodged). Money never doubles (the
+ * settle DB-gate is the wall), but liveness/fairness would break without a
+ * backstop. This sweep is that backstop: a slow, periodic reconciliation that
+ * force-settles matches the job pipeline dropped.
+ *
+ * It queries the DB (the durable source of truth — `Match` has @@index([mode,
+ * endedAt]) so open matches are cheap to find) for still-open matches older than
+ * a grace window, and for each:
+ *   • if the Redis state is still present with no result and a player is offline
+ *     cluster-wide → route through handleAbandonForfeit (the SAME lock+CAS+DB-
+ *     gated settle every outcome uses — idempotent + money-safe by construction);
+ *   • if the Redis state is GONE (fully lost) but the row is still open → close it
+ *     with a DB-GATED draw/abandon. We can't reconstruct who was winning, so we
+ *     never award a win to an unknowable player; a draw moves no trophies and no
+ *     gold. Settling the row is what unstrands the opponent.
+ *
+ * The grace window (STRANDED_MS) is deliberately well past ABANDON_MS so a match
+ * being settled by the normal job path in real time is never swept out from under
+ * it — the sweep only ever catches matches the pipeline already failed to close.
+ */
+const STRANDED_MS = 5 * 60_000; // 5 min: comfortably past ABANDON_MS (90s) + poll jitter
+const SWEEP_BATCH = 50; // cap work per tick; the next tick catches the rest
+
+export async function sweepAbandonedMatches(io: IOServer): Promise<{ swept: number; closed: number }> {
+  const cutoff = new Date(Date.now() - STRANDED_MS);
+  const open = await prisma.match.findMany({
+    where: { endedAt: null, startedAt: { lt: cutoff } },
+    select: { id: true, mode: true, redId: true, blueId: true },
+    take: SWEEP_BATCH,
+    orderBy: { startedAt: "asc" },
+  });
+  let swept = 0;
+  let closed = 0;
+  for (const row of open) {
+    try {
+      const lm = await getMatch(row.id);
+      if (lm && !lm.state.result) {
+        // Live state present — is either seated player offline cluster-wide? If so
+        // the normal forfeit path applies (it re-checks presence + settles safely).
+        const players = [lm.redId, lm.blueId].filter((x): x is string => !!x);
+        let offlinePlayer: string | null = null;
+        for (const uid of players) {
+          const socks = await io.in(`presence:${uid}`).fetchSockets();
+          if (socks.length === 0) { offlinePlayer = uid; break; }
+        }
+        if (offlinePlayer) {
+          await handleAbandonForfeit(io, { matchId: row.id, userId: offlinePlayer });
+          swept++;
+        }
+        // Both players online + no result + very old = a genuinely long game still
+        // in progress; leave it alone.
+        continue;
+      }
+      // Redis state is gone but the DB row is still open — a fully-stranded match
+      // (state lost with its abandon job). Close it as a draw/abandon through the
+      // same gate so a racing settle can't double-close it, and no win is invented.
+      const gate = await prisma.match.updateMany({
+        where: { id: row.id, endedAt: null },
+        data: { winner: "draw", reason: "abandon", goldReward: 0, endedAt: new Date() },
+      });
+      if (gate.count > 0) {
+        closed++;
+        // Tell any still-connected opponent to leave the board, then free Redis
+        // remnants + fire lifetime hooks (rooms.ts reclaims a lingering room).
+        io.to(row.id).emit(EV.matchEnded, {
+          matchId: row.id,
+          result: { winner: "draw", reason: "abandon" },
+          winnerId: null,
+          loserId: null,
+          redTrophyDelta: 0,
+          blueTrophyDelta: 0,
+          goldReward: 0,
+          state: null,
+        });
+        runMatchEndHooks(row.id);
+      }
+    } catch (e) {
+      console.error("[match] sweep failed for", row.id, e);
+    }
   }
+  if (swept || closed) console.log(`[match] abandon sweep: ${swept} forfeited, ${closed} stranded-closed`);
+  return { swept, closed };
 }
 
 /**
@@ -158,138 +293,169 @@ type RematchOffer = {
   blueId: string;
   mode: PrismaMatchMode;
   settings: GameSettings;
-  offeredBy: Set<string>;
-  expires: number;
+  /** userIds who have offered a rematch (JSON-safe: a plain array, not a Set). */
+  offeredBy: string[];
 };
-const rematchOffers: Map<string, RematchOffer> = new Map();
-const REMATCH_TTL_MS = 60_000;
-// Periodic sweep so abandoned end-of-match offers are reclaimed even if no new
-// offer event ever fires (opportunistic pruning alone would leak them). unref()
-// so this timer never keeps the process alive on shutdown.
-const rematchSweep = setInterval(() => {
-  const now = Date.now();
-  for (const [id, o] of rematchOffers) if (o.expires < now) rematchOffers.delete(id);
-}, 30_000);
-rematchSweep.unref?.();
+const REMATCH_TTL_SEC = 60;
+const rematchKey = (matchId: string) => `rt:rematch:${matchId}`;
+/** Read a rematch offer (null if none / expired — Redis TTL reclaims it). */
+async function getRematchOffer(matchId: string): Promise<RematchOffer | null> {
+  return getJSON<RematchOffer>(rematchKey(matchId));
+}
+/** Write/refresh a rematch offer with a native 60s TTL — no periodic sweep
+ *  needed; a stale offer simply expires out of Redis. */
+async function putRematchOffer(matchId: string, offer: RematchOffer): Promise<void> {
+  await setJSON(rematchKey(matchId), offer, REMATCH_TTL_SEC);
+}
+async function delRematchOffer(matchId: string): Promise<void> {
+  await delKey(rematchKey(matchId));
+}
 
 /**
- * Seed a live match. Called by matchmaking (and any room-start flow) the moment
- * two players are paired. The engine builds the opening position; the same
- * `settings` are persisted on the Match row so replays are exact.
+ * Drop a live match's state without settling it (e.g. the private-room host
+ * abandoned the lobby before/after start). Safe to call for an unknown id.
+ * Async now that the authoritative state lives in Redis. (No callers today; kept
+ * as a public helper for room-abandon cleanup flows.)
  */
-/**
- * Drop a live match's in-memory state without settling it (e.g. the private-room
- * host abandoned the lobby before/after start). Safe to call for an unknown id.
- */
-export function endLiveMatch(matchId: string): void {
-  live.delete(matchId);
-  clearSpectators(matchId);
+export async function endLiveMatch(matchId: string): Promise<void> {
+  const lm = await getMatch(matchId);
+  if (lm) await removeMatch(lm);
+  await clearSpectators(matchId);
 }
 
 /**
  * Forfeit a live match to `winnerColor` and settle it exactly once (persist +
- * ledger + broadcast matchEnded), then drop it from memory. Used when a
- * private-room host abandons a STARTED match: the guest's in-progress game must
- * settle as a WIN for the guest rather than being silently discarded. No-op for
- * an unknown/already-settled/already-finished match (so a normal endLiveMatch
- * path and this never double-settle).
+ * ledger + broadcast matchEnded), then drop it. Used when a private-room host
+ * abandons a STARTED match: the guest's in-progress game must settle as a WIN for
+ * the guest rather than being silently discarded. Routed through `mutateMatch` so
+ * it is lock+CAS serialized and, via the DB-gated settle, can never double-settle
+ * against a concurrent result/resign. No-op for an already-finished match (mutate
+ * returns null → "aborted").
  */
 export async function forfeitLiveMatch(
   io: IOServer,
   matchId: string,
   winnerColor: PieceColor,
 ): Promise<void> {
-  const lm = live.get(matchId);
-  if (!lm || lm.settled || lm.state.result) return;
-  lm.state = { ...lm.state, result: { winner: winnerColor, reason: "abandon" } };
-  await settleMatch(io, lm);
+  await mutateMatch(
+    io,
+    matchId,
+    (lm) => {
+      if (lm.state.result) return null;
+      return { ...lm.state, result: { winner: winnerColor, reason: "abandon" } };
+    },
+    async (lm) => {
+      await settleMatch(io, lm);
+    },
+  );
 }
 
-export function createLiveMatch(
+/**
+ * Seed a live match into Redis. Called by matchmaking (and any room-start flow)
+ * the moment two players are paired. The engine builds the opening position; the
+ * same `settings` are persisted on the Match row so replays are exact.
+ *
+ * ASYNC now (the authoritative state lives in Redis): callers must `await`.
+ * Cross-file callers in matchmaking.ts (tryMatch/startBotMatch) and rooms.ts
+ * (roomStart) are updated in Tasks 6/7.
+ */
+export async function createLiveMatch(
   matchId: string,
   redId: string | null,
   blueId: string | null,
   mode: PrismaMatchMode | string,
   settings: GameSettings,
   botColor?: PieceColor,
-): LiveMatch {
+): Promise<StoredMatch> {
   const state = createInitialState(settings, matchId);
-  const lm: LiveMatch = {
+  const lm: Omit<StoredMatch, "version"> = {
     matchId,
     redId,
     blueId,
-    mode: mode as PrismaMatchMode,
+    mode: mode as string,
     state,
-    settled: false,
     botColor,
   };
-  live.set(matchId, lm);
-  return lm;
+  await createMatch(lm);
+  return { ...lm, version: 0 };
 }
 
 /**
  * Drive the BOT's turn (empty-queue fill). If it's the bot's move and the game
- * isn't over, wait a human-like beat, compute a strong move with the engine, and
- * apply it through the SAME authoritative path as a human move (validate → apply
- * → persist → broadcast matchMoved → settle). Recurses so consecutive bot turns
- * (never happens in Dama, but safe) and post-move settlement are handled. No-op
- * for all-human matches.
+ * isn't over, schedule a `bot-move` job so ANY instance in the cluster can play
+ * the reply (the instance that owned the human move may not be the one that later
+ * claims the job — jobs.ts guarantees exactly-one delivery). The actual move is
+ * applied by `handleBotMove` through the SAME authoritative mutateMatch path as a
+ * human move (validate → apply → CAS → broadcast matchMoved → settle). No-op for
+ * all-human matches is enforced inside the handler (re-checks botColor).
  */
-export function maybePlayBotMove(io: IOServer, matchId: string): void {
-  const lm = live.get(matchId);
-  if (!lm || lm.settled || !lm.botColor) return;
-  if (lm.state.result || lm.state.turn !== lm.botColor) return;
+export function maybePlayBotMove(_io: IOServer, matchId: string): void {
+  // Human-like think time was 700–1500ms; the brief fixes the job delay at 900ms.
+  // The handler re-validates it is still the bot's turn, so a scheduled-but-stale
+  // job is a safe no-op.
+  void scheduleJob("bot-move", matchId, 900, { matchId });
+}
 
-  // Human-like think time (700–1500ms) so it doesn't feel robotic.
-  const delay = 700 + Math.floor(Math.random() * 800);
-  setTimeout(() => {
-    void (async () => {
-      const cur = live.get(matchId);
-      // Re-check: the match may have ended / resigned / turn changed mid-timeout.
-      if (!cur || cur.settled || cur.botColor == null) return;
-      if (cur.state.result || cur.state.turn !== cur.botColor) return;
-
+/**
+ * bot-move job handler (cluster-safe). Re-checks — under the match lock via
+ * mutateMatch — that this is still a bot-filled match, it is the bot's turn, and
+ * the game isn't over, then computes and applies the engine's best move. After a
+ * successful apply: settle if the game ended, else re-schedule so a (theoretical)
+ * consecutive bot turn continues. All the guards live inside `mutate` so a stale
+ * job (turn already changed, match resigned/ended) aborts harmlessly.
+ */
+export async function handleBotMove(io: IOServer, payload: Record<string, unknown>): Promise<void> {
+  const matchId = String(payload.matchId);
+  let ended = false;
+  const res = await mutateMatch(
+    io,
+    matchId,
+    (lm) => {
+      if (lm.botColor == null) return null; // all-human match — nothing to do
+      if (lm.state.result || lm.state.turn !== lm.botColor) return null;
       let move: Move;
       try {
-        move = bestMove(cur.state, "hard");
+        move = bestMove(lm.state, "hard");
       } catch (e) {
         console.error("[match] bot bestMove failed", matchId, e);
-        return;
+        return null;
       }
-      let next: GameState;
       try {
-        if (!isLegal(cur.state, move)) return; // engine invariant; bail safely
-        next = applyMove(cur.state, move);
+        if (!isLegal(lm.state, move)) return null; // engine invariant; bail safely
+        const next = applyMove(lm.state, move);
+        // Stash the move on the state object for afterSave's broadcast (read back
+        // by recomputing from history below to avoid a closure-mutation surprise).
+        return next;
       } catch (e) {
         console.error("[match] bot applyMove failed", matchId, e);
-        return;
+        return null;
       }
-      cur.state = next;
-
+    },
+    async (lm) => {
+      const last = lm.state.history[lm.state.history.length - 1];
       prisma.match
-        .update({ where: { id: matchId }, data: { moves: next.history as unknown as object } })
+        .update({ where: { id: matchId }, data: { moves: lm.state.history as unknown as object } })
         .catch((e) => console.error("[match] bot move persist failed", matchId, e));
-
-      io.to(matchId).emit(EV.matchMoved, { matchId, move, state: next });
-
-      if (next.result) {
-        await settleMatch(io, cur);
-      } else {
-        // If, after the bot's move, it's somehow the bot's turn again, continue.
-        maybePlayBotMove(io, matchId);
+      io.to(matchId).emit(EV.matchMoved, { matchId, move: last, state: lm.state });
+      if (lm.state.result) {
+        ended = true;
+        await settleMatch(io, lm);
       }
-    })();
-  }, delay);
+    },
+  );
+  // If the bot moved and the game continues, it may be the bot's turn again
+  // (consecutive-turn safety net) — re-schedule outside the lock.
+  if (res === "ok" && !ended) maybePlayBotMove(io, matchId);
 }
 
 /** The color this user plays in a match, or null if they are not a player. */
-function colorOf(lm: LiveMatch, userId: string): PieceColor | null {
+function colorOf(lm: StoredMatch, userId: string): PieceColor | null {
   if (lm.redId === userId) return "red";
   if (lm.blueId === userId) return "blue";
   return null;
 }
 
-function userIdForColor(lm: LiveMatch, color: PieceColor): string | null {
+function userIdForColor(lm: StoredMatch, color: PieceColor): string | null {
   return color === "red" ? lm.redId : lm.blueId;
 }
 
@@ -388,11 +554,9 @@ async function recordPlayerOutcome(
   await advanceQuestsFor(userId, { won, drew, captures, isRanked, streak });
 }
 
-async function settleMatch(io: IOServer, lm: LiveMatch): Promise<void> {
-  if (lm.settled) return;
+async function settleMatch(io: IOServer, lm: StoredMatch): Promise<void> {
   const result = lm.state.result;
   if (!result) return;
-  lm.settled = true;
 
   // Ranked trophies move in any RANKED match. `botColor` is set iff a seat is a
   // bot (empty-queue fallback). Two amounts apply:
@@ -433,10 +597,20 @@ async function settleMatch(io: IOServer, lm: LiveMatch): Promise<void> {
   }
   if (winnerColor) goldReward = goldPerWin;
 
-  // Persist the match record first so the ledger entries can reference it.
+  // ── SETTLE GATE (money-critical) ──────────────────────────────────────────
+  // Persist the outcome as a CONDITIONAL write: only rows still open (endedAt
+  // NULL) are updated. `updateMany` returns how many rows it touched. Exactly one
+  // instance in the cluster can flip endedAt from NULL to a date; any racer (a
+  // concurrent result + resign, an abandon-forfeit firing as the last move lands,
+  // or a second instance replaying the same job) sees `count === 0` and RETURNS
+  // here — before any grant, broadcast, or cleanup. This makes double-award
+  // impossible cluster-wide; the ledger's unique index (refType+refId+userId) is
+  // the second wall. The delta computation above is pure and side-effect-free, so
+  // running it on a losing racer is harmless.
+  let gateCount = 0;
   try {
-    await prisma.match.update({
-      where: { id: lm.matchId },
+    const gate = await prisma.match.updateMany({
+      where: { id: lm.matchId, endedAt: null },
       data: {
         winner: result.winner,
         reason: result.reason,
@@ -447,10 +621,15 @@ async function settleMatch(io: IOServer, lm: LiveMatch): Promise<void> {
         endedAt: new Date(),
       },
     });
+    gateCount = gate.count;
   } catch (e) {
     // eslint-disable-next-line no-console
     console.error("[match] failed to persist result", lm.matchId, e);
+    // A DB failure means we did NOT win the gate — do not grant/broadcast on an
+    // unpersisted settlement (the row could still be settled by a healthy racer).
+    return;
   }
+  if (gateCount === 0) return; // another instance already settled this match.
 
   // Apply economy deltas. Each call is atomic + append-only; a failure on one
   // (e.g. a bot user or deleted account) must not block the others.
@@ -547,35 +726,23 @@ async function settleMatch(io: IOServer, lm: LiveMatch): Promise<void> {
 
   // Remember this pairing so either player can offer a rematch (both-human only).
   // Carry the FINISHED match's real settings into the rematch (not DEFAULT).
+  // Stored in Redis with a native 60s TTL (rt:rematch:<matchId>).
   if (lm.redId && lm.blueId) {
-    rematchOffers.set(lm.matchId, {
+    await putRematchOffer(lm.matchId, {
       redId: lm.redId,
       blueId: lm.blueId,
-      mode: lm.mode,
+      mode: lm.mode as PrismaMatchMode,
       settings: { ...lm.state.settings },
-      offeredBy: new Set(),
-      expires: Date.now() + REMATCH_TTL_MS,
+      offeredBy: [],
     });
   }
 
-  live.delete(lm.matchId);
-  clearSpectators(lm.matchId);
+  await removeMatch(lm);
+  await clearSpectators(lm.matchId);
 
   // Notify lifetime-bound listeners (e.g. rooms.ts reclaims a private room kept
   // alive for spectators). Best-effort — a throwing hook must not break anything.
-  for (const hook of matchEndHooks) {
-    try {
-      hook(lm.matchId);
-    } catch (e) {
-      console.error("[match] onMatchEnd hook failed", lm.matchId, e);
-    }
-  }
-}
-
-/** Prune expired rematch offers (called opportunistically on each offer). */
-function pruneRematchOffers() {
-  const now = Date.now();
-  for (const [id, o] of rematchOffers) if (o.expires < now) rematchOffers.delete(id);
+  runMatchEndHooks(lm.matchId);
 }
 
 export function registerMatch(io: IOServer, socket: Socket) {
@@ -589,80 +756,89 @@ export function registerMatch(io: IOServer, socket: Socket) {
       return;
     }
 
-    const lm = live.get(matchId);
-    if (!lm) {
+    // The validation order + emitted events are byte-identical to the pre-Redis
+    // handler; only the storage/serialization boundary moved to mutateMatch.
+    let applied: StoredMatch | null = null;
+    const res = await mutateMatch(
+      io,
+      matchId,
+      (lm) => {
+        const myColor = colorOf(lm, userId);
+        if (!myColor) {
+          socket.emit(EV.matchIllegal, { matchId, reason: "not-a-player" });
+          return null;
+        }
+        if (lm.state.result) {
+          socket.emit(EV.matchIllegal, { matchId, reason: "match-over" });
+          return null;
+        }
+        if (lm.state.turn !== myColor) {
+          socket.emit(EV.matchIllegal, { matchId, reason: "not-your-turn" });
+          return null;
+        }
+        // Authoritative legality check — the client's opinion is irrelevant.
+        if (!isLegal(lm.state, move)) {
+          socket.emit(EV.matchIllegal, { matchId, reason: "illegal-move" });
+          return null;
+        }
+        try {
+          return applyMove(lm.state, move);
+        } catch {
+          socket.emit(EV.matchIllegal, { matchId, reason: "illegal-move" });
+          return null;
+        }
+      },
+      async (lm) => {
+        applied = lm;
+        // Persist the running move list (best-effort; Redis is the source of truth
+        // during play, this keeps the row resync-able across crashes).
+        prisma.match
+          .update({ where: { id: matchId }, data: { moves: lm.state.history as unknown as object } })
+          .catch((e) => console.error("[match] move persist failed", matchId, e));
+        io.to(matchId).emit(EV.matchMoved, { matchId, move, state: lm.state });
+      },
+    );
+
+    if (res === "gone") {
       socket.emit(EV.matchIllegal, { matchId, reason: "no-such-match" });
       return;
     }
-
-    const myColor = colorOf(lm, userId);
-    if (!myColor) {
-      socket.emit(EV.matchIllegal, { matchId, reason: "not-a-player" });
+    if (res === "busy") {
+      socket.emit(EV.matchIllegal, { matchId, reason: "busy" });
       return;
     }
-    if (lm.state.result) {
-      socket.emit(EV.matchIllegal, { matchId, reason: "match-over" });
-      return;
-    }
-    if (lm.state.turn !== myColor) {
-      socket.emit(EV.matchIllegal, { matchId, reason: "not-your-turn" });
-      return;
-    }
-
-    // Authoritative legality check — the client's opinion is irrelevant.
-    if (!isLegal(lm.state, move)) {
-      socket.emit(EV.matchIllegal, { matchId, reason: "illegal-move" });
-      return;
-    }
-
-    let next: GameState;
-    try {
-      next = applyMove(lm.state, move);
-    } catch {
-      socket.emit(EV.matchIllegal, { matchId, reason: "illegal-move" });
-      return;
-    }
-    lm.state = next;
-
-    // Persist the running move list (best-effort; the in-memory state is the
-    // source of truth during play, this keeps the row resync-able across crashes).
-    prisma.match
-      .update({
-        where: { id: matchId },
-        data: { moves: next.history as unknown as object },
-      })
-      .catch((e) => console.error("[match] move persist failed", matchId, e));
-
-    io.to(matchId).emit(EV.matchMoved, { matchId, move, state: next });
-
-    if (next.result) {
-      await settleMatch(io, lm);
-    } else {
-      // If this is a bot-filled match and it's now the bot's turn, let the server
-      // play the bot's reply (no-op for all-human matches).
-      maybePlayBotMove(io, matchId);
-    }
+    if (res !== "ok" || !applied) return; // "aborted" → the mutate already emitted
+    const lm = applied as StoredMatch;
+    if (lm.state.result) await settleMatch(io, lm);
+    else maybePlayBotMove(io, matchId);
   });
 
   socket.on(EV.matchResign, async (payload: { matchId?: unknown } = {}) => {
     const matchId = typeof payload?.matchId === "string" ? payload.matchId : null;
     if (!matchId) return;
-    const lm = live.get(matchId);
-    if (!lm || lm.settled) return;
-    const myColor = colorOf(lm, userId);
-    if (!myColor) return;
-    if (lm.state.result) return;
-
-    // The resigning side loses; the opponent is the winner.
-    const winner: PieceColor = myColor === "red" ? "blue" : "red";
-    lm.state = { ...lm.state, result: { winner, reason: "resign" } };
-    await settleMatch(io, lm);
+    let resigned: StoredMatch | null = null;
+    const res = await mutateMatch(
+      io,
+      matchId,
+      (lm) => {
+        const myColor = colorOf(lm, userId);
+        if (!myColor) return null;
+        if (lm.state.result) return null;
+        // The resigning side loses; the opponent is the winner.
+        const winner: PieceColor = myColor === "red" ? "blue" : "red";
+        return { ...lm.state, result: { winner, reason: "resign" } };
+      },
+      async (lm) => {
+        resigned = lm;
+      },
+    );
+    if (res === "ok" && resigned) await settleMatch(io, resigned);
   });
 
-  socket.on(EV.matchResync, (payload: { matchId?: unknown } = {}) => {
+  socket.on(EV.matchResync, async (payload: { matchId?: unknown } = {}) => {
     const matchId = typeof payload?.matchId === "string" ? payload.matchId : null;
     if (!matchId) return;
-    const lm = live.get(matchId);
+    const lm = await getMatch(matchId);
     if (!lm) {
       socket.emit(EV.matchIllegal, { matchId, reason: "no-such-match" });
       return;
@@ -699,10 +875,10 @@ export function registerMatch(io: IOServer, socket: Socket) {
   // (roomSpectate → socket.join(matchId) → matchResync-style read-only state):
   // any player is refused (they belong in the normal match flow, not this one),
   // and only a genuinely LIVE match can be joined — no fabricated/replay state.
-  socket.on(EV.spectateJoin, (payload: { matchId?: unknown } = {}) => {
+  socket.on(EV.spectateJoin, async (payload: { matchId?: unknown } = {}) => {
     const matchId = typeof payload?.matchId === "string" ? payload.matchId : null;
     if (!matchId) return;
-    const lm = live.get(matchId);
+    const lm = await getMatch(matchId);
     if (!lm) {
       socket.emit(EV.matchIllegal, { matchId, reason: "no-such-match" });
       return;
@@ -714,7 +890,7 @@ export function registerMatch(io: IOServer, socket: Socket) {
       return;
     }
     void socket.join(matchId);
-    addSpectatorSocket(io, matchId, userId, socket.id);
+    await addSpectatorSocket(io, matchId, userId, socket.id);
     socket.emit(EV.matchState, {
       matchId,
       state: lm.state,
@@ -723,15 +899,15 @@ export function registerMatch(io: IOServer, socket: Socket) {
     });
   });
 
-  socket.on(EV.spectateLeave, (payload: { matchId?: unknown } = {}) => {
+  socket.on(EV.spectateLeave, async (payload: { matchId?: unknown } = {}) => {
     const matchId = typeof payload?.matchId === "string" ? payload.matchId : null;
     if (!matchId) return;
     // Only a non-player may be removed this way — never accidentally evict a
     // real player's socket from their own live match room.
-    const lm = live.get(matchId);
+    const lm = await getMatch(matchId);
     if (lm && colorOf(lm, userId)) return;
     void socket.leave(matchId);
-    removeSpectatorSocket(io, matchId, userId, socket.id);
+    await removeSpectatorSocket(io, matchId, userId, socket.id);
   });
 
   // ── In-match quick chat / emote — relay to the match room (persisted lightly
@@ -740,7 +916,7 @@ export function registerMatch(io: IOServer, socket: Socket) {
     if (!allow(socket, "match:chat", 8, 4000)) return; // anti-flood
     const matchId = typeof payload?.matchId === "string" ? payload.matchId : null;
     if (!matchId) return;
-    const lm = live.get(matchId);
+    const lm = await getMatch(matchId);
     // Only the two players may chat, and only in a live match.
     if (!lm || !colorOf(lm, userId)) return;
     const emote = typeof payload?.emote === "string" ? payload.emote.slice(0, 8) : null;
@@ -762,13 +938,12 @@ export function registerMatch(io: IOServer, socket: Socket) {
   // ── Rematch: either finished-match player offers; both offers → new match. ──
   socket.on(EV.matchRematchOffer, async (payload: { matchId?: unknown } = {}) => {
     if (!allow(socket, "rematch", 5, 5000)) return; // anti-flood
-    pruneRematchOffers();
     const matchId = typeof payload?.matchId === "string" ? payload.matchId : null;
     if (!matchId) return;
-    const offer = rematchOffers.get(matchId);
+    const offer = await getRematchOffer(matchId);
     if (!offer || (userId !== offer.redId && userId !== offer.blueId)) return;
 
-    offer.offeredBy.add(userId);
+    if (!offer.offeredBy.includes(userId)) offer.offeredBy.push(userId);
     // Tell the opponent an offer is pending.
     io.to(`presence:${userId === offer.redId ? offer.blueId : offer.redId}`).emit(EV.matchRematchOffer, {
       fromMatchId: matchId,
@@ -776,8 +951,8 @@ export function registerMatch(io: IOServer, socket: Socket) {
     });
 
     // Both agreed → seed a fresh match with colors swapped and pair them.
-    if (offer.offeredBy.has(offer.redId) && offer.offeredBy.has(offer.blueId)) {
-      rematchOffers.delete(matchId);
+    if (offer.offeredBy.includes(offer.redId) && offer.offeredBy.includes(offer.blueId)) {
+      await delRematchOffer(matchId);
       const newRed = offer.blueId; // swap seats
       const newBlue = offer.redId;
       try {
@@ -791,7 +966,7 @@ export function registerMatch(io: IOServer, socket: Socket) {
           },
           select: { id: true },
         });
-        createLiveMatch(match.id, newRed, newBlue, offer.mode, offer.settings);
+        await createLiveMatch(match.id, newRed, newBlue, offer.mode, offer.settings);
         // Join both players' current sockets to the new match room and notify.
         for (const uid of [newRed, newBlue]) {
           const room = io.sockets.adapter.rooms.get(`presence:${uid}`);
@@ -802,57 +977,90 @@ export function registerMatch(io: IOServer, socket: Socket) {
       } catch (e) {
         console.error("[match] rematch create failed", e);
       }
+    } else {
+      // First offer of the pair — persist the added offerer (refreshing the 60s
+      // TTL) so the opponent's later offer sees ours and completes the match.
+      await putRematchOffer(matchId, offer);
     }
   });
 
-  socket.on(EV.matchRematchDecline, (payload: { matchId?: unknown } = {}) => {
+  socket.on(EV.matchRematchDecline, async (payload: { matchId?: unknown } = {}) => {
     const matchId = typeof payload?.matchId === "string" ? payload.matchId : null;
     if (!matchId) return;
-    const offer = rematchOffers.get(matchId);
+    const offer = await getRematchOffer(matchId);
     if (!offer) return;
-    rematchOffers.delete(matchId);
+    await delRematchOffer(matchId);
     const other = userId === offer.redId ? offer.blueId : offer.redId;
     io.to(`presence:${other}`).emit(EV.matchRematchDecline, { fromMatchId: matchId, by: userId });
   });
 
   // ── Spectator cleanup — unlike the abandon-forfeit timer below (players get a
   // reconnect grace window), a dropped spectator socket is removed immediately:
-  // there's no "forfeit" concept for watching, just an accurate live count. Scans
-  // every match this socket was registered under (a spectator's socket id is only
-  // ever added via addSpectatorSocket, so this is cheap in practice).
+  // there's no "forfeit" concept for watching, just an accurate live count. The
+  // cluster-wide index rt:spectByUser:<userId> lists exactly the matches this
+  // user is spectating, so we drop this socket from each without scanning every
+  // live match.
   socket.on("disconnect", () => {
-    for (const matchId of [...spectators.keys()]) {
-      removeSpectatorSocket(io, matchId, userId, socket.id);
-    }
+    void (async () => {
+      for (const matchId of await spectatorMatchesForSocket(userId)) {
+        await removeSpectatorSocket(io, matchId, userId, socket.id);
+      }
+    })().catch((e) => console.error("[match] spectator disconnect cleanup failed", e));
   });
 
-  // ── Abandonment forfeit ── if this was the user's LAST socket, arm a timer on
-  // every live match they're still playing: if they don't reconnect (resync)
-  // within ABANDON_MS, forfeit them so the match always settles. Deferred a tick
-  // so the socket has fully left its presence room before we check for others.
+  // ── Abandonment forfeit ── if this was the user's LAST socket cluster-wide,
+  // schedule an abandon-forfeit job on every live match they're still playing:
+  // if they don't reconnect (resync) within ABANDON_MS, the job forfeits them so
+  // the match always settles. Deferred a tick so the socket has fully left its
+  // presence room before we check for others. The presence check + the actual
+  // forfeit are BOTH re-done inside handleAbandonForfeit when the job fires, so a
+  // reconnect anywhere in the cluster in the meantime cancels the outcome.
   socket.on("disconnect", () => {
     setTimeout(() => {
-      // Still have another connected socket (multi-tab / quick reconnect)? then
-      // they haven't abandoned anything.
-      const room = io.sockets.adapter.rooms.get(`presence:${userId}`);
-      if (room && room.size > 0) return;
-      for (const lm of live.values()) {
-        if (lm.settled || lm.state.result) continue;
-        const color = colorOf(lm, userId);
-        if (!color) continue; // not a player in this match
-        const k = abandonKey(lm.matchId, userId);
-        if (abandonTimers.has(k)) continue; // already armed
-        const t = setTimeout(() => {
-          abandonTimers.delete(k);
-          const cur = live.get(lm.matchId);
-          if (!cur || cur.settled || cur.state.result) return;
-          // Still gone → opponent wins by abandonment.
-          const winner: PieceColor = color === "red" ? "blue" : "red";
-          cur.state = { ...cur.state, result: { winner, reason: "abandon" } };
-          void settleMatch(io, cur).catch((e) => console.error("[match] abandon settle failed", e));
-        }, ABANDON_MS);
-        abandonTimers.set(k, t);
-      }
+      void (async () => {
+        // Still connected somewhere in the cluster (multi-tab / quick reconnect on
+        // any instance)? then they haven't abandoned anything. fetchSockets() spans
+        // all instances via the Redis adapter.
+        const socks = await io.in(`presence:${userId}`).fetchSockets();
+        if (socks.length > 0) return;
+        for (const matchId of await matchIdsForUser(userId)) {
+          const lm = await getMatch(matchId);
+          if (!lm || lm.state.result) continue;
+          if (!colorOf(lm, userId)) continue; // not a player in this match
+          // scheduleJob replaces any existing job for this key (see jobs.ts), so
+          // re-arming is idempotent — no double-forfeit.
+          void scheduleJob("abandon-forfeit", abandonKey(matchId, userId), ABANDON_MS, { matchId, userId });
+        }
+      })().catch((e) => console.error("[match] abandon schedule failed", e));
     }, 500);
   });
+}
+
+/**
+ * abandon-forfeit job handler (cluster-safe). Fires ABANDON_MS after a player's
+ * last socket dropped. Re-checks presence across the whole cluster first — a
+ * reconnect on ANY instance in the grace window cancels the forfeit. If still
+ * gone, forfeits the match to the opponent through the same lock+CAS+DB-gated
+ * settle path as every other outcome, so it can never double-settle against a
+ * concurrent final move/resign.
+ */
+export async function handleAbandonForfeit(io: IOServer, payload: Record<string, unknown>): Promise<void> {
+  const matchId = String(payload.matchId);
+  const userId = String(payload.userId);
+  const socks = await io.in(`presence:${userId}`).fetchSockets();
+  if (socks.length > 0) return; // reconnected somewhere in the cluster
+  await mutateMatch(
+    io,
+    matchId,
+    (lm) => {
+      if (lm.state.result) return null;
+      const color = colorOf(lm, userId);
+      if (!color) return null;
+      const winner: PieceColor = color === "red" ? "blue" : "red";
+      return { ...lm.state, result: { winner, reason: "abandon" } };
+    },
+    async (lm) => {
+      await settleMatch(io, lm);
+    },
+  );
 }
