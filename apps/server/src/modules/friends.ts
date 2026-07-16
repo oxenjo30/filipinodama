@@ -3,6 +3,7 @@ import { friendRequestSchema, friendRequestByTagSchema } from "@dama/shared";
 import { prisma } from "../db/client.js";
 import { ok, err } from "../lib/errors.js";
 import { requireAuth } from "../auth/guards.js";
+import { isBlockedBetween } from "./blocks.js";
 
 /** Public-safe user shape for friend lists / requests / suggestions. */
 function publicFriend(u: {
@@ -58,6 +59,8 @@ async function createFriendRequest(me: string, toUserId: string) {
     select: { id: true },
   });
   if (!target) throw err.notFound("USER_NOT_FOUND", "User not found");
+
+  if (await isBlockedBetween(me, toUserId)) throw err.forbidden("BLOCKED", "You can't add this player.");
 
   // already friends?
   const [aId, bId] = me < toUserId ? [me, toUserId] : [toUserId, me];

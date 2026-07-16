@@ -7,6 +7,7 @@ import { requireAuth } from "../auth/guards.js";
 import { getIO } from "../realtime/io.js";
 import { EV } from "@dama/shared";
 import { ensureChannel, dmRefId, loadHistory, postMessage, markRead, unreadCount } from "./chat-service.js";
+import { isBlockedBetween } from "./blocks.js";
 
 /**
  * Direct messages between friends. A DM = one Channel(type=DM, refId=<sorted
@@ -20,6 +21,7 @@ import { ensureChannel, dmRefId, loadHistory, postMessage, markRead, unreadCount
 const sendSchema = z.object({ body: z.string().min(1).max(1000) });
 
 async function assertFriends(me: string, other: string) {
+  if (await isBlockedBetween(me, other)) throw err.forbidden("BLOCKED", "You can't message this player.");
   const [aId, bId] = me < other ? [me, other] : [other, me];
   const f = await prisma.friendship.findUnique({ where: { aId_bId: { aId, bId } } });
   if (!f) throw err.forbidden("NOT_FRIENDS", "You can only message friends");
