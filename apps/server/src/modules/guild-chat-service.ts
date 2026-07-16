@@ -1,4 +1,6 @@
 import { prisma } from "../db/client.js";
+import { blockedIdsFor } from "./blocks.js";
+import { maskProfanity } from "@dama/shared";
 
 /**
  * guild-chat-service — shared DB logic for guild chat, used by both the REST
@@ -78,10 +80,14 @@ function toWire(
  * Each message is annotated with the author's CURRENT guild role (best-effort;
  * null if the author has since left the guild).
  */
-export async function loadGuildHistory(guildId: string, limit = 50): Promise<ChatMessage[]> {
+export async function loadGuildHistory(guildId: string, viewerId: string, limit = 50): Promise<ChatMessage[]> {
   const channelId = await ensureGuildChannel(guildId);
+  const blocked = await blockedIdsFor(viewerId);
   const rows = await prisma.message.findMany({
-    where: { channelId },
+    where: {
+      channelId,
+      ...(blocked.length > 0 ? { authorId: { notIn: blocked } } : {}),
+    },
     orderBy: { createdAt: "desc" },
     take: Math.min(Math.max(limit, 1), 100),
     include: { author: { select: authorSelect } },
@@ -106,8 +112,9 @@ export async function postGuildMessage(
   role: "LEADER" | "OFFICER" | "MEMBER" | null,
 ): Promise<ChatMessage> {
   const channelId = await ensureGuildChannel(guildId);
+  const clean = maskProfanity(body);
   const msg = await prisma.message.create({
-    data: { channelId, authorId, body },
+    data: { channelId, authorId, body: clean },
     include: { author: { select: authorSelect } },
   });
   return toWire(guildId, msg, role);

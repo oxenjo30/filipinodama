@@ -281,7 +281,7 @@ export async function guildRoutes(app: FastifyInstance) {
       const me = req.userId!;
       const guildId = req.params.id;
       await requireGuildRole(me, guildId, "MEMBER");
-      const messages = await loadGuildHistory(guildId, 50);
+      const messages = await loadGuildHistory(guildId, me, 50);
       return ok({ messages });
     },
   );
