@@ -70,6 +70,7 @@ import com.filipinodama.app.data.economy.storeItemDiscountPct
 import com.filipinodama.app.data.economy.storeItemIsDeal
 import com.filipinodama.app.data.economy.storeItemPrice
 import com.filipinodama.app.data.economy.storeThumbFor
+import com.filipinodama.app.ui.components.PullRefreshContainer
 import com.filipinodama.app.ui.components.SignInRequiredDialog
 import com.filipinodama.app.ui.components.isAuthError
 import com.filipinodama.app.ui.components.screenInsets
@@ -187,16 +188,25 @@ fun StoreScreen(
         return
     }
 
-    LaunchedEffect(retryTick) {
-        items = null
+    // Real catalog load — also called by onRefresh below (pull-to-refresh)
+    // so a pull re-fetches the same store items/deals from the server. Unlike
+    // the entry LaunchedEffect this does NOT clear `items` first, so the
+    // grid stays visible (no flash-to-spinner) while the gold indicator
+    // shows the fetch is in flight.
+    suspend fun loadCatalog(clearFirst: Boolean) {
+        if (clearFirst) items = null
         loadError = false
         when (val result = EconomyRepository.storeItems()) {
             is EconomyResult.Success -> items = result.data.items
             is EconomyResult.Failure -> {
-                items = emptyList()
+                if (clearFirst) items = emptyList()
                 loadError = true
             }
         }
+    }
+
+    LaunchedEffect(retryTick) {
+        loadCatalog(clearFirst = true)
     }
 
     // Real ownership: the export's InventoryItem rows keyed by itemId (the
@@ -327,6 +337,11 @@ fun StoreScreen(
             }
         }
 
+        // Pull down anywhere on the catalog to RE-FETCH the store items from
+        // the server (loadCatalog — the same EconomyRepository.storeItems()
+        // call the entry LaunchedEffect and Retry run), so a pull gets the
+        // latest catalog/deals, not a cosmetic spinner.
+        PullRefreshContainer(onRefresh = { loadCatalog(clearFirst = false) }) {
         Column(
             modifier = Modifier
                 .fillMaxSize()
@@ -387,6 +402,7 @@ fun StoreScreen(
 
             Box(Modifier.height(24.dp))
         }
+        } // PullRefreshContainer
     }
 
     // Store Item Preview bottom sheet (finding ECON-1) — emitted AFTER the

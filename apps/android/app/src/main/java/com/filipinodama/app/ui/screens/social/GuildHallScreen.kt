@@ -61,6 +61,7 @@ import com.filipinodama.app.ui.screens.profile.AvatarView
 import com.filipinodama.app.ui.components.CurrencyAmount
 import com.filipinodama.app.ui.components.CurrencyIconKind
 import com.filipinodama.app.ui.components.LocalSnackbar
+import com.filipinodama.app.ui.components.PullRefreshContainer
 import com.filipinodama.app.ui.components.isAuthError
 import com.filipinodama.app.ui.theme.Gold
 import com.filipinodama.app.ui.theme.GoldLt
@@ -118,28 +119,34 @@ fun GuildHallScreen(
     var manageMember by remember { mutableStateOf<GuildMemberDto?>(null) }
     var tab by remember { mutableStateOf("roster") }
 
-    fun loadDetail(guildId: String, roleHint: String?) {
-        scope.launch {
-            when (val d = GuildsRepository.detail(guildId)) {
-                is SocialResult.Success -> {
-                    detail = d.data
-                    guildLoadError = false
-                    val role = d.data.myRole ?: roleHint
-                    if (role != null && guildRoleAtLeast(role, "OFFICER")) {
-                        when (val r = GuildsRepository.requests(guildId)) {
-                            is SocialResult.Success -> { requests = r.data.requests; requestsError = false }
-                            is SocialResult.Failure -> { requests = emptyList(); requestsError = true }
-                        }
-                    } else {
-                        requests = null
+    // Extracted as a suspend fun (not just scope.launch'd) so pull-to-refresh and
+    // loadMembership() can await the whole chain directly.
+    suspend fun loadDetailData(guildId: String, roleHint: String?) {
+        when (val d = GuildsRepository.detail(guildId)) {
+            is SocialResult.Success -> {
+                detail = d.data
+                guildLoadError = false
+                val role = d.data.myRole ?: roleHint
+                if (role != null && guildRoleAtLeast(role, "OFFICER")) {
+                    when (val r = GuildsRepository.requests(guildId)) {
+                        is SocialResult.Success -> { requests = r.data.requests; requestsError = false }
+                        is SocialResult.Failure -> { requests = emptyList(); requestsError = true }
                     }
+                } else {
+                    requests = null
                 }
-                is SocialResult.Failure -> { detail = null; guildLoadError = true }
             }
+            is SocialResult.Failure -> { detail = null; guildLoadError = true }
         }
     }
 
-    fun loadMembership() {
+    fun loadDetail(guildId: String, roleHint: String?) {
+        scope.launch { loadDetailData(guildId, roleHint) }
+    }
+
+    // Extracted as a suspend fun so pull-to-refresh can await the whole membership
+    // + detail chain directly via PullRefreshContainer's onRefresh.
+    suspend fun loadMembershipData() {
         if (me == null) {
             membershipChecked = true
             myGuildId = null
@@ -147,38 +154,40 @@ fun GuildHallScreen(
             requests = null
             return
         }
-        scope.launch {
-            // GET /api/guilds/:id via a public-profile shape is not available here,
-            // so we reuse the same guild detail endpoint's joinState semantics:
-            // fetch the browse list first, then check each guild's own detail for
-            // membership would be wasteful — instead we rely on the server's own
-            // /api/guilds/:id?membership pattern via /api/users/:id like web does.
-            // Android has no ProfileApi.publicUser wired for guild yet, so the
-            // simplest honest source is: try GET /api/guilds/{browse-derived id}
-            // is not viable without an id. We fall back to the SAME contract web
-            // uses: GET /api/users/:me.id returns { user: { guild } }.
-            val userResult = com.filipinodama.app.data.profile.ProfileRepository.publicUser(me.id)
-            when (userResult) {
-                is com.filipinodama.app.data.profile.ProfileResult.Success -> {
-                    val gid = userResult.data.user.guild?.id
-                    myGuildId = gid
-                    guildLoadError = false
-                    if (gid != null) loadDetail(gid, userResult.data.user.guild?.role)
-                    else {
-                        detail = null
-                        requests = null
-                    }
-                }
-                is com.filipinodama.app.data.profile.ProfileResult.Failure -> {
-                    // A failed membership probe is NOT "no guild" — flag the error so
-                    // the render shows a retry state, not the empty "not in a guild" copy.
-                    myGuildId = null
+        // GET /api/guilds/:id via a public-profile shape is not available here,
+        // so we reuse the same guild detail endpoint's joinState semantics:
+        // fetch the browse list first, then check each guild's own detail for
+        // membership would be wasteful — instead we rely on the server's own
+        // /api/guilds/:id?membership pattern via /api/users/:id like web does.
+        // Android has no ProfileApi.publicUser wired for guild yet, so the
+        // simplest honest source is: try GET /api/guilds/{browse-derived id}
+        // is not viable without an id. We fall back to the SAME contract web
+        // uses: GET /api/users/:me.id returns { user: { guild } }.
+        val userResult = com.filipinodama.app.data.profile.ProfileRepository.publicUser(me.id)
+        when (userResult) {
+            is com.filipinodama.app.data.profile.ProfileResult.Success -> {
+                val gid = userResult.data.user.guild?.id
+                myGuildId = gid
+                guildLoadError = false
+                if (gid != null) loadDetailData(gid, userResult.data.user.guild?.role)
+                else {
                     detail = null
-                    guildLoadError = true
+                    requests = null
                 }
             }
-            membershipChecked = true
+            is com.filipinodama.app.data.profile.ProfileResult.Failure -> {
+                // A failed membership probe is NOT "no guild" — flag the error so
+                // the render shows a retry state, not the empty "not in a guild" copy.
+                myGuildId = null
+                detail = null
+                guildLoadError = true
+            }
         }
+        membershipChecked = true
+    }
+
+    fun loadMembership() {
+        scope.launch { loadMembershipData() }
     }
 
     LaunchedEffect(me?.id) {
@@ -240,13 +249,19 @@ fun GuildHallScreen(
         )
     }
 
-    Column(modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background).verticalScroll(rememberScrollState())) {
+    Column(modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
         Row(modifier = Modifier.fillMaxWidth().padding(20.dp), verticalAlignment = Alignment.CenterVertically) {
             Column(modifier = Modifier.weight(1f)) {
                 Text("ALLIANCES", color = Gold, style = MaterialTheme.typography.labelMedium)
                 Text("Guild Hall", color = GoldLt, style = MaterialTheme.typography.headlineMedium, modifier = Modifier.padding(top = 4.dp))
             }
         }
+
+        // Pull down anywhere in the guild hall body to RE-FETCH membership/guild
+        // detail from the server (loadMembershipData() — the same call the entry
+        // LaunchedEffect runs), so a pull gets the latest, not a cosmetic spinner.
+        PullRefreshContainer(onRefresh = { loadMembershipData() }) {
+        Column(modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
 
         // NOTE: anonymous users (me == null) are NOT stopped here anymore — they
         // fall through to the browsable "not in a guild yet" state below and can
@@ -498,6 +513,8 @@ fun GuildHallScreen(
                 }
             }
         }
+        } // Column (scrollable body)
+        } // PullRefreshContainer
     }
 }
 

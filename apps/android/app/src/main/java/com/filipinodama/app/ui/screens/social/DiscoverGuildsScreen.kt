@@ -50,6 +50,7 @@ import com.filipinodama.app.data.social.resolveGuildCrest
 import com.filipinodama.app.ui.components.CurrencyIcon
 import com.filipinodama.app.ui.components.CurrencyIconKind
 import com.filipinodama.app.ui.components.MockupBackButton
+import com.filipinodama.app.ui.components.PullRefreshContainer
 import com.filipinodama.app.ui.components.screenInsets
 import com.filipinodama.app.ui.theme.Gold
 import com.filipinodama.app.ui.theme.GoldLt
@@ -92,13 +93,17 @@ fun DiscoverGuildsScreen(onBack: () -> Unit, onRequireSignIn: () -> Unit = {}) {
     // state instead of the genuine-empty "be the first to found one" copy.
     var browseFailed by remember { mutableStateOf(false) }
 
-    fun loadBrowse(q: String) {
-        scope.launch {
-            when (val r = GuildsRepository.browse(q)) {
-                is SocialResult.Success -> { browse = r.data.guilds; browseFailed = false }
-                is SocialResult.Failure -> { browse = emptyList(); browseFailed = true }
-            }
+    // Extracted as a suspend fun so pull-to-refresh can await it directly via
+    // PullRefreshContainer's onRefresh (re-fetches with the current query).
+    suspend fun loadBrowseData(q: String) {
+        when (val r = GuildsRepository.browse(q)) {
+            is SocialResult.Success -> { browse = r.data.guilds; browseFailed = false }
+            is SocialResult.Failure -> { browse = emptyList(); browseFailed = true }
         }
+    }
+
+    fun loadBrowse(q: String) {
+        scope.launch { loadBrowseData(q) }
     }
 
     LaunchedEffect(Unit) { loadBrowse("") }
@@ -177,7 +182,12 @@ fun DiscoverGuildsScreen(onBack: () -> Unit, onRequireSignIn: () -> Unit = {}) {
             }
         }
 
-        Column(modifier = Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState()).padding(horizontal = 16.dp)) {
+        // Pull down anywhere in the guild list to RE-FETCH the browse results from
+        // the server (loadBrowseData with the current query — the same call the
+        // entry LaunchedEffect runs), so a pull gets the latest, not a cosmetic
+        // spinner.
+        PullRefreshContainer(onRefresh = { loadBrowseData(query) }, modifier = Modifier.weight(1f)) {
+        Column(modifier = Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(horizontal = 16.dp)) {
             Spacer()
             when {
                 browse == null -> Box(Modifier.fillMaxWidth().padding(30.dp), contentAlignment = Alignment.Center) { CircularProgressIndicator(color = Gold) }
@@ -268,6 +278,7 @@ fun DiscoverGuildsScreen(onBack: () -> Unit, onRequireSignIn: () -> Unit = {}) {
                 }
             }
         }
+        } // PullRefreshContainer
     }
 
         // Overlays — emitted AFTER the main Column so they layer above it.

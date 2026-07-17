@@ -47,6 +47,7 @@ import com.filipinodama.app.ui.screens.profile.AvatarView
 import com.filipinodama.app.ui.components.CurrencyAmount
 import com.filipinodama.app.ui.components.CurrencyIconKind
 import com.filipinodama.app.ui.components.LocalSnackbar
+import com.filipinodama.app.ui.components.PullRefreshContainer
 import com.filipinodama.app.ui.components.isAuthError
 import com.filipinodama.app.ui.components.screenInsets
 import com.filipinodama.app.ui.theme.Gold
@@ -94,26 +95,30 @@ fun FriendsScreen(
     var swipeState by remember { mutableStateOf(SwipeListState()) }
     var addOpen by remember { mutableStateOf(false) }
 
-    fun refresh() {
-        scope.launch {
-            loading = true
-            // The friends list is the primary content; a failure there drives the
-            // error state. Requests/suggested are secondary — their failure just
-            // leaves those sections empty (not worth an error banner).
-            when (val f = FriendsRepository.friends()) {
-                is SocialResult.Success -> { friends = f.data.friends; loadFailed = false }
-                is SocialResult.Failure -> loadFailed = true
-            }
-            when (val r = FriendsRepository.requests()) {
-                is SocialResult.Success -> incoming = r.data.incoming
-                is SocialResult.Failure -> {}
-            }
-            when (val s = FriendsRepository.suggested()) {
-                is SocialResult.Success -> suggested = s.data.suggested
-                is SocialResult.Failure -> {}
-            }
-            loading = false
+    // Extracted as a suspend fun (not just scope.launch'd) so pull-to-refresh can
+    // await it directly via PullRefreshContainer's onRefresh.
+    suspend fun refreshData() {
+        loading = true
+        // The friends list is the primary content; a failure there drives the
+        // error state. Requests/suggested are secondary — their failure just
+        // leaves those sections empty (not worth an error banner).
+        when (val f = FriendsRepository.friends()) {
+            is SocialResult.Success -> { friends = f.data.friends; loadFailed = false }
+            is SocialResult.Failure -> loadFailed = true
         }
+        when (val r = FriendsRepository.requests()) {
+            is SocialResult.Success -> incoming = r.data.incoming
+            is SocialResult.Failure -> {}
+        }
+        when (val s = FriendsRepository.suggested()) {
+            is SocialResult.Success -> suggested = s.data.suggested
+            is SocialResult.Failure -> {}
+        }
+        loading = false
+    }
+
+    fun refresh() {
+        scope.launch { refreshData() }
     }
 
     LaunchedEffect(me?.id) {
@@ -215,7 +220,7 @@ fun FriendsScreen(
         return
     }
 
-    Column(modifier = Modifier.fillMaxSize().screenInsets().background(MaterialTheme.colorScheme.background).verticalScroll(rememberScrollState())) {
+    Column(modifier = Modifier.fillMaxSize().screenInsets().background(MaterialTheme.colorScheme.background)) {
         Row(modifier = Modifier.fillMaxWidth().padding(20.dp), verticalAlignment = Alignment.CenterVertically) {
             // Mockup Friends header (line 2800): the ‹ chevron square button, then
             // the eyebrow + title. NOT a "‹ Back" text link (owner round-3 fix).
@@ -234,6 +239,11 @@ fun FriendsScreen(
             }
         }
 
+        // Pull down anywhere in the scrollable body to RE-FETCH friends/requests/
+        // suggested from the server (refreshData() — the same calls the entry
+        // LaunchedEffect runs), so a pull gets the latest, not a cosmetic spinner.
+        PullRefreshContainer(onRefresh = { refreshData() }) {
+        Column(modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
         // Stat tiles — mockup order/labels/colors EXACTLY (line 3298-3300):
         // Online now (#6ee0a0 green) · Total friends (#f4d886 gold) · Requests.
         Row(modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -333,6 +343,8 @@ fun FriendsScreen(
                 }
             }
         }
+        } // Column (scrollable body)
+        } // PullRefreshContainer
     }
 }
 
