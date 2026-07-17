@@ -153,7 +153,10 @@ android {
         // rememberSaveable(key) so it survives the match composable leaving/re-
         // entering composition while Settings sits on top (a genuinely new match
         // still gets a fresh loader via a new back-stack-entry key). (27 was
-        // uploaded to Play before this fix, so this ships as 28.)
+        // uploaded to Play before this fix, so this ships as 28.) Also in 28:
+        // the Notifications swipe-to-delete red tray is clipped to the card's
+        // 16dp rounded shape, so the red no longer pokes out at the card corners
+        // when the row is closed (owner-reported "red corners").
         versionCode = 28
         versionName = "0.1.28"
 

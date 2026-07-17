@@ -17,6 +17,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.draw.clip
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -192,7 +193,16 @@ private fun NotificationSwipeRow(
             isOpen = isOpen,
             onOpenChange = onOpenChange,
             actions = {
-                Row(modifier = Modifier.fillMaxSize(), horizontalArrangement = Arrangement.End) {
+                // The red delete tray is CLIPPED to the same 16dp rounded shape as
+                // the card in front of it. Without this the tray is a square-
+                // cornered rectangle behind a rounded card, so when the row is
+                // CLOSED the red pokes out at all four corners + the side edges
+                // (owner-reported "red corners"). Clipping it to match means the
+                // red only ever shows on the straight right edge when swiped open.
+                Row(
+                    modifier = Modifier.fillMaxSize().clip(RoundedCornerShape(16.dp)),
+                    horizontalArrangement = Arrangement.End
+                ) {
                     Box(
                         modifier = Modifier.fillMaxSize().width(132.dp)
                             .background(Color(0xFFD93B52))
