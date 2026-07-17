@@ -5,6 +5,7 @@ import { ok, err } from "../lib/errors.js";
 import { requireAuth } from "../auth/guards.js";
 import { isBlockedBetween } from "./blocks.js";
 import { pushUnreadCount } from "../lib/notify.js";
+import { matchIdsForUser } from "../realtime/store.js";
 
 /** Public-safe user shape for friend lists / requests / suggestions. */
 function publicFriend(u: {
@@ -114,7 +115,23 @@ export async function friendRoutes(app: FastifyInstance) {
       },
       orderBy: { createdAt: "desc" },
     });
-    const friends = rows.map((f) => publicFriend(f.aId === me ? f.b : f.a));
+    const base = rows.map((f) => publicFriend(f.aId === me ? f.b : f.a));
+    // Annotate each friend with a REAL "in a live match" flag from the realtime
+    // layer's rt:userMatch:<uid> Redis index (already maintained by match
+    // create/remove). Drives the amber "in-game" presence state on the Friends
+    // screen (mockup 3-state dot). Best-effort: a Redis hiccup just yields
+    // inMatch=false, never fabricated.
+    const friends = await Promise.all(
+      base.map(async (u) => {
+        let inMatch = false;
+        try {
+          inMatch = (await matchIdsForUser(u.id)).length > 0;
+        } catch {
+          /* realtime index unavailable → treat as not-in-match */
+        }
+        return { ...u, inMatch };
+      }),
+    );
     return ok({ friends });
   });
 

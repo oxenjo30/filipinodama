@@ -163,8 +163,24 @@ android {
         // the Notifications swipe-to-delete red tray is clipped to the card's
         // 16dp rounded shape, so the red no longer pokes out at the card corners
         // when the row is closed (owner-reported "red corners").
-        versionCode = 28
-        versionName = "0.1.28"
+        // 29 = TWO shipped batches in one release. Ship 1: REAL-TIME notification
+        // badge — the red "action needed" bubble appears the instant a
+        // notification arrives (e.g. a friend request) with no refresh (server
+        // emits notif:new to presence:<userId>, mobile/web subscribe); PULL-TO-
+        // REFRESH fixed on loading/empty/error states (they weren't scroll
+        // containers so the gesture never fired); the Home bell badge no longer
+        // clips at the screen edge; the Edit-Avatar "Save Changes" button is
+        // pinned + clears the gesture bar. Ship 2: Friends screen brought 1:1 to
+        // the mockup — inline tier chip, unread-DM count bubble on the 💬 button,
+        // Requests rows use compact ✓/✕ icon buttons, the Requests summary tile
+        // is lavender, the Offline header drops its count; a DISCOVERABLE "⋯ →
+        // Remove friend" menu (unfriend was swipe-only); 3-state presence dot
+        // (online green / in-a-match amber / offline grey) driven by a real
+        // rt:userMatch server flag; and the Profile "Messages" pill was removed
+        // (mockup has no inbox — chat is per-person) with its unread signal
+        // folded into the Friends pill's red bubble (friend requests + unread DMs).
+        versionCode = 29
+        versionName = "0.1.29"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 

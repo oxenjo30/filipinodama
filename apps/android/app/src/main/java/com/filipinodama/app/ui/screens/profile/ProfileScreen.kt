@@ -376,11 +376,11 @@ fun ProfileScreen(
         // "👥 Friends" (purple, unread badge) pills. Replaces the old
         // Edit/Friends/Settings 3-chip row (Edit moved into the header above,
         // Settings moved into the tab bar below).
-        // Three quick-link pills, each a red "needs action" bubble on its own
-        // real count: Inventory (no count), Friends (pending friend-REQUESTS —
-        // fixed: it used to wrongly show the DM count), Messages (unread DMs).
-        // The messages entry lives here (not on Home) per owner directive: every
-        // pending action a player must handle shows as a red bubble on the Profile.
+        // Two quick-link pills. The Messages pill was REMOVED (owner directive
+        // 2026-07-17): the mobile mockup has no Messages inbox, chat is reached
+        // per-person via the friend 💬 button. Its "needs action" signal moves
+        // onto the FRIENDS pill, whose red bubble now sums pending friend-REQUESTS
+        // + unread DMs — a single "social action needed" indicator on Profile.
         Row(
             modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp),
             horizontalArrangement = Arrangement.spacedBy(8.dp)
@@ -399,17 +399,10 @@ fun ProfileScreen(
                 textColor = Color(0xFFE7D6FF),
                 gradient = listOf(Color(0x477A4BBF), Color(0x474E2A8E)),
                 border = Color(0x66C9A4FF),
-                badgeCount = friendReqCount,
+                // Red bubble = pending friend REQUESTS + unread DMs (the Messages
+                // pill's old signal folded in here).
+                badgeCount = friendReqCount + dmUnread.unread,
                 onClick = onOpenFriends,
-                modifier = Modifier.weight(1f)
-            )
-            ProfileQuickLink(
-                label = "✉ Messages",
-                textColor = Color(0xFF9EC1FF),
-                gradient = listOf(Color(0x475A96FF), Color(0x472E4E8E)),
-                border = Color(0x665A96FF),
-                badgeCount = dmUnread.unread,
-                onClick = onOpenMessages,
                 modifier = Modifier.weight(1f)
             )
         }
