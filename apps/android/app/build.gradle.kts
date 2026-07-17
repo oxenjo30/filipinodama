@@ -179,8 +179,12 @@ android {
         // rt:userMatch server flag; and the Profile "Messages" pill was removed
         // (mockup has no inbox — chat is per-person) with its unread signal
         // folded into the Friends pill's red bubble (friend requests + unread DMs).
-        versionCode = 29
-        versionName = "0.1.29"
+        // 30 = one-tap EMOJI PICKER in guild chat + friend/DM chat composers: a
+        // small 😊 button opens a popup grid of common chat emojis that insert
+        // into the message draft (the text fields already accept typed emoji;
+        // this adds a quick inserter without switching the keyboard).
+        versionCode = 30
+        versionName = "0.1.30"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
