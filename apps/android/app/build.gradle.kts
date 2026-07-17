@@ -107,13 +107,16 @@ android {
         // off); the Store item card is left-aligned to match the mobile mockup
         // (the price no longer hugs the left under centered content); the Private
         // Room lobby's players card is rebuilt as the mockup's 3-column VS grid.
-        // Also in 21 (combined from a second workstream): an in-app "update
-        // available" nudge — a soft, dismissible dialog (server-driven via the
-        // ANDROID_LATEST_VERSION config key vs BuildConfig.VERSION_CODE) that opens
-        // the Play listing; dormant until an admin sets that key. Ships off by
-        // default ("0").
-        versionCode = 21
-        versionName = "0.1.20"
+        // 22 = COMBINED build: the systemic mobile-layout pass (above) PLUS an
+        // in-app "update available" nudge — a soft, dismissible dialog
+        // (server-driven via the ANDROID_LATEST_VERSION config key vs
+        // BuildConfig.VERSION_CODE) that opens the Play listing; dormant until an
+        // admin sets that key (ships off by default, "0"). Owner directive: from
+        // here on the versionName digits track the versionCode for easy counting —
+        // versionCode 22 → versionName "0.1.22" (ending the historical off-by-one).
+        // 21 was set on a branch but superseded by this 22 before any upload.
+        versionCode = 22
+        versionName = "0.1.22"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
