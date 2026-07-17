@@ -1,5 +1,14 @@
 # Lessons
 
+## 2026-07-17 - "compileDebugKotlin clean" missed errors that only compileReleaseKotlin caught
+
+- Mistake: Verified Android changes with `:app:compileDebugKotlin` (exit 0) and called them done. The RELEASE bundle build then failed at `:app:compileReleaseKotlin` on a missing import (`navigationBarsPadding`) and a duplicate import (`Arrangement`) — errors the debug compile did NOT surface. Root: (a) debug compiles incrementally and a file carried in from another worktree wasn't recompiled from clean, so its missing import went unseen; (b) release-variant compile settings flagged the duplicate import as an error where debug didn't. The green debug compile was falsely reassuring for exactly the files that were broken.
+- Cause: Debug and release are different Kotlin compilation variants with different caching and strictness. An incremental debug compile can pass over a file that a clean release compile rejects. Verifying only debug is not sufficient before a release AAB.
+- Rule:
+  1. Before building a release AAB, run `:app:compileReleaseKotlin` (the same variant the bundle compiles) — not just `compileDebugKotlin`. It's the true gate.
+  2. When you COPY a file from another worktree/branch into this one, its imports are only valid if that file's deps also exist here — recompile it specifically (or clean-compile), don't trust an incremental debug pass.
+  3. Watch for duplicate imports when multiple agents edit the same file's import block — one adds an import another already added. The release compiler treats an ambiguous/duplicate import as an error.
+
 ## 2026-07-17 - Shipped pull-to-refresh that silently did nothing on loading/empty/error states
 
 - Mistake: Wired `PullToRefreshBox` (material3 1.3.0) on ~18 screens by wrapping each screen's `when {}` content. It compiled and worked ON A POPULATED LIST, so I called it done — but on the LOADING, ERROR, and EMPTY branches (a bare `Box`, or a `Column` with `fillMaxSize()` but NO `verticalScroll`) the pull gesture did nothing: no spinner, no refetch. The empty state is the FIRST thing a user sees on a fresh screen, so it read as "pull-to-refresh is broken."
