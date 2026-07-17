@@ -148,6 +148,11 @@ android {
         // Mode / Time Control / spectator-toggle are host-local visual controls
         // (no server field — same honest boundary as the web room page); only
         // Move Timer writes the authoritative settings.moveTimerSec.
+        // Also in 27: opening Settings mid-match then closing it no longer
+        // replays the ~2s loading screen — MatchEntryGate's "already loaded"
+        // flag is now rememberSaveable(key) so it survives the match composable
+        // leaving/re-entering composition while Settings sits on top (a genuinely
+        // new match still gets a fresh loader via a new back-stack-entry key).
         versionCode = 27
         versionName = "0.1.27"
 
