@@ -57,6 +57,8 @@ import com.filipinodama.app.ui.components.LoadingContext
 import com.filipinodama.app.ui.components.LoadingOverlay
 import com.filipinodama.app.ui.components.LocalSnackbar
 import com.filipinodama.app.ui.components.rememberSnackbarController
+import com.filipinodama.app.ui.components.UpdateAvailableDialog
+import com.filipinodama.app.ui.components.openPlayStoreListing
 import com.filipinodama.app.ui.screens.rooms.LiveMatchBrowserScreen
 import com.filipinodama.app.ui.screens.rooms.PrivateRoomScreen
 import com.filipinodama.app.ui.screens.economy.DailyRewardsScreen
@@ -216,6 +218,11 @@ fun AppNavHost() {
     // (not just a dismissible banner like web's desktop nav banner) per
     // mobile-screen-inventory.md SCREEN 1 being a full-screen `sc-if` gate.
     val maintenance by ConfigRepository.maintenance.collectAsState()
+    // "Update available" nudge (once per process): a plain `remember` — NOT
+    // keyed, NOT reset on ON_RESUME below — so it survives resume/foreground
+    // and only resets on cold start, matching the spec's once-per-process cadence.
+    val updateAvailable by ConfigRepository.updateAvailable.collectAsState()
+    var updateDismissed by remember { mutableStateOf(false) }
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     // App-wide transient feedback — one host, provided to the whole NavHost so any
@@ -748,6 +755,16 @@ fun AppNavHost() {
         }
         }
         }
+        }
+
+        if (updateAvailable && !updateDismissed) {
+            UpdateAvailableDialog(
+                onUpdate = {
+                    openPlayStoreListing(context)
+                    updateDismissed = true
+                },
+                onDismiss = { updateDismissed = true }
+            )
         }
     }
 }
