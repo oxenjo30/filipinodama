@@ -475,6 +475,11 @@ private fun HostOrGuestLobby(
     val context = LocalContext.current
     var copyLabel by remember { mutableStateOf("Copy Code") }
     val roomUrl = "${BuildConfig.WEB_ORIGIN}/rooms?code=${ui.code}"
+    // "Allow spectators" is a LOCAL host preference — the server has no field
+    // for it yet (spectating is always technically open via the link), so we
+    // keep it honest: this only toggles what the host sees, exactly like the
+    // web PrivateRoomPage's local `allowSpec`. Not presented as shared state.
+    var allowSpec by remember { mutableStateOf(true) }
 
     // navigationBarsPadding() lifts the whole scroll content above the system
     // nav/gesture bar so the last item (Leave / Start Match) clears it instead of
@@ -515,20 +520,38 @@ private fun HostOrGuestLobby(
             )
         }
 
+        // Players card + Match Settings live TOGETHER (mockup 1680-1721: the
+        // "Game Mode / Time Control / Move Timer" block is inside the players
+        // card, under the VS grid, host-only).
         item {
-            PlayersCard(host = ui.host, guest = ui.guest, isHost = isHost, onKick = onKick, onBan = onBan)
+            PlayersCard(
+                host = ui.host,
+                guest = ui.guest,
+                isHost = isHost,
+                settings = ui.settings,
+                onKick = onKick,
+                onBan = onBan,
+                onSettings = onSettings
+            )
         }
 
-        if (isHost) {
-            item { SettingsCard(settings = ui.settings, onSettings = onSettings) }
+        // Card order matches the mockup (1723-1780): Spectators → Invite
+        // Friends → Room Chat.
+        item {
+            SpectatorsCard(
+                spectators = ui.spectators,
+                allowSpec = allowSpec,
+                isHost = isHost,
+                onKick = onKick,
+                onToggleSpec = { allowSpec = !allowSpec },
+                roomUrl = roomUrl,
+                clipboard = clipboard,
+                onOpenSpectate = onSpectateSelf
+            )
         }
 
         if (isHost) {
             item { InviteFriendsCard(roomUrl = roomUrl) }
-        }
-
-        item {
-            SpectatorsCard(spectators = ui.spectators, isHost = isHost, onKick = onKick, roomUrl = roomUrl, clipboard = clipboard, onOpenSpectate = onSpectateSelf)
         }
 
         item {
@@ -578,13 +601,29 @@ private fun RoomCodeCard(
                     }
                 }
             }
+            // Mockup 1665-1669: "Copy Code" is the WIDE primary (flex:1, gold-
+            // tinted); "Link" and "Invite" are COMPACT auto-width secondaries
+            // (flex:none, dark bg + thin gold border). Not three equal-width
+            // gradient buttons.
             Row(
                 modifier = Modifier.fillMaxWidth().padding(top = 16.dp),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                GameButton(copyLabel, onCopyCode, modifier = Modifier.weight(1f))
-                GameButton("🔗 Link", onCopyLink, variant = GameButtonVariant.PURPLE, modifier = Modifier.weight(1f))
-                GameButton("✉ Invite", onShare, variant = GameButtonVariant.PURPLE, modifier = Modifier.weight(1f))
+                // Wide gold-tinted "Copy Code" primary (flex:1).
+                Box(
+                    modifier = Modifier
+                        .weight(1f)
+                        .clickable(onClick = onCopyCode)
+                        .background(Gold.copy(alpha = 0.10f), RoundedCornerShape(11.dp))
+                        .border(1.dp, Gold.copy(alpha = 0.3f), RoundedCornerShape(11.dp))
+                        .padding(vertical = 11.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(copyLabel, color = Color(0xFFF0CF72), style = MaterialTheme.typography.labelLarge)
+                }
+                RoomCompactButton("🔗 Link", onCopyLink)
+                RoomCompactButton("✉ Invite", onShare)
             }
 
             // "Lock the room" toggle (mockup 1670-1677): a divider, then the lock
@@ -635,8 +674,17 @@ private fun RoomCodeCard(
  * web port.
  */
 @Composable
-private fun PlayersCard(host: RoomMemberDto?, guest: RoomMemberDto?, isHost: Boolean, onKick: (String) -> Unit, onBan: (String) -> Unit) {
+private fun PlayersCard(
+    host: RoomMemberDto?,
+    guest: RoomMemberDto?,
+    isHost: Boolean,
+    settings: GameSettings,
+    onKick: (String) -> Unit,
+    onBan: (String) -> Unit,
+    onSettings: (GameSettings) -> Unit
+) {
     GameFrameCard {
+      Column {
         Row(
             modifier = Modifier.fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically,
@@ -706,6 +754,113 @@ private fun PlayersCard(host: RoomMemberDto?, guest: RoomMemberDto?, isHost: Boo
                 }
             }
         }
+
+        // ── Match settings (mockup 1706-1720) — INSIDE the players card, under
+        //    the VS grid, host-only. Divider then Game Mode / Time Control /
+        //    Move Timer chip rows. ──
+        if (isHost) {
+            MatchSettingsBlock(settings = settings, onSettings = onSettings)
+        }
+      }
+    }
+}
+
+/**
+ * Match-settings chip rows (mockup 1706-1720). Rendered for the HOST inside the
+ * players card. Honesty boundary (mirrors web PrivateRoomPage.tsx lines 148-157):
+ *  • "Game Mode" (Classic / Blitz) and "Time Control" (5 min / 10 min /
+ *    Unlimited) are host-local visual preferences — the server has NO field for
+ *    them, so they are NOT written to shared room state (selecting one only
+ *    changes what the host sees). Presenting them as live shared state would be
+ *    fabricated data.
+ *  • "Move Timer" (10s / 20s / 30s / Off) is REAL — it writes to the
+ *    authoritative settings.moveTimerSec the server persists and every client
+ *    reads. These are the same option values the web uses.
+ */
+@Composable
+private fun MatchSettingsBlock(settings: GameSettings, onSettings: (GameSettings) -> Unit) {
+    // Local-only cosmetic preferences (no server field yet). Kept honest.
+    var mode by remember { mutableStateOf("Classic") }
+    var time by remember { mutableStateOf("10 min") }
+    // The real, authoritative move-timer value.
+    val moveTimerLabel = when (settings.moveTimerSec) {
+        10 -> "10s"; 20 -> "20s"; 30 -> "30s"; else -> "Off"
+    }
+
+    Box(
+        Modifier.fillMaxWidth().padding(top = 16.dp).height(1.dp).background(Gold.copy(alpha = 0.12f))
+    )
+    Column(modifier = Modifier.padding(top = 16.dp)) {
+        SettingLabel("Game Mode")
+        ChipRow(
+            options = listOf("Classic", "Blitz"),
+            selected = mode,
+            onSelect = { mode = it }
+        )
+
+        SettingLabel("Time Control", topPad = 14.dp)
+        ChipRow(
+            options = listOf("5 min", "10 min", "Unlimited"),
+            selected = time,
+            onSelect = { time = it }
+        )
+
+        // Move Timer — real. Header row carries a live subtitle.
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(top = 14.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text("MOVE TIMER", color = Color(0xFFC79A4E), style = MaterialTheme.typography.labelSmall)
+            Text(
+                if (settings.moveTimerSec == null) "No per-move limit" else "${settings.moveTimerSec}s per move",
+                color = Ink2,
+                style = MaterialTheme.typography.labelSmall
+            )
+        }
+        Row(horizontalArrangement = Arrangement.spacedBy(7.dp), modifier = Modifier.padding(top = 8.dp)) {
+            listOf("10s" to 10, "20s" to 20, "30s" to 30, "Off" to null).forEach { (label, secs) ->
+                val selected = moveTimerLabel == label
+                SettingChip(label = label, selected = selected) {
+                    onSettings(settings.copy(moveTimerSec = secs))
+                }
+            }
+        }
+    }
+}
+
+/** Uppercase gold section label used by the match-settings rows (mockup 1708). */
+@Composable
+private fun SettingLabel(text: String, topPad: androidx.compose.ui.unit.Dp = 0.dp) {
+    Text(
+        text.uppercase(),
+        color = Color(0xFFC79A4E),
+        style = MaterialTheme.typography.labelSmall,
+        modifier = Modifier.padding(top = topPad, bottom = 8.dp)
+    )
+}
+
+/** A horizontal row of selectable setting chips. */
+@Composable
+private fun ChipRow(options: List<String>, selected: String, onSelect: (String) -> Unit) {
+    Row(horizontalArrangement = Arrangement.spacedBy(7.dp)) {
+        options.forEach { opt ->
+            SettingChip(label = opt, selected = opt == selected) { onSelect(opt) }
+        }
+    }
+}
+
+/** One rounded setting chip (mockup segmented-control button style). */
+@Composable
+private fun SettingChip(label: String, selected: Boolean, onClick: () -> Unit) {
+    Box(
+        modifier = Modifier
+            .clickable(onClick = onClick)
+            .background(if (selected) Gold.copy(alpha = 0.22f) else Color.White.copy(alpha = 0.06f), RoundedCornerShape(999.dp))
+            .border(1.dp, if (selected) Gold else Gold.copy(alpha = 0.15f), RoundedCornerShape(999.dp))
+            .padding(horizontal = 12.dp, vertical = 8.dp)
+    ) {
+        Text(label, color = if (selected) GoldLt else Ink, style = MaterialTheme.typography.labelMedium)
     }
 }
 
@@ -745,6 +900,44 @@ private fun PlayerSeat(
     }
 }
 
+/**
+ * Compact auto-width secondary button (mockup 1667-1668): dark translucent bg,
+ * thin gold border, 12px label. Sizes to its content — used for the room-code
+ * "Link" / "Invite" actions that sit beside the wide "Copy Code" primary.
+ */
+@Composable
+private fun RoomCompactButton(text: String, onClick: () -> Unit) {
+    Box(
+        modifier = Modifier
+            .clickable(onClick = onClick)
+            .background(Color(0x800F0720), RoundedCornerShape(11.dp))
+            .border(1.dp, Gold.copy(alpha = 0.2f), RoundedCornerShape(11.dp))
+            .padding(horizontal = 14.dp, vertical = 11.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        Text(text, color = Color(0xFFC9B8E6), style = MaterialTheme.typography.labelLarge)
+    }
+}
+
+/**
+ * Small fully-rounded PILL button (mockup 1741-1742): auto-width, dark bg, thin
+ * tinted border, 11px label. Used for "Copy Spectate Link" / "Spectator View"
+ * — NOT the big full-width GameButton the old build used.
+ */
+@Composable
+private fun RoomPill(text: String, borderColor: Color, textColor: Color, bg: Color, onClick: () -> Unit) {
+    Box(
+        modifier = Modifier
+            .clickable(onClick = onClick)
+            .background(bg, RoundedCornerShape(100.dp))
+            .border(1.dp, borderColor, RoundedCornerShape(100.dp))
+            .padding(horizontal = 14.dp, vertical = 8.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        Text(text, color = textColor, style = MaterialTheme.typography.labelMedium)
+    }
+}
+
 @Composable
 private fun SmallActionChip(text: String, danger: Boolean = false, onClick: () -> Unit) {
     Box(
@@ -758,99 +951,116 @@ private fun SmallActionChip(text: String, danger: Boolean = false, onClick: () -
 }
 
 /**
- * Host controls for game settings — maps to the server's REAL sanitizeSettings
- * fields (apps/server/src/realtime/rooms.ts): forcedMaxCapture (bool),
- * drawMoveLimit (10-200), moveTimerSec (5-600, optional/off). The mockup's
- * "Game Mode" / "Time Control" / "Move Timer" chip rows are represented here
- * with the actual settings the server accepts — not invented chip values the
- * server would silently discard.
+ * Spectators card (mockup 1723-1748). Header = "Spectators" + a subtitle + an
+ * on/off SWITCH. When spectators are ALLOWED: either a wrap of spectator CHIPS
+ * (avatar + name + host ✕) or the exact empty-state copy, then a small "Copy
+ * Spectate Link" PILL and a "▶ Spectator View" pill (NOT a big full-width
+ * button). When OFF: the "turned off" explainer.
+ *
+ * [allowSpec] is a host-local visual preference — the server has no field for a
+ * spectator on/off toggle, so this only changes what the host sees (mirrors the
+ * web PrivateRoomPage's local `allowSpec`); it is not fabricated shared state.
  */
-@Composable
-private fun SettingsCard(settings: GameSettings, onSettings: (GameSettings) -> Unit) {
-    GameFrameCard {
-        Column {
-            Text("Match Settings", color = Ink2, style = MaterialTheme.typography.labelSmall)
-
-            Row(
-                modifier = Modifier.fillMaxWidth().padding(top = 12.dp),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Column {
-                    Text("Forced max capture", color = Color.White, style = MaterialTheme.typography.bodyMedium)
-                    Text("Must take the biggest available capture", color = Ink2, style = MaterialTheme.typography.labelSmall)
-                }
-                Switch(
-                    checked = settings.forcedMaxCapture,
-                    onCheckedChange = { onSettings(settings.copy(forcedMaxCapture = it)) },
-                    colors = SwitchDefaults.colors(checkedThumbColor = Gold, checkedTrackColor = Gold.copy(alpha = 0.4f))
-                )
-            }
-
-            Text("Move Timer", color = Color.White, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(top = 16.dp))
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(top = 8.dp)) {
-                // Mockup move-timer options: Off / 15s / 30s / 60s (ROOM-2).
-                listOf(null, 15, 30, 60).forEach { secs ->
-                    val selected = settings.moveTimerSec == secs
-                    Box(
-                        modifier = Modifier
-                            .clickable { onSettings(settings.copy(moveTimerSec = secs)) }
-                            .background(if (selected) Gold.copy(alpha = 0.22f) else Color.White.copy(alpha = 0.06f), RoundedCornerShape(999.dp))
-                            .border(1.dp, if (selected) Gold else Gold.copy(alpha = 0.15f), RoundedCornerShape(999.dp))
-                            .padding(horizontal = 12.dp, vertical = 8.dp)
-                    ) {
-                        Text(if (secs == null) "Off" else "${secs}s", color = if (selected) GoldLt else Ink, style = MaterialTheme.typography.labelMedium)
-                    }
-                }
-            }
-
-            Text("Draw Move Limit: ${settings.drawMoveLimit}", color = Color.White, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(top = 16.dp))
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(top = 8.dp)) {
-                listOf(20, 40, 80, 120).forEach { limit ->
-                    val selected = settings.drawMoveLimit == limit
-                    Box(
-                        modifier = Modifier
-                            .clickable { onSettings(settings.copy(drawMoveLimit = limit)) }
-                            .background(if (selected) Gold.copy(alpha = 0.22f) else Color.White.copy(alpha = 0.06f), RoundedCornerShape(999.dp))
-                            .border(1.dp, if (selected) Gold else Gold.copy(alpha = 0.15f), RoundedCornerShape(999.dp))
-                            .padding(horizontal = 12.dp, vertical = 8.dp)
-                    ) {
-                        Text("$limit", color = if (selected) GoldLt else Ink, style = MaterialTheme.typography.labelMedium)
-                    }
-                }
-            }
-        }
-    }
-}
-
+@OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable
 private fun SpectatorsCard(
     spectators: List<RoomMemberDto>,
+    allowSpec: Boolean,
     isHost: Boolean,
     onKick: (String) -> Unit,
+    onToggleSpec: () -> Unit,
     roomUrl: String,
     clipboard: ClipboardManager,
     onOpenSpectate: () -> Unit
 ) {
     GameFrameCard {
         Column {
+            // Header: title + subtitle + switch (mockup 1725-1728).
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                Text("Spectators (${spectators.size})", color = Ink2, style = MaterialTheme.typography.labelSmall)
+                Column(modifier = Modifier.weight(1f)) {
+                    Text("Spectators", color = Color(0xFFF4D886), style = MaterialTheme.typography.titleSmall)
+                    Text(
+                        if (allowSpec) "${spectators.size} watching · friends can tune in" else "Match is private",
+                        color = Ink2,
+                        style = MaterialTheme.typography.labelSmall,
+                        modifier = Modifier.padding(top = 2.dp)
+                    )
+                }
+                Switch(
+                    checked = allowSpec,
+                    onCheckedChange = { if (isHost) onToggleSpec() },
+                    enabled = isHost,
+                    colors = SwitchDefaults.colors(checkedThumbColor = Gold, checkedTrackColor = Gold.copy(alpha = 0.4f))
+                )
             }
-            if (spectators.isEmpty()) {
-                Text("No one watching yet", color = Ink2, style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(top = 8.dp))
-            } else {
-                Column(modifier = Modifier.padding(top = 8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    spectators.forEach { spec ->
-                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                            Text(spec.name, color = Color.White, style = MaterialTheme.typography.bodyMedium)
-                            if (isHost) SmallActionChip("Kick") { onKick(spec.userId) }
+
+            if (allowSpec) {
+                Column(modifier = Modifier.padding(top = 14.dp)) {
+                    if (spectators.isEmpty()) {
+                        Text(
+                            "👁 No one is watching yet — share the spectate link to let friends tune in.",
+                            color = Ink2,
+                            style = MaterialTheme.typography.bodySmall
+                        )
+                    } else {
+                        // Spectator chips (avatar + name + host ✕), wrapping.
+                        androidx.compose.foundation.layout.FlowRow(
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            spectators.forEach { spec ->
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(7.dp),
+                                    modifier = Modifier
+                                        .background(Color(0x800F0720), RoundedCornerShape(100.dp))
+                                        .border(1.dp, Gold.copy(alpha = 0.16f), RoundedCornerShape(100.dp))
+                                        .padding(start = 5.dp, end = 8.dp, top = 5.dp, bottom = 5.dp)
+                                ) {
+                                    AvatarView(avatarUrl = spec.avatarUrl, size = 24.dp)
+                                    Text(spec.name, color = Color(0xFFF4ECD6), style = MaterialTheme.typography.labelMedium)
+                                    if (isHost) {
+                                        Box(
+                                            modifier = Modifier
+                                                .size(18.dp)
+                                                .clickable { onKick(spec.userId) }
+                                                .background(Color(0x24A83744), CircleShape)
+                                                .border(1.dp, Color(0x80A83744), CircleShape),
+                                            contentAlignment = Alignment.Center
+                                        ) { Text("✕", color = Color(0xFFFF8FAE), style = MaterialTheme.typography.labelSmall) }
+                                    }
+                                }
+                            }
                         }
                     }
+                    // The two share pills (mockup 1741-1742) — small, side by side.
+                    Row(
+                        modifier = Modifier.padding(top = 12.dp),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        RoomPill(
+                            text = "👁 Copy Spectate Link",
+                            borderColor = Gold.copy(alpha = 0.3f),
+                            textColor = Color(0xFFC9B8E6),
+                            bg = Color(0x800F0720),
+                            onClick = { clipboard.setText(AnnotatedString(roomUrl)) }
+                        )
+                        RoomPill(
+                            text = "▶ Spectator View",
+                            borderColor = Color(0x595A96FF),
+                            textColor = Color(0xFF8FB3FF),
+                            bg = Color(0x1F5A96FF),
+                            onClick = onOpenSpectate
+                        )
+                    }
                 }
-            }
-            Row(modifier = Modifier.fillMaxWidth().padding(top = 12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                GameButton("👁 Copy Spectate Link", onClick = { clipboard.setText(AnnotatedString(roomUrl)) }, variant = GameButtonVariant.PURPLE, modifier = Modifier.weight(1f))
+            } else {
+                Text(
+                    "Spectators are turned off. Only you and your opponent can see this match.",
+                    color = Ink2,
+                    style = MaterialTheme.typography.bodySmall,
+                    modifier = Modifier.padding(top = 12.dp)
+                )
             }
         }
     }

@@ -134,8 +134,22 @@ android {
         // tray no longer bleeds through (it looked like a solid red card); and every
         // dialog adopts the shared royal panel (RoyalDialog.kt: purple gradient +
         // gold border) so no modal looks flat/off-brand.
-        versionCode = 25
-        versionName = "0.1.25"
+        // 26 = Pull-to-refresh across 18 data screens (separate branch/PR #30).
+        // 27 = Private Room 1:1 mockup-fidelity rebuild of the host lobby
+        // (handoffv3 Mobile.dc.html PRIVATE ROOM section). "Copy Spectate Link"
+        // is now the small rounded PILL from the mockup (was an oversized full-
+        // width purple button) with a "▶ Spectator View" pill beside it; the
+        // Spectators card gains its header subtitle + on/off switch + spectator
+        // chips (avatar+name+✕); Match Settings ("Game Mode" / "Time Control" /
+        // "Move Timer" chip rows) is merged INTO the players card under the VS
+        // grid; the room-code row makes "Copy Code" the wide primary with
+        // compact "Link"/"Invite" secondaries; and the card order matches the
+        // mockup (Code → Players+Settings → Spectators → Invite → Chat). Game
+        // Mode / Time Control / spectator-toggle are host-local visual controls
+        // (no server field — same honest boundary as the web room page); only
+        // Move Timer writes the authoritative settings.moveTimerSec.
+        versionCode = 27
+        versionName = "0.1.27"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
