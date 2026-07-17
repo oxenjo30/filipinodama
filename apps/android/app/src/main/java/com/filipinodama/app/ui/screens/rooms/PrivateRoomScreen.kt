@@ -48,6 +48,7 @@ import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.compose.runtime.collectAsState
 import com.filipinodama.app.BuildConfig
 import com.filipinodama.app.R
@@ -154,6 +155,7 @@ fun PrivateRoomScreen(
         when (val e = ui.error) {
             is RoomError.NotFound -> { toast = "No room found for code ${e.code}."; mode = RoomScreenMode.JOIN }
             is RoomError.Banned -> { toast = "You're banned from that room."; mode = RoomScreenMode.JOIN }
+            RoomError.Locked -> { toast = "That room is locked — the host isn't accepting new players."; mode = RoomScreenMode.JOIN }
             is RoomError.YouBanned -> { toast = "You're banned from that room."; mode = RoomScreenMode.CHOOSE }
             RoomError.Kicked -> { toast = "You were removed from the room."; mode = RoomScreenMode.CHOOSE }
             RoomError.Closed -> { toast = "The host closed the room."; mode = RoomScreenMode.CHOOSE }
@@ -493,6 +495,9 @@ private fun HostOrGuestLobby(
             RoomCodeCard(
                 code = ui.code ?: "",
                 copyLabel = copyLabel,
+                locked = ui.locked,
+                isHost = isHost,
+                onToggleLock = { RoomRepository.setLock(!ui.locked) },
                 onCopyCode = {
                     clipboard.setText(AnnotatedString(ui.code ?: ""))
                     copyLabel = "Copied!"
@@ -547,7 +552,16 @@ private fun HostOrGuestLobby(
 }
 
 @Composable
-private fun RoomCodeCard(code: String, copyLabel: String, onCopyCode: () -> Unit, onCopyLink: () -> Unit, onShare: () -> Unit) {
+private fun RoomCodeCard(
+    code: String,
+    copyLabel: String,
+    locked: Boolean,
+    isHost: Boolean,
+    onToggleLock: () -> Unit,
+    onCopyCode: () -> Unit,
+    onCopyLink: () -> Unit,
+    onShare: () -> Unit
+) {
     GameFrameCard {
         Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.fillMaxWidth()) {
             Text("Room Code", color = Ink2, style = MaterialTheme.typography.labelSmall)
@@ -571,6 +585,43 @@ private fun RoomCodeCard(code: String, copyLabel: String, onCopyCode: () -> Unit
                 GameButton(copyLabel, onCopyCode, modifier = Modifier.weight(1f))
                 GameButton("🔗 Link", onCopyLink, variant = GameButtonVariant.PURPLE, modifier = Modifier.weight(1f))
                 GameButton("✉ Invite", onShare, variant = GameButtonVariant.PURPLE, modifier = Modifier.weight(1f))
+            }
+
+            // "Lock the room" toggle (mockup 1670-1677): a divider, then the lock
+            // icon + label + a dynamic subtitle + a switch. Host-only (a guest sees
+            // the state but can't change it — disabled switch). While locked the
+            // server turns away new joiners by code.
+            Box(
+                Modifier
+                    .fillMaxWidth()
+                    .padding(top = 16.dp)
+                    .height(1.dp)
+                    .background(Gold.copy(alpha = 0.12f))
+            )
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(top = 14.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                Text(if (locked) "🔒" else "🔓", fontSize = 17.sp)
+                Column(modifier = Modifier.weight(1f)) {
+                    Text("Lock the room", color = Color(0xFFF4ECD6), style = MaterialTheme.typography.bodyMedium)
+                    Text(
+                        if (locked) "Locked — no one new can join" else "Anyone with the code can join",
+                        color = Ink2,
+                        style = MaterialTheme.typography.labelSmall,
+                        modifier = Modifier.padding(top = 1.dp)
+                    )
+                }
+                Switch(
+                    checked = locked,
+                    onCheckedChange = { if (isHost) onToggleLock() },
+                    enabled = isHost,
+                    colors = SwitchDefaults.colors(
+                        checkedThumbColor = Gold,
+                        checkedTrackColor = Gold.copy(alpha = 0.4f)
+                    )
+                )
             }
         }
     }

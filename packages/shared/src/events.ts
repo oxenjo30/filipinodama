@@ -39,6 +39,7 @@ export const EV = {
   roomSettings: "room:settings",
   roomKick: "room:kick",
   roomBan: "room:ban",
+  roomLock: "room:lock",
   roomSpectate: "room:spectate",
   roomStart: "room:start",
 

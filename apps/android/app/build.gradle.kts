@@ -120,8 +120,14 @@ android {
         // instead of a centered vertical column — the last two mockup-fidelity gaps
         // found by the audit (the other, Private Room's "Lock the room" toggle,
         // needs a server field and ships separately).
-        versionCode = 23
-        versionName = "0.1.23"
+        // 24 = Private Room "Lock the room" toggle — the LAST mockup-fidelity gap.
+        // The host can lock a room so the server turns away new joiners by code
+        // (existing members unaffected); lock icon + label + switch in the room-code
+        // card, dynamic subtitle, and a "that room is locked" message for a turned-
+        // away joiner. Rooms are Redis-only so no DB migration (server adds
+        // Room.locked + a room:lock event + a room:join gate).
+        versionCode = 24
+        versionName = "0.1.24"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 

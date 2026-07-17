@@ -54,6 +54,7 @@ object RoomRepository {
         const val roomSettings = "room:settings"
         const val roomKick = "room:kick"
         const val roomBan = "room:ban"
+        const val roomLock = "room:lock"
         const val roomSpectate = "room:spectate"
         const val roomStart = "room:start"
         const val roomChat = "room:chat" // literal string on the server, not EV.roomChat
@@ -151,6 +152,12 @@ object RoomRepository {
         emitPayload(EV.roomSettings, RoomSettingsRequest(settings))
     }
 
+    /** Host-only: set the room's locked state. The server rejects new joiners
+     *  while locked; the authoritative value comes back on the next room:state. */
+    fun setLock(locked: Boolean) {
+        emitPayload(EV.roomLock, RoomLockRequest(locked))
+    }
+
     fun kick(userId: String) {
         emitPayload(EV.roomKick, RoomUserRequest(userId))
     }
@@ -229,6 +236,7 @@ object RoomRepository {
 sealed class RoomError {
     data class NotFound(val code: String) : RoomError()
     data class Banned(val code: String) : RoomError()
+    object Locked : RoomError() // the room is locked; the host isn't accepting new joiners
     object Closed : RoomError() // host left / room torn down
     object Kicked : RoomError()
     object YouBanned : RoomError() // host banned us
@@ -256,6 +264,8 @@ data class RoomUiState(
     val mode: String = "PRIVATE",
     /** Set by the server once the host starts (spectators observe this too). */
     val matchId: String? = null,
+    /** Host toggled "Lock the room" — while true, new joiners are turned away. */
+    val locked: Boolean = false,
 
     /** Live relayed room chat, oldest -> newest. */
     val chat: List<RoomChatMsg> = emptyList(),
@@ -312,7 +322,11 @@ fun applyRoomStatePayload(current: RoomUiState, p: JsonObject): RoomUiState {
         val errStr = p.stringOrNull("error")
         val code = p.stringOrNull("code") ?: ""
         return current.copy(
-            error = if (errStr == "banned") RoomError.Banned(code) else RoomError.NotFound(code),
+            error = when (errStr) {
+                "banned" -> RoomError.Banned(code)
+                "locked" -> RoomError.Locked
+                else -> RoomError.NotFound(code)
+            },
             connecting = false
         )
     }
@@ -341,6 +355,7 @@ fun applyRoomStatePayload(current: RoomUiState, p: JsonObject): RoomUiState {
             settings = dto.settings,
             mode = dto.mode,
             matchId = dto.matchId,
+            locked = dto.locked,
             connecting = false,
             error = null
         )
