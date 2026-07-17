@@ -43,6 +43,11 @@ object ConfigRepository {
     private val _watchLiveEnabled = MutableStateFlow(false)
     val watchLiveEnabled: StateFlow<Boolean> = _watchLiveEnabled.asStateFlow()
 
+    // "update available" nudge — true when the server's ANDROID_LATEST_VERSION
+    // versionCode is strictly greater than this build's BuildConfig.VERSION_CODE.
+    private val _updateAvailable = MutableStateFlow(false)
+    val updateAvailable: StateFlow<Boolean> = _updateAvailable.asStateFlow()
+
     /**
      * Fetches /api/config/public and updates [maintenance]. Safe to call
      * repeatedly (app start, foreground, "Check again" retry, periodic
@@ -61,6 +66,10 @@ object ConfigRepository {
         _diamondTopUpEnabled.value = cfg["DIAMOND_TOPUP_ENABLED"] == "true"
         _watchLiveEnabled.value = deriveWatchLiveEnabled(cfg["WATCH_LIVE_ENABLED"])
         _maintenance.value = deriveMaintenanceState(cfg["MAINTENANCE_BANNER"], cfg["MAINTENANCE_TEXT"])
+        _updateAvailable.value = deriveUpdateAvailable(
+            cfg["ANDROID_LATEST_VERSION"],
+            com.filipinodama.app.BuildConfig.VERSION_CODE
+        )
     }
 }
 
@@ -97,3 +106,14 @@ fun deriveMaintenanceState(banner: String?, text: String?): MaintenanceState {
  * never un-hides a page the owner turned off.)
  */
 fun deriveWatchLiveEnabled(value: String?): Boolean = value == "true"
+
+/**
+ * True only when the server advertises a strictly-newer Play versionCode than
+ * this build. Fail-safe: null / blank / non-numeric / "0" / older / equal ⇒
+ * false (never a false "please update"). Integer comparison because versionCode
+ * is monotonic — avoids semver "1.10 < 1.9" traps.
+ */
+fun deriveUpdateAvailable(latest: String?, current: Int): Boolean {
+    val latestCode = latest?.trim()?.toIntOrNull() ?: return false
+    return latestCode > current
+}
