@@ -183,8 +183,17 @@ android {
         // small 😊 button opens a popup grid of common chat emojis that insert
         // into the message draft (the text fields already accept typed emoji;
         // this adds a quick inserter without switching the keyboard).
-        versionCode = 30
-        versionName = "0.1.30"
+        // 31 = Store page no longer has an "invisible bar" / dead gap between its
+        // content and the bottom tab bar. The Store root was calling
+        // .screenInsets() (status + nav-bar padding), but as a TAB screen the app
+        // root already applies the top inset and the BottomTabBar applies the
+        // bottom nav-bar inset — so Store was double-applying the bottom inset,
+        // pushing content up and leaving the gap. Removed it to match Home and the
+        // other tab screens. (No app change was needed for the "update available"
+        // nudge — that feature is correct; it just needs the server config
+        // ANDROID_LATEST_VERSION set to the latest live versionCode.)
+        versionCode = 31
+        versionName = "0.1.31"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 

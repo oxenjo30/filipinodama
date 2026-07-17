@@ -1,5 +1,22 @@
 # Lessons
 
+## 2026-07-18 - A "feature not working" report was a missing prod CONFIG ROW, not a code bug
+
+- Symptom: Owner reported the in-app "update available" nudge never appears despite a newer version existing. Instinct is to debug the client code.
+- Finding: The client (ConfigRepository.deriveUpdateAvailable + UpdateAvailableDialog wiring) was 100% correct. The nudge is gated on server config `ANDROID_LATEST_VERSION` > BuildConfig.VERSION_CODE. Reading the LIVE `/api/config/public` showed the key was ABSENT entirely — the row was added to seed.ts AFTER prod was first seeded, and the seed only creates-if-missing on a run, so prod never got the row. With no value → comparison always false → nudge never fires. The admin PATCH can't fix it either: `PATCH /admin/config/:key` does `findUnique` first and 404s if the row doesn't exist.
+- Rule:
+  1. When a feature "doesn't work," check whether it's gated on a SERVER CONFIG/DATA value before debugging client code. Read the live config/endpoint. A missing/default config row looks identical to a broken feature.
+  2. A config key added to seed.ts does NOT reach an already-seeded prod automatically — someone must re-run the seed (safe idempotent upsert) or insert the row. Adding a seed entry is not "shipping" it to prod.
+  3. Version-gated nudges have a release step: after publishing to the store, set the "latest version" config to the new versionCode. That step is easy to forget and silently disables the whole feature.
+
+## 2026-07-18 - Only ONE screen had the double-inset bug — don't mass-"fix" the shared helper
+
+- Bug: Store page had a dead gap above the bottom tab bar. Cause: Store's root called `.screenInsets()` (status + nav-bar padding), but the app root already applies the top inset and the BottomTabBar applies the bottom nav-bar inset — so Store double-applied the bottom inset (the framework's own comment literally warned this "leaves a gap").
+- Cause of the trap: ~20 screens call `.screenInsets()`, so it looks like a shared-helper problem. But MOST of those are PUSHED screens (Checkout, Matchmaking, OfflineGame…) shown WITHOUT the tab bar, where `.screenInsets()` (bottom nav padding) is CORRECT. The bug only hits TAB-ROUTE screens (Home/Store/Play/Guild/Profile) where the tab bar already owns the bottom inset. Of those five, only Store had it wrong.
+- Rule:
+  1. Before "fixing" a shared modifier/helper everywhere it appears, check the CONTEXT each call sits in. The same call can be correct in one context (pushed screen) and a double-inset bug in another (tab screen).
+  2. For inset bugs, identify who OWNS each edge's inset in the layout tree (root vs tab bar vs screen) and ensure each edge is applied exactly once. A gap = applied twice; content under a bar = applied zero times.
+
 ## 2026-07-17 - "compileDebugKotlin clean" missed errors that only compileReleaseKotlin caught
 
 - Mistake: Verified Android changes with `:app:compileDebugKotlin` (exit 0) and called them done. The RELEASE bundle build then failed at `:app:compileReleaseKotlin` on a missing import (`navigationBarsPadding`) and a duplicate import (`Arrangement`) — errors the debug compile did NOT surface. Root: (a) debug compiles incrementally and a file carried in from another worktree wasn't recompiled from clean, so its missing import went unseen; (b) release-variant compile settings flagged the duplicate import as an error where debug didn't. The green debug compile was falsely reassuring for exactly the files that were broken.
