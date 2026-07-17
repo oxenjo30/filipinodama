@@ -198,6 +198,13 @@ fun HomeScreen(
         unreadNotifs = notifState.data?.unreadCount ?: 0
     }
 
+    // Go LIVE on the shared socket's notif:new once signed in, so the bell badge
+    // (and the Profile "action needed" bubble) update the instant a notification
+    // arrives — e.g. someone sends a friend request — with no refresh. Idempotent.
+    LaunchedEffect(me?.id) {
+        if (me != null) com.filipinodama.app.data.social.NotificationsRepository.ensureLive()
+    }
+
     // Pull down anywhere on Home to RE-FETCH the active match, quests, daily
     // reward, season, tournaments, and notifications from the server
     // (loadHomeData — the same calls the entry LaunchedEffect above runs),
@@ -437,16 +444,25 @@ private fun SearchGlyph() {
 
 @Composable
 private fun NotificationBell(unreadCount: Int, onClick: () -> Unit) {
-    Box(
-        modifier = Modifier
-            .clickable(onClick = onClick)
-            .size(36.dp)
-            .clip(CircleShape)
-            .background(Color.White.copy(alpha = 0.05f)),
-        contentAlignment = Alignment.Center
-    ) {
-        Text("🔔", style = MaterialTheme.typography.bodyMedium, color = Color(0xFFF4D886))
+    // The unread badge sits at the bell's top-END and extends slightly BEYOND
+    // the 36dp circle. The bell is the last element flush to the top bar's right
+    // margin, so without headroom the badge is clipped by the screen edge
+    // (owner-reported). Wrap the bell in a Box that reserves a few dp of end +
+    // top padding so the overflowing badge stays on-screen and uncut.
+    Box(modifier = Modifier.padding(end = 6.dp, top = 4.dp)) {
+        Box(
+            modifier = Modifier
+                .clickable(onClick = onClick)
+                .size(36.dp)
+                .clip(CircleShape)
+                .background(Color.White.copy(alpha = 0.05f)),
+            contentAlignment = Alignment.Center
+        ) {
+            Text("🔔", style = MaterialTheme.typography.bodyMedium, color = Color(0xFFF4D886))
+        }
         if (unreadCount > 0) {
+            // Anchored to the wrapper's top-end; the reserved padding above gives
+            // it room to overflow the bell circle without leaving the screen.
             Box(
                 modifier = Modifier
                     .align(Alignment.TopEnd)

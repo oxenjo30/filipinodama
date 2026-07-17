@@ -83,13 +83,25 @@ fun TournamentsListScreen(onBack: () -> Unit = {}, onOpenDetail: (String) -> Uni
         // not a cosmetic spinner.
         PullRefreshContainer(onRefresh = { loadTournaments() }) {
         when {
-            error != null -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+            error != null -> Column(
+                Modifier.fillMaxSize().verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.Center,
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
                 Text(error ?: "", color = Ink2, style = MaterialTheme.typography.bodyMedium)
             }
-            items == null -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+            items == null -> Column(
+                Modifier.fillMaxSize().verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.Center,
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
                 CircularProgressIndicator(color = Gold)
             }
-            items!!.isEmpty() -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+            items!!.isEmpty() -> Column(
+                Modifier.fillMaxSize().verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.Center,
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
                 Text(
                     "None running · check back soon",
                     color = Ink2,

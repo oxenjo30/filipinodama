@@ -18,7 +18,9 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -113,7 +115,7 @@ fun DailyRewardsScreen(onBack: () -> Unit = {}, onRequireSignIn: () -> Unit = {}
     // (loadDailyStatus() — the same call the entry LaunchedEffect runs), not a
     // cosmetic spinner.
     PullRefreshContainer(onRefresh = { loadDailyStatus() }) {
-    Column(modifier = Modifier.fillMaxSize().screenInsets().background(MaterialTheme.colorScheme.background).padding(16.dp, 20.dp)) {
+    Column(modifier = Modifier.fillMaxSize().screenInsets().background(MaterialTheme.colorScheme.background).verticalScroll(rememberScrollState()).padding(16.dp, 20.dp)) {
         val statusNow = status
         Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
             MockupBackButton(onClick = onBack)

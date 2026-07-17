@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Outlet, useLocation, useNavigate } from "react-router-dom";
-import { rankTierFor } from "@dama/shared";
+import { rankTierFor, EV } from "@dama/shared";
+import { connectSocket, getSocket } from "../../lib/socket";
 import { useAppStore } from "../../stores/appStore";
 import { useAuthStore } from "../../stores/authStore";
 import { usePresenceStore } from "../../stores/presenceStore";
@@ -159,6 +160,52 @@ export function AppLayout() {
   const [searchOpen, setSearchOpen] = useState(false);
   const [notifOpen, setNotifOpen] = useState(false);
   const [notifUnread, setNotifUnread] = useState(0);
+
+  // Fetch the notification unread count on mount + every route change (was only
+  // fetched when the bell PANEL was opened, so the badge sat stuck at 0 for a
+  // signed-in user until they clicked the bell). This fixes the "no red bubble
+  // for a pending friend request" report — the request creates a notification,
+  // and now the badge reflects it without opening the panel.
+  useEffect(() => {
+    if (!me || me.isGuest) return;
+    let cancelled = false;
+    void api
+      .get<{ unreadCount: number }>("/api/notifications?limit=1")
+      .then((res) => {
+        if (!cancelled) setNotifUnread(res.unreadCount ?? 0);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [me, pathname]);
+
+  // LIVE: subscribe once to EV.notifNew so the bell badge lights up the INSTANT a
+  // notification (friend request, guild event, etc.) arrives — no refresh needed.
+  // The server emits { unreadCount } to presence:<userId> after creating the row.
+  // Mirrors dmStore's EV.chatMessage subscription (shared socket; attach only).
+  useEffect(() => {
+    if (!me || me.isGuest) return;
+    const onNotifNew = (p: { unreadCount?: number } | undefined) => {
+      if (p && typeof p.unreadCount === "number") setNotifUnread(p.unreadCount);
+    };
+    let attached: ReturnType<typeof getSocket> | null = null;
+    connectSocket()
+      .then((s) => {
+        attached = s;
+        s.off(EV.notifNew, onNotifNew);
+        s.on(EV.notifNew, onNotifNew);
+      })
+      .catch(() => {
+        const s = getSocket();
+        attached = s;
+        s.off(EV.notifNew, onNotifNew);
+        s.on(EV.notifNew, onNotifNew);
+      });
+    return () => {
+      attached?.off(EV.notifNew, onNotifNew);
+    };
+  }, [me]);
   const [menuOpen, setMenuOpen] = useState(false); // mobile hamburger drawer
   const [openMenu, setOpenMenu] = useState<string | null>(null); // desktop nav dropdown (e.g. "Play")
   // Close the nav dropdown on a short DELAY so moving the mouse from the button

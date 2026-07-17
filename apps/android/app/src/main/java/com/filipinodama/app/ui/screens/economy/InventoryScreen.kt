@@ -121,7 +121,11 @@ fun InventoryScreen(onBrowseStore: () -> Unit = {}, onBack: () -> Unit = {}) {
         // loadInventory() the entry LaunchedEffect runs), not a cosmetic spinner.
         PullRefreshContainer(onRefresh = { loadInventory() }) {
         when (val g = groups) {
-            null -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator(color = Gold) }
+            null -> Column(
+                Modifier.fillMaxSize().verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.Center,
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) { CircularProgressIndicator(color = Gold) }
             else -> if (g.isEmpty()) {
                 EmptyInventoryState(onBrowseStore)
             } else {
@@ -266,7 +270,7 @@ private fun InventoryItemCard(item: StoreItemDto, equipped: Boolean, onEquip: ()
 @Composable
 private fun EmptyInventoryState(onBrowseStore: () -> Unit) {
     Column(
-        modifier = Modifier.fillMaxSize().padding(32.dp),
+        modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(32.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center
     ) {
@@ -338,20 +342,26 @@ fun OrdersScreen(onBrowseStore: () -> Unit = {}, onBack: () -> Unit = {}) {
         // loadOrders() the entry LaunchedEffect runs), not a cosmetic spinner.
         PullRefreshContainer(onRefresh = { loadOrders() }) {
         when {
-            error != null -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text(error ?: "Could not load your orders.", color = Ink2, style = MaterialTheme.typography.bodyMedium)
-                    Text(
-                        "Retry",
-                        color = GoldLt,
-                        style = MaterialTheme.typography.labelLarge,
-                        modifier = Modifier.padding(top = 12.dp).clickable { retryTick++ }
-                    )
-                }
+            error != null -> Column(
+                Modifier.fillMaxSize().verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.Center,
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                Text(error ?: "Could not load your orders.", color = Ink2, style = MaterialTheme.typography.bodyMedium)
+                Text(
+                    "Retry",
+                    color = GoldLt,
+                    style = MaterialTheme.typography.labelLarge,
+                    modifier = Modifier.padding(top = 12.dp).clickable { retryTick++ }
+                )
             }
-            receipts == null -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator(color = Gold) }
+            receipts == null -> Column(
+                Modifier.fillMaxSize().verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.Center,
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) { CircularProgressIndicator(color = Gold) }
             receipts!!.isEmpty() -> Column(
-                modifier = Modifier.fillMaxSize().padding(top = 40.dp),
+                modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(top = 40.dp),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
                 Text("🧾", style = MaterialTheme.typography.displayMedium)

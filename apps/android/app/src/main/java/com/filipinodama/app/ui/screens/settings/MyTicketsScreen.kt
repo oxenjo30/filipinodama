@@ -96,9 +96,15 @@ fun MyTicketsScreen(onBack: () -> Unit = {}) {
         Box(Modifier.fillMaxSize().padding(top = 20.dp)) {
             when {
                 tickets == null && loadError == null ->
-                    Box(Modifier.fillMaxWidth().padding(40.dp), contentAlignment = Alignment.Center) { CircularProgressIndicator(color = Gold) }
+                    Column(
+                        modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()),
+                        verticalArrangement = Arrangement.Center,
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        Box(Modifier.fillMaxWidth().padding(40.dp), contentAlignment = Alignment.Center) { CircularProgressIndicator(color = Gold) }
+                    }
                 loadError != null -> Column(
-                    modifier = Modifier.fillMaxWidth().padding(vertical = 32.dp),
+                    modifier = Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(vertical = 32.dp),
                     horizontalAlignment = Alignment.CenterHorizontally,
                     verticalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
@@ -114,7 +120,7 @@ fun MyTicketsScreen(onBack: () -> Unit = {}) {
                     "You haven't filed any support tickets yet.",
                     color = Ink2,
                     style = MaterialTheme.typography.bodyMedium,
-                    modifier = Modifier.fillMaxWidth().padding(vertical = 32.dp)
+                    modifier = Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(vertical = 32.dp)
                 )
                 else -> Column(
                     modifier = Modifier.verticalScroll(rememberScrollState()),
