@@ -222,7 +222,10 @@ fun AppNavHost() {
     // keyed, NOT reset on ON_RESUME below — so it survives resume/foreground
     // and only resets on cold start, matching the spec's once-per-process cadence.
     val updateAvailable by ConfigRepository.updateAvailable.collectAsState()
-    var updateDismissed by remember { mutableStateOf(false) }
+    // Dismissed state lives on the ConfigRepository object (process-scoped), NOT a
+    // composable remember — so "once per process" survives Activity recreation
+    // (rotation, system dark-mode toggle, font/locale change) instead of re-nagging.
+    val updateDismissed by ConfigRepository.updateNudgeDismissed.collectAsState()
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     // App-wide transient feedback — one host, provided to the whole NavHost so any
@@ -761,9 +764,9 @@ fun AppNavHost() {
             UpdateAvailableDialog(
                 onUpdate = {
                     openPlayStoreListing(context)
-                    updateDismissed = true
+                    ConfigRepository.dismissUpdateNudge()
                 },
-                onDismiss = { updateDismissed = true }
+                onDismiss = { ConfigRepository.dismissUpdateNudge() }
             )
         }
     }

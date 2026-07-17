@@ -48,6 +48,15 @@ object ConfigRepository {
     private val _updateAvailable = MutableStateFlow(false)
     val updateAvailable: StateFlow<Boolean> = _updateAvailable.asStateFlow()
 
+    // Whether the user dismissed the update nudge THIS PROCESS. Held here (on the
+    // process-level object), not in composable `remember`, so the "once per
+    // process" cadence survives Activity recreation (rotation, system dark-mode
+    // toggle, font-size/locale change) — a plain `remember` would reset on those
+    // and re-nag. Resets only on a cold start (new process = new object).
+    private val _updateNudgeDismissed = MutableStateFlow(false)
+    val updateNudgeDismissed: StateFlow<Boolean> = _updateNudgeDismissed.asStateFlow()
+    fun dismissUpdateNudge() { _updateNudgeDismissed.value = true }
+
     /**
      * Fetches /api/config/public and updates [maintenance]. Safe to call
      * repeatedly (app start, foreground, "Check again" retry, periodic
