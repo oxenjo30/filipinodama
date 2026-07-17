@@ -141,8 +141,30 @@ android {
         // RE-FETCHES that screen's real data from the server (the same repository
         // call its entry LaunchedEffect runs) so the user gets late/updated data
         // — not a cosmetic spinner. Shared PullRefreshContainer (gold indicator).
-        versionCode = 26
-        versionName = "0.1.26"
+        // 27 = Private Room 1:1 mockup-fidelity rebuild of the host lobby
+        // (handoffv3 Mobile.dc.html PRIVATE ROOM section). "Copy Spectate Link"
+        // is now the small rounded PILL from the mockup (was an oversized full-
+        // width purple button) with a "▶ Spectator View" pill beside it; the
+        // Spectators card gains its header subtitle + on/off switch + spectator
+        // chips (avatar+name+✕); Match Settings ("Game Mode" / "Time Control" /
+        // "Move Timer" chip rows) is merged INTO the players card under the VS
+        // grid; the room-code row makes "Copy Code" the wide primary with
+        // compact "Link"/"Invite" secondaries; and the card order matches the
+        // mockup (Code → Players+Settings → Spectators → Invite → Chat). Game
+        // Mode / Time Control / spectator-toggle are host-local visual controls
+        // (no server field — same honest boundary as the web room page); only
+        // Move Timer writes the authoritative settings.moveTimerSec. (27 was
+        // uploaded to Play, so it is permanently reserved — 28 supersedes it.)
+        // 28 = opening Settings mid-match then closing it no longer replays the
+        // ~2s loading screen — MatchEntryGate's "already loaded" flag is now
+        // rememberSaveable(key) so it survives the match composable leaving/re-
+        // entering composition while Settings sits on top (a genuinely new match
+        // still gets a fresh loader via a new back-stack-entry key). Also in 28:
+        // the Notifications swipe-to-delete red tray is clipped to the card's
+        // 16dp rounded shape, so the red no longer pokes out at the card corners
+        // when the row is closed (owner-reported "red corners").
+        versionCode = 28
+        versionName = "0.1.28"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 

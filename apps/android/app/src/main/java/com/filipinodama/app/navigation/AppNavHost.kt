@@ -18,6 +18,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -137,6 +138,15 @@ import kotlinx.coroutines.launch
  * [key] re-arms the gate per distinct navigation (e.g. a new matchId/mode),
  * so re-entering the same route (rematch, retry) shows the loader again just
  * like the mockup's fresh `playWithLoader` call per transition.
+ *
+ * The "already loaded" flag is [rememberSaveable] (NOT plain remember): pushing
+ * a screen ON TOP of the match (e.g. opening Settings mid-match) removes the
+ * match composable from composition, and popping back re-composes it. With
+ * plain remember that reset showLoader to true and the ~2s loading screen
+ * replayed every time you closed Settings mid-rank-match. rememberSaveable keyed
+ * by the same [key] persists the flag across that round-trip, so the loader
+ * shows once per real match entry and NOT when returning from an overlay screen.
+ * A genuinely new match still gets a new [key] → fresh loader.
  */
 @Composable
 private fun MatchEntryGate(
@@ -145,7 +155,7 @@ private fun MatchEntryGate(
     durationMs: Int = 2050,
     content: @Composable () -> Unit
 ) {
-    var showLoader by remember(key) { mutableStateOf(true) }
+    var showLoader by rememberSaveable(key) { mutableStateOf(true) }
     if (showLoader) {
         LoadingOverlay(context = loadingContext, durationMs = durationMs, onFinished = { showLoader = false })
     } else {

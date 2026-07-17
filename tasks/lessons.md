@@ -1,5 +1,22 @@
 # Lessons
 
+## 2026-07-17 - A rounded card over a square background leaks the background at the corners
+
+- Mistake: The Notifications swipe-to-delete red tray sat behind a card with `RoundedCornerShape(16.dp)`, but the tray itself was a plain square-cornered `Box`. When the row was closed, the card's rounded corners couldn't cover the tray's square corners, so red showed at all four corners + the side edges (owner-reported "red corners"). This was the SECOND red-bleed bug in the same component — the first was red glowing *through* a semi-transparent card (fixed by making the card opaque); this one is red poking out *around* the rounded card.
+- Cause: When one element is layered on top of another, both must share the same clip shape. Fixing the front element's transparency doesn't fix a shape mismatch — a fully-opaque rounded card still exposes a square backer at the corners.
+- Rule:
+  1. In a swipe-reveal / layered-background pattern, clip the BACKGROUND layer to the SAME shape (and radius) as the foreground card, not just the card. `Modifier.clip(RoundedCornerShape(N.dp))` on the tray.
+  2. When re-touching a component that had a "red/color bleed" fix before, check for BOTH failure modes: alpha bleed-through AND corner/edge exposure from a shape mismatch. They look similar to a user but have different fixes.
+
+## 2026-07-17 - Delivered an AAB before all committed fixes were in it (versionCode then burned by upload)
+
+- Mistake: Built + delivered the v27 AAB, THEN committed a further fix (loader replay). The user submitted the delivered v27 to Play — which didn't contain the later fix. Play permanently reserves an uploaded versionCode, so the fix had to ship as v28.
+- Cause: Building the release bundle before the fix set was final. The AAB is a snapshot at build time; any commit after the build is NOT in the delivered file, even though it's on the branch.
+- Rule:
+  1. Build the release AAB LAST, only after every intended fix for that version is committed AND compiled. If a new fix lands after the AAB is built, the AAB is stale — rebuild before delivering, and say so.
+  2. When delivering an AAB, state the exact commit it was built from (or the last fix it includes) so the owner knows what's in the file they're about to upload.
+  3. Once a versionCode is uploaded to Play it is burned forever — the next build must bump. Never reuse a submitted code even if the release was never promoted.
+
 ## 2026-07-17 - Patched a cached balance with a server response's 0-sentinel, wiping the real value
 
 - Mistake: `EconomyRepository.claimSeasonEnd()` called `patchBalances(gold = data.goldBalance, diamonds = data.diamondBalance)`. The server (`seasons.ts` end-claim) only runs the ledger for a currency it actually GRANTED; a currency with a 0 reward comes back as `*Balance = 0` — a SENTINEL, not the user's real balance. `patchBalances` treats `null` as "leave unchanged" but writes a real `0` through, so a player ranked outside the top-100 (diamonds reward = 0) had their cached diamonds overwritten to 0 on claim.
