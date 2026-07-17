@@ -86,8 +86,21 @@ android {
         // OnlineMatchScreen result CTAs clear the gesture bar; Avatar Picker sheet
         // is bottom-anchored; Report on a public profile prompts sign-in for an
         // anonymous user instead of a raw error.
-        versionCode = 19
-        versionName = "0.1.18"
+        // 20 = UI & FUNCTIONALITY AUDIT FIXES — the dead Royal Pass premium "Claim"
+        // button now works (one claim grants both free + premium tracks) and season
+        // tier/end claims surface failures; season-end reward claim added (parity
+        // with web "Claim All Rewards"); app-wide Snackbar surfaces previously-
+        // swallowed social/guild/quest failures and a load ERROR is now distinct
+        // from a genuine EMPTY (Friends / Guild Hall / Discover Guilds show a retry
+        // state instead of the "nothing here" copy); Edit-Profile / Contact-Support /
+        // Delete-Account / guild-preview dialogs scroll so their CTAs stay reachable;
+        // the Messages inbox is reachable from Home and My Tickets (with staff
+        // replies) is viewable from Settings; matchmaking gains the Red/Either/Blue
+        // preferred-side picker and reports gain the Hate-Speech reason (web parity);
+        // key icon controls get 48dp touch targets + screen-reader labels. Diamonds
+        // stay dark (no external checkout wired).
+        versionCode = 20
+        versionName = "0.1.19"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
