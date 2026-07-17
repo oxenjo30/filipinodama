@@ -46,6 +46,8 @@ import com.filipinodama.app.data.push.PushNotifications
 import com.filipinodama.app.data.settings.SettingsRepository
 import com.filipinodama.app.data.settings.SettingsResult
 import com.filipinodama.app.data.settings.SettingsStore
+import com.filipinodama.app.ui.components.screenInsetsBottomOnly
+import com.filipinodama.app.ui.components.screenInsetsTopOnly
 import com.filipinodama.app.ui.theme.Gold
 import com.filipinodama.app.ui.theme.GoldLt
 import com.filipinodama.app.ui.theme.Ink
@@ -153,11 +155,11 @@ fun SettingsScreen(
 
     LaunchedEffect(Unit) { PushNotifications.ensureChannel(context) }
 
-    Column(modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
+    Column(modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background).screenInsetsTopOnly()) {
         SettingsTopBar(onBack = onBack)
 
         Column(
-            modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(20.dp),
+            modifier = Modifier.fillMaxSize().screenInsetsBottomOnly().verticalScroll(rememberScrollState()).padding(20.dp),
             verticalArrangement = Arrangement.spacedBy(18.dp)
         ) {
             if (me == null) {

@@ -45,6 +45,7 @@ import com.filipinodama.app.data.social.PresenceRepository
 import com.filipinodama.app.data.social.SocialResult
 import com.filipinodama.app.ui.components.LocalSnackbar
 import com.filipinodama.app.ui.components.isAuthError
+import com.filipinodama.app.ui.components.screenInsets
 import com.filipinodama.app.ui.screens.social.ReportPlayerDialog
 import com.filipinodama.app.ui.theme.Gold
 import com.filipinodama.app.ui.theme.GoldLt
@@ -133,7 +134,7 @@ fun PublicProfileScreen(
         }
     }
 
-    Column(modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background).verticalScroll(rememberScrollState())) {
+    Column(modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background).screenInsets().verticalScroll(rememberScrollState())) {
         // Header — mockup lines 2250-2253 ("PLAYER PUBLIC PROFILE"): a bare
         // in-flow flex row (no header-bar container of its own) holding the
         // ‹ back control + an uppercase "Player profile" eyebrow label. This

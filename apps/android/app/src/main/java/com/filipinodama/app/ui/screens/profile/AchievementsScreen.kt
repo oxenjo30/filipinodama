@@ -27,6 +27,7 @@ import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
 import com.filipinodama.app.data.AuthRepository
 import com.filipinodama.app.ui.components.MockupBackButton
+import com.filipinodama.app.ui.components.screenInsets
 import com.filipinodama.app.ui.theme.GoldLt
 
 /**
@@ -54,7 +55,7 @@ fun AchievementsScreen(onBack: () -> Unit = {}) {
     val authState by AuthRepository.state.collectAsState()
     val me = authState.user
 
-    Column(modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background).padding(16.dp)) {
+    Column(modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background).screenInsets().padding(16.dp)) {
         if (me == null) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 MockupBackButton(onClick = onBack)

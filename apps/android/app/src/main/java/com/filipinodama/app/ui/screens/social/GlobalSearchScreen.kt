@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -36,6 +37,8 @@ import com.filipinodama.app.data.social.SocialResult
 import com.filipinodama.app.data.social.UserSearchResultDto
 import com.filipinodama.app.ui.components.CurrencyAmount
 import com.filipinodama.app.ui.components.CurrencyIconKind
+import com.filipinodama.app.ui.components.screenContentPadding
+import com.filipinodama.app.ui.components.screenInsetsTopOnly
 import com.filipinodama.app.ui.screens.profile.AvatarView
 import kotlinx.coroutines.delay
 
@@ -82,6 +85,8 @@ fun GlobalSearchScreen(onClose: () -> Unit, onOpenProfile: (String) -> Unit) {
     Column(
         modifier = Modifier
             .fillMaxSize()
+            .screenInsetsTopOnly()
+            .imePadding()
             .background(Color(0xB8060312))
             .padding(top = 12.dp, start = 16.dp, end = 16.dp, bottom = 20.dp)
     ) {
@@ -138,7 +143,10 @@ fun GlobalSearchScreen(onClose: () -> Unit, onOpenProfile: (String) -> Unit) {
                         modifier = Modifier.padding(top = 6.dp)
                     )
                 }
-                else -> LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                else -> LazyColumn(
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                    contentPadding = screenContentPadding()
+                ) {
                     items(results) { p -> SearchResultRow(p, onClick = { onOpenProfile(p.id) }) }
                 }
             }

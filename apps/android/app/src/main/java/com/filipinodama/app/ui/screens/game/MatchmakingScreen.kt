@@ -38,6 +38,7 @@ import com.filipinodama.app.data.match.MatchRepository
 import com.filipinodama.app.data.match.MatchStatus
 import com.filipinodama.app.ui.components.CurrencyAmount
 import com.filipinodama.app.ui.components.CurrencyIconKind
+import com.filipinodama.app.ui.components.screenInsets
 import com.filipinodama.app.ui.screens.profile.AvatarView
 
 /**
@@ -82,6 +83,7 @@ fun MatchmakingScreen(mode: String, onCancel: () -> Unit, onEnteredMatch: () -> 
             .fillMaxSize()
             // Mockup: radial-gradient(circle at 50% 40%, #2a1642, #0b0716 68%).
             .background(Brush.radialGradient(listOf(Color(0xFF2A1642), Color(0xFF0B0716))))
+            .screenInsets()
     ) {
         Column(
             modifier = Modifier.fillMaxSize().padding(34.dp),

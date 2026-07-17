@@ -33,6 +33,7 @@ import com.filipinodama.app.data.settings.SettingsResult
 import com.filipinodama.app.data.settings.TicketDetailResponse
 import com.filipinodama.app.data.settings.TicketSummary
 import com.filipinodama.app.ui.components.MockupBackButton
+import com.filipinodama.app.ui.components.screenInsets
 import com.filipinodama.app.ui.theme.Gold
 import com.filipinodama.app.ui.theme.GoldLt
 import com.filipinodama.app.ui.theme.Green
@@ -79,7 +80,7 @@ fun MyTicketsScreen(onBack: () -> Unit = {}) {
         return
     }
 
-    Column(modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background).padding(20.dp)) {
+    Column(modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background).screenInsets().padding(20.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             MockupBackButton(onClick = onBack)
             Column(modifier = Modifier.padding(start = 12.dp)) {
@@ -172,7 +173,7 @@ private fun TicketThreadView(ticketId: String, onBack: () -> Unit) {
         }
     }
 
-    Column(modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background).padding(20.dp)) {
+    Column(modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background).screenInsets().padding(20.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             MockupBackButton(onClick = onBack)
             Text("Ticket", color = GoldLt, style = MaterialTheme.typography.headlineSmall, modifier = Modifier.padding(start = 12.dp))

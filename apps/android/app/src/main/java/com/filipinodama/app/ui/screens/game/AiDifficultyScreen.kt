@@ -29,6 +29,7 @@ import androidx.compose.ui.unit.dp
 import com.filipinodama.app.R
 import com.filipinodama.app.data.engine.AiDifficulties
 import com.filipinodama.app.ui.components.MockupBackButton
+import com.filipinodama.app.ui.components.screenInsets
 import com.filipinodama.app.ui.theme.Gold
 import com.filipinodama.app.ui.theme.GoldLt
 import com.filipinodama.app.ui.theme.Ink
@@ -69,6 +70,7 @@ fun AiDifficultyScreen(onBack: () -> Unit, onStart: (String) -> Unit) {
         modifier = Modifier
             .fillMaxSize()
             .background(MaterialTheme.colorScheme.background)
+            .screenInsets()
             .verticalScroll(rememberScrollState())
             .padding(horizontal = 24.dp, vertical = 20.dp),
         horizontalAlignment = Alignment.CenterHorizontally

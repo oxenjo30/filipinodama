@@ -2,7 +2,10 @@ package com.filipinodama.app.ui.screens.game
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
+import com.filipinodama.app.ui.components.screenInsets
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -74,6 +77,13 @@ fun OfflineGameScreen(difficulty: String, onChangeDifficulty: () -> Unit, onHome
         modifier = Modifier
             .fillMaxSize()
             .background(MaterialTheme.colorScheme.background)
+            // Scroll + system insets: on a short phone the board + both player
+            // bars + title exceed the screen height, which pushed the Undo/Resign
+            // row OFF-SCREEN (unreachable). verticalScroll makes the whole thing
+            // reachable; screenInsets keeps the header off the status bar and the
+            // buttons off the gesture bar. (docs/ops/android-mobile-layout-audit.md)
+            .screenInsets()
+            .verticalScroll(rememberScrollState())
             .padding(16.dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {

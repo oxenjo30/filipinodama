@@ -98,9 +98,17 @@ android {
         // replies) is viewable from Settings; matchmaking gains the Red/Either/Blue
         // preferred-side picker and reports gain the Hate-Speech reason (web parity);
         // key icon controls get 48dp touch targets + screen-reader labels. Diamonds
-        // stay dark (no external checkout wired).
-        versionCode = 20
-        versionName = "0.1.19"
+        // stay dark (no external checkout wired). 21 = SYSTEMIC MOBILE-LAYOUT
+        // pass: a shared screenInsets() convention applied to ~30 pushed screens
+        // (their headers no longer tuck under the status bar and their bottom CTAs
+        // — Leave, Place Order, Claim, Delete Account — clear the gesture bar
+        // instead of jamming against it); Offline Practice + Replay Viewer are now
+        // scrollable so their controls are reachable on short phones (were cut
+        // off); the Store item card is left-aligned to match the mobile mockup
+        // (the price no longer hugs the left under centered content); the Private
+        // Room lobby's players card is rebuilt as the mockup's 3-column VS grid.
+        versionCode = 21
+        versionName = "0.1.20"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 

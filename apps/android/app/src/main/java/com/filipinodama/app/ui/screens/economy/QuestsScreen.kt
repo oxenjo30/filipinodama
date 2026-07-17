@@ -40,6 +40,7 @@ import com.filipinodama.app.ui.components.CurrencyIconKind
 import com.filipinodama.app.ui.components.LocalSnackbar
 import com.filipinodama.app.ui.components.MockupBackButton
 import com.filipinodama.app.ui.components.isAuthError
+import com.filipinodama.app.ui.components.screenInsets
 import com.filipinodama.app.ui.theme.Gold
 import com.filipinodama.app.ui.theme.GoldLt
 import com.filipinodama.app.ui.theme.Ink
@@ -110,7 +111,7 @@ fun QuestsScreen(onBack: () -> Unit = {}, onRequireSignIn: () -> Unit = {}) {
 
     val goldReady = daily.count { it.claimable && !it.claimed } + seasonal.count { it.claimable && !it.claimed }
 
-    Column(modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background).padding(16.dp, 20.dp)) {
+    Column(modifier = Modifier.fillMaxSize().screenInsets().background(MaterialTheme.colorScheme.background).padding(16.dp, 20.dp)) {
         Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
             MockupBackButton(onClick = onBack)
             Row(

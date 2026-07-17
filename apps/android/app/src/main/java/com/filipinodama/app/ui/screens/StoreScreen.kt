@@ -70,6 +70,7 @@ import com.filipinodama.app.data.economy.storeItemPrice
 import com.filipinodama.app.data.economy.storeThumbFor
 import com.filipinodama.app.ui.components.SignInRequiredDialog
 import com.filipinodama.app.ui.components.isAuthError
+import com.filipinodama.app.ui.components.screenInsets
 import com.filipinodama.app.ui.screens.economy.BuyFlow
 import com.filipinodama.app.ui.screens.economy.BuyFlowState
 import com.filipinodama.app.ui.screens.economy.CheckoutScreen
@@ -253,7 +254,7 @@ fun StoreScreen(
         }
     }
 
-    Column(modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
+    Column(modifier = Modifier.fillMaxSize().screenInsets().background(MaterialTheme.colorScheme.background)) {
         // Header: title + gold/diamond balances (display only — no "+", mockup's
         // diamond "+"/top-up affordance intentionally omitted per the earned-only
         // policy). Mockup values: title font 800 24px Cinzel #f4ecd6; gold chip
@@ -518,11 +519,16 @@ private fun StoreItemCard(
     val price = storeItemPrice(item)
     val meta = STORE_TYPE_META[item.type]
 
+    // LEFT-aligned card to match the mobile mockup (Mobile.dc.html store grid:
+    // flex-direction:column with NO align-items:center → name, sub, Preview, price
+    // and Buy/+ all left-aligned). The card was previously centered, which left the
+    // price hugging the left edge under centered content — the contradictory
+    // alignment the owner flagged. Left-aligning the whole card resolves it and
+    // matches the design 1:1.
     Column(
         modifier = Modifier
             .background(Panel, RoundedCornerShape(14.dp))
-            .padding(14.dp),
-        horizontalAlignment = Alignment.CenterHorizontally
+            .padding(14.dp)
     ) {
         // Mockup tag scheme (mobile-split.txt:4759-4760): NEW=#3fbf6f on
         // rgba(63,191,111,.16); PREMIUM=#c9a4ff on rgba(201,164,255,.16);
@@ -559,10 +565,13 @@ private fun StoreItemCard(
             item.name,
             color = androidx.compose.ui.graphics.Color.White,
             style = MaterialTheme.typography.titleSmall,
-            textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+            // Left-aligned per the mockup (was Center). minLines=2 still reserves
+            // an even 2-line name block so grid rows stay aligned.
+            textAlign = androidx.compose.ui.text.style.TextAlign.Start,
             minLines = 2,
             maxLines = 2,
-            overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
+            overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+            modifier = Modifier.fillMaxWidth()
         )
         Text(meta?.sub ?: "", color = Ink2, style = MaterialTheme.typography.labelSmall, modifier = Modifier.padding(top = 2.dp, bottom = 6.dp))
 

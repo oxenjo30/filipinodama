@@ -45,6 +45,7 @@ import com.filipinodama.app.data.economy.storeThumbFor
 import com.filipinodama.app.ui.components.CurrencyIcon
 import com.filipinodama.app.ui.components.CurrencyIconKind
 import com.filipinodama.app.ui.components.MockupBackButtonCheckout
+import com.filipinodama.app.ui.components.screenInsets
 import kotlinx.coroutines.launch
 
 /**
@@ -137,7 +138,7 @@ fun CheckoutScreen(
         }
     }
 
-    Column(modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
+    Column(modifier = Modifier.fillMaxSize().screenInsets().background(MaterialTheme.colorScheme.background)) {
         // Header: ‹ back (36x36 checkout variant) + "Checkout" + Clear.
         Row(
             modifier = Modifier.fillMaxWidth().padding(16.dp, 20.dp, 16.dp, 14.dp),
