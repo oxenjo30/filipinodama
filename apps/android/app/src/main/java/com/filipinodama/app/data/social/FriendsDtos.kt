@@ -20,7 +20,10 @@ data class FriendUserDto(
     val rankTier: String = "",
     val lastSeenAt: String = "",
     // presence is delivered live over sockets; REST always reports "unknown".
-    val presence: String = "unknown"
+    val presence: String = "unknown",
+    // REAL "in a live match" flag from GET /api/friends (server reads the
+    // rt:userMatch Redis index). Drives the amber "in-game" presence dot.
+    val inMatch: Boolean = false
 )
 
 @Serializable

@@ -45,6 +45,8 @@ type FriendUser = {
   rankTier: string;
   lastSeenAt: string;
   presence: "unknown";
+  /** Real "in a live match" flag from GET /api/friends (rt:userMatch index). */
+  inMatch?: boolean;
 };
 type FriendReq = { id: string; createdAt: string; user: FriendUser };
 

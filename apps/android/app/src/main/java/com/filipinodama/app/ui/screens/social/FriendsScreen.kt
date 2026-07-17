@@ -18,6 +18,8 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
@@ -36,6 +38,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import com.filipinodama.app.data.AuthRepository
+import com.filipinodama.app.data.engine.RankTiers
+import com.filipinodama.app.data.social.DmRepository
 import com.filipinodama.app.data.social.FriendRequestDto
 import com.filipinodama.app.data.social.FriendUserDto
 import com.filipinodama.app.data.social.FriendsRepository
@@ -56,6 +60,7 @@ import com.filipinodama.app.ui.theme.Green
 import com.filipinodama.app.ui.theme.Ink
 import com.filipinodama.app.ui.theme.Ink2
 import com.filipinodama.app.ui.theme.Panel
+import com.filipinodama.app.ui.theme.TextDefault
 import kotlinx.coroutines.launch
 
 /**
@@ -78,6 +83,14 @@ fun FriendsScreen(
 ) {
     val me = AuthRepository.state.collectAsState().value.user
     val onlineSet by PresenceRepository.online.collectAsState()
+    // Per-friend unread DM counts — REAL data from DmRepository's conversation list
+    // (GET /api/dm), keyed by the other user's id. Drives the 💬 button's red
+    // unread bubble (mockup line 2113). loadConversations() is invoked in the entry
+    // LaunchedEffect so this is populated; nothing here is fabricated.
+    val dmState by DmRepository.state.collectAsState()
+    val unreadByFriend = remember(dmState.conversations) {
+        dmState.conversations.associate { it.user.id to it.unread }
+    }
     val scope = rememberCoroutineScope()
     val snackbar = LocalSnackbar.current
 
@@ -128,6 +141,8 @@ fun FriendsScreen(
         }
         PresenceRepository.start()
         refresh()
+        // Populate per-friend unread counts for the 💬 badge (real GET /api/dm).
+        DmRepository.loadConversations()
     }
 
     // Surface a failed social action instead of settling as if nothing happened.
@@ -249,7 +264,7 @@ fun FriendsScreen(
         Row(modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             SummaryTile("Online now", onlineCount.toString(), Color(0xFF6EE0A0), Modifier.weight(1f))
             SummaryTile("Total friends", friends.size.toString(), Color(0xFFF4D886), Modifier.weight(1f))
-            SummaryTile("Requests", incoming.size.toString(), Color(0xFFFF9AA6), Modifier.weight(1f))
+            SummaryTile("Requests", incoming.size.toString(), Color(0xFFC9A6FF), Modifier.weight(1f))
         }
 
         OutlinedTextField(
@@ -306,6 +321,7 @@ fun FriendsScreen(
                                 friend = f,
                                 online = true,
                                 muted = mutedIds.contains(f.id),
+                                unread = unreadByFriend[f.id] ?: 0,
                                 isOpen = swipeState.isOpen(f.id),
                                 onOpenChange = { open -> swipeState = if (open) swipeState.open(f.id) else swipeState.close(f.id) },
                                 onOpenProfile = { onOpenProfile(f.id) },
@@ -317,12 +333,15 @@ fun FriendsScreen(
                     }
                 }
                 if (offlineFriends.isNotEmpty()) {
-                    SectionCard(title = "Offline · ${offlineFriends.size}") {
+                    // Mockup "Offline" header carries NO count (unlike "Online · N" /
+                    // "Requests · N") — line 2124.
+                    SectionCard(title = "Offline") {
                         offlineFriends.forEach { f ->
                             FriendSwipeRow(
                                 friend = f,
                                 online = false,
                                 muted = mutedIds.contains(f.id),
+                                unread = unreadByFriend[f.id] ?: 0,
                                 isOpen = swipeState.isOpen(f.id),
                                 onOpenChange = { open -> swipeState = if (open) swipeState.open(f.id) else swipeState.close(f.id) },
                                 onOpenProfile = { onOpenProfile(f.id) },
@@ -370,8 +389,15 @@ private fun SectionCard(title: String, content: @Composable () -> Unit) {
 }
 
 @Composable
-private fun PresenceDot(online: Boolean, modifier: Modifier = Modifier) {
-    Box(modifier = modifier.size(12.dp).background(if (online) Green else Ink2, CircleShape))
+private fun PresenceDot(online: Boolean, inMatch: Boolean = false, modifier: Modifier = Modifier) {
+    // 3-state (mockup line 3272): in a live match → amber #f0a94b; online →
+    // green; offline → grey. in-match implies online.
+    val color = when {
+        inMatch -> Color(0xFFF0A94B)
+        online -> Green
+        else -> Ink2
+    }
+    Box(modifier = modifier.size(12.dp).background(color, CircleShape))
 }
 
 @Composable
@@ -382,17 +408,23 @@ private fun FriendRequestRow(req: FriendRequestDto, busy: Boolean, onOpen: () ->
             Text(req.user.displayName, color = Color.White, style = MaterialTheme.typography.bodyLarge)
             Text("${req.user.tag} · ${req.user.rankTier}", color = Ink2, style = MaterialTheme.typography.labelSmall, modifier = Modifier.padding(top = 2.dp))
         }
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        // Mockup (lines 2088-2089): compact 40x40 icon buttons — green ✓ (accept)
+        // in a green-tinted square, grey ✕ (decline) transparent. Same
+        // onAccept/onDecline wiring + busy-disable as the old text buttons.
+        Row(horizontalArrangement = Arrangement.spacedBy(7.dp)) {
             Box(
-                modifier = Modifier.clickable(enabled = !busy, onClick = onAccept)
-                    .background(Green.copy(alpha = 0.18f), RoundedCornerShape(8.dp))
-                    .padding(horizontal = 14.dp, vertical = 9.dp)
-            ) { Text("Accept", color = Green, style = MaterialTheme.typography.labelMedium) }
+                modifier = Modifier.size(40.dp)
+                    .clickable(enabled = !busy, onClick = onAccept)
+                    .background(Green.copy(alpha = 0.18f), RoundedCornerShape(10.dp))
+                    .border(1.dp, Green.copy(alpha = 0.55f), RoundedCornerShape(10.dp)),
+                contentAlignment = Alignment.Center
+            ) { Text("✓", color = Green, style = MaterialTheme.typography.titleMedium) }
             Box(
-                modifier = Modifier.clickable(enabled = !busy, onClick = onDecline)
-                    .background(Color.Black.copy(alpha = 0.25f), RoundedCornerShape(8.dp))
-                    .padding(horizontal = 14.dp, vertical = 9.dp)
-            ) { Text("Decline", color = Ink2, style = MaterialTheme.typography.labelMedium) }
+                modifier = Modifier.size(40.dp)
+                    .clickable(enabled = !busy, onClick = onDecline)
+                    .border(1.dp, Gold.copy(alpha = 0.2f), RoundedCornerShape(10.dp)),
+                contentAlignment = Alignment.Center
+            ) { Text("✕", color = Ink2, style = MaterialTheme.typography.titleMedium) }
         }
     }
 }
@@ -402,6 +434,7 @@ private fun FriendSwipeRow(
     friend: FriendUserDto,
     online: Boolean,
     muted: Boolean,
+    unread: Int,
     isOpen: Boolean,
     onOpenChange: (Boolean) -> Unit,
     onOpenProfile: () -> Unit,
@@ -409,6 +442,15 @@ private fun FriendSwipeRow(
     onMute: () -> Unit,
     onDelete: () -> Unit
 ) {
+    // Inline tier chip — tier + color derived from the friend's trophy count
+    // (the authoritative source, exactly like web FriendsPage.tsx tierOf()); the
+    // hex accent is parsed the same way SeasonScreen does, falling back to Ink2.
+    val tier = RankTiers.forTrophies(friend.trophies)
+    val tierColor = try {
+        Color(android.graphics.Color.parseColor(tier.accent))
+    } catch (_: Exception) {
+        Ink2
+    }
     Box(modifier = Modifier.fillMaxWidth().height(64.dp)) {
         SwipeRevealRow(
             isOpen = isOpen,
@@ -436,32 +478,104 @@ private fun FriendSwipeRow(
                 ) {
                     Box {
                         AvatarView(avatarUrl = friend.avatarUrl, frameId = friend.frameId, size = 44.dp)
-                        PresenceDot(online = online, modifier = Modifier.align(Alignment.BottomEnd))
+                        // in-match (amber) only counts while the friend is also online.
+                        PresenceDot(online = online, inMatch = online && friend.inMatch, modifier = Modifier.align(Alignment.BottomEnd))
                     }
                     Column(modifier = Modifier.weight(1f).padding(start = 12.dp)) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text(friend.displayName, color = Color.White, style = MaterialTheme.typography.bodyLarge)
-                            if (muted) Text(" 🔕", color = Ink2, style = MaterialTheme.typography.labelSmall)
+                        // Name row = displayName + inline tier chip (dot + label). The
+                        // MOBILE mockup (line 2109) omits the #tag here to save the tight
+                        // horizontal space (the wider web FriendRow shows it); tier color
+                        // is derived from trophies exactly like web tierOf().
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(7.dp)) {
+                            Text(
+                                friend.displayName,
+                                color = if (online) Color.White else Color(0xFFEFE7FB),
+                                style = MaterialTheme.typography.bodyLarge,
+                                maxLines = 1
+                            )
+                            Box(
+                                modifier = Modifier.size(7.dp).background(tierColor, CircleShape)
+                            )
+                            Text(tier.label, color = tierColor, style = MaterialTheme.typography.labelSmall, maxLines = 1)
+                            if (muted) Text("🔕", color = Ink2, style = MaterialTheme.typography.labelSmall)
                         }
-                        CurrencyAmount(
-                            kind = CurrencyIconKind.TROPHY,
-                            text = friend.trophies.toString(),
-                            prefix = if (online) "Online now · " else "Offline · ",
-                            color = if (online) Green else Ink2,
+                        // Honest status line — tier now carries the rank signal, so the
+                        // trophy count is dropped here (mockup line 2110 shows only the
+                        // status label). In a match → amber "In a match"; online → green
+                        // "Online now"; else grey "Offline".
+                        val inGame = online && friend.inMatch
+                        Text(
+                            if (inGame) "In a match" else if (online) "Online now" else "Offline",
+                            color = if (inGame) Color(0xFFF0A94B) else if (online) Green else Ink2,
                             style = MaterialTheme.typography.labelSmall,
-                            modifier = Modifier.padding(top = 2.dp)
+                            modifier = Modifier.padding(top = 3.dp)
                         )
                     }
+                    // Trailing actions: 💬 message button (with unread bubble) for online
+                    // rows, then a discoverable ⋯ overflow menu (Mute/Unmute + Remove).
                     if (onMessage != null) {
-                        Box(
-                            modifier = Modifier.clickable(onClick = onMessage)
-                                .background(Gold.copy(alpha = 0.12f), RoundedCornerShape(8.dp))
-                                .padding(horizontal = 12.dp, vertical = 10.dp)
-                        ) { Text("💬", style = MaterialTheme.typography.bodyMedium) }
+                        Box {
+                            Box(
+                                modifier = Modifier.clickable(onClick = onMessage)
+                                    .background(Gold.copy(alpha = 0.12f), RoundedCornerShape(8.dp))
+                                    .padding(horizontal = 12.dp, vertical = 10.dp)
+                            ) { Text("💬", style = MaterialTheme.typography.bodyMedium) }
+                            // Unread bubble — REAL per-friend count from DmRepository
+                            // (mockup line 2113). Only shown when there are unread DMs.
+                            if (unread > 0) {
+                                Box(
+                                    modifier = Modifier.align(Alignment.TopEnd)
+                                        .padding(top = 1.dp, end = 1.dp)
+                                        .size(16.dp)
+                                        .background(Color(0xFFA8202F), CircleShape)
+                                        .border(2.dp, Panel, CircleShape),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Text(
+                                        if (unread > 9) "9+" else unread.toString(),
+                                        color = Color.White,
+                                        style = MaterialTheme.typography.labelSmall
+                                    )
+                                }
+                            }
+                        }
                     }
+                    FriendRowMenu(muted = muted, onMute = onMute, onDelete = onDelete)
                 }
             }
         )
+    }
+}
+
+/**
+ * Discoverable overflow menu for a friend row — a ⋯ (kebab) icon button that
+ * opens a DropdownMenu with Mute/Unmute and a red "Remove friend". This is the
+ * VISIBLE unfriend affordance (the swipe-to-reveal Delete remains too); "Remove
+ * friend" is wired to the same onDelete (removeFriend → DELETE /api/friends/:id).
+ */
+@Composable
+private fun FriendRowMenu(muted: Boolean, onMute: () -> Unit, onDelete: () -> Unit) {
+    var menuOpen by remember { mutableStateOf(false) }
+    Box {
+        Box(
+            modifier = Modifier.clickable { menuOpen = true }
+                .padding(horizontal = 8.dp, vertical = 10.dp),
+            contentAlignment = Alignment.Center
+        ) { Text("⋯", color = Ink2, style = MaterialTheme.typography.titleMedium) }
+        DropdownMenu(
+            expanded = menuOpen,
+            onDismissRequest = { menuOpen = false },
+            modifier = Modifier.background(Panel)
+        ) {
+            DropdownMenuItem(
+                text = { Text(if (muted) "Unmute" else "Mute", color = TextDefault) },
+                onClick = { menuOpen = false; onMute() }
+            )
+            DropdownMenuItem(
+                text = { Text("Remove friend", color = Color(0xFFFF8F9E)) },
+                onClick = { menuOpen = false; onDelete() }
+            )
+        }
     }
 }
 
