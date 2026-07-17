@@ -1,5 +1,7 @@
 package com.filipinodama.app.ui.screens
 
+import com.filipinodama.app.ui.components.royalDialogPanel
+import com.filipinodama.app.ui.components.royalSheetPanel
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -813,7 +815,7 @@ private fun StoreItemPreviewSheet(
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .background(Panel, RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp))
+                .royalSheetPanel(20.dp)
                 .padding(24.dp)
                 .clickable(enabled = false) {},
             horizontalAlignment = Alignment.CenterHorizontally
@@ -951,7 +953,7 @@ private fun PurchaseConfirmSheet(item: StoreItemDto, balance: Int, onCancel: () 
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .background(Panel, RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp))
+                .royalSheetPanel(20.dp)
                 .padding(24.dp)
                 .clickable(enabled = false) {},
             horizontalAlignment = Alignment.CenterHorizontally
@@ -994,7 +996,7 @@ private fun PurchasingOverlay() {
 private fun PurchaseSuccessOverlay(item: StoreItemDto, onDismiss: () -> Unit) {
     Box(modifier = Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.6f)).clickable(onClick = onDismiss), contentAlignment = Alignment.Center) {
         Column(
-            modifier = Modifier.background(Panel, RoundedCornerShape(18.dp)).padding(28.dp).clickable(enabled = false) {},
+            modifier = Modifier.royalDialogPanel().padding(28.dp).clickable(enabled = false) {},
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
             Text("✓", color = Color(0xFF3FBF6F), style = MaterialTheme.typography.displaySmall)
@@ -1012,7 +1014,7 @@ private fun PurchaseSuccessOverlay(item: StoreItemDto, onDismiss: () -> Unit) {
 private fun PurchaseErrorOverlay(message: String, onDismiss: () -> Unit) {
     Box(modifier = Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.6f)).clickable(onClick = onDismiss), contentAlignment = Alignment.Center) {
         Column(
-            modifier = Modifier.background(Panel, RoundedCornerShape(18.dp)).padding(28.dp).clickable(enabled = false) {},
+            modifier = Modifier.royalDialogPanel().padding(28.dp).clickable(enabled = false) {},
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
             Text("⚠", style = MaterialTheme.typography.displaySmall)

@@ -1,5 +1,6 @@
 package com.filipinodama.app.ui.screens.settings
 
+import com.filipinodama.app.ui.components.royalDialogPanel
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -73,7 +74,7 @@ fun BlockedPlayersDialog(onClose: () -> Unit) {
 
     Dialog(onDismissRequest = onClose) {
         Column(
-            modifier = Modifier.fillMaxWidth().background(Panel, RoundedCornerShape(18.dp)).padding(22.dp)
+            modifier = Modifier.fillMaxWidth().royalDialogPanel().padding(22.dp)
         ) {
             Text("Blocked Players", color = GoldLt, style = MaterialTheme.typography.titleMedium)
             Text(

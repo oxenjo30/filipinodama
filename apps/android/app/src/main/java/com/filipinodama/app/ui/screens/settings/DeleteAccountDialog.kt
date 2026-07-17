@@ -1,5 +1,6 @@
 package com.filipinodama.app.ui.screens.settings
 
+import com.filipinodama.app.ui.components.royalDialogPanel
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -59,7 +60,7 @@ fun DeleteAccountDialog(onClose: () -> Unit, onDeleted: () -> Unit) {
         Column(
             // Scroll so the typed-DELETE confirm + buttons stay reachable with the
             // keyboard open / large font (versionCode-12 unreachable-CTA bug class).
-            modifier = Modifier.fillMaxWidth().background(Panel, RoundedCornerShape(18.dp)).verticalScroll(rememberScrollState()).padding(22.dp),
+            modifier = Modifier.fillMaxWidth().royalDialogPanel().verticalScroll(rememberScrollState()).padding(22.dp),
             verticalArrangement = Arrangement.spacedBy(14.dp)
         ) {
             Text("⚠️ Delete Your Account?", color = Red, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)

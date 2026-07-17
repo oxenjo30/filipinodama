@@ -1,5 +1,6 @@
 package com.filipinodama.app.ui.screens.social
 
+import com.filipinodama.app.ui.components.royalDialogPanel
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -100,7 +101,7 @@ fun ReportPlayerDialog(
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .background(Panel, RoundedCornerShape(18.dp))
+                .royalDialogPanel()
                 .padding(24.dp)
                 .verticalScroll(rememberScrollState())
         ) {

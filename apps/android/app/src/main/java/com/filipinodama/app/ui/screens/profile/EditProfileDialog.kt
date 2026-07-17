@@ -28,6 +28,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import com.filipinodama.app.data.AuthRepository
 import com.filipinodama.app.data.profile.ProfileRepository
+import com.filipinodama.app.ui.components.RoyalPrimaryButton
+import com.filipinodama.app.ui.components.royalDialogPanel
 import com.filipinodama.app.data.profile.ProfileResult
 import com.filipinodama.app.data.profile.UpdateProfileRequest
 import com.filipinodama.app.ui.theme.Gold
@@ -68,7 +70,7 @@ fun EditProfileDialog(onClose: () -> Unit, onChangeAvatar: () -> Unit) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .background(Panel, RoundedCornerShape(20.dp))
+                .royalDialogPanel()
                 // Scroll so a large accessibility font / open keyboard can't push
                 // the Save CTA off-screen (the versionCode-12 unreachable-CTA class).
                 .verticalScroll(rememberScrollState())
@@ -111,24 +113,24 @@ fun EditProfileDialog(onClose: () -> Unit, onChangeAvatar: () -> Unit) {
                 colors = OutlinedTextFieldDefaults.colors(focusedTextColor = androidx.compose.ui.graphics.Color.White, unfocusedTextColor = androidx.compose.ui.graphics.Color.White)
             )
 
-            Row(horizontalArrangement = Arrangement.End, modifier = Modifier.fillMaxWidth()) {
-                TextButton(onClick = onClose, enabled = !saving) { Text("Cancel", color = Ink) }
-                TextButton(
-                    enabled = !saving,
-                    onClick = {
-                        saving = true
-                        scope.launch {
-                            val trimmed = name.trim().ifEmpty { me?.displayName ?: "" }
-                            val result = ProfileRepository.updateProfile(
-                                UpdateProfileRequest(displayName = trimmed, bio = bio.trim())
-                            )
-                            saving = false
-                            if (result is ProfileResult.Success) onClose()
-                        }
+            RoyalPrimaryButton(
+                label = if (saving) "Saving…" else "Save Changes",
+                enabled = !saving,
+                modifier = Modifier.padding(top = 22.dp),
+                onClick = {
+                    saving = true
+                    scope.launch {
+                        val trimmed = name.trim().ifEmpty { me?.displayName ?: "" }
+                        val result = ProfileRepository.updateProfile(
+                            UpdateProfileRequest(displayName = trimmed, bio = bio.trim())
+                        )
+                        saving = false
+                        if (result is ProfileResult.Success) onClose()
                     }
-                ) {
-                    Text(if (saving) "Saving…" else "Save Changes", color = Gold)
                 }
+            )
+            Row(horizontalArrangement = Arrangement.Center, modifier = Modifier.fillMaxWidth().padding(top = 10.dp)) {
+                TextButton(onClick = onClose, enabled = !saving) { Text("Cancel", color = Ink2) }
             }
         }
     }

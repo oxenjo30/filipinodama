@@ -209,21 +209,16 @@ fun HomeScreen(
                     onClick = onOpenLeaderboard,
                     modifier = Modifier.weight(1f)
                 )
-                // Tighter gap between the trailing icons so the enlarged 48dp
-                // touch targets + the added Messages icon don't over-squeeze the
-                // weighted identity block on narrow (~360dp) screens. The 48dp
-                // targets already provide visual separation via their padding.
+                // Owner directive (2026-07-17): the Home top bar shows only the
+                // wallet chip + the notification bell. The search and messages
+                // icons were REMOVED — the messages (✉) icon was never in the
+                // mobile mockup (an unapproved gap-fill), and the owner chose to
+                // drop the search (🔍) icon too for a minimal top bar (a deliberate
+                // divergence from the mockup, which does include a search icon).
+                // DM is still reachable from Friends/Profile; global search remains
+                // available via its screen where routed elsewhere.
                 Row(horizontalArrangement = Arrangement.spacedBy(2.dp), verticalAlignment = Alignment.CenterVertically) {
                     WalletChip(gold = me.gold, diamonds = me.diamonds, onClick = onOpenWallet)
-                    RoundIconButton(onClick = onOpenSearch, contentDescription = "Search players") {
-                        SearchGlyph()
-                    }
-                    // Messages inbox entry point — the DM_LIST screen was built +
-                    // registered but had NO way in (threads only opened from
-                    // Friends/Profile). This surfaces the consolidated inbox.
-                    RoundIconButton(onClick = onOpenMessages, contentDescription = "Messages") {
-                        Text("✉", color = GoldLt, style = MaterialTheme.typography.titleMedium)
-                    }
                     NotificationBell(unreadCount = unreadNotifs, onClick = onOpenNotifications)
                 }
             }

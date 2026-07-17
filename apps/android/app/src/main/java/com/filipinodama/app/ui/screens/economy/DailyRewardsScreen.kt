@@ -1,5 +1,6 @@
 package com.filipinodama.app.ui.screens.economy
 
+import com.filipinodama.app.ui.components.royalDialogPanel
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -248,7 +249,7 @@ fun DailyRewardsScreen(onBack: () -> Unit = {}, onRequireSignIn: () -> Unit = {}
             contentAlignment = Alignment.Center
         ) {
             Column(
-                modifier = Modifier.background(Panel, RoundedCornerShape(18.dp)).padding(28.dp).clickable(enabled = false) {},
+                modifier = Modifier.royalDialogPanel().padding(28.dp).clickable(enabled = false) {},
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
                 CurrencyIcon(kind = CurrencyIconKind.CHEST, size = 40.dp)

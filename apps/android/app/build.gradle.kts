@@ -126,8 +126,16 @@ android {
         // card, dynamic subtitle, and a "that room is locked" message for a turned-
         // away joiner. Rooms are Redis-only so no DB migration (server adds
         // Room.locked + a room:lock event + a room:join gate).
-        versionCode = 24
-        versionName = "0.1.24"
+        // 25 = UI polish batch 1: Home top bar trimmed to wallet + bell (the search
+        // and never-in-mockup messages icons removed); Profile gains red "needs
+        // action" count bubbles — a Messages quick-link (unread DMs) + the Friends
+        // pill fixed to show pending friend-REQUESTS (it wrongly showed the DM
+        // count); the Notifications unread card is opaque so the red swipe-to-delete
+        // tray no longer bleeds through (it looked like a solid red card); and every
+        // dialog adopts the shared royal panel (RoyalDialog.kt: purple gradient +
+        // gold border) so no modal looks flat/off-brand.
+        versionCode = 25
+        versionName = "0.1.25"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
