@@ -1,5 +1,6 @@
 package com.filipinodama.app.ui.screens.game
 
+import com.filipinodama.app.ui.components.royalDialogPanel
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.rememberScrollState
@@ -247,7 +248,7 @@ private fun OfflineEndCard(onRematch: () -> Unit, onChangeDifficulty: () -> Unit
         contentAlignment = Alignment.Center
     ) {
         Column(
-            modifier = Modifier.padding(24.dp).background(Panel, RoundedCornerShape(18.dp)).padding(24.dp),
+            modifier = Modifier.padding(24.dp).royalDialogPanel().padding(24.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
             Text("Match Complete", color = Gold, style = MaterialTheme.typography.labelLarge)

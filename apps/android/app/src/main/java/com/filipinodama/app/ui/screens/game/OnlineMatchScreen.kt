@@ -1,5 +1,6 @@
 package com.filipinodama.app.ui.screens.game
 
+import com.filipinodama.app.ui.components.royalDialogPanel
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -546,7 +547,7 @@ private fun MatchEndCard(
             Column(
                 modifier = Modifier
                     .padding(24.dp)
-                    .background(Panel, RoundedCornerShape(18.dp))
+                    .royalDialogPanel()
                     .padding(24.dp),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {

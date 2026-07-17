@@ -1,5 +1,6 @@
 package com.filipinodama.app.ui.screens.settings
 
+import com.filipinodama.app.ui.components.royalDialogPanel
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -62,7 +63,7 @@ fun ContactSupportDialog(onClose: () -> Unit) {
         Column(
             // Scroll so the form's CTA stays reachable with the keyboard open or a
             // large accessibility font (versionCode-12 unreachable-CTA bug class).
-            modifier = Modifier.fillMaxWidth().background(Panel, RoundedCornerShape(18.dp)).verticalScroll(rememberScrollState()).padding(22.dp),
+            modifier = Modifier.fillMaxWidth().royalDialogPanel().verticalScroll(rememberScrollState()).padding(22.dp),
             verticalArrangement = Arrangement.spacedBy(14.dp)
         ) {
             if (sentTicketId != null) {

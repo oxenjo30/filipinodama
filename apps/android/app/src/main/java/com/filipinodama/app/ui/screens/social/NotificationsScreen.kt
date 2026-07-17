@@ -202,7 +202,13 @@ private fun NotificationSwipeRow(
                 }
             },
             content = {
-                Box(modifier = Modifier.fillMaxSize().background(if (unread) Color(0x0FE8B84B) else Color(0xFF1E1134), RoundedCornerShape(16.dp))) {
+                // The card MUST be OPAQUE. It sits over the red swipe-to-delete
+                // tray; an unread bg of 0x0FE8B84B (≈6% alpha gold) let the red
+                // tray glow straight through, so an unread row looked like a solid
+                // red card (owner-reported). Use an opaque unread colour (a gold-
+                // tinted dark, distinct from the read #1E1134) so the red only ever
+                // shows when the row is actually swiped open.
+                Box(modifier = Modifier.fillMaxSize().background(if (unread) Color(0xFF2A1E42) else Color(0xFF1E1134), RoundedCornerShape(16.dp))) {
                     if (unread) {
                         Box(
                             modifier = Modifier.align(Alignment.TopStart).padding(top = 16.dp, start = 6.dp)

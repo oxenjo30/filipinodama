@@ -1,5 +1,6 @@
 package com.filipinodama.app.ui.screens.social
 
+import com.filipinodama.app.ui.components.royalDialogPanel
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -846,7 +847,7 @@ fun BrowseGuildRow(card: GuildCardDto, isMine: Boolean, busy: Boolean, requested
 @Composable
 private fun ManageMemberDialog(member: GuildMemberDto, isLeader: Boolean, busy: Boolean, onClose: () -> Unit, onChangeRole: (String) -> Unit, onKick: () -> Unit) {
     Dialog(onDismissRequest = { if (!busy) onClose() }) {
-        Column(modifier = Modifier.fillMaxWidth().background(Panel, RoundedCornerShape(18.dp)).padding(22.dp)) {
+        Column(modifier = Modifier.fillMaxWidth().royalDialogPanel().padding(22.dp)) {
             Text(member.user.displayName, color = GoldLt, style = MaterialTheme.typography.headlineSmall)
             Text("Current role: ${member.role}", color = Ink2, style = MaterialTheme.typography.labelSmall, modifier = Modifier.padding(top = 4.dp, bottom = 16.dp))
             if (isLeader) {
@@ -1038,7 +1039,7 @@ fun GuildCreateDialog(onClose: () -> Unit, onCreated: (String) -> Unit) {
     val ready = name.trim().length >= 3 && tag.trim().length >= 2
 
     Dialog(onDismissRequest = { if (!busy) onClose() }) {
-        Column(modifier = Modifier.fillMaxWidth().background(Panel, RoundedCornerShape(18.dp)).padding(22.dp).verticalScroll(rememberScrollState())) {
+        Column(modifier = Modifier.fillMaxWidth().royalDialogPanel().padding(22.dp).verticalScroll(rememberScrollState())) {
             Text("Create a Guild", color = GoldLt, style = MaterialTheme.typography.headlineSmall)
             CrestPicker(selected = crest, onSelect = { crest = it })
             LabeledField("GUILD NAME") {
@@ -1106,7 +1107,7 @@ private fun GuildEditDialog(detail: GuildDetailResponse, onClose: () -> Unit, on
     var busy by remember { mutableStateOf(false) }
 
     Dialog(onDismissRequest = { if (!busy) onClose() }) {
-        Column(modifier = Modifier.fillMaxWidth().background(Panel, RoundedCornerShape(18.dp)).padding(22.dp).verticalScroll(rememberScrollState())) {
+        Column(modifier = Modifier.fillMaxWidth().royalDialogPanel().padding(22.dp).verticalScroll(rememberScrollState())) {
             Text("Edit Guild", color = GoldLt, style = MaterialTheme.typography.headlineSmall)
             CrestPicker(selected = crest, onSelect = { crest = it })
             LabeledField("GUILD NAME") {

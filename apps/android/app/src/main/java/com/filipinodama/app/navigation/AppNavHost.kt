@@ -419,7 +419,8 @@ fun AppNavHost() {
                     // inline tab's Support rows straight to the same real
                     // Legal destination the standalone SettingsScreen uses.
                     onOpenLegal = { doc -> navController.navigate(AppDestinations.legal(doc)) },
-                    onOpenAchievements = { navController.navigate(AppDestinations.ACHIEVEMENTS) }
+                    onOpenAchievements = { navController.navigate(AppDestinations.ACHIEVEMENTS) },
+                    onOpenMessages = { navController.navigate(AppDestinations.DM_LIST) }
                 )
             }
             composable(AppDestinations.ACHIEVEMENTS) {

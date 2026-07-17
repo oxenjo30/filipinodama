@@ -111,7 +111,8 @@ fun ProfileScreen(
     onOpenOrders: () -> Unit = {},
     onOpenInventory: () -> Unit = {},
     onOpenLegal: (String) -> Unit = {},
-    onOpenAchievements: () -> Unit = {}
+    onOpenAchievements: () -> Unit = {},
+    onOpenMessages: () -> Unit = {}
 ) {
     val authState by AuthRepository.state.collectAsState()
     val me = authState.user
@@ -131,6 +132,10 @@ fun ProfileScreen(
     // mockup's own hardcoded static example — no member-count/rank field
     // exists on PublicGuildDto, so this card shows only name+tag, honestly).
     var myGuild by remember { mutableStateOf<com.filipinodama.app.data.profile.PublicGuildDto?>(null) }
+    // Pending INCOMING friend requests — a real "needs your action" count for the
+    // Friends pill's red bubble (GET /api/friends/requests → incoming). One-shot
+    // fetch (there's no reactive stream for it); refreshed when the screen (re)opens.
+    var friendReqCount by remember { mutableStateOf(0) }
 
     LaunchedEffect(me?.id) {
         if (me?.id == null) return@LaunchedEffect
@@ -138,6 +143,17 @@ fun ProfileScreen(
             is com.filipinodama.app.data.profile.ProfileResult.Success -> myGuild = result.data.user.guild
             is com.filipinodama.app.data.profile.ProfileResult.Failure -> myGuild = null
         }
+    }
+
+    // Load pending friend-request count + refresh the DM unread total so the
+    // Profile's action bubbles are live on open (both are real server data).
+    LaunchedEffect(me?.id) {
+        if (me?.id == null) return@LaunchedEffect
+        val r = com.filipinodama.app.data.social.FriendsRepository.requests()
+        if (r is com.filipinodama.app.data.social.SocialResult.Success) {
+            friendReqCount = r.data.incoming.size
+        }
+        com.filipinodama.app.data.social.DmRepository.unreadTotal() // updates DmRepository.state.unread
     }
 
     LaunchedEffect(me?.id) {
@@ -323,45 +339,42 @@ fun ProfileScreen(
         // "👥 Friends" (purple, unread badge) pills. Replaces the old
         // Edit/Friends/Settings 3-chip row (Edit moved into the header above,
         // Settings moved into the tab bar below).
+        // Three quick-link pills, each a red "needs action" bubble on its own
+        // real count: Inventory (no count), Friends (pending friend-REQUESTS —
+        // fixed: it used to wrongly show the DM count), Messages (unread DMs).
+        // The messages entry lives here (not on Home) per owner directive: every
+        // pending action a player must handle shows as a red bubble on the Profile.
         Row(
             modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp),
             horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            Box(
-                modifier = Modifier
-                    .weight(1f)
-                    .clickable(onClick = onOpenInventory)
-                    .background(Color(0x1AE8B84B), RoundedCornerShape(13.dp))
-                    .border(1.dp, Color(0x59E8B84B), RoundedCornerShape(13.dp))
-                    .padding(vertical = 13.dp),
-                contentAlignment = Alignment.Center
-            ) {
-                Text("🎒 Inventory", color = Color(0xFFF4D886), style = MaterialTheme.typography.labelLarge)
-            }
-            Box(
-                modifier = Modifier
-                    .weight(1f)
-                    .clickable(onClick = onOpenFriends)
-                    .background(Brush.verticalGradient(listOf(Color(0x477A4BBF), Color(0x474E2A8E))), RoundedCornerShape(13.dp))
-                    .border(1.dp, Color(0x66C9A4FF), RoundedCornerShape(13.dp))
-                    .padding(vertical = 13.dp),
-                contentAlignment = Alignment.Center
-            ) {
-                Box {
-                    Text("👥 Friends", color = Color(0xFFE7D6FF), style = MaterialTheme.typography.labelLarge)
-                    if (dmUnread.unread > 0) {
-                        Box(
-                            modifier = Modifier
-                                .align(Alignment.TopEnd)
-                                .offset(x = 12.dp, y = (-8).dp)
-                                .background(Brush.verticalGradient(listOf(Color(0xFFFF6B7D), Color(0xFFE23D55))), RoundedCornerShape(10.dp))
-                                .padding(horizontal = 5.dp, vertical = 1.dp)
-                        ) {
-                            Text(dmUnread.unread.toString(), color = androidx.compose.ui.graphics.Color.White, style = MaterialTheme.typography.labelSmall)
-                        }
-                    }
-                }
-            }
+            ProfileQuickLink(
+                label = "🎒 Inventory",
+                textColor = Color(0xFFF4D886),
+                bg = Color(0x1AE8B84B),
+                border = Color(0x59E8B84B),
+                badgeCount = 0,
+                onClick = onOpenInventory,
+                modifier = Modifier.weight(1f)
+            )
+            ProfileQuickLink(
+                label = "👥 Friends",
+                textColor = Color(0xFFE7D6FF),
+                gradient = listOf(Color(0x477A4BBF), Color(0x474E2A8E)),
+                border = Color(0x66C9A4FF),
+                badgeCount = friendReqCount,
+                onClick = onOpenFriends,
+                modifier = Modifier.weight(1f)
+            )
+            ProfileQuickLink(
+                label = "✉ Messages",
+                textColor = Color(0xFF9EC1FF),
+                gradient = listOf(Color(0x475A96FF), Color(0x472E4E8E)),
+                border = Color(0x665A96FF),
+                badgeCount = dmUnread.unread,
+                onClick = onOpenMessages,
+                modifier = Modifier.weight(1f)
+            )
         }
 
         // ── tabs — mockup's exact 3-tab pill row (lines 549-553, profOverview/
@@ -952,6 +965,58 @@ private fun AchievementsGrid(wins: Int, streak: Int, trophies: Int, onOpenAchiev
  * an underline tab strip) and eliminates the ambiguous/zero-width measure
  * pass that was silently dropping the second child.
  */
+/**
+ * A Profile quick-link pill with an optional red "needs action" count bubble
+ * (unread messages / pending friend requests). The bubble mirrors the mockup's
+ * avatar-count style: a red gradient rounded pill with a white count, capped at
+ * "9+". [gradient] (a 2-colour list) wins over the flat [bg] when provided.
+ */
+@Composable
+private fun ProfileQuickLink(
+    label: String,
+    textColor: Color,
+    border: Color,
+    badgeCount: Int,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    bg: Color? = null,
+    gradient: List<Color>? = null,
+) {
+    val shape = RoundedCornerShape(13.dp)
+    val bgMod = when {
+        gradient != null -> Modifier.background(Brush.verticalGradient(gradient), shape)
+        bg != null -> Modifier.background(bg, shape)
+        else -> Modifier
+    }
+    Box(
+        modifier = modifier
+            .clickable(onClick = onClick)
+            .then(bgMod)
+            .border(1.dp, border, shape)
+            .padding(vertical = 13.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        Box {
+            Text(label, color = textColor, style = MaterialTheme.typography.labelLarge)
+            if (badgeCount > 0) {
+                Box(
+                    modifier = Modifier
+                        .align(Alignment.TopEnd)
+                        .offset(x = 12.dp, y = (-8).dp)
+                        .background(Brush.verticalGradient(listOf(Color(0xFFFF6B7D), Color(0xFFE23D55))), RoundedCornerShape(10.dp))
+                        .padding(horizontal = 5.dp, vertical = 1.dp)
+                ) {
+                    Text(
+                        if (badgeCount > 9) "9+" else badgeCount.toString(),
+                        color = androidx.compose.ui.graphics.Color.White,
+                        style = MaterialTheme.typography.labelSmall
+                    )
+                }
+            }
+        }
+    }
+}
+
 @Composable
 private fun ProfileTabButton(label: String, active: Boolean, modifier: Modifier = Modifier, onClick: () -> Unit) {
     Box(
