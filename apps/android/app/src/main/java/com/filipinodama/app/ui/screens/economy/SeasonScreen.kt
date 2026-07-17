@@ -51,6 +51,7 @@ import com.filipinodama.app.ui.components.CurrencyIcon
 import com.filipinodama.app.ui.components.CurrencyIconKind
 import com.filipinodama.app.ui.components.LocalSnackbar
 import com.filipinodama.app.ui.components.MockupBackButton
+import com.filipinodama.app.ui.components.PullRefreshContainer
 import com.filipinodama.app.ui.components.screenInsets
 import com.filipinodama.app.ui.theme.Gold
 import com.filipinodama.app.ui.theme.GoldLt
@@ -181,6 +182,10 @@ fun SeasonScreen(onBack: () -> Unit = {}, onRequireSignIn: () -> Unit = {}) {
                 Text(s.season.name, color = GoldLt, style = MaterialTheme.typography.headlineSmall, modifier = Modifier.padding(top = 6.dp, bottom = 4.dp))
                 Text("Ends ${endsInLabel(s.season.endsAt)}", color = Ink2, style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(bottom = 16.dp))
 
+                // Pull down to RE-FETCH season progress + end-status from the
+                // server (load() + loadEndStatus() — the same calls the entry
+                // LaunchedEffect runs), not a cosmetic spinner.
+                PullRefreshContainer(onRefresh = { load(); loadEndStatus() }) {
                 Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
                     // Level bar — XP against the highest tier gate present.
                     val maxXp = s.tiers.maxOfOrNull { it.xp } ?: 1
@@ -283,6 +288,7 @@ fun SeasonScreen(onBack: () -> Unit = {}, onRequireSignIn: () -> Unit = {}) {
                         }
                     }
                 }
+                } // PullRefreshContainer
             }
         }
     }

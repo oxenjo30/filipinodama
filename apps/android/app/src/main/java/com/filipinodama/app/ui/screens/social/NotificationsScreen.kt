@@ -44,6 +44,7 @@ import com.filipinodama.app.ui.theme.Green
 import com.filipinodama.app.ui.theme.Ink
 import com.filipinodama.app.ui.theme.Ink2
 import com.filipinodama.app.ui.theme.Panel
+import com.filipinodama.app.ui.components.PullRefreshContainer
 import com.filipinodama.app.ui.components.screenContentPadding
 import com.filipinodama.app.ui.components.screenInsetsTopOnly
 import kotlinx.coroutines.launch
@@ -98,6 +99,10 @@ fun NotificationsScreen(onBack: () -> Unit) {
             )
         }
 
+        // Pull down anywhere on the list/empty state to RE-FETCH notifications from
+        // the server (NotificationsRepository.load() — the same call the entry
+        // LaunchedEffect runs), so a pull gets the latest, not a cosmetic spinner.
+        PullRefreshContainer(onRefresh = { NotificationsRepository.load() }) {
         when {
             state.loading && data == null -> Box(Modifier.fillMaxSize().padding(32.dp), contentAlignment = Alignment.Center) { CircularProgressIndicator(color = Gold) }
             state.error && data == null -> Box(Modifier.fillMaxSize().padding(32.dp), contentAlignment = Alignment.Center) {
@@ -150,6 +155,7 @@ fun NotificationsScreen(onBack: () -> Unit) {
                 }
             }
         }
+        } // PullRefreshContainer
     }
 }
 

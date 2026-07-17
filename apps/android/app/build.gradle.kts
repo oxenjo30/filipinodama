@@ -134,8 +134,15 @@ android {
         // tray no longer bleeds through (it looked like a solid red card); and every
         // dialog adopts the shared royal panel (RoyalDialog.kt: purple gradient +
         // gold border) so no modal looks flat/off-brand.
-        versionCode = 25
-        versionName = "0.1.25"
+        // 26 = Pull-to-refresh across 18 data screens (Home, Store, Wallet,
+        // Inventory/Orders, Quests, Season, Tournaments, Daily Rewards,
+        // Leaderboard, Live Matches, Friends, Discover Guilds, Guild Hall, DM
+        // inbox, Notifications, My Tickets, Achievements, Profile). Pulling down
+        // RE-FETCHES that screen's real data from the server (the same repository
+        // call its entry LaunchedEffect runs) so the user gets late/updated data
+        // — not a cosmetic spinner. Shared PullRefreshContainer (gold indicator).
+        versionCode = 26
+        versionName = "0.1.26"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 

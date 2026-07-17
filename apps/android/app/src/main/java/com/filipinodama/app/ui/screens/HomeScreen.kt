@@ -59,6 +59,7 @@ import com.filipinodama.app.data.tournaments.TournamentsRepository
 import com.filipinodama.app.ui.components.CurrencyAmount
 import com.filipinodama.app.ui.components.CurrencyIcon
 import com.filipinodama.app.ui.components.CurrencyIconKind
+import com.filipinodama.app.ui.components.PullRefreshContainer
 import com.filipinodama.app.ui.screens.profile.AvatarView
 import com.filipinodama.app.ui.theme.Gold
 import com.filipinodama.app.ui.theme.GoldLt
@@ -149,17 +150,15 @@ fun HomeScreen(
         onDispose { lifecycleOwner.lifecycle.removeObserver(obs) }
     }
 
-    LaunchedEffect(me?.id, activeMatchRefreshTick) {
-        if (me == null) {
-            loadingActive = false
-            return@LaunchedEffect
-        }
-        loadingActive = true
+    // Real Home data load — factored out so pull-to-refresh (onRefresh below)
+    // can re-run the SAME awaited calls the entry LaunchedEffect below runs,
+    // re-fetching active match, quests, daily-login status, season, and
+    // tournaments from the server (not a cosmetic spinner).
+    suspend fun loadHomeData() {
         when (val result = EconomyRepository.activeMatch()) {
             is EconomyResult.Success -> activeMatch = result.data.match
             is EconomyResult.Failure -> activeMatch = null
         }
-        loadingActive = false
 
         when (val q = EconomyRepository.quests()) {
             is EconomyResult.Success -> homeQuests = q.data.daily.take(2)
@@ -184,11 +183,27 @@ fun HomeScreen(
         com.filipinodama.app.data.social.NotificationsRepository.load()
     }
 
+    LaunchedEffect(me?.id, activeMatchRefreshTick) {
+        if (me == null) {
+            loadingActive = false
+            return@LaunchedEffect
+        }
+        loadingActive = true
+        loadHomeData()
+        loadingActive = false
+    }
+
     val notifState by com.filipinodama.app.data.social.NotificationsRepository.state.collectAsState()
     LaunchedEffect(notifState.data?.unreadCount) {
         unreadNotifs = notifState.data?.unreadCount ?: 0
     }
 
+    // Pull down anywhere on Home to RE-FETCH the active match, quests, daily
+    // reward, season, tournaments, and notifications from the server
+    // (loadHomeData — the same calls the entry LaunchedEffect above runs),
+    // so a pull gets the latest, not a cosmetic spinner. No-op for a signed-
+    // out user, matching the entry effect's own me == null guard.
+    PullRefreshContainer(onRefresh = { if (me != null) loadHomeData() }) {
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -296,6 +311,7 @@ fun HomeScreen(
         // ── season pass banner ──
         SeasonPassBanner(season = season, onClick = onSeason)
     }
+    } // PullRefreshContainer
 }
 
 private fun seasonNumLabel(season: SeasonCurrentResponse?): String {

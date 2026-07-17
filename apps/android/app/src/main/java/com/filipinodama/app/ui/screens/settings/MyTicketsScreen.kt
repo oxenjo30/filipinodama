@@ -33,6 +33,7 @@ import com.filipinodama.app.data.settings.SettingsResult
 import com.filipinodama.app.data.settings.TicketDetailResponse
 import com.filipinodama.app.data.settings.TicketSummary
 import com.filipinodama.app.ui.components.MockupBackButton
+import com.filipinodama.app.ui.components.PullRefreshContainer
 import com.filipinodama.app.ui.components.screenInsets
 import com.filipinodama.app.ui.theme.Gold
 import com.filipinodama.app.ui.theme.GoldLt
@@ -89,7 +90,10 @@ fun MyTicketsScreen(onBack: () -> Unit = {}) {
             }
         }
 
-        Box(Modifier.padding(top = 20.dp)) {
+        // Pull down to RE-FETCH the ticket list from the server (SettingsRepository
+        // .myTickets() via load() — the same call the entry LaunchedEffect runs).
+        PullRefreshContainer(onRefresh = { load() }) {
+        Box(Modifier.fillMaxSize().padding(top = 20.dp)) {
             when {
                 tickets == null && loadError == null ->
                     Box(Modifier.fillMaxWidth().padding(40.dp), contentAlignment = Alignment.Center) { CircularProgressIndicator(color = Gold) }
@@ -120,6 +124,7 @@ fun MyTicketsScreen(onBack: () -> Unit = {}) {
                 }
             }
         }
+        } // PullRefreshContainer
     }
 }
 

@@ -52,6 +52,7 @@ import com.filipinodama.app.data.profile.tierArtUrl
 import com.filipinodama.app.data.settings.SettingsStore
 import com.filipinodama.app.ui.components.CurrencyAmount
 import com.filipinodama.app.ui.components.CurrencyIconKind
+import com.filipinodama.app.ui.components.PullRefreshContainer
 import com.filipinodama.app.ui.theme.Gold
 import com.filipinodama.app.ui.theme.GoldLt
 import com.filipinodama.app.ui.theme.Green
@@ -176,6 +177,34 @@ fun ProfileScreen(
         }
     }
 
+    // Pull-to-refresh reload: re-runs the SAME real server calls the four entry
+    // LaunchedEffects above run (myGuild, friend-request count + DM unread total,
+    // trophy ledger, match history for the current filter) so a pull gets late/
+    // updated data, not a cosmetic spinner. Kept in sync with those LaunchedEffects
+    // by construction — same repository calls, same target state vars.
+    suspend fun reloadProfile() {
+        val userId = me?.id ?: return
+        when (val result = com.filipinodama.app.data.profile.ProfileRepository.publicUser(userId)) {
+            is com.filipinodama.app.data.profile.ProfileResult.Success -> myGuild = result.data.user.guild
+            is com.filipinodama.app.data.profile.ProfileResult.Failure -> myGuild = null
+        }
+        val r = com.filipinodama.app.data.social.FriendsRepository.requests()
+        if (r is com.filipinodama.app.data.social.SocialResult.Success) {
+            friendReqCount = r.data.incoming.size
+        }
+        com.filipinodama.app.data.social.DmRepository.unreadTotal()
+        when (val result = ProfileRepository.trophyLedger()) {
+            is ProfileResult.Success -> trophyRows = result.data.items
+            is ProfileResult.Failure -> trophyRows = emptyList()
+        }
+        val modeArg = if (historyFilter in setOf("RANKED", "CASUAL", "AI")) historyFilter else null
+        val resultArg = if (historyFilter in setOf("win", "loss")) historyFilter else null
+        when (val result = ProfileRepository.matches(userId, mode = modeArg, result = resultArg)) {
+            is ProfileResult.Success -> matches = result.data.items
+            is ProfileResult.Failure -> matches = emptyList()
+        }
+    }
+
     if (me == null) {
         // Anonymous / signed-out: the Profile tab is browsable but has no data
         // to show, so it's an empty state WITH a real call-to-action (owner:
@@ -228,6 +257,10 @@ fun ProfileScreen(
 
     val dmUnread by com.filipinodama.app.data.social.DmRepository.state.collectAsState()
 
+    // Pull down anywhere on the Profile to RE-FETCH real data from the server
+    // (reloadProfile() above — guild, friend-request/DM counts, trophy ledger,
+    // match history), not a cosmetic spinner.
+    PullRefreshContainer(onRefresh = { reloadProfile() }) {
     Column(modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background).verticalScroll(rememberScrollState())) {
         // ── identity header card — mockup lines 508-530: gradient card,
         // avatar (60dp) + tier-badge pill bottom-right + optional frame
@@ -594,6 +627,7 @@ fun ProfileScreen(
             )
         }
     }
+    } // PullRefreshContainer
 }
 
 /**
