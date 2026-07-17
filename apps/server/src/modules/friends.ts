@@ -4,6 +4,7 @@ import { prisma } from "../db/client.js";
 import { ok, err } from "../lib/errors.js";
 import { requireAuth } from "../auth/guards.js";
 import { isBlockedBetween } from "./blocks.js";
+import { pushUnreadCount } from "../lib/notify.js";
 
 /** Public-safe user shape for friend lists / requests / suggestions. */
 function publicFriend(u: {
@@ -94,6 +95,9 @@ async function createFriendRequest(me: string, toUserId: string) {
       data: { requestId: request.id, fromUserId: me },
     },
   });
+  // Live-push the recipient's new unread count so their bell + "action needed"
+  // badge lights up instantly, no refresh (mirrors the DM live-badge path).
+  await pushUnreadCount(toUserId);
 
   return { status: "pending" as const, requestId: request.id };
 }

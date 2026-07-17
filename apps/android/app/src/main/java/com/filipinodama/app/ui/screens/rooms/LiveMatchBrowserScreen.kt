@@ -12,7 +12,9 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -114,11 +116,15 @@ fun LiveMatchBrowserScreen(
         // latest live matches, not a cosmetic spinner.
         PullRefreshContainer(onRefresh = { load() }) {
         when {
-            current == null -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+            current == null -> Column(
+                Modifier.fillMaxSize().verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.Center,
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
                 CircularProgressIndicator(color = Gold)
             }
             loadError -> Column(
-                modifier = Modifier.fillMaxSize().padding(top = 40.dp),
+                modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(top = 40.dp),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
                 Text("Couldn't load live matches — try again.", color = Ink2, style = MaterialTheme.typography.bodyMedium)
@@ -128,7 +134,11 @@ fun LiveMatchBrowserScreen(
                     modifier = Modifier.padding(top = 14.dp).fillMaxWidth(0.5f)
                 )
             }
-            current.isEmpty() -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+            current.isEmpty() -> Column(
+                Modifier.fillMaxSize().verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.Center,
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
                 Text(
                     "No live matches right now — check back soon, or jump into Play to start one yourself.",
                     color = Ink2,

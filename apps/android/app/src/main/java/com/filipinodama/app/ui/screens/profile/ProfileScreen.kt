@@ -148,7 +148,11 @@ fun ProfileScreen(
 
     // Load pending friend-request count + refresh the DM unread total so the
     // Profile's action bubbles are live on open (both are real server data).
-    LaunchedEffect(me?.id) {
+    // Keyed on NotificationsRepository.actionsTick too: a live `notif:new`
+    // (e.g. an incoming friend request) bumps the tick, which re-runs this and
+    // refreshes the red "action needed" bubble INSTANTLY — no manual refresh.
+    val actionsTick by com.filipinodama.app.data.social.NotificationsRepository.actionsTick.collectAsState()
+    LaunchedEffect(me?.id, actionsTick) {
         if (me?.id == null) return@LaunchedEffect
         val r = com.filipinodama.app.data.social.FriendsRepository.requests()
         if (r is com.filipinodama.app.data.social.SocialResult.Success) {

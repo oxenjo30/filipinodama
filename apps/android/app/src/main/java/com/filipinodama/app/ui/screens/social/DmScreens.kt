@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -100,9 +101,17 @@ fun DmConversationListScreen(onBack: () -> Unit, onOpenThread: (String) -> Unit)
         // LaunchedEffect runs), so a pull gets the latest, not a cosmetic spinner.
         PullRefreshContainer(onRefresh = { DmRepository.loadConversations() }) {
         if (dmState.loadingList && dmState.conversations.isEmpty()) {
-            Box(Modifier.fillMaxSize().padding(32.dp), contentAlignment = Alignment.Center) { CircularProgressIndicator(color = Gold) }
+            Column(
+                Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(32.dp),
+                verticalArrangement = Arrangement.Center,
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) { CircularProgressIndicator(color = Gold) }
         } else if (visibleConversations.isEmpty()) {
-            Box(Modifier.fillMaxWidth().padding(32.dp), contentAlignment = Alignment.Center) {
+            Column(
+                Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(32.dp),
+                verticalArrangement = Arrangement.Center,
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
                 Text("No conversations yet.\nMessage a friend from your Friends list to start.", color = Ink2, style = MaterialTheme.typography.bodyMedium, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
             }
         } else {

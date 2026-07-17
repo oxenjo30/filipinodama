@@ -1,5 +1,14 @@
 # Lessons
 
+## 2026-07-17 - Shipped pull-to-refresh that silently did nothing on loading/empty/error states
+
+- Mistake: Wired `PullToRefreshBox` (material3 1.3.0) on ~18 screens by wrapping each screen's `when {}` content. It compiled and worked ON A POPULATED LIST, so I called it done — but on the LOADING, ERROR, and EMPTY branches (a bare `Box`, or a `Column` with `fillMaxSize()` but NO `verticalScroll`) the pull gesture did nothing: no spinner, no refetch. The empty state is the FIRST thing a user sees on a fresh screen, so it read as "pull-to-refresh is broken."
+- Cause: `PullToRefreshBox` detects the pull PURELY through nested-scroll events from its content. Only a scroll container (`LazyColumn`, or `Modifier.verticalScroll`) emits those. A `Box`/non-scrolling `Column` emits ZERO, so the box never sees the drag. `fillMaxSize()` is irrelevant — SCROLLABILITY is the requirement. I verified the happy path and never tested the empty/loading path on a device.
+- Rule:
+  1. For `PullToRefreshBox`, EVERY content branch (including loading/error/EMPTY) must be a scroll container. Make short/empty/spinner branches `Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.Center, ...)`. Leave `LazyColumn`/existing-`verticalScroll` branches alone (never double-wrap a LazyColumn in verticalScroll — it crashes with "infinity maximum height").
+  2. Test an interaction on its EMPTY and LOADING states, not just the populated one — those are the states a new user hits first.
+  3. "Compiles + works in the demo case" is not "done" for a gesture/interaction feature — the failure here was invisible to a compile and to a data-filled screen.
+
 ## 2026-07-17 - A rounded card over a square background leaks the background at the corners
 
 - Mistake: The Notifications swipe-to-delete red tray sat behind a card with `RoundedCornerShape(16.dp)`, but the tray itself was a plain square-cornered `Box`. When the row was closed, the card's rounded corners couldn't cover the tray's square corners, so red showed at all four corners + the side edges (owner-reported "red corners"). This was the SECOND red-bleed bug in the same component — the first was red glowing *through* a semi-transparent card (fixed by making the card opaque); this one is red poking out *around* the rounded card.

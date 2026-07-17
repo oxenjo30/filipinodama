@@ -126,6 +126,10 @@ fun AvatarPickerDialog(onClose: () -> Unit) {
                     RoundedCornerShape(24.dp, 24.dp, 0.dp, 0.dp)
                 )
                 .border(1.dp, Color(0x59E8B84B), RoundedCornerShape(24.dp, 24.dp, 0.dp, 0.dp))
+                // Lift the whole sheet above the system nav/gesture bar so the
+                // pinned "Save Changes" footer isn't half-hidden behind it
+                // (owner-reported: the button sat too low, cut off at the bottom).
+                .navigationBarsPadding()
         ) {
             Row(
                 modifier = Modifier.fillMaxWidth().padding(20.dp, 18.dp, 20.dp, 14.dp),
@@ -160,7 +164,9 @@ fun AvatarPickerDialog(onClose: () -> Unit) {
                     Text("Couldn't load your avatars. Please try again.", color = Color(0xFF9A8BBF), style = MaterialTheme.typography.bodyMedium)
                 }
                 else -> Column(
-                    modifier = Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(20.dp),
+                    // weight(1f) so this content SCROLLS in the space above the
+                    // pinned Save footer, instead of pushing the button off-screen.
+                    modifier = Modifier.fillMaxWidth().weight(1f, fill = false).verticalScroll(rememberScrollState()).padding(20.dp),
                     verticalArrangement = Arrangement.spacedBy(22.dp)
                 ) {
                     // Live preview: avatar + frame overlay.
@@ -236,29 +242,35 @@ fun AvatarPickerDialog(onClose: () -> Unit) {
                             }
                         }
                     }
+                }
+            }
 
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable(enabled = !saving) {
-                                saving = true
-                                scope.launch {
-                                    if (draftAvatar != startKey) {
-                                        ProfileRepository.updateProfile(UpdateProfileRequest(avatarUrl = draftAvatar))
-                                    }
-                                    if (draftFrame != me?.frameId) {
-                                        EconomyRepository.equip(EquipRequest(frame = draftFrame ?: ""))
-                                    }
-                                    saving = false
-                                    onClose()
+            // "Save Changes" — a PINNED footer OUTSIDE the scroll (mockup keeps
+            // the primary CTA fixed at the sheet's bottom). Only shown once the
+            // grids have loaded (hidden while loading / on load error).
+            if (ownedAvatars != null && !loadError) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(start = 20.dp, end = 20.dp, top = 6.dp, bottom = 20.dp)
+                        .clickable(enabled = !saving) {
+                            saving = true
+                            scope.launch {
+                                if (draftAvatar != startKey) {
+                                    ProfileRepository.updateProfile(UpdateProfileRequest(avatarUrl = draftAvatar))
                                 }
+                                if (draftFrame != me?.frameId) {
+                                    EconomyRepository.equip(EquipRequest(frame = draftFrame ?: ""))
+                                }
+                                saving = false
+                                onClose()
                             }
-                            .background(androidx.compose.ui.graphics.Brush.verticalGradient(listOf(Color(0xFFEFC25A), Color(0xFFC9971F))), RoundedCornerShape(12.dp))
-                            .padding(vertical = 14.dp),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Text(if (saving) "Saving…" else "Save Changes", color = Color(0xFF2A1608), style = MaterialTheme.typography.titleMedium)
-                    }
+                        }
+                        .background(androidx.compose.ui.graphics.Brush.verticalGradient(listOf(Color(0xFFEFC25A), Color(0xFFC9971F))), RoundedCornerShape(12.dp))
+                        .padding(vertical = 14.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(if (saving) "Saving…" else "Save Changes", color = Color(0xFF2A1608), style = MaterialTheme.typography.titleMedium)
                 }
             }
         }

@@ -3,10 +3,16 @@ package com.filipinodama.app.data.social
 import com.filipinodama.app.data.apiErrorFrom
 
 import com.filipinodama.app.data.ApiClient
+import com.filipinodama.app.data.SocketClient
+import io.socket.client.Socket
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.launch
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
@@ -24,6 +30,50 @@ object NotificationsRepository {
 
     private val _state = MutableStateFlow(NotificationsUiState())
     val state: StateFlow<NotificationsUiState> = _state.asStateFlow()
+
+    // A monotonically-increasing "something needing your attention changed"
+    // signal. Bumped whenever a live notif:new arrives. Screens that show an
+    // "action needed" bubble derived from a SEPARATE source (e.g. the Profile
+    // Friends pill reads FriendsRepository.requests()) observe this to re-fetch
+    // their own count live, without each needing its own socket subscription.
+    private val _actionsTick = MutableStateFlow(0)
+    val actionsTick: StateFlow<Int> = _actionsTick.asStateFlow()
+
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+    private var subscribed = false
+    private var socket: Socket? = null
+
+    private object EV {
+        const val notifNew = "notif:new"
+    }
+
+    /**
+     * Subscribe ONCE to the shared socket's `notif:new` so the bell badge (and
+     * any action-bubble observing [actionsTick]) updates the INSTANT a
+     * notification arrives — no refresh. The server emits { unreadCount } to
+     * presence:<userId> after creating a notification (e.g. a friend request).
+     * Call once the user is signed in (idempotent). Mirrors DmRepository.
+     */
+    fun ensureLive() {
+        if (subscribed) return
+        subscribed = true
+        try {
+            val s = SocketClient.connect(ApiClient.okHttpClient) ?: run {
+                subscribed = false
+                return
+            }
+            socket = s
+            s.off(EV.notifNew)
+            s.on(EV.notifNew) {
+                // Re-load the full feed (updates the bell's unreadCount) and nudge
+                // action-bubble observers to re-fetch. Cheap + always correct.
+                scope.launch { load() }
+                _actionsTick.update { it + 1 }
+            }
+        } catch (_: Exception) {
+            subscribed = false
+        }
+    }
 
     suspend fun load() {
         _state.update { it.copy(loading = true, error = false) }

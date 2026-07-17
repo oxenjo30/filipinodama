@@ -112,12 +112,14 @@ function FriendRow({
   onOpen,
   onMessage,
   onInvite,
+  onUnfriend,
 }: {
   friend: FriendUser;
   online: boolean;
   onOpen: () => void;
   onMessage: () => void;
   onInvite: () => void;
+  onUnfriend: () => void;
 }) {
   const tier = tierOf(friend);
   const dot = online ? "#3fbf6f" : "#6b6480";
@@ -216,6 +218,25 @@ function FriendRow({
           }}
         >
           Invite
+        </button>
+        {/* Visible Unfriend action — web has no swipe gesture, so a discoverable
+            button is the only way to remove a friend from the desktop UI. */}
+        <button
+          onClick={onUnfriend}
+          title="Unfriend"
+          style={{
+            flex: "none",
+            width: 38,
+            height: 38,
+            borderRadius: 8,
+            border: "1px solid rgba(217,59,82,.35)",
+            background: "rgba(217,59,82,.1)",
+            color: "#ff8f9e",
+            fontSize: 15,
+            cursor: "pointer",
+          }}
+        >
+          ✕
         </button>
       </div>
     </div>
@@ -365,6 +386,23 @@ export function FriendsPage() {
       showToast(msg);
     } finally {
       markBusy(req.id, false);
+    }
+  }
+
+  /** Unfriend → DELETE /api/friends/:userId, drop from the list (with confirm). */
+  async function unfriend(friend: FriendUser) {
+    if (busy[friend.id]) return;
+    if (!window.confirm(`Remove ${friend.displayName} from your friends?`)) return;
+    markBusy(friend.id, true);
+    try {
+      await api.del(`/api/friends/${friend.id}`);
+      setFriends((list) => list.filter((f) => f.id !== friend.id));
+      showToast(`Removed ${friend.displayName} from your friends.`);
+    } catch (e) {
+      const msg = e instanceof ApiError ? e.message : "Couldn't remove friend. Try again.";
+      showToast(msg);
+    } finally {
+      markBusy(friend.id, false);
     }
   }
 
@@ -712,6 +750,7 @@ export function FriendsPage() {
                         onOpen={() => navigate(`/profile/${f.id}`)}
                         onMessage={() => messageFriend(f.id)}
                         onInvite={() => navigate("/play")}
+                        onUnfriend={() => unfriend(f)}
                       />
                     ))}
                   </div>
@@ -732,6 +771,7 @@ export function FriendsPage() {
                         onOpen={() => navigate(`/profile/${f.id}`)}
                         onMessage={() => messageFriend(f.id)}
                         onInvite={() => navigate("/play")}
+                        onUnfriend={() => unfriend(f)}
                       />
                     ))}
                   </div>

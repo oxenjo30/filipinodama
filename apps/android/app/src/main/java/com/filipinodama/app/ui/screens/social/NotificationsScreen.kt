@@ -15,8 +15,10 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.ui.draw.clip
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
@@ -105,15 +107,21 @@ fun NotificationsScreen(onBack: () -> Unit) {
         // LaunchedEffect runs), so a pull gets the latest, not a cosmetic spinner.
         PullRefreshContainer(onRefresh = { NotificationsRepository.load() }) {
         when {
-            state.loading && data == null -> Box(Modifier.fillMaxSize().padding(32.dp), contentAlignment = Alignment.Center) { CircularProgressIndicator(color = Gold) }
-            state.error && data == null -> Box(Modifier.fillMaxSize().padding(32.dp), contentAlignment = Alignment.Center) {
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text("Couldn't load notifications", color = Ink, style = MaterialTheme.typography.titleMedium)
-                    Text("Try again", color = Gold, style = MaterialTheme.typography.labelMedium, modifier = Modifier.padding(top = 10.dp).clickable { scope.launch { NotificationsRepository.load() } })
-                }
+            state.loading && data == null -> Column(
+                Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(32.dp),
+                verticalArrangement = Arrangement.Center,
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) { CircularProgressIndicator(color = Gold) }
+            state.error && data == null -> Column(
+                Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(32.dp),
+                verticalArrangement = Arrangement.Center,
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                Text("Couldn't load notifications", color = Ink, style = MaterialTheme.typography.titleMedium)
+                Text("Try again", color = Gold, style = MaterialTheme.typography.labelMedium, modifier = Modifier.padding(top = 10.dp).clickable { scope.launch { NotificationsRepository.load() } })
             }
             isEmpty -> Column(
-                modifier = Modifier.fillMaxSize().padding(horizontal = 32.dp, vertical = 80.dp),
+                modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 32.dp, vertical = 80.dp),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
                 Box(
