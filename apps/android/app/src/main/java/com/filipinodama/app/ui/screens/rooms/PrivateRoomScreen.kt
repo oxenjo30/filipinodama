@@ -473,7 +473,11 @@ private fun HostOrGuestLobby(
     val isHost = ui.isHostUser(myUserId)
     val clipboard = LocalClipboardManager.current
     val context = LocalContext.current
+    val scope = rememberCoroutineScope()
     var copyLabel by remember { mutableStateOf("Copy Code") }
+    // The pending "Copied!" → "Copy Code" auto-reset job, so rapid re-taps
+    // cancel the prior timer instead of racing (mockup 2915: a 1600ms revert).
+    var copyResetJob by remember { mutableStateOf<kotlinx.coroutines.Job?>(null) }
     val roomUrl = "${BuildConfig.WEB_ORIGIN}/rooms?code=${ui.code}"
     // "Allow spectators" is a LOCAL host preference — the server has no field
     // for it yet (spectating is always technically open via the link), so we
@@ -506,6 +510,13 @@ private fun HostOrGuestLobby(
                 onCopyCode = {
                     clipboard.setText(AnnotatedString(ui.code ?: ""))
                     copyLabel = "Copied!"
+                    // Revert the label after 1.6s (mockup parity), cancelling any
+                    // prior pending reset so double-taps don't flip it back early.
+                    copyResetJob?.cancel()
+                    copyResetJob = scope.launch {
+                        kotlinx.coroutines.delay(1600)
+                        copyLabel = "Copy Code"
+                    }
                 },
                 onCopyLink = {
                     clipboard.setText(AnnotatedString(roomUrl))
@@ -559,15 +570,26 @@ private fun HostOrGuestLobby(
         }
 
         item {
-            Column(verticalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.padding(bottom = 24.dp)) {
-                GameButton("Leave", onLeave, variant = GameButtonVariant.PURPLE)
-                if (isHost) {
+            // Mockup 1784-1786: Leave + Start Match are a SIDE-BY-SIDE row
+            // (display:flex, each flex:1), not a vertical stack. A guest sees
+            // only "Leave", so it stays a single full-width button for them.
+            if (isHost) {
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    modifier = Modifier.padding(bottom = 24.dp)
+                ) {
+                    GameButton("Leave", onLeave, variant = GameButtonVariant.PURPLE, modifier = Modifier.weight(1f))
                     GameButton(
                         text = if (ui.guest != null) "▶ Start Match" else "Waiting for a guest…",
                         onClick = onStart,
                         enabled = ui.guest != null,
-                        variant = GameButtonVariant.GOLD
+                        variant = GameButtonVariant.GOLD,
+                        modifier = Modifier.weight(1f)
                     )
+                }
+            } else {
+                Column(modifier = Modifier.padding(bottom = 24.dp)) {
+                    GameButton("Leave", onLeave, variant = GameButtonVariant.PURPLE)
                 }
             }
         }
@@ -756,11 +778,10 @@ private fun PlayersCard(
         }
 
         // ── Match settings (mockup 1706-1720) — INSIDE the players card, under
-        //    the VS grid, host-only. Divider then Game Mode / Time Control /
-        //    Move Timer chip rows. ──
-        if (isHost) {
-            MatchSettingsBlock(settings = settings, onSettings = onSettings)
-        }
+        //    the VS grid. Shown to BOTH players (web parity): the guest needs to
+        //    see the Move Timer they'll play under. Only the host's taps do
+        //    anything; the guest gets read-only chips + a caption. ──
+        MatchSettingsBlock(settings = settings, isHost = isHost, onSettings = onSettings)
       }
     }
 }
@@ -778,7 +799,7 @@ private fun PlayersCard(
  *    reads. These are the same option values the web uses.
  */
 @Composable
-private fun MatchSettingsBlock(settings: GameSettings, onSettings: (GameSettings) -> Unit) {
+private fun MatchSettingsBlock(settings: GameSettings, isHost: Boolean, onSettings: (GameSettings) -> Unit) {
     // Local-only cosmetic preferences (no server field yet). Kept honest.
     var mode by remember { mutableStateOf("Classic") }
     var time by remember { mutableStateOf("10 min") }
@@ -795,6 +816,7 @@ private fun MatchSettingsBlock(settings: GameSettings, onSettings: (GameSettings
         ChipRow(
             options = listOf("Classic", "Blitz"),
             selected = mode,
+            enabled = isHost,
             onSelect = { mode = it }
         )
 
@@ -802,6 +824,7 @@ private fun MatchSettingsBlock(settings: GameSettings, onSettings: (GameSettings
         ChipRow(
             options = listOf("5 min", "10 min", "Unlimited"),
             selected = time,
+            enabled = isHost,
             onSelect = { time = it }
         )
 
@@ -821,10 +844,21 @@ private fun MatchSettingsBlock(settings: GameSettings, onSettings: (GameSettings
         Row(horizontalArrangement = Arrangement.spacedBy(7.dp), modifier = Modifier.padding(top = 8.dp)) {
             listOf("10s" to 10, "20s" to 20, "30s" to 30, "Off" to null).forEach { (label, secs) ->
                 val selected = moveTimerLabel == label
-                SettingChip(label = label, selected = selected) {
+                SettingChip(label = label, selected = selected, enabled = isHost) {
                     onSettings(settings.copy(moveTimerSec = secs))
                 }
             }
+        }
+
+        // The guest sees the settings (so they know the Move Timer they'll play
+        // under) but can't change them — web parity (PrivateRoomPage.tsx).
+        if (!isHost) {
+            Text(
+                "Only the host can change the match settings.",
+                color = Ink2,
+                style = MaterialTheme.typography.labelSmall,
+                modifier = Modifier.padding(top = 12.dp)
+            )
         }
     }
 }
@@ -840,27 +874,30 @@ private fun SettingLabel(text: String, topPad: androidx.compose.ui.unit.Dp = 0.d
     )
 }
 
-/** A horizontal row of selectable setting chips. */
+/** A horizontal row of selectable setting chips. [enabled] false = read-only
+ *  (guest view): chips still show the selection but don't respond to taps. */
 @Composable
-private fun ChipRow(options: List<String>, selected: String, onSelect: (String) -> Unit) {
+private fun ChipRow(options: List<String>, selected: String, enabled: Boolean = true, onSelect: (String) -> Unit) {
     Row(horizontalArrangement = Arrangement.spacedBy(7.dp)) {
         options.forEach { opt ->
-            SettingChip(label = opt, selected = opt == selected) { onSelect(opt) }
+            SettingChip(label = opt, selected = opt == selected, enabled = enabled) { onSelect(opt) }
         }
     }
 }
 
-/** One rounded setting chip (mockup segmented-control button style). */
+/** One rounded setting chip (mockup segmented-control button style). When
+ *  [enabled] is false the chip is dimmed and non-interactive (guest read-only). */
 @Composable
-private fun SettingChip(label: String, selected: Boolean, onClick: () -> Unit) {
+private fun SettingChip(label: String, selected: Boolean, enabled: Boolean = true, onClick: () -> Unit) {
     Box(
         modifier = Modifier
-            .clickable(onClick = onClick)
+            .then(if (enabled) Modifier.clickable(onClick = onClick) else Modifier)
             .background(if (selected) Gold.copy(alpha = 0.22f) else Color.White.copy(alpha = 0.06f), RoundedCornerShape(999.dp))
             .border(1.dp, if (selected) Gold else Gold.copy(alpha = 0.15f), RoundedCornerShape(999.dp))
             .padding(horizontal = 12.dp, vertical = 8.dp)
     ) {
-        Text(label, color = if (selected) GoldLt else Ink, style = MaterialTheme.typography.labelMedium)
+        val textColor = if (selected) GoldLt else Ink
+        Text(label, color = if (enabled) textColor else textColor.copy(alpha = 0.5f), style = MaterialTheme.typography.labelMedium)
     }
 }
 
