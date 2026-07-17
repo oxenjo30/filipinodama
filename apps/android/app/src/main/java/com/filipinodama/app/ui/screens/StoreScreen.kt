@@ -73,7 +73,6 @@ import com.filipinodama.app.data.economy.storeThumbFor
 import com.filipinodama.app.ui.components.PullRefreshContainer
 import com.filipinodama.app.ui.components.SignInRequiredDialog
 import com.filipinodama.app.ui.components.isAuthError
-import com.filipinodama.app.ui.components.screenInsets
 import com.filipinodama.app.ui.screens.economy.BuyFlow
 import com.filipinodama.app.ui.screens.economy.BuyFlowState
 import com.filipinodama.app.ui.screens.economy.CheckoutScreen
@@ -266,7 +265,13 @@ fun StoreScreen(
         }
     }
 
-    Column(modifier = Modifier.fillMaxSize().screenInsets().background(MaterialTheme.colorScheme.background)) {
+    // NOTE: no .screenInsets() here. Store is a TAB screen — the app root already
+    // applies statusBarsPadding() (top) and the BottomTabBar applies
+    // navigationBarsPadding() (bottom). Adding screenInsets() double-applied the
+    // bottom nav-bar inset, leaving an "invisible bar" / dead gap between the
+    // Store content and the tab bar (owner-reported). Home and the other tab
+    // screens correctly add no root inset; Store now matches them.
+    Column(modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
         // Header: title + gold/diamond balances (display only — no "+", mockup's
         // diamond "+"/top-up affordance intentionally omitted per the earned-only
         // policy). Mockup values: title font 800 24px Cinzel #f4ecd6; gold chip
