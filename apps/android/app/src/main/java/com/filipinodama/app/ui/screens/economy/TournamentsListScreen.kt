@@ -31,6 +31,7 @@ import com.filipinodama.app.data.tournaments.TournamentListItemDto
 import com.filipinodama.app.data.tournaments.TournamentsRepository
 import com.filipinodama.app.ui.components.CurrencyIcon
 import com.filipinodama.app.ui.components.CurrencyIconKind
+import com.filipinodama.app.ui.components.PullRefreshContainer
 import com.filipinodama.app.ui.components.screenInsets
 import com.filipinodama.app.ui.theme.Gold
 import com.filipinodama.app.ui.theme.GoldLt
@@ -59,12 +60,14 @@ fun TournamentsListScreen(onBack: () -> Unit = {}, onOpenDetail: (String) -> Uni
     var items by remember { mutableStateOf<List<TournamentListItemDto>?>(null) }
     var error by remember { mutableStateOf<String?>(null) }
 
-    LaunchedEffect(Unit) {
+    suspend fun loadTournaments() {
         when (val result = TournamentsRepository.list()) {
             is EconomyResult.Success -> { items = result.data.items; error = null }
             is EconomyResult.Failure -> error = result.message
         }
     }
+
+    LaunchedEffect(Unit) { loadTournaments() }
 
     Column(modifier = Modifier.fillMaxSize().screenInsets().background(MaterialTheme.colorScheme.background)) {
         Row(
@@ -75,6 +78,10 @@ fun TournamentsListScreen(onBack: () -> Unit = {}, onOpenDetail: (String) -> Uni
             Text("Tournaments", color = GoldLt, style = MaterialTheme.typography.titleLarge)
         }
 
+        // Pull down to RE-FETCH the tournaments list from the server
+        // (loadTournaments() — the same call the entry LaunchedEffect runs),
+        // not a cosmetic spinner.
+        PullRefreshContainer(onRefresh = { loadTournaments() }) {
         when {
             error != null -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 Text(error ?: "", color = Ink2, style = MaterialTheme.typography.bodyMedium)
@@ -97,6 +104,7 @@ fun TournamentsListScreen(onBack: () -> Unit = {}, onOpenDetail: (String) -> Uni
                 Box(Modifier.padding(bottom = 20.dp))
             }
         }
+        } // PullRefreshContainer
     }
 }
 

@@ -44,6 +44,7 @@ import com.filipinodama.app.data.social.DmRepository
 import com.filipinodama.app.data.social.PresenceRepository
 import com.filipinodama.app.data.social.SocialResult
 import com.filipinodama.app.ui.screens.profile.AvatarView
+import com.filipinodama.app.ui.components.PullRefreshContainer
 import com.filipinodama.app.ui.components.screenContentPadding
 import com.filipinodama.app.ui.components.screenInsetsTopOnly
 import com.filipinodama.app.ui.theme.Gold
@@ -94,6 +95,10 @@ fun DmConversationListScreen(onBack: () -> Unit, onOpenThread: (String) -> Unit)
             return@Column
         }
 
+        // Pull down anywhere on the list/empty state to RE-FETCH conversations from
+        // the server (DmRepository.loadConversations() — the same call the entry
+        // LaunchedEffect runs), so a pull gets the latest, not a cosmetic spinner.
+        PullRefreshContainer(onRefresh = { DmRepository.loadConversations() }) {
         if (dmState.loadingList && dmState.conversations.isEmpty()) {
             Box(Modifier.fillMaxSize().padding(32.dp), contentAlignment = Alignment.Center) { CircularProgressIndicator(color = Gold) }
         } else if (visibleConversations.isEmpty()) {
@@ -110,6 +115,7 @@ fun DmConversationListScreen(onBack: () -> Unit, onOpenThread: (String) -> Unit)
                 }
             }
         }
+        } // PullRefreshContainer
     }
 }
 

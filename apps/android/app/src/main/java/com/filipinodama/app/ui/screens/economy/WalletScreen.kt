@@ -44,6 +44,7 @@ import com.filipinodama.app.data.economy.LedgerEntryDto
 import com.filipinodama.app.ui.components.CurrencyIcon
 import com.filipinodama.app.ui.components.CurrencyIconKind
 import com.filipinodama.app.ui.components.MockupBackButton
+import com.filipinodama.app.ui.components.PullRefreshContainer
 import com.filipinodama.app.ui.components.screenInsets
 import com.filipinodama.app.ui.theme.Gold
 import com.filipinodama.app.ui.theme.GoldLt
@@ -131,6 +132,10 @@ fun WalletScreen(onBack: () -> Unit = {}) {
         }
     }
 
+    // Pull down anywhere on the wallet content to RE-FETCH the ledger from the
+    // server (loadLedger() — the same call the entry LaunchedEffect runs), so a
+    // pull gets the latest activity, not a cosmetic spinner.
+    PullRefreshContainer(onRefresh = { loadLedger() }) {
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -236,6 +241,7 @@ fun WalletScreen(onBack: () -> Unit = {}) {
 
         Box(Modifier.size(24.dp))
     }
+    } // PullRefreshContainer
 }
 
 @Composable

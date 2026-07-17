@@ -39,6 +39,7 @@ import com.filipinodama.app.data.engine.RankTiers
 import com.filipinodama.app.data.leaderboard.LbRowDto
 import com.filipinodama.app.data.leaderboard.LeaderboardRepository
 import com.filipinodama.app.data.leaderboard.LeaderboardResult
+import com.filipinodama.app.ui.components.PullRefreshContainer
 import com.filipinodama.app.ui.components.screenInsets
 import com.filipinodama.app.ui.screens.profile.AvatarView
 import com.filipinodama.app.ui.theme.Gold
@@ -97,6 +98,35 @@ fun LeaderboardScreen(onOpenPublicProfile: (String) -> Unit, onBack: () -> Unit 
         }
     }
 
+    // Real leaderboard load — also called by onRefresh below (pull-to-
+    // refresh) so a pull re-fetches the current scope's rows + season from
+    // the server, the same calls the entry LaunchedEffect above runs.
+    suspend fun loadLeaderboard() {
+        val requiresAuth = scope != "global" && me == null
+        if (requiresAuth) {
+            needsAuthPrompt = true
+            rows = null
+            youRow = null
+            return
+        }
+        needsAuthPrompt = false
+        loadError = null
+        when (val result = LeaderboardRepository.leaderboard(scope)) {
+            is LeaderboardResult.Success -> {
+                rows = result.data.rows
+                youRow = result.data.me
+            }
+            is LeaderboardResult.Failure -> {
+                rows = emptyList()
+                loadError = result.message
+            }
+        }
+        when (val seasonResult = EconomyRepository.seasonCurrent()) {
+            is EconomyResult.Success -> season = seasonResult.data.season
+            is EconomyResult.Failure -> season = null
+        }
+    }
+
     LaunchedEffect(scope, me?.id, retryTick) {
         val requiresAuth = scope != "global" && me == null
         if (requiresAuth) {
@@ -120,6 +150,7 @@ fun LeaderboardScreen(onOpenPublicProfile: (String) -> Unit, onBack: () -> Unit 
         }
     }
 
+    PullRefreshContainer(onRefresh = { loadLeaderboard() }) {
     Column(modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background).screenInsets().verticalScroll(rememberScrollState())) {
         Row(modifier = Modifier.fillMaxWidth().padding(16.dp, 16.dp, 16.dp, 8.dp), verticalAlignment = Alignment.CenterVertically) {
             com.filipinodama.app.ui.components.MockupBackButton(onClick = onBack)
@@ -267,6 +298,7 @@ fun LeaderboardScreen(onOpenPublicProfile: (String) -> Unit, onBack: () -> Unit 
             }
         }
     }
+    } // PullRefreshContainer
 }
 
 /**

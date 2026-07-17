@@ -39,6 +39,7 @@ import com.filipinodama.app.ui.components.CurrencyAmount
 import com.filipinodama.app.ui.components.CurrencyIconKind
 import com.filipinodama.app.ui.components.LocalSnackbar
 import com.filipinodama.app.ui.components.MockupBackButton
+import com.filipinodama.app.ui.components.PullRefreshContainer
 import com.filipinodama.app.ui.components.isAuthError
 import com.filipinodama.app.ui.components.screenInsets
 import com.filipinodama.app.ui.theme.Gold
@@ -161,6 +162,9 @@ fun QuestsScreen(onBack: () -> Unit = {}, onRequireSignIn: () -> Unit = {}) {
                 Text("Couldn't load your quests — try again.", color = Ink2, style = MaterialTheme.typography.bodyMedium)
             }
         } else {
+            // Pull down to RE-FETCH quests from the server (load() — the same
+            // call the entry LaunchedEffect runs), not a cosmetic spinner.
+            PullRefreshContainer(onRefresh = { load() }) {
             Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
                 val dailyReady = daily.count { it.claimable && !it.claimed }
                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
@@ -215,6 +219,7 @@ fun QuestsScreen(onBack: () -> Unit = {}, onRequireSignIn: () -> Unit = {}) {
                 }
                 Box(Modifier.height(24.dp))
             }
+            } // PullRefreshContainer
         }
     }
 }

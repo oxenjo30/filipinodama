@@ -32,6 +32,7 @@ import com.filipinodama.app.data.rooms.LiveMatchItemDto
 import com.filipinodama.app.data.rooms.RoomsApi
 import com.filipinodama.app.ui.components.CurrencyAmount
 import com.filipinodama.app.ui.components.CurrencyIconKind
+import com.filipinodama.app.ui.components.PullRefreshContainer
 import com.filipinodama.app.ui.components.screenInsets
 import com.filipinodama.app.ui.screens.game.GameButton
 import com.filipinodama.app.ui.screens.game.GameButtonVariant
@@ -107,6 +108,11 @@ fun LiveMatchBrowserScreen(
         )
 
         val current = items
+        // Pull down anywhere on the list/empty/error state to RE-FETCH live
+        // matches from the server (load() — the same call the entry
+        // LaunchedEffect and the Retry button run), so a pull gets the
+        // latest live matches, not a cosmetic spinner.
+        PullRefreshContainer(onRefresh = { load() }) {
         when {
             current == null -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 CircularProgressIndicator(color = Gold)
@@ -140,6 +146,7 @@ fun LiveMatchBrowserScreen(
                 }
             }
         }
+        } // PullRefreshContainer
     }
 }
 

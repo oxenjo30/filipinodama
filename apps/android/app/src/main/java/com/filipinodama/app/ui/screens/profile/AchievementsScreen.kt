@@ -27,6 +27,7 @@ import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
 import com.filipinodama.app.data.AuthRepository
 import com.filipinodama.app.ui.components.MockupBackButton
+import com.filipinodama.app.ui.components.PullRefreshContainer
 import com.filipinodama.app.ui.components.screenInsets
 import com.filipinodama.app.ui.theme.GoldLt
 
@@ -102,8 +103,15 @@ fun AchievementsScreen(onBack: () -> Unit = {}) {
             }
         }
 
+        // Pull down to RE-FETCH the current user (wins/streak/trophies — the real
+        // inputs this screen's unlock/progress math runs on) from the server via
+        // AuthRepository.refreshMe(), the same /api/auth/me call the app's own
+        // session-restore path uses. This screen has no LaunchedEffect fetch of
+        // its own (it derives from the shared AuthRepository.state), so refreshMe()
+        // is the real reload for its data.
+        PullRefreshContainer(onRefresh = { AuthRepository.refreshMe() }, modifier = Modifier.padding(top = 16.dp)) {
         LazyColumn(
-            modifier = Modifier.fillMaxSize().padding(top = 16.dp),
+            modifier = Modifier.fillMaxSize(),
             verticalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(10.dp)
         ) {
             items(defs) { a ->
@@ -112,6 +120,7 @@ fun AchievementsScreen(onBack: () -> Unit = {}) {
                 AchievementRow(def = a, unlocked = unlocked, progress = pct)
             }
         }
+        } // PullRefreshContainer
     }
 }
 

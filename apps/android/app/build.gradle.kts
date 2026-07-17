@@ -134,7 +134,13 @@ android {
         // tray no longer bleeds through (it looked like a solid red card); and every
         // dialog adopts the shared royal panel (RoyalDialog.kt: purple gradient +
         // gold border) so no modal looks flat/off-brand.
-        // 26 = Pull-to-refresh across 18 data screens (separate branch/PR #30).
+        // 26 = Pull-to-refresh across 18 data screens (Home, Store, Wallet,
+        // Inventory/Orders, Quests, Season, Tournaments, Daily Rewards,
+        // Leaderboard, Live Matches, Friends, Discover Guilds, Guild Hall, DM
+        // inbox, Notifications, My Tickets, Achievements, Profile). Pulling down
+        // RE-FETCHES that screen's real data from the server (the same repository
+        // call its entry LaunchedEffect runs) so the user gets late/updated data
+        // — not a cosmetic spinner. Shared PullRefreshContainer (gold indicator).
         // 27 = Private Room 1:1 mockup-fidelity rebuild of the host lobby
         // (handoffv3 Mobile.dc.html PRIVATE ROOM section). "Copy Spectate Link"
         // is now the small rounded PILL from the mockup (was an oversized full-
@@ -147,13 +153,13 @@ android {
         // mockup (Code → Players+Settings → Spectators → Invite → Chat). Game
         // Mode / Time Control / spectator-toggle are host-local visual controls
         // (no server field — same honest boundary as the web room page); only
-        // Move Timer writes the authoritative settings.moveTimerSec.
+        // Move Timer writes the authoritative settings.moveTimerSec. (27 was
+        // uploaded to Play, so it is permanently reserved — 28 supersedes it.)
         // 28 = opening Settings mid-match then closing it no longer replays the
         // ~2s loading screen — MatchEntryGate's "already loaded" flag is now
         // rememberSaveable(key) so it survives the match composable leaving/re-
         // entering composition while Settings sits on top (a genuinely new match
-        // still gets a fresh loader via a new back-stack-entry key). (27 was
-        // uploaded to Play before this fix, so this ships as 28.) Also in 28:
+        // still gets a fresh loader via a new back-stack-entry key). Also in 28:
         // the Notifications swipe-to-delete red tray is clipped to the card's
         // 16dp rounded shape, so the red no longer pokes out at the card corners
         // when the row is closed (owner-reported "red corners").

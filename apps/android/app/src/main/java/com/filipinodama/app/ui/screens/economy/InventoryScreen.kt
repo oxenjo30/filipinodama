@@ -49,6 +49,7 @@ import com.filipinodama.app.ui.theme.Gold
 import com.filipinodama.app.ui.components.CurrencyAmount
 import com.filipinodama.app.ui.components.CurrencyIconKind
 import com.filipinodama.app.ui.components.MockupBackButtonStore
+import com.filipinodama.app.ui.components.PullRefreshContainer
 import com.filipinodama.app.ui.components.screenInsets
 import com.filipinodama.app.ui.theme.GoldLt
 import com.filipinodama.app.ui.theme.Ink2
@@ -74,7 +75,7 @@ fun InventoryScreen(onBrowseStore: () -> Unit = {}, onBack: () -> Unit = {}) {
     val scope = rememberCoroutineScope()
     var groups by remember { mutableStateOf<Map<String, List<StoreItemDto>>?>(null) } // null = loading
 
-    LaunchedEffect(me?.id) {
+    suspend fun loadInventory() {
         val itemsResult = EconomyRepository.storeItems()
         val inventoryResult = EconomyRepository.ownedInventory()
 
@@ -85,6 +86,8 @@ fun InventoryScreen(onBrowseStore: () -> Unit = {}, onBack: () -> Unit = {}) {
         val ownedItems = allItems.filter { it.id in ownedIds }
         groups = ownedItems.groupBy { it.type }
     }
+
+    LaunchedEffect(me?.id) { loadInventory() }
 
     // Count of owned items currently equipped per the real account fields.
     val equippedCount = groups?.values?.flatten()?.count {
@@ -114,6 +117,9 @@ fun InventoryScreen(onBrowseStore: () -> Unit = {}, onBack: () -> Unit = {}) {
             ) { Text("Store", color = Color(0xFFF4D886), style = MaterialTheme.typography.labelMedium) }
         }
 
+        // Pull down to RE-FETCH inventory + catalog from the server (the same
+        // loadInventory() the entry LaunchedEffect runs), not a cosmetic spinner.
+        PullRefreshContainer(onRefresh = { loadInventory() }) {
         when (val g = groups) {
             null -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator(color = Gold) }
             else -> if (g.isEmpty()) {
@@ -170,6 +176,7 @@ fun InventoryScreen(onBrowseStore: () -> Unit = {}, onBack: () -> Unit = {}) {
                 }
             }
         }
+        } // PullRefreshContainer
     }
 }
 
@@ -305,7 +312,7 @@ fun OrdersScreen(onBrowseStore: () -> Unit = {}, onBack: () -> Unit = {}) {
     // Phase 7 retry affordance: bump to re-run the load effect below.
     var retryTick by remember { mutableStateOf(0) }
 
-    LaunchedEffect(retryTick) {
+    suspend fun loadOrders() {
         error = null
         when (val result = EconomyRepository.orders()) {
             is EconomyResult.Success -> receipts = result.data.receipts
@@ -314,6 +321,8 @@ fun OrdersScreen(onBrowseStore: () -> Unit = {}, onBack: () -> Unit = {}) {
         val itemsResult = EconomyRepository.storeItems()
         catalog = (itemsResult as? EconomyResult.Success)?.data?.items?.associateBy { it.id } ?: emptyMap()
     }
+
+    LaunchedEffect(retryTick) { loadOrders() }
 
     Column(modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
         Row(
@@ -325,6 +334,9 @@ fun OrdersScreen(onBrowseStore: () -> Unit = {}, onBack: () -> Unit = {}) {
             Text("Purchase History", color = Color(0xFFF4ECD6), style = MaterialTheme.typography.headlineSmall)
         }
 
+        // Pull down to RE-FETCH orders + catalog from the server (the same
+        // loadOrders() the entry LaunchedEffect runs), not a cosmetic spinner.
+        PullRefreshContainer(onRefresh = { loadOrders() }) {
         when {
             error != null -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
@@ -366,6 +378,7 @@ fun OrdersScreen(onBrowseStore: () -> Unit = {}, onBack: () -> Unit = {}) {
                 }
             }
         }
+        } // PullRefreshContainer
     }
 }
 

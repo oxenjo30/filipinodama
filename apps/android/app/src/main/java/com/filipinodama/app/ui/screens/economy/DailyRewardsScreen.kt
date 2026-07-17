@@ -43,6 +43,7 @@ import com.filipinodama.app.ui.components.CurrencyAmount
 import com.filipinodama.app.ui.components.CurrencyIcon
 import com.filipinodama.app.ui.components.CurrencyIconKind
 import com.filipinodama.app.ui.components.MockupBackButton
+import com.filipinodama.app.ui.components.PullRefreshContainer
 import com.filipinodama.app.ui.components.screenInsets
 import com.filipinodama.app.ui.theme.Gold
 import com.filipinodama.app.ui.theme.GoldLt
@@ -76,12 +77,14 @@ fun DailyRewardsScreen(onBack: () -> Unit = {}, onRequireSignIn: () -> Unit = {}
     // Phase 7 retry affordance: bump to re-run the initial load below.
     var retryTick by remember { mutableStateOf(0) }
 
-    LaunchedEffect(retryTick) {
+    suspend fun loadDailyStatus() {
         when (val result = EconomyRepository.dailyLoginStatus()) {
             is EconomyResult.Success -> status = result.data
             is EconomyResult.Failure -> error = result.message
         }
     }
+
+    LaunchedEffect(retryTick) { loadDailyStatus() }
 
     fun claim() {
         // Owner policy: claiming a reward requires an account. An anonymous
@@ -106,6 +109,10 @@ fun DailyRewardsScreen(onBack: () -> Unit = {}, onRequireSignIn: () -> Unit = {}
         }
     }
 
+    // Pull down to RE-FETCH the daily-login status from the server
+    // (loadDailyStatus() — the same call the entry LaunchedEffect runs), not a
+    // cosmetic spinner.
+    PullRefreshContainer(onRefresh = { loadDailyStatus() }) {
     Column(modifier = Modifier.fillMaxSize().screenInsets().background(MaterialTheme.colorScheme.background).padding(16.dp, 20.dp)) {
         val statusNow = status
         Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
@@ -241,6 +248,7 @@ fun DailyRewardsScreen(onBack: () -> Unit = {}, onRequireSignIn: () -> Unit = {}
             }
         }
     }
+    } // PullRefreshContainer
 
     if (justClaimed != null) {
         val c = justClaimed!!
