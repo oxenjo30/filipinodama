@@ -105,7 +105,11 @@ fun AiDifficultyScreen(onBack: () -> Unit, onStart: (String) -> Unit) {
 
 @Composable
 private fun DifficultyCard(level: DifficultyLevel, selected: Boolean, onClick: () -> Unit) {
-    Column(
+    // Horizontal row layout matching the mobile mockup (Mobile.dc.html 1580-1591):
+    // a 56dp emblem on the LEFT, then a left-aligned text block (title, desc, pip
+    // row) taking the rest of the width. Was a centered vertical Column, which
+    // diverged from the mockup and mirrors ModeSelect's ModeCardRow pattern.
+    Row(
         modifier = Modifier
             .fillMaxWidth()
             .clickable(onClick = onClick)
@@ -119,36 +123,37 @@ private fun DifficultyCard(level: DifficultyLevel, selected: Boolean, onClick: (
                 RoundedCornerShape(16.dp)
             )
             .padding(horizontal = 16.dp, vertical = 14.dp),
-        horizontalAlignment = Alignment.CenterHorizontally
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(16.dp)
     ) {
         Image(
             painter = painterResource(id = level.emblem),
             contentDescription = null,
-            modifier = Modifier.size(46.dp)
+            modifier = Modifier.size(56.dp)
         )
-        Text(
-            level.label,
-            color = GoldLt,
-            style = MaterialTheme.typography.titleMedium,
-            modifier = Modifier.padding(top = 6.dp)
-        )
-        Text(
-            level.desc,
-            color = Ink,
-            style = MaterialTheme.typography.bodySmall,
-            modifier = Modifier.padding(top = 4.dp),
-            textAlign = androidx.compose.ui.text.style.TextAlign.Center
-        )
-        Row(modifier = Modifier.padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-            repeat(3) { i ->
-                androidx.compose.foundation.layout.Box(
-                    modifier = Modifier
-                        .size(8.dp)
-                        .background(
-                            if (i < level.dots) level.accent else Gold.copy(alpha = 0.18f),
-                            CircleShape
-                        )
-                )
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                level.label,
+                color = GoldLt,
+                style = MaterialTheme.typography.titleMedium
+            )
+            Text(
+                level.desc,
+                color = Ink,
+                style = MaterialTheme.typography.bodySmall,
+                modifier = Modifier.padding(top = 3.dp)
+            )
+            Row(modifier = Modifier.padding(top = 9.dp), horizontalArrangement = Arrangement.spacedBy(5.dp)) {
+                repeat(3) { i ->
+                    androidx.compose.foundation.layout.Box(
+                        modifier = Modifier
+                            .size(8.dp)
+                            .background(
+                                if (i < level.dots) level.accent else Gold.copy(alpha = 0.18f),
+                                CircleShape
+                            )
+                    )
+                }
             }
         }
     }

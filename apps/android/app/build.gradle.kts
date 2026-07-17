@@ -115,8 +115,13 @@ android {
         // here on the versionName digits track the versionCode for easy counting —
         // versionCode 22 → versionName "0.1.22" (ending the historical off-by-one).
         // 21 was set on a branch but superseded by this 22 before any upload.
-        versionCode = 22
-        versionName = "0.1.22"
+        // 23 = AI Difficulty cards match the mobile mockup: each difficulty card is
+        // now a horizontal row (56dp emblem left + left-aligned title/desc/pips)
+        // instead of a centered vertical column — the last two mockup-fidelity gaps
+        // found by the audit (the other, Private Room's "Lock the room" toggle,
+        // needs a server field and ships separately).
+        versionCode = 23
+        versionName = "0.1.23"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
