@@ -19,6 +19,16 @@ export function getSocket(): Socket {
       path: "/rt",
       withCredentials: true,
       autoConnect: true,
+      // NOTE: kept as websocket+polling for now. The multi-region plan
+      // (docs/ops/multi-region-design.md, Stage 0) wants websocket-ONLY so the
+      // polling handshake can't land on different origin regions behind a load
+      // balancer — BUT both clients authenticate via the httpOnly fd_access
+      // cookie, and the Android client documented that a raw websocket upgrade
+      // could fail to carry that cookie (breaking matchmaking auth). Browsers DO
+      // send cookies on the WS upgrade, so web WS-only is probably safe, but this
+      // gates ALL online play — pin to websocket-only only after a real
+      // browser-side auth test confirms the socket still authenticates. Tracked
+      // as a Stage-0 follow-up.
       transports: ["websocket", "polling"],
     });
   }
