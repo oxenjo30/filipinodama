@@ -50,6 +50,7 @@ import com.filipinodama.app.data.social.resolveGuildCrest
 import com.filipinodama.app.ui.components.CurrencyIcon
 import com.filipinodama.app.ui.components.CurrencyIconKind
 import com.filipinodama.app.ui.components.MockupBackButton
+import com.filipinodama.app.ui.components.screenInsets
 import com.filipinodama.app.ui.theme.Gold
 import com.filipinodama.app.ui.theme.GoldLt
 import com.filipinodama.app.ui.theme.Ink2
@@ -107,7 +108,7 @@ fun DiscoverGuildsScreen(onBack: () -> Unit, onRequireSignIn: () -> Unit = {}) {
     // shared Box parent — otherwise the full-screen Column paints over them and
     // the sheet is invisible even though its state/data are correct.
     Box(modifier = Modifier.fillMaxSize()) {
-    Column(modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
+    Column(modifier = Modifier.fillMaxSize().screenInsets().background(MaterialTheme.colorScheme.background)) {
         Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp).padding(top = 12.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 MockupBackButton(onClick = onBack)

@@ -32,6 +32,7 @@ import com.filipinodama.app.data.rooms.LiveMatchItemDto
 import com.filipinodama.app.data.rooms.RoomsApi
 import com.filipinodama.app.ui.components.CurrencyAmount
 import com.filipinodama.app.ui.components.CurrencyIconKind
+import com.filipinodama.app.ui.components.screenInsets
 import com.filipinodama.app.ui.screens.game.GameButton
 import com.filipinodama.app.ui.screens.game.GameButtonVariant
 import com.filipinodama.app.ui.theme.Blue
@@ -84,7 +85,7 @@ fun LiveMatchBrowserScreen(
 
     LaunchedEffect(Unit) { load() }
 
-    Column(modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background).padding(20.dp)) {
+    Column(modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background).screenInsets().padding(20.dp)) {
         // Mockup title row is "Watch Live" + an inline pulsing "Live" pill on
         // the SAME row (no separate eyebrow) — mobile-split.txt lines 2533-2541.
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {

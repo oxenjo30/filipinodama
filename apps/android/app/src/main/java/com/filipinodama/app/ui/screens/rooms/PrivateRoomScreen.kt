@@ -12,9 +12,13 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
@@ -184,6 +188,7 @@ fun PrivateRoomScreen(
         modifier = Modifier
             .fillMaxSize()
             .background(MaterialTheme.colorScheme.background)
+            .statusBarsPadding() // keep the header clear of the status bar / notch
     ) {
         RoomHeader(onBack = onBack)
 
@@ -469,8 +474,19 @@ private fun HostOrGuestLobby(
     var copyLabel by remember { mutableStateOf("Copy Code") }
     val roomUrl = "${BuildConfig.WEB_ORIGIN}/rooms?code=${ui.code}"
 
+    // navigationBarsPadding() lifts the whole scroll content above the system
+    // nav/gesture bar so the last item (Leave / Start Match) clears it instead of
+    // jamming against it (the mobile mockup reserves 96px at the bottom for this).
+    // imePadding lifts it above the soft keyboard when the room-chat composer is
+    // focused. A small top contentPadding gives the first card breathing room
+    // under the header.
     LazyColumn(
-        modifier = Modifier.fillMaxSize().padding(horizontal = 20.dp),
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(horizontal = 20.dp)
+            .navigationBarsPadding()
+            .imePadding(),
+        contentPadding = PaddingValues(top = 4.dp, bottom = 24.dp),
         verticalArrangement = Arrangement.spacedBy(14.dp)
     ) {
         item {
@@ -560,38 +576,120 @@ private fun RoomCodeCard(code: String, copyLabel: String, onCopyCode: () -> Unit
     }
 }
 
+/**
+ * 3-column VS players card, matching the mobile mockup (Mobile.dc.html
+ * 1682-1705): Host seat | round "VS" badge | Guest seat (or a dashed "Waiting…"
+ * placeholder). Real 64dp avatars, HOST / ● Ready badges, Kick/Ban under the
+ * guest for the host. Replaces the old flat letter-avatar list that read as a
+ * web port.
+ */
 @Composable
 private fun PlayersCard(host: RoomMemberDto?, guest: RoomMemberDto?, isHost: Boolean, onKick: (String) -> Unit, onBan: (String) -> Unit) {
     GameFrameCard {
-        Column {
-            Text("Players", color = Ink2, style = MaterialTheme.typography.labelSmall)
-            SeatRow(name = host?.name ?: "Host", sub = "Host", modifier = Modifier.padding(top = 10.dp))
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            // Host seat
+            PlayerSeat(
+                name = host?.name ?: "Host",
+                avatarUrl = host?.avatarUrl,
+                badge = "HOST",
+                badgeColor = GoldLt,
+                nameColor = GoldLt,
+                modifier = Modifier.weight(1f)
+            )
+
+            // VS badge
+            Box(
+                modifier = Modifier
+                    .size(46.dp)
+                    .border(1.dp, Gold.copy(alpha = 0.4f), CircleShape)
+                    .background(Color(0xB30F0720), CircleShape),
+                contentAlignment = Alignment.Center
+            ) {
+                Text("VS", color = GoldLt, style = MaterialTheme.typography.titleSmall)
+            }
+
+            // Guest seat OR waiting placeholder
             if (guest != null) {
-                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 10.dp)) {
-                    SeatRow(name = guest.name, sub = "Guest", modifier = Modifier.weight(1f))
+                Column(
+                    modifier = Modifier.weight(1f),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    PlayerSeat(
+                        name = guest.name,
+                        avatarUrl = guest.avatarUrl,
+                        badge = "● READY",
+                        badgeColor = Color(0xFF3FBF6F),
+                        nameColor = Color(0xFFFF8FAE),
+                        avatarRingColor = Color(0x80FF8FAE)
+                    )
                     if (isHost) {
-                        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(7.dp),
+                            modifier = Modifier.padding(top = 9.dp)
+                        ) {
                             SmallActionChip("Kick") { onKick(guest.userId) }
                             SmallActionChip("Ban", danger = true) { onBan(guest.userId) }
                         }
                     }
                 }
             } else {
-                Text("Waiting…", color = Ink2, style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(top = 10.dp))
+                Column(
+                    modifier = Modifier.weight(1f),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(64.dp)
+                            .border(2.dp, Gold.copy(alpha = 0.3f), CircleShape)
+                            .background(Color(0x800F0720), CircleShape),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text("?", color = Gold.copy(alpha = 0.4f), style = MaterialTheme.typography.titleLarge)
+                    }
+                    Text("Waiting…", color = Ink2, style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(top = 8.dp))
+                    Text("No one has joined yet", color = Ink2, style = MaterialTheme.typography.labelSmall, modifier = Modifier.padding(top = 2.dp))
+                }
             }
         }
     }
 }
 
+/** One seat in the VS players grid: centered 64dp avatar + name + a small badge. */
 @Composable
-private fun SeatRow(name: String, sub: String, modifier: Modifier = Modifier) {
-    Row(modifier = modifier, verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-        Box(modifier = Modifier.size(36.dp).background(Gold.copy(alpha = 0.16f), CircleShape), contentAlignment = Alignment.Center) {
-            Text(name.take(1).uppercase(), color = GoldLt, style = MaterialTheme.typography.labelLarge)
-        }
-        Column {
-            Text(name, color = Color.White, style = MaterialTheme.typography.titleSmall)
-            Text(sub, color = Ink2, style = MaterialTheme.typography.labelSmall)
+private fun PlayerSeat(
+    name: String,
+    avatarUrl: String?,
+    badge: String,
+    badgeColor: Color,
+    nameColor: Color,
+    avatarRingColor: Color = Gold.copy(alpha = 0.5f),
+    modifier: Modifier = Modifier
+) {
+    Column(modifier = modifier, horizontalAlignment = Alignment.CenterHorizontally) {
+        com.filipinodama.app.ui.screens.profile.AvatarView(
+            avatarUrl = avatarUrl,
+            size = 64.dp,
+            ring = true
+        )
+        Text(
+            name,
+            color = nameColor,
+            style = MaterialTheme.typography.titleSmall,
+            maxLines = 1,
+            overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+            modifier = Modifier.padding(top = 8.dp)
+        )
+        Box(
+            modifier = Modifier
+                .padding(top = 4.dp)
+                .border(1.dp, badgeColor.copy(alpha = 0.4f), RoundedCornerShape(999.dp))
+                .padding(horizontal = 9.dp, vertical = 2.dp)
+        ) {
+            Text(badge, color = badgeColor, style = MaterialTheme.typography.labelSmall)
         }
     }
 }

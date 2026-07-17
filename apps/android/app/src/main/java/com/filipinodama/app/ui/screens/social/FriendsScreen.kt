@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
@@ -47,6 +48,7 @@ import com.filipinodama.app.ui.components.CurrencyAmount
 import com.filipinodama.app.ui.components.CurrencyIconKind
 import com.filipinodama.app.ui.components.LocalSnackbar
 import com.filipinodama.app.ui.components.isAuthError
+import com.filipinodama.app.ui.components.screenInsets
 import com.filipinodama.app.ui.theme.Gold
 import com.filipinodama.app.ui.theme.GoldLt
 import com.filipinodama.app.ui.theme.Green
@@ -213,7 +215,7 @@ fun FriendsScreen(
         return
     }
 
-    Column(modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background).verticalScroll(rememberScrollState())) {
+    Column(modifier = Modifier.fillMaxSize().screenInsets().background(MaterialTheme.colorScheme.background).verticalScroll(rememberScrollState())) {
         Row(modifier = Modifier.fillMaxWidth().padding(20.dp), verticalAlignment = Alignment.CenterVertically) {
             // Mockup Friends header (line 2800): the ‹ chevron square button, then
             // the eyebrow + title. NOT a "‹ Back" text link (owner round-3 fix).
@@ -515,7 +517,7 @@ private fun AddFriendScreen(onBack: () -> Unit, onOpenProfile: (String) -> Unit)
         }
     }
 
-    Column(modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background).padding(16.dp)) {
+    Column(modifier = Modifier.fillMaxSize().screenInsets().imePadding().background(MaterialTheme.colorScheme.background).padding(16.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.padding(bottom = 16.dp)) {
             com.filipinodama.app.ui.components.MockupBackButton(onClick = onBack)
             Column {

@@ -44,6 +44,8 @@ import com.filipinodama.app.ui.theme.Green
 import com.filipinodama.app.ui.theme.Ink
 import com.filipinodama.app.ui.theme.Ink2
 import com.filipinodama.app.ui.theme.Panel
+import com.filipinodama.app.ui.components.screenContentPadding
+import com.filipinodama.app.ui.components.screenInsetsTopOnly
 import kotlinx.coroutines.launch
 import java.time.Instant
 import java.time.temporal.ChronoUnit
@@ -78,7 +80,7 @@ fun NotificationsScreen(onBack: () -> Unit) {
     val data = state.data
     val isEmpty = !state.loading && !state.error && (data?.notifications?.isEmpty() ?: true)
 
-    Column(modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
+    Column(modifier = Modifier.fillMaxSize().screenInsetsTopOnly().background(MaterialTheme.colorScheme.background)) {
         Row(
             modifier = Modifier.fillMaxWidth().padding(12.dp, 20.dp, 12.dp, 14.dp),
             verticalAlignment = Alignment.CenterVertically,
@@ -123,7 +125,10 @@ fun NotificationsScreen(onBack: () -> Unit) {
                     modifier = Modifier.padding(top = 12.dp)
                 )
             }
-            data != null -> LazyColumn(modifier = Modifier.fillMaxSize()) {
+            data != null -> LazyColumn(
+                modifier = Modifier.fillMaxSize(),
+                contentPadding = screenContentPadding()
+            ) {
                 val groups = listOf("Today" to data.groups.today, "Yesterday" to data.groups.yesterday, "Earlier" to data.groups.earlier)
                 groups.forEach { (label, items) ->
                     if (items.isNotEmpty()) {

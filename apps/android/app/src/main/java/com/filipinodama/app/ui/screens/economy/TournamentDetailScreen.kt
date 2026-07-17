@@ -42,6 +42,7 @@ import com.filipinodama.app.data.tournaments.TournamentsRepository
 import com.filipinodama.app.ui.components.CurrencyIcon
 import com.filipinodama.app.ui.components.CurrencyIconKind
 import com.filipinodama.app.ui.components.MockupBackButton
+import com.filipinodama.app.ui.components.screenInsets
 import com.filipinodama.app.ui.theme.Gold
 import com.filipinodama.app.ui.theme.GoldLt
 import com.filipinodama.app.ui.theme.Ink
@@ -90,7 +91,7 @@ fun TournamentDetailScreen(
 
     LaunchedEffect(tournamentId) { load() }
 
-    Column(modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background).padding(horizontal = 16.dp, vertical = 20.dp)) {
+    Column(modifier = Modifier.fillMaxSize().screenInsets().background(MaterialTheme.colorScheme.background).padding(horizontal = 16.dp, vertical = 20.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             MockupBackButton(onClick = onBack)
             Text(

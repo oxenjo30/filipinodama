@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
@@ -37,6 +38,7 @@ import com.filipinodama.app.R
 import com.filipinodama.app.data.AuthRepository
 import com.filipinodama.app.data.AuthResult
 import com.filipinodama.app.data.GoogleSignInHelper
+import com.filipinodama.app.ui.components.screenInsets
 import com.filipinodama.app.ui.theme.Bg
 import com.filipinodama.app.ui.theme.Gold
 import com.filipinodama.app.ui.theme.GoldLt
@@ -126,8 +128,10 @@ fun LoginScreen(
         modifier = Modifier
             .fillMaxSize()
             .background(Bg)
+            .screenInsets()
             .verticalScroll(rememberScrollState())
-            .padding(horizontal = 28.dp, vertical = 24.dp),
+            .padding(horizontal = 28.dp, vertical = 24.dp)
+            .imePadding(),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
         // Back chevron — only when there's somewhere to return to (a gated

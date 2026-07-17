@@ -44,6 +44,8 @@ import com.filipinodama.app.data.social.DmRepository
 import com.filipinodama.app.data.social.PresenceRepository
 import com.filipinodama.app.data.social.SocialResult
 import com.filipinodama.app.ui.screens.profile.AvatarView
+import com.filipinodama.app.ui.components.screenContentPadding
+import com.filipinodama.app.ui.components.screenInsetsTopOnly
 import com.filipinodama.app.ui.theme.Gold
 import com.filipinodama.app.ui.theme.GoldLt
 import com.filipinodama.app.ui.theme.Green
@@ -75,7 +77,7 @@ fun DmConversationListScreen(onBack: () -> Unit, onOpenThread: (String) -> Unit)
     }
     val visibleConversations = dmState.conversations.filter { !blockedIds.contains(it.user.id) }
 
-    Column(modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
+    Column(modifier = Modifier.fillMaxSize().screenInsetsTopOnly().background(MaterialTheme.colorScheme.background)) {
         Row(
             modifier = Modifier.fillMaxWidth().padding(20.dp),
             verticalAlignment = Alignment.CenterVertically,
@@ -99,7 +101,10 @@ fun DmConversationListScreen(onBack: () -> Unit, onOpenThread: (String) -> Unit)
                 Text("No conversations yet.\nMessage a friend from your Friends list to start.", color = Ink2, style = MaterialTheme.typography.bodyMedium, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
             }
         } else {
-            LazyColumn(modifier = Modifier.fillMaxSize()) {
+            LazyColumn(
+                modifier = Modifier.fillMaxSize(),
+                contentPadding = screenContentPadding()
+            ) {
                 items(visibleConversations, key = { it.channelId }) { c ->
                     ConversationRow(conversation = c, online = onlineSet.contains(c.user.id), onClick = { onOpenThread(c.user.id) })
                 }
@@ -181,7 +186,7 @@ fun DmThreadScreen(userId: String, onBack: () -> Unit) {
         )
     }
 
-    Column(modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
+    Column(modifier = Modifier.fillMaxSize().screenInsetsTopOnly().background(MaterialTheme.colorScheme.background)) {
         Row(modifier = Modifier.fillMaxWidth().padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
             com.filipinodama.app.ui.components.MockupBackButton(onClick = onBack, modifier = Modifier.padding(end = 12.dp))
             if (openUser != null) AvatarView(avatarUrl = openUser.avatarUrl, size = 38.dp)

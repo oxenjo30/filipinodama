@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -52,6 +53,7 @@ import com.filipinodama.app.data.match.MatchStatus
 import com.filipinodama.app.ui.components.CurrencyAmount
 import com.filipinodama.app.ui.components.CurrencyIconKind
 import com.filipinodama.app.ui.components.MockupBackButton
+import com.filipinodama.app.ui.components.screenInsets
 import com.filipinodama.app.ui.screens.profile.AvatarView
 import com.filipinodama.app.ui.screens.social.ReportPlayerDialog
 import com.filipinodama.app.ui.theme.GoldLt
@@ -176,8 +178,10 @@ fun OnlineMatchScreen(
                 // Mockup board bg: radial-gradient(circle at 50% 28%, #1c1338, #0b0716 70%).
                 Brush.radialGradient(listOf(Color(0xFF1C1338), Color(0xFF0B0716)))
             )
+            .screenInsets()
             .verticalScroll(rememberScrollState())
-            .padding(16.dp),
+            .padding(16.dp)
+            .imePadding(),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
         // Top bar: back ‹ / centered mode label / guide (settings) button.

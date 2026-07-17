@@ -24,6 +24,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.filipinodama.app.data.legal.LEGAL_DOCS
+import com.filipinodama.app.ui.components.screenInsetsBottomOnly
+import com.filipinodama.app.ui.components.screenInsetsTopOnly
 import com.filipinodama.app.ui.theme.Gold
 import com.filipinodama.app.ui.theme.GoldLt
 import com.filipinodama.app.ui.theme.Ink
@@ -45,7 +47,7 @@ fun LegalScreen(initialKey: String, onBack: () -> Unit) {
     var active by remember { mutableStateOf(initialKey) }
     val doc = LEGAL_DOCS[active] ?: LEGAL_DOCS.getValue("terms")
 
-    Column(modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
+    Column(modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background).screenInsetsTopOnly()) {
         Row(
             modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 14.dp),
             verticalAlignment = Alignment.CenterVertically,
@@ -75,7 +77,7 @@ fun LegalScreen(initialKey: String, onBack: () -> Unit) {
         }
 
         Column(
-            modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(20.dp),
+            modifier = Modifier.fillMaxSize().screenInsetsBottomOnly().verticalScroll(rememberScrollState()).padding(20.dp),
             verticalArrangement = Arrangement.spacedBy(4.dp)
         ) {
             Text(doc.kicker.uppercase(), color = Gold, style = MaterialTheme.typography.labelSmall)

@@ -31,6 +31,7 @@ import com.filipinodama.app.data.tournaments.TournamentListItemDto
 import com.filipinodama.app.data.tournaments.TournamentsRepository
 import com.filipinodama.app.ui.components.CurrencyIcon
 import com.filipinodama.app.ui.components.CurrencyIconKind
+import com.filipinodama.app.ui.components.screenInsets
 import com.filipinodama.app.ui.theme.Gold
 import com.filipinodama.app.ui.theme.GoldLt
 import com.filipinodama.app.ui.theme.Ink2
@@ -65,7 +66,7 @@ fun TournamentsListScreen(onBack: () -> Unit = {}, onOpenDetail: (String) -> Uni
         }
     }
 
-    Column(modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
+    Column(modifier = Modifier.fillMaxSize().screenInsets().background(MaterialTheme.colorScheme.background)) {
         Row(
             modifier = Modifier.fillMaxWidth().padding(20.dp),
             verticalAlignment = Alignment.CenterVertically

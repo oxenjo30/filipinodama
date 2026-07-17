@@ -29,6 +29,7 @@ import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 import com.filipinodama.app.BuildConfig
 import com.filipinodama.app.data.AuthRepository
+import com.filipinodama.app.ui.components.screenInsets
 import com.filipinodama.app.ui.theme.Bg
 import com.filipinodama.app.ui.theme.Gold
 
@@ -91,6 +92,7 @@ fun OnboardingScreen(onFinished: () -> Unit) {
         modifier = Modifier
             .fillMaxSize()
             .background(Bg)
+            .screenInsets()
     ) {
         Column(
             modifier = Modifier

@@ -39,6 +39,7 @@ import com.filipinodama.app.data.engine.RankTiers
 import com.filipinodama.app.data.leaderboard.LbRowDto
 import com.filipinodama.app.data.leaderboard.LeaderboardRepository
 import com.filipinodama.app.data.leaderboard.LeaderboardResult
+import com.filipinodama.app.ui.components.screenInsets
 import com.filipinodama.app.ui.screens.profile.AvatarView
 import com.filipinodama.app.ui.theme.Gold
 import com.filipinodama.app.ui.theme.GoldLt
@@ -119,7 +120,7 @@ fun LeaderboardScreen(onOpenPublicProfile: (String) -> Unit, onBack: () -> Unit 
         }
     }
 
-    Column(modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background).verticalScroll(rememberScrollState())) {
+    Column(modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background).screenInsets().verticalScroll(rememberScrollState())) {
         Row(modifier = Modifier.fillMaxWidth().padding(16.dp, 16.dp, 16.dp, 8.dp), verticalAlignment = Alignment.CenterVertically) {
             com.filipinodama.app.ui.components.MockupBackButton(onClick = onBack)
             Text(
