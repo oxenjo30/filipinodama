@@ -36,7 +36,9 @@ data class RoomStateDto(
     val settings: GameSettings,
     /** "PRIVATE" | "RANKED" (PrismaMatchMode) — rooms only ever use PRIVATE today. */
     val mode: String,
-    val matchId: String? = null
+    val matchId: String? = null,
+    /** Host toggled "Lock the room" — while true the server rejects new joiners. */
+    val locked: Boolean = false
 )
 
 /** EV.roomStart payload — server -> host/guest/spectators once the host starts. */
@@ -64,6 +66,9 @@ data class RoomCodeRequest(val code: String)
 
 @Serializable
 data class RoomSettingsRequest(val settings: GameSettings)
+
+@Serializable
+data class RoomLockRequest(val locked: Boolean)
 
 @Serializable
 data class RoomUserRequest(val userId: String)

@@ -75,6 +75,7 @@ type Room = {
   settings: GameSettings;
   mode: PrismaMatchMode;
   matchId: string | null; // set once started
+  locked: boolean; // host toggled "Lock the room" → room:join is rejected while true
 };
 
 // Reclaim a private room once its match settles (it's kept alive during play so
@@ -143,6 +144,7 @@ function roomState(room: Room) {
     settings: room.settings,
     mode: room.mode,
     matchId: room.matchId,
+    locked: room.locked,
   };
 }
 function publicMember(m: Member) {
@@ -403,6 +405,7 @@ export function registerRooms(io: IOServer, socket: Socket) {
       settings: { ...DEFAULT_SETTINGS },
       mode,
       matchId: null,
+      locked: false,
     };
     await withLock(`room:${code}`, async () => {
       await storeRoom(room);
@@ -430,6 +433,13 @@ export function registerRooms(io: IOServer, socket: Socket) {
     // member (keep their seat); otherwise leave any prior room and take a slot.
     const prior = await getUserRoom(RP, userId);
     const alreadyHere = prior === code && !!memberIn(peek, userId);
+    // Locked room: a NEW joiner is turned away (the host can still lock a room to
+    // stop drop-ins by code). An existing member (host/guest reattaching, e.g. a
+    // second tab or a reconnect) is unaffected — only fresh joins are gated.
+    if (peek.locked && !alreadyHere) {
+      socket.emit(EV.roomState, { code, error: "locked" });
+      return;
+    }
     if (!alreadyHere) await removeMember(io, userId); // leave any OTHER room first (outside this lock)
     const member = alreadyHere ? null : await memberFor(userId, socket.id);
     void socket.join(ROOM_PREFIX(code));
@@ -498,6 +508,24 @@ export function registerRooms(io: IOServer, socket: Socket) {
       const room = await loadRoom(code);
       if (!room || room.hostId !== userId) return; // host only
       if (payload.settings) room.settings = sanitizeSettings(room.settings, payload.settings);
+      await storeRoom(room);
+      out = room;
+    });
+    if (out) emitState(io, out);
+  });
+
+  socket.on(EV.roomLock, async (payload: { locked?: unknown } = {}) => {
+    // Host toggles "Lock the room" — while locked, new joiners hit the "locked"
+    // error in room:join (existing members are unaffected). Host only; the new
+    // value is taken from the payload (a plain boolean), defaulting to a flip if
+    // absent, so the client can send an explicit desired state.
+    const code = await getUserRoom(RP, userId);
+    if (!code) return;
+    let out: Room | null = null;
+    await withLock(`room:${code}`, async () => {
+      const room = await loadRoom(code);
+      if (!room || room.hostId !== userId) return; // host only
+      room.locked = typeof payload.locked === "boolean" ? payload.locked : !room.locked;
       await storeRoom(room);
       out = room;
     });
