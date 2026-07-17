@@ -55,6 +55,39 @@ export function classifyDevice(userAgent: string | undefined): ClientDevice {
 }
 
 /**
+ * Best-effort client region for the multi-region evidence-gathering (Stage 0,
+ * docs/ops/multi-region-design.md). Once Cloudflare fronts the API it adds a
+ * `cf-ipcountry` header (2-letter ISO country) on every request incl. the socket
+ * upgrade — that's the client's real geography, free and accurate. Before
+ * Cloudflare is in place this is just "unknown", which is fine: the point is that
+ * the LOGGING is wired now so the data starts flowing the moment the edge is on.
+ * We fold country → a coarse region bucket matching Railway's deploy regions so
+ * the RTT logs answer "where are players, and how far are they from Singapore?".
+ */
+export function clientRegionOf(socket: Socket): string {
+  const h = socket.handshake.headers;
+  const cc = (
+    (typeof h["cf-ipcountry"] === "string" ? h["cf-ipcountry"] : undefined) ?? ""
+  ).toUpperCase();
+  if (!cc || cc === "XX") return "unknown";
+  // Coarse buckets aligned to Railway regions (us-west/us-east/eu-west/southeast-asia).
+  if (["PH", "SG", "MY", "ID", "TH", "VN", "JP", "KR", "CN", "HK", "TW", "IN", "AU"].includes(cc)) return "apac";
+  if (["US", "CA", "MX"].includes(cc)) return "amer";
+  if (["GB", "IE", "FR", "DE", "NL", "ES", "IT", "PL", "SE", "NO", "FI", "PT", "BE", "CH", "AT"].includes(cc)) return "emea";
+  return `other:${cc}`;
+}
+
+/**
+ * The Railway region THIS instance is serving from (RAILWAY_REPLICA_REGION is
+ * injected per-replica at runtime). Paired with clientRegionOf in the RTT log so
+ * we can see serving-region vs client-region and the resulting latency — the
+ * core Stage-0 signal for deciding IF/WHERE a second region is worth it.
+ */
+export function servingRegion(): string {
+  return process.env.RAILWAY_REPLICA_REGION ?? process.env.RAILWAY_REGION ?? "unknown";
+}
+
+/**
  * Resolve + verify the authed user id from the handshake, then confirm the
  * account is still live (not deleted, not currently banned). A valid JWT alone
  * is not enough — a ban/delete after connect-time must keep the user out of
@@ -112,6 +145,7 @@ export function registerRealtime(io: IOServer) {
         }
         socket.data.userId = userId;
         socket.data.device = classifyDevice(socket.handshake.headers["user-agent"]);
+        socket.data.region = clientRegionOf(socket); // Stage-0 multi-region evidence
         next();
       })
       .catch(() => next(new Error("unauthorized")));
@@ -119,6 +153,43 @@ export function registerRealtime(io: IOServer) {
 
   io.on("connection", (socket: Socket) => {
     // socket.data.userId is guaranteed set by the io.use() guard above.
+
+    // ── Stage-0 multi-region telemetry (docs/ops/multi-region-design.md) ──
+    // ZERO client change: log where each client connects from, which region served
+    // it, and — read from socket.io's OWN heartbeat, no app-level ping needed —
+    // the connection's round-trip latency. This is the EVIDENCE that decides
+    // if/where a second region is ever worth it: "how many players are far from
+    // Singapore, and how much latency do they pay?". It flows the moment Cloudflare
+    // fronts the API (which supplies the cf-ipcountry geo header used by
+    // clientRegionOf); until then region reads "unknown" but serving-region + the
+    // heartbeat RTT are already useful.
+    //
+    // RTT SOURCE: engine.io already pings every client on a heartbeat interval and
+    // records the pong latency internally. We don't add our own ping (which would
+    // need client cooperation + a client rebuild). Instead we read engine.io's
+    // measured value if the installed version exposes it, and otherwise just emit
+    // the geography line (Cloudflare's own analytics carries client RTT as a
+    // backstop). Best-effort and fire-and-forget — never touches gameplay.
+    const region = (socket.data.region as string) ?? "unknown";
+    const serving = servingRegion();
+    const device = (socket.data.device as string) ?? "web";
+    const logConn = (rttMs?: number) => {
+      const rtt = rttMs != null && Number.isFinite(rttMs) ? ` rtt_ms=${Math.round(rttMs)}` : "";
+      console.log(`[conn] region=${region} serving=${serving} device=${device}${rtt}`);
+    };
+    // engine.io v6 (socket.io v4) tracks the last pong latency on the raw conn;
+    // read it defensively since it's not a stable public field.
+    const readEngineRtt = (): number | undefined => {
+      const conn = socket.conn as unknown as { pingTimeout?: number; lastPong?: number; lastPing?: number };
+      if (conn?.lastPong != null && conn?.lastPing != null) return conn.lastPong - conn.lastPing;
+      return undefined;
+    };
+    logConn(readEngineRtt());
+    // Re-sample once a minute so we see steady-state latency, not just connect-time.
+    const rttTimer = setInterval(() => logConn(readEngineRtt()), 60_000);
+    rttTimer.unref?.();
+    socket.on("disconnect", () => clearInterval(rttTimer));
+
     registerPresence(io, socket); // must run first — joins presence:<userId> room
     registerMatchmaking(io, socket);
     registerMatch(io, socket);
