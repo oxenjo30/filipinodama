@@ -107,6 +107,11 @@ android {
         // off); the Store item card is left-aligned to match the mobile mockup
         // (the price no longer hugs the left under centered content); the Private
         // Room lobby's players card is rebuilt as the mockup's 3-column VS grid.
+        // Also in 21 (combined from a second workstream): an in-app "update
+        // available" nudge — a soft, dismissible dialog (server-driven via the
+        // ANDROID_LATEST_VERSION config key vs BuildConfig.VERSION_CODE) that opens
+        // the Play listing; dormant until an admin sets that key. Ships off by
+        // default ("0").
         versionCode = 21
         versionName = "0.1.20"
 
