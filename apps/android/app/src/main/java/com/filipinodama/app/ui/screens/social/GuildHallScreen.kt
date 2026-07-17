@@ -1012,6 +1012,10 @@ private fun GuildChatPanel(guildId: String, guildName: String) {
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(9.dp)
         ) {
+            // One-tap emoji insert (owner request) — appends to the guild-chat draft.
+            com.filipinodama.app.ui.components.EmojiPickerButton(
+                onEmojiSelected = { draft += it }
+            )
             Box(modifier = Modifier.weight(1f)) {
                 if (draft.isEmpty()) {
                     Text("Message $guildName…", color = Color(0xFF6F6091), style = MaterialTheme.typography.bodySmall)

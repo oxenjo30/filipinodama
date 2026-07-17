@@ -294,6 +294,11 @@ fun DmThreadScreen(userId: String, onBack: () -> Unit) {
                 }
             }
             Row(modifier = Modifier.fillMaxWidth().padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                // One-tap emoji insert (owner request) — appends to the draft.
+                com.filipinodama.app.ui.components.EmojiPickerButton(
+                    onEmojiSelected = { draft += it },
+                    modifier = Modifier.padding(end = 8.dp)
+                )
                 OutlinedTextField(
                     value = draft,
                     onValueChange = { draft = it },
