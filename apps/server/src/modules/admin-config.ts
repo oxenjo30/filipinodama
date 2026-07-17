@@ -40,7 +40,7 @@ import { env } from "../config/env.js";
  */
 
 const LOCKED_KEYS = new Set(["DIAMOND_TOPUP_ENABLED"]);          // env-governed, never a writable row
-const PUBLIC_CONFIG_KEYS = ["MAINTENANCE_BANNER", "MAINTENANCE_TEXT", "DAILY_LOGIN_ENABLED", "WATCH_LIVE_ENABLED"] as const;
+const PUBLIC_CONFIG_KEYS = ["MAINTENANCE_BANNER", "MAINTENANCE_TEXT", "DAILY_LOGIN_ENABLED", "WATCH_LIVE_ENABLED", "ANDROID_LATEST_VERSION"] as const;
 
 function validate(type: string, value: string): boolean {
   if (type === "bool") return value === "true" || value === "false";

@@ -163,6 +163,12 @@ const CONFIG_SEED = [
   // Owner directive 2026-07-12: Watch Live PAGE hidden by default (safe-off).
   // Spectate flows/links stay live regardless — this only gates the page + nav.
   { key: "WATCH_LIVE_ENABLED", value: "false", type: "bool", category: "flag", label: "Watch Live page enabled" },
+  // Android "update available" nudge. Value = the LATEST Play versionCode as an
+  // integer (NOT the versionName — they're off-by-one). "0" = disabled (no
+  // versionCode is < 1, so 0 > current is always false ⇒ no nudge). type "int"
+  // so the admin can't save non-numeric garbage. Re-seeding never clobbers a
+  // live admin edit (the upsert update-branch omits `value`).
+  { key: "ANDROID_LATEST_VERSION", value: "0", type: "int", category: "flag", label: "Android latest versionCode (integer, NOT the version name)" },
 ];
 
 async function main() {
