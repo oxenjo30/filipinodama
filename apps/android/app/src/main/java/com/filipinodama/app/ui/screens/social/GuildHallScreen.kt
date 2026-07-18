@@ -941,6 +941,18 @@ private fun GuildChatPanel(guildId: String, guildName: String, onOpenProfile: (S
     val visibleMessages = state.messages.filter { !blockedIds.contains(it.author.id) }
 
     Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp)) {
+        // Frame the conversation region so it reads as a bounded "chat area"
+        // instead of messages floating on the raw page background (owner
+        // request) — matches the DM chat frame + the app's card language:
+        // gold hairline border + inset panel surface + rounded corners.
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(18.dp))
+                .background(Color(0xFF160B28).copy(alpha = 0.55f), RoundedCornerShape(18.dp))
+                .border(1.dp, Color(0x59E8B84B), RoundedCornerShape(18.dp))
+                .padding(12.dp)
+        ) {
         when {
             state.loading -> Box(Modifier.fillMaxWidth().padding(vertical = 30.dp), contentAlignment = Alignment.Center) { CircularProgressIndicator(color = Gold) }
             visibleMessages.isEmpty() -> Box(Modifier.fillMaxWidth().padding(vertical = 30.dp), contentAlignment = Alignment.Center) {
@@ -975,8 +987,9 @@ private fun GuildChatPanel(guildId: String, guildName: String, onOpenProfile: (S
                                         else androidx.compose.ui.graphics.Brush.verticalGradient(listOf(Color(0xFF241833), Color(0xFF241833))),
                                         gBubbleShape
                                     )
-                                    // Bubble border to define it against the dark bg (owner request).
-                                    .border(1.dp, if (mine) Color(0xFFC99A2E) else Color(0x33E8B84B), gBubbleShape)
+                                    // Bubble border to define it against the dark bg (owner request):
+                                    // bumped incoming edge from 0x33 ghost to 0x66 so it's clearly visible.
+                                    .border(1.dp, if (mine) Color(0xFFC99A2E) else Color(0x66E8B84B), gBubbleShape)
                                     .padding(horizontal = 13.dp, vertical = 10.dp)
                             ) {
                                 Text(m.body, color = if (mine) Color(0xFF2A1608) else Color(0xFFEFE7FB), style = MaterialTheme.typography.bodySmall)
@@ -1001,6 +1014,7 @@ private fun GuildChatPanel(guildId: String, guildName: String, onOpenProfile: (S
                 }
             }
         }
+        } // chat-area frame Box
 
         // Composer — mockup pill input + round gold send. GuildHall is a
         // tab route so BottomTabBar already owns the nav-bar inset — only

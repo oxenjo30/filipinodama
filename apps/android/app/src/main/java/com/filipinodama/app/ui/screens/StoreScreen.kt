@@ -1,7 +1,6 @@
 package com.filipinodama.app.ui.screens
 
 import com.filipinodama.app.ui.components.royalDialogPanel
-import com.filipinodama.app.ui.components.royalSheetPanel
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -15,6 +14,8 @@ import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -869,13 +870,16 @@ private fun StoreItemPreviewSheet(
     )
 
     Box(
-        modifier = Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.6f)).clickable(onClick = onClose),
-        contentAlignment = Alignment.BottomCenter
+        modifier = Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.6f)).clickable(onClick = onClose).padding(horizontal = 16.dp),
+        contentAlignment = Alignment.Center
     ) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .royalSheetPanel(20.dp)
+                .heightIn(max = 620.dp)
+                .royalDialogPanel(20.dp)
+                .navigationBarsPadding()
+                .verticalScroll(rememberScrollState())
                 .padding(24.dp)
                 .clickable(enabled = false) {},
             horizontalAlignment = Alignment.CenterHorizontally
@@ -1007,13 +1011,14 @@ private fun PurchaseConfirmSheet(item: StoreItemDto, balance: Int, onCancel: () 
     val cur = storeItemCurrency(item)
     val price = storeItemPrice(item)
     Box(
-        modifier = Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.6f)).clickable(onClick = onCancel),
-        contentAlignment = Alignment.BottomCenter
+        modifier = Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.6f)).clickable(onClick = onCancel).padding(horizontal = 16.dp),
+        contentAlignment = Alignment.Center
     ) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .royalSheetPanel(20.dp)
+                .royalDialogPanel(20.dp)
+                .navigationBarsPadding()
                 .padding(24.dp)
                 .clickable(enabled = false) {},
             horizontalAlignment = Alignment.CenterHorizontally

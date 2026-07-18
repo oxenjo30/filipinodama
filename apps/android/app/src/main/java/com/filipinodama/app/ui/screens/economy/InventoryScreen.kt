@@ -109,7 +109,12 @@ fun InventoryScreen(onBrowseStore: () -> Unit = {}, onBack: () -> Unit = {}) {
         val ownedIds = (inventoryResult as? EconomyResult.Success)
             ?.data?.inventory?.map { it.itemId }?.toSet() ?: emptySet()
 
-        val ownedItems = allItems.filter { it.id in ownedIds }
+        // Owner directive 2026-07-18: AVATARS are no longer shown in the Inventory
+        // page. They remain fully owned/equippable via the Edit Avatar picker
+        // (AvatarPickerDialog) — this only hides them from the Inventory list, and
+        // since the "Items Owned"/"Equipped" stat tiles derive from `groups`, they
+        // now count only Inventory-shown categories (boards, skins, frames, …).
+        val ownedItems = allItems.filter { it.id in ownedIds && it.type != "AVATAR" }
         groups = ownedItems.groupBy { it.type }
     }
 
@@ -259,7 +264,13 @@ private fun InventoryItemCard(
                 else androidx.compose.ui.graphics.Brush.linearGradient(listOf(Color(0xCC1B1030), Color(0xCC1B1030))),
                 RoundedCornerShape(13.dp)
             )
-            .border(1.dp, if (equipped) Color(0xB33FBF6F) else Color(0x24E8B84B), RoundedCornerShape(13.dp))
+            // Owner 2026-07-18: drop the faint "invisible" gold outline on unequipped
+            // tiles (it read as a barely-there border). Equipped tiles keep their
+            // clear green ring; unequipped tiles rely on the panel fill alone.
+            .then(
+                if (equipped) Modifier.border(1.dp, Color(0xB33FBF6F), RoundedCornerShape(13.dp))
+                else Modifier
+            )
             .padding(7.dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {

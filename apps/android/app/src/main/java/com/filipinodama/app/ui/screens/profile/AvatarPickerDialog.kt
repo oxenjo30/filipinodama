@@ -47,6 +47,7 @@ import com.filipinodama.app.data.economy.EconomyRepository
 import com.filipinodama.app.data.economy.EconomyResult
 import com.filipinodama.app.data.economy.EquipRequest
 import com.filipinodama.app.data.economy.StoreItemDto
+import com.filipinodama.app.data.economy.storeItemBasePrice
 import com.filipinodama.app.data.profile.ProfileRepository
 import com.filipinodama.app.data.profile.ProfileResult
 import com.filipinodama.app.data.profile.UpdateProfileRequest
@@ -113,22 +114,27 @@ fun AvatarPickerDialog(onClose: () -> Unit) {
     }
 
     Dialog(onDismissRequest = onClose, properties = DialogProperties(usePlatformDefaultWidth = false)) {
-        // Bottom-anchor the sheet inside the dialog window (it's styled like a
-        // bottom sheet — top-only rounded corners, sheet chrome — but a bare
-        // Dialog centers its content by default, which made it render
-        // floating/centered instead of docked to the bottom edge).
-        Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.BottomCenter) {
+        // CENTERED dialog (owner: "why do modals open at the bottom? make them
+        // open in the middle"). The panel is centered in the window with a
+        // horizontal margin, all-corners rounding, and a capped height — so the
+        // pinned "Save Changes" footer is ALWAYS inside the card and never
+        // overlaps the system nav/gesture bar. navigationBarsPadding still keeps
+        // it clear of the bar when the card is near-full-height on small screens.
+        Box(
+            modifier = Modifier.fillMaxSize().padding(horizontal = 16.dp),
+            contentAlignment = Alignment.Center
+        ) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .heightIn(max = 640.dp)
+                .heightIn(max = 620.dp)
                 .background(
                     androidx.compose.ui.graphics.Brush.verticalGradient(listOf(Color(0xFF1A0F30), Color(0xFF120A22))),
-                    RoundedCornerShape(24.dp, 24.dp, 0.dp, 0.dp)
+                    RoundedCornerShape(24.dp)
                 )
-                .border(1.dp, Color(0x59E8B84B), RoundedCornerShape(24.dp, 24.dp, 0.dp, 0.dp))
-                // Lift the whole sheet above the system nav/gesture bar so the
-                // pinned "Save Changes" footer isn't half-hidden behind it
+                .border(1.dp, Color(0x59E8B84B), RoundedCornerShape(24.dp))
+                // Keep the whole card clear of the system nav/gesture bar so the
+                // pinned "Save Changes" footer is never hidden behind it
                 // (owner-reported: the button sat too low, cut off at the bottom).
                 .navigationBarsPadding()
         ) {
@@ -198,6 +204,10 @@ fun AvatarPickerDialog(onClose: () -> Unit) {
                         ) {
                             items(avatars) { item ->
                                 val selected = item.id == draftAvatar
+                                // Owner 2026-07-18: mark premium (store-bought) avatars —
+                                // any avatar with a real price — with a small gold gem so
+                                // the user can tell which ones they unlocked from the Store.
+                                val premium = storeItemBasePrice(item) > 0
                                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
                                     Box(
                                         modifier = Modifier.size(52.dp)
@@ -213,6 +223,17 @@ fun AvatarPickerDialog(onClose: () -> Unit) {
                                                     .background(Color(0xF23FBF6F), CircleShape),
                                                 contentAlignment = Alignment.Center
                                             ) { Text("✓", color = Color(0xFF0A1F12), style = MaterialTheme.typography.labelSmall) }
+                                        }
+                                        // Premium marker — top-start so it never collides
+                                        // with the top-end selection check.
+                                        if (premium) {
+                                            Box(
+                                                modifier = Modifier.align(Alignment.TopStart).size(16.dp)
+                                                    .background(Color(0xF2E8B84B), CircleShape)
+                                                    .border(1.dp, Color(0x66160C28), CircleShape)
+                                                    .semantics { contentDescription = "Premium avatar" },
+                                                contentAlignment = Alignment.Center
+                                            ) { Text("◆", color = Color(0xFF2A1608), style = MaterialTheme.typography.labelSmall) }
                                         }
                                     }
                                     Text(item.name, color = Color(0xFFC9BCE6), style = MaterialTheme.typography.labelSmall, maxLines = 1, modifier = Modifier.padding(top = 3.dp))
