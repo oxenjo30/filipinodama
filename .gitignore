@@ -1,5 +1,6 @@
 node_modules/
 dist/
+dist-ssr/
 .next/
 .turbo/
 coverage/
@@ -24,3 +25,6 @@ FilipinoDama Web Game Design.zip
 handoffv2/
 handoff/
 _asset-previews/
+
+# Local AAB/APK delivery folder (build artifacts — never commit)
+/builds/

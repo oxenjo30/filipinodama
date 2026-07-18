@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState, type MouseEvent } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { articles, allBySlug, isPublished, formatDate, type BlogCategory } from "./blog";
+import { SiteHead, articleJsonLd } from "../../lib/seo";
 import { api } from "../../lib/api";
 
 /**
@@ -86,18 +87,6 @@ const PROSE_CSS = `
 .fd-article th{color:var(--gold-lt);font-weight:700}
 `;
 
-/** Set/create <meta name="description"> for SEO, restoring nothing on unmount
- *  (each article overwrites it on mount; that's the desired behaviour). */
-function setMetaDescription(content: string) {
-  let el = document.querySelector<HTMLMetaElement>('meta[name="description"]');
-  if (!el) {
-    el = document.createElement("meta");
-    el.setAttribute("name", "description");
-    document.head.appendChild(el);
-  }
-  el.setAttribute("content", content);
-}
-
 /**
  * Rewrite the article body's internal links at render time.
  *
@@ -142,14 +131,8 @@ export function ArticlePage() {
   const live = found ? isPublished(found) : false;
   const article = found && live ? found : undefined;
 
-  useEffect(() => {
-    if (!article) {
-      document.title = "Dama Blog — FilipinoDama";
-      return;
-    }
-    document.title = `${article.title} — FilipinoDama`;
-    setMetaDescription(article.description);
-  }, [article]);
+  // Title / description / canonical / OG / JSON-LD are owned by <SiteHead> in each
+  // return branch below (Helmet), so they land in the prerendered HTML.
 
   // Body HTML with internal *.html links rewritten to /blog/<slug> routes.
   const bodyHtml = useMemo(
@@ -194,6 +177,12 @@ export function ArticlePage() {
     const when = formatDate(found.datePublished);
     return (
       <div style={{ maxWidth: 720, margin: "0 auto", padding: 26 }}>
+        <SiteHead
+          title={`Coming soon — ${found.title} — FilipinoDama`}
+          description="This Dama article isn't published yet."
+          path={`/blog/${found.slug}`}
+          noindex
+        />
         <div className="frame" style={{ padding: "48px 20px", textAlign: "center" }}>
           <div style={{ fontSize: 34, marginBottom: 10 }}>📅</div>
           <div style={{ font: "700 18px Cinzel,serif", color: "var(--gold-lt)" }}>
@@ -214,6 +203,12 @@ export function ArticlePage() {
   if (!article) {
     return (
       <div style={{ maxWidth: 720, margin: "0 auto", padding: 26 }}>
+        <SiteHead
+          title="Article not found — FilipinoDama"
+          description="We couldn't find that article."
+          path="/blog"
+          noindex
+        />
         <div className="frame" style={{ padding: "48px 20px", textAlign: "center" }}>
           <div style={{ fontSize: 34, marginBottom: 10 }}>📄</div>
           <div style={{ font: "700 18px Cinzel,serif", color: "var(--gold-lt)" }}>
@@ -235,6 +230,13 @@ export function ArticlePage() {
 
   return (
     <div className="fd-page-pad" style={{ maxWidth: 1200, margin: "0 auto", padding: "26px 26px 60px" }}>
+      <SiteHead
+        title={`${article.title} — FilipinoDama`}
+        description={article.description}
+        path={`/blog/${article.slug}`}
+        ogType="article"
+        jsonLd={articleJsonLd(article)}
+      />
       <style>{PROSE_CSS}</style>
 
       {/* Two-column: reading column + sidebar rail (collapses on mobile). */}
