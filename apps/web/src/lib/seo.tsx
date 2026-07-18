@@ -82,7 +82,6 @@ export function SiteHead({
       <meta name="twitter:image" content={image} />
 
       {blocks.map((block, i) => (
-        // eslint-disable-next-line react/no-danger
         <script key={i} type="application/ld+json">
           {JSON.stringify(block)}
         </script>
