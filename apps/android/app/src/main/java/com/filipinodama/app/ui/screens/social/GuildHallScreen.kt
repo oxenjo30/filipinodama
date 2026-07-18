@@ -1037,11 +1037,23 @@ private fun GuildChatPanel(guildId: String, guildName: String, onOpenProfile: (S
                 modifier = Modifier
                     .size(38.dp)
                     .clickable(enabled = draft.isNotBlank() && !state.sending) {
-                        val body = draft.trim(); draft = ""
-                        scope.launch { GuildChatRepository.send(guildId, body) }
+                        // Keep the draft until the send SUCCEEDS; restore it on
+                        // failure (review M-6 — the old code cleared the draft
+                        // before sending and lost it silently on error, unlike DM).
+                        val body = draft.trim()
+                        draft = ""
+                        scope.launch {
+                            GuildChatRepository.send(guildId, body)
+                            if (GuildChatRepository.state.value.error != null) draft = body
+                        }
                     }
                     .background(
-                        androidx.compose.ui.graphics.Brush.verticalGradient(listOf(Color(0xFFEFC25A), Color(0xFFC9971F))),
+                        // Dim the send button when it can't send (review m-11): a
+                        // disabled Send used to look identical to an enabled one.
+                        if (draft.isNotBlank() && !state.sending)
+                            androidx.compose.ui.graphics.Brush.verticalGradient(listOf(Color(0xFFEFC25A), Color(0xFFC9971F)))
+                        else
+                            androidx.compose.ui.graphics.Brush.verticalGradient(listOf(Color(0x66EFC25A), Color(0x66C9971F))),
                         CircleShape
                     ),
                 contentAlignment = Alignment.Center

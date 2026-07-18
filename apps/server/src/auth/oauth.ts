@@ -6,6 +6,7 @@ import { env, features } from "../config/env.js";
 import { randomTag } from "./tokens.js";
 import { err } from "../lib/errors.js";
 import { grantDefaults } from "./service.js";
+import { redis } from "../realtime/store.js";
 
 /**
  * OAuth 2.0 (Google / Facebook) — authorization-code flow (web), plus a
@@ -28,21 +29,35 @@ type Profile = { providerId: string; email: string | null; name: string | null; 
 
 const CALLBACK = (p: OAuthProvider) => `${env.OAUTH_CALLBACK_BASE}/api/auth/oauth/${p}/callback`;
 
-// Ephemeral CSRF state store (in-memory; fine for single instance). Each state
-// carries its expiry and the post-login `next` path the user was headed to, so
-// the callback can return them there instead of always landing on home.
-type StateEntry = { exp: number; next: string };
-const stateStore = new Map<string, StateEntry>();
-export function makeState(next = "/"): string {
+// Ephemeral CSRF state store. Kept in REDIS (not an in-process Map) because the
+// app runs multi-instance: the redirect that mints the state and the callback
+// that consumes it may land on different instances, so an in-memory Map would
+// fail the callback with "state not found" on any instance but the minting one.
+// Each state carries the post-login `next` path the user was headed to. Redis
+// key TTL enforces the same ~10-minute expiry the Map's `exp` used (fail-closed:
+// once expired the key is gone, so the callback is rejected).
+type StateEntry = { next: string };
+const STATE_KEY = (s: string) => `oauth:state:${s}`;
+const STATE_TTL_SEC = 10 * 60;
+export async function makeState(next = "/"): Promise<string> {
   const s = randomBytes(16).toString("hex");
-  stateStore.set(s, { exp: Date.now() + 10 * 60 * 1000, next });
+  await redis.set(STATE_KEY(s), JSON.stringify({ next } satisfies StateEntry), "EX", STATE_TTL_SEC);
   return s;
 }
-/** Validate + consume a state; returns the stored `next` path, or null if invalid. */
-export function consumeState(s: string): string | null {
-  const entry = stateStore.get(s);
-  stateStore.delete(s);
-  return entry && entry.exp > Date.now() ? entry.next : null;
+// Atomic GET+DEL so a state can only ever be consumed once (single-use), even if
+// two callbacks race — done via a tiny Lua eval (matching store.ts's eval style)
+// rather than GETDEL so it works regardless of the ioredis client's typed method
+// surface.
+const CONSUME_STATE_LUA = `local v = redis.call('GET', KEYS[1]); if v then redis.call('DEL', KEYS[1]) end; return v`;
+/** Validate + consume a state; returns the stored `next` path, or null if invalid/expired. */
+export async function consumeState(s: string): Promise<string | null> {
+  const raw = (await redis.eval(CONSUME_STATE_LUA, 1, STATE_KEY(s))) as string | null;
+  if (raw == null) return null; // missing or expired → fail-closed (login rejected)
+  try {
+    return (JSON.parse(raw) as StateEntry).next;
+  } catch {
+    return null;
+  }
 }
 
 export function isConfigured(p: OAuthProvider): boolean {
@@ -94,8 +109,22 @@ export async function fetchProfile(p: OAuthProvider, code: string): Promise<Prof
       headers: { Authorization: `Bearer ${access_token}` },
     });
     if (!infoRes.ok) throw err.badRequest("OAUTH_PROFILE", "Google profile fetch failed");
-    const info = (await infoRes.json()) as { sub: string; email?: string; name?: string; picture?: string };
-    return { providerId: info.sub, email: info.email ?? null, name: info.name ?? null, avatar: info.picture ?? null };
+    const info = (await infoRes.json()) as {
+      sub: string;
+      email?: string;
+      email_verified?: boolean | string; // OIDC userinfo returns a boolean; tolerate the string form too
+      name?: string;
+      picture?: string;
+    };
+    // SECURITY: only surface the email as a linkable identity if Google asserts it
+    // is verified. Otherwise an attacker who controls an *unverified* Google
+    // account whose email string matches a victim's local account could get
+    // auto-linked to that victim in findOrCreateOAuthUser (link-by-email). Mirrors
+    // the email_verified check on the native ID-token path (verifyGoogleIdToken).
+    // Unverified → email = null → a fresh account is created instead of linking.
+    const emailVerified = info.email_verified === true || info.email_verified === "true";
+    const email = info.email && emailVerified ? info.email : null;
+    return { providerId: info.sub, email, name: info.name ?? null, avatar: info.picture ?? null };
   }
   // facebook
   const tokenRes = await fetch(

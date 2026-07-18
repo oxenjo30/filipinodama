@@ -478,6 +478,11 @@ private fun HostOrGuestLobby(
     // The pending "Copied!" → "Copy Code" auto-reset job, so rapid re-taps
     // cancel the prior timer instead of racing (mockup 2915: a 1600ms revert).
     var copyResetJob by remember { mutableStateOf<kotlinx.coroutines.Job?>(null) }
+    // Review m-14: the "🔗 Link" compact button used to copy the room URL with
+    // no feedback at all. Give it the same transient "Copied!" affordance as the
+    // wide "Copy Code" primary above.
+    var linkLabel by remember { mutableStateOf("🔗 Link") }
+    var linkResetJob by remember { mutableStateOf<kotlinx.coroutines.Job?>(null) }
     val roomUrl = "${BuildConfig.WEB_ORIGIN}/rooms?code=${ui.code}"
     // "Allow spectators" is a LOCAL host preference — the server has no field
     // for it yet (spectating is always technically open via the link), so we
@@ -504,6 +509,7 @@ private fun HostOrGuestLobby(
             RoomCodeCard(
                 code = ui.code ?: "",
                 copyLabel = copyLabel,
+                linkLabel = linkLabel,
                 locked = ui.locked,
                 isHost = isHost,
                 onToggleLock = { RoomRepository.setLock(!ui.locked) },
@@ -520,6 +526,12 @@ private fun HostOrGuestLobby(
                 },
                 onCopyLink = {
                     clipboard.setText(AnnotatedString(roomUrl))
+                    linkLabel = "Copied!"
+                    linkResetJob?.cancel()
+                    linkResetJob = scope.launch {
+                        kotlinx.coroutines.delay(1600)
+                        linkLabel = "🔗 Link"
+                    }
                 },
                 onShare = {
                     val send = Intent(Intent.ACTION_SEND).apply {
@@ -600,6 +612,7 @@ private fun HostOrGuestLobby(
 private fun RoomCodeCard(
     code: String,
     copyLabel: String,
+    linkLabel: String,
     locked: Boolean,
     isHost: Boolean,
     onToggleLock: () -> Unit,
@@ -644,7 +657,7 @@ private fun RoomCodeCard(
                 ) {
                     Text(copyLabel, color = Color(0xFFF0CF72), style = MaterialTheme.typography.labelLarge)
                 }
-                RoomCompactButton("🔗 Link", onCopyLink)
+                RoomCompactButton(linkLabel, onCopyLink)
                 RoomCompactButton("✉ Invite", onShare)
             }
 
@@ -1014,6 +1027,11 @@ private fun SpectatorsCard(
     clipboard: ClipboardManager,
     onOpenSpectate: () -> Unit
 ) {
+    // Review m-14: give "Copy Spectate Link" the same transient "Copied!"
+    // affordance as the room-code buttons (it copied silently before).
+    val specScope = rememberCoroutineScope()
+    var spectateLabel by remember { mutableStateOf("👁 Copy Spectate Link") }
+    var spectateResetJob by remember { mutableStateOf<kotlinx.coroutines.Job?>(null) }
     GameFrameCard {
         Column {
             // Header: title + subtitle + switch (mockup 1725-1728).
@@ -1080,11 +1098,19 @@ private fun SpectatorsCard(
                         horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
                         RoomPill(
-                            text = "👁 Copy Spectate Link",
+                            text = spectateLabel,
                             borderColor = Gold.copy(alpha = 0.3f),
                             textColor = Color(0xFFC9B8E6),
                             bg = Color(0x800F0720),
-                            onClick = { clipboard.setText(AnnotatedString(roomUrl)) }
+                            onClick = {
+                                clipboard.setText(AnnotatedString(roomUrl))
+                                spectateLabel = "Copied!"
+                                spectateResetJob?.cancel()
+                                spectateResetJob = specScope.launch {
+                                    kotlinx.coroutines.delay(1600)
+                                    spectateLabel = "👁 Copy Spectate Link"
+                                }
+                            }
                         )
                         RoomPill(
                             text = "▶ Spectator View",
@@ -1150,8 +1176,14 @@ private fun InviteFriendsCard(roomUrl: String) {
                             Text(f.displayName, color = Color.White, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f).padding(start = 10.dp))
                             SmallActionChip(if (sent) "Sent ✓" else "Invite") {
                                 if (!sent) {
-                                    sentIds = sentIds + f.id
-                                    scope.launch { DmRepository.send(f.id, "Join my FilipinoDama room: $roomUrl") }
+                                    // Review m-13: flip the chip to "Sent ✓" only
+                                    // after the DM actually goes through — the old
+                                    // code marked it sent before the send, so a
+                                    // failed invite still showed as delivered.
+                                    scope.launch {
+                                        DmRepository.send(f.id, "Join my FilipinoDama room: $roomUrl")
+                                        if (DmRepository.state.value.error == null) sentIds = sentIds + f.id
+                                    }
                                 }
                             }
                         }
@@ -1206,18 +1238,22 @@ private fun RoomChatCard(chat: List<com.filipinodama.app.data.rooms.RoomChatMsg>
                     ),
                     shape = RoundedCornerShape(10.dp)
                 )
+                val canSend = draft.isNotBlank()
                 Box(
                     modifier = Modifier
-                        .background(Gold, RoundedCornerShape(10.dp))
-                        .clickable {
-                            if (draft.isNotBlank()) {
-                                onSend(draft)
-                                draft = ""
-                            }
+                        // Dim Send when there's nothing to send (review m-11).
+                        .background(if (canSend) Gold else Gold.copy(alpha = 0.4f), RoundedCornerShape(10.dp))
+                        .clickable(enabled = canSend) {
+                            onSend(draft)
+                            draft = ""
                         }
                         .padding(horizontal = 16.dp, vertical = 12.dp)
                 ) {
-                    Text("Send", color = Color(0xFF2A1607), style = MaterialTheme.typography.labelMedium)
+                    Text(
+                        "Send",
+                        color = Color(0xFF2A1607).copy(alpha = if (canSend) 1f else 0.6f),
+                        style = MaterialTheme.typography.labelMedium
+                    )
                 }
             }
         }

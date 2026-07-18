@@ -330,10 +330,19 @@ fun DmThreadScreen(userId: String, onBack: () -> Unit, onOpenProfile: (String) -
                                 if (DmRepository.state.value.error == null) draft = ""
                             }
                         }
-                        .background(Gold, RoundedCornerShape(10.dp))
+                        // Dim Send when it can't send (review m-11).
+                        .background(
+                            if (!dmState.sending && draft.isNotBlank()) Gold else Gold.copy(alpha = 0.4f),
+                            RoundedCornerShape(10.dp)
+                        )
                         .padding(horizontal = 16.dp, vertical = 14.dp)
                 ) {
-                    Text("Send", color = Color(0xFF2A1607), style = MaterialTheme.typography.labelMedium)
+                    val canSend = !dmState.sending && draft.isNotBlank()
+                    Text(
+                        "Send",
+                        color = Color(0xFF2A1607).copy(alpha = if (canSend) 1f else 0.6f),
+                        style = MaterialTheme.typography.labelMedium
+                    )
                 }
             }
         }

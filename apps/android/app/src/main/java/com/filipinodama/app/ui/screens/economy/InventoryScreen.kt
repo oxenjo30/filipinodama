@@ -73,12 +73,33 @@ import kotlinx.coroutines.launch
  * (me.equippedBoard/equippedSkin/frameId/avatarUrl) via [isItemEquipped],
  * exactly like web — never from a client-side tap set.
  */
+@OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable
 fun InventoryScreen(onBrowseStore: () -> Unit = {}, onBack: () -> Unit = {}) {
     val authState by AuthRepository.state.collectAsState()
     val me = authState.user
     val scope = rememberCoroutineScope()
+    val snackbar = com.filipinodama.app.ui.components.LocalSnackbar.current
     var groups by remember { mutableStateOf<Map<String, List<StoreItemDto>>?>(null) } // null = loading
+    // The item currently mid-equip (for the in-flight tile state) so a laggy
+    // equip doesn't read as a dead tap (review finding C-1). Null = none.
+    var equippingId by remember { mutableStateOf<String?>(null) }
+
+    // Equip an item + give real feedback: in-flight state on the tile, a success
+    // snackbar, and an error snackbar on failure (review finding C-1 — the old
+    // tap-to-equip ignored the result and showed nothing).
+    fun equip(item: StoreItemDto) {
+        val request = equipRequestFor(item) ?: return
+        equippingId = item.id
+        scope.launch {
+            val result = EconomyRepository.equip(request)
+            equippingId = null
+            when (result) {
+                is EconomyResult.Success -> snackbar.show("${item.name} equipped")
+                is EconomyResult.Failure -> snackbar.show(result.message)
+            }
+        }
+    }
 
     suspend fun loadInventory() {
         val itemsResult = EconomyRepository.storeItems()
@@ -149,44 +170,53 @@ fun InventoryScreen(onBrowseStore: () -> Unit = {}, onBack: () -> Unit = {}) {
                                 (STORE_TYPE_META[type]?.label ?: type).uppercase(),
                                 color = Color(0xFF8B7CAE),
                                 style = MaterialTheme.typography.labelMedium,
-                                modifier = Modifier.padding(bottom = 10.dp, top = 6.dp)
+                                modifier = Modifier.padding(bottom = 4.dp, top = 6.dp)
                             )
                             Text(
                                 "${items.size} owned",
-                                color = Color(0xFF6F6091),
+                                // Contrast lift (review UI#3): #6F6091 was below the
+                                // readable floor; use the theme Ink2 muted token.
+                                color = Ink2,
                                 style = MaterialTheme.typography.labelSmall,
-                                modifier = Modifier.padding(bottom = 10.dp, top = 6.dp)
+                                modifier = Modifier.padding(bottom = 4.dp, top = 6.dp)
                             )
                         }
-                        // Reworked 2026-07-18: a DENSER 3-column grid of compact
-                        // square tiles (the old 2-col x 165dp cards were oversized
-                        // on phones). Tap a tile to equip; a small corner check
-                        // marks the equipped one. Cell height ≈ tile (square) +
-                        // name line ≈ 118dp.
-                        val cols = 3
-                        LazyVerticalGrid(
-                            columns = GridCells.Fixed(cols),
-                            modifier = Modifier.height((((items.size + cols - 1) / cols) * 118).dp),
+                        // Affordance hint (review finding C-2): the tiles ARE the
+                        // equip control now (no per-card button), so tell the user.
+                        Text(
+                            "Tap an item to equip it",
+                            color = Ink2,
+                            style = MaterialTheme.typography.labelSmall,
+                            modifier = Modifier.padding(bottom = 10.dp)
+                        )
+                        // Self-measuring 3-up grid via FlowRow (review UI#4): the old
+                        // LazyVerticalGrid nested in a verticalScroll needed a hard
+                        // per-row height (118dp) that clipped names at some widths.
+                        // FlowRow wraps to content, so tiles never clip. maxItems 3
+                        // = 3 columns; each tile takes an equal weight of the row.
+                        androidx.compose.foundation.layout.FlowRow(
+                            modifier = Modifier.fillMaxWidth().padding(bottom = 14.dp),
                             horizontalArrangement = Arrangement.spacedBy(8.dp),
-                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                            verticalArrangement = Arrangement.spacedBy(8.dp),
+                            maxItemsInEachRow = 3
                         ) {
-                            items(items) { item ->
+                            items.forEach { item ->
                                 InventoryItemCard(
                                     item = item,
-                                    // Real account-field equipped state; the equip
-                                    // PATCH patches AuthRepository so this
-                                    // recomposes when the server confirms.
                                     equipped = isItemEquipped(item, me?.equippedBoard, me?.equippedSkin, me?.frameId, me?.avatarUrl),
-                                    onEquip = {
-                                        scope.launch {
-                                            val request = equipRequestFor(item)
-                                            if (request != null) EconomyRepository.equip(request)
-                                        }
-                                    }
+                                    equipping = equippingId == item.id,
+                                    onEquip = { equip(item) },
+                                    // 3-up: each tile is 1/3 of the row (minus gaps).
+                                    modifier = Modifier.weight(1f)
                                 )
                             }
+                            // Pad the last partial row so 1-2 trailing items still
+                            // size to 1/3 width instead of stretching full-width.
+                            val remainder = items.size % 3
+                            if (remainder != 0) repeat(3 - remainder) {
+                                androidx.compose.foundation.layout.Spacer(Modifier.weight(1f))
+                            }
                         }
-                        Box(Modifier.height(14.dp))
                     }
                 }
             }
@@ -210,13 +240,20 @@ private fun StatTile(label: String, value: String, valueColor: Color, modifier: 
 }
 
 @Composable
-private fun InventoryItemCard(item: StoreItemDto, equipped: Boolean, onEquip: () -> Unit) {
-    // Compact tap-to-equip tile (2026-07-18 rework, replaces the oversized
-    // per-card "Equip" button). The WHOLE tile is tappable to equip; when
-    // equipped it gets a green ring + a small corner check. Denser 3-up grid.
+private fun InventoryItemCard(
+    item: StoreItemDto,
+    equipped: Boolean,
+    equipping: Boolean,
+    onEquip: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    // Compact tap-to-equip tile. The WHOLE tile is tappable to equip; equipped =
+    // green ring + corner check; a "Tap to equip" hint + an "Equip" line make
+    // the affordance visible (review C-2); an in-flight spinner while equipping
+    // (review C-1) so a laggy equip doesn't read as a dead tap.
     Column(
-        modifier = Modifier
-            .clickable(enabled = !equipped, onClick = onEquip)
+        modifier = modifier
+            .clickable(enabled = !equipped && !equipping, onClick = onEquip)
             .background(
                 if (equipped) androidx.compose.ui.graphics.Brush.linearGradient(listOf(Color(0x243FBF6F), Color(0xD91B1030)))
                 else androidx.compose.ui.graphics.Brush.linearGradient(listOf(Color(0xCC1B1030), Color(0xCC1B1030))),
@@ -248,6 +285,13 @@ private fun InventoryItemCard(item: StoreItemDto, equipped: Boolean, onEquip: ()
                 )
                 else -> {} // Emoji thumbnails removed (no more emote items)
             }
+            // In-flight spinner over the thumb while this item is equipping.
+            if (equipping) {
+                Box(
+                    modifier = Modifier.fillMaxSize().background(Color(0x99160C28), RoundedCornerShape(10.dp)),
+                    contentAlignment = Alignment.Center
+                ) { CircularProgressIndicator(color = Gold, strokeWidth = 2.dp, modifier = Modifier.size(22.dp)) }
+            }
             // Small equipped check in the corner (replaces the big EQUIPPED pill).
             if (equipped) {
                 Box(
@@ -268,6 +312,14 @@ private fun InventoryItemCard(item: StoreItemDto, equipped: Boolean, onEquip: ()
             maxLines = 1,
             overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
             modifier = Modifier.fillMaxWidth().padding(top = 5.dp)
+        )
+        // Per-tile affordance line (review C-2): "Equipped" (green) vs a gold
+        // "Equip" prompt so it's obvious a non-equipped tile is the equip control.
+        Text(
+            if (equipped) "Equipped" else "Equip",
+            color = if (equipped) Color(0xFF7FE0A3) else Color(0xFFF0CF72),
+            style = MaterialTheme.typography.labelSmall,
+            modifier = Modifier.padding(top = 2.dp)
         )
     }
 }
