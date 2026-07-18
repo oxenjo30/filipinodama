@@ -120,6 +120,35 @@ export function websiteJsonLd(): object[] {
   ];
 }
 
+/** FAQPage for a page with question/answer blocks (e.g. /learn rules FAQ). */
+export function faqJsonLd(faqs: { q: string; a: string }[]): object {
+  return {
+    "@context": "https://schema.org",
+    "@type": "FAQPage",
+    mainEntity: faqs.map((f) => ({
+      "@type": "Question",
+      name: f.q,
+      acceptedAnswer: { "@type": "Answer", text: f.a },
+    })),
+  };
+}
+
+/** HowTo for step-by-step guides (e.g. how to play dama on /learn). */
+export function howToJsonLd(name: string, description: string, steps: { name: string; text: string }[]): object {
+  return {
+    "@context": "https://schema.org",
+    "@type": "HowTo",
+    name,
+    description,
+    step: steps.map((s, i) => ({
+      "@type": "HowToStep",
+      position: i + 1,
+      name: s.name,
+      text: s.text,
+    })),
+  };
+}
+
 /** Article + BreadcrumbList for a blog post. */
 export function articleJsonLd(a: {
   slug: string;
