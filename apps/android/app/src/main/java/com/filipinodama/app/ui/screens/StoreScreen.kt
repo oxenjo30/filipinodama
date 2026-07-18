@@ -595,8 +595,18 @@ private fun StoreItemCard(
                 Box {}
             }
         }
+        // Review #5: seat the thumbnail in a subtle recessed "well" (dark tint +
+        // hairline gold border + radius) so transparent-PNG cosmetics read as
+        // products on a surface, not glyphs floating on the card. Small vertical
+        // margin keeps it clear of the tag row and the name block.
         Box(
-            modifier = Modifier.fillMaxWidth().height(70.dp).clickable(onClick = onPreviewOrBuy),
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(top = 8.dp, bottom = 4.dp)
+                .height(74.dp)
+                .background(Color(0x33100A22), RoundedCornerShape(12.dp))
+                .border(1.dp, Gold.copy(alpha = 0.12f), RoundedCornerShape(12.dp))
+                .clickable(onClick = onPreviewOrBuy),
             contentAlignment = Alignment.Center
         ) {
             StoreThumbView(storeThumbFor(item), size = 60.dp)
