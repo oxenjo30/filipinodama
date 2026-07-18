@@ -63,7 +63,7 @@ export async function ensureGuildChannel(guildId: string): Promise<string> {
 /** Shape a Message row (+ author + role) into the wire `ChatMessage`. */
 function toWire(
   guildId: string,
-  m: { id: string; body: string; createdAt: Date; author: { id: string; displayName: string; avatarUrl: string | null } },
+  m: { id: string; body: string; createdAt: Date; author: { id: string; displayName: string; avatarUrl: string | null; frameId: string | null } },
   role: "LEADER" | "OFFICER" | "MEMBER" | null,
 ): ChatMessage {
   return {
