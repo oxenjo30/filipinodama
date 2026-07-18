@@ -192,8 +192,20 @@ android {
         // other tab screens. (No app change was needed for the "update available"
         // nudge — that feature is correct; it just needs the server config
         // ANDROID_LATEST_VERSION set to the latest live versionCode.)
-        versionCode = 31
-        versionName = "0.1.31"
+        // 32 = COSMETICS batch. (1) Default profile FRAME for every player: a
+        // free "filigree" house frame is granted+equipped at signup (server) and
+        // backfilled to existing players, and frames now show on the surfaces
+        // that dropped them (DM, private-room player cards, guild chat) — frameId
+        // added to those DTOs. (2) Board + piece SKINS now actually RENDER in the
+        // app: BoardView was hardcoded and never read the equipped skin; it now
+        // varies the board tint + piece colours by the equipped board/skin
+        // (BoardCosmetics.kt ports the web's procedural colour tables; your own
+        // skin paints your colour in online play). (3) Chat message bubbles (DM +
+        // guild) gained a border so they read against the dark background. (4)
+        // Tapping an avatar in the DM header or a guild-chat message opens that
+        // player's profile.
+        versionCode = 32
+        versionName = "0.1.32"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 

@@ -64,7 +64,7 @@ const roomForMatchKey = (matchId: string) => `rt:roomForMatch:${matchId}`;
 // A member tracks ALL of a user's sockets in this room (multi-tab), so one tab
 // closing doesn't evict a user who is still connected on another. `sockets` is a
 // plain string[] (JSON-safe) with Set semantics (dedupe via includes/filter).
-type Member = { userId: string; sockets: string[]; name: string; avatarUrl: string | null; tag: string };
+type Member = { userId: string; sockets: string[]; name: string; avatarUrl: string | null; tag: string; frameId: string | null };
 type Room = {
   code: string;
   hostId: string;
@@ -116,9 +116,9 @@ async function makeCode(rng: () => number): Promise<string> {
 async function memberFor(userId: string, socketId: string): Promise<Member> {
   const u = await prisma.user.findUnique({
     where: { id: userId },
-    select: { displayName: true, avatarUrl: true, tag: true },
+    select: { displayName: true, avatarUrl: true, tag: true, frameId: true },
   });
-  return { userId, sockets: [socketId], name: u?.displayName ?? "Player", avatarUrl: u?.avatarUrl ?? null, tag: u?.tag ?? "" };
+  return { userId, sockets: [socketId], name: u?.displayName ?? "Player", avatarUrl: u?.avatarUrl ?? null, tag: u?.tag ?? "", frameId: u?.frameId ?? null };
 }
 
 /** Find a user's member record in a room (host/guest/spectator), or null. */
@@ -148,7 +148,7 @@ function roomState(room: Room) {
   };
 }
 function publicMember(m: Member) {
-  return { userId: m.userId, name: m.name, avatarUrl: m.avatarUrl, tag: m.tag };
+  return { userId: m.userId, name: m.name, avatarUrl: m.avatarUrl, tag: m.tag, frameId: m.frameId };
 }
 
 function emitState(io: IOServer, room: Room) {
@@ -293,8 +293,8 @@ export type OpenRoom = {
   code: string;
   mode: PrismaMatchMode;
   matchId: string | null;
-  host: { userId: string; displayName: string; avatarUrl: string | null; tag: string };
-  guest: { userId: string; displayName: string; avatarUrl: string | null; tag: string } | null;
+  host: { userId: string; displayName: string; avatarUrl: string | null; tag: string; frameId: string | null };
+  guest: { userId: string; displayName: string; avatarUrl: string | null; tag: string; frameId: string | null } | null;
   viewers: number;
 };
 
@@ -326,9 +326,9 @@ export async function listOpenRooms(): Promise<OpenRoom[]> {
       code: room.code,
       mode: room.mode,
       matchId: room.matchId,
-      host: { userId: room.host.userId, displayName: room.host.name, avatarUrl: room.host.avatarUrl, tag: room.host.tag },
+      host: { userId: room.host.userId, displayName: room.host.name, avatarUrl: room.host.avatarUrl, tag: room.host.tag, frameId: room.host.frameId },
       guest: room.guest
-        ? { userId: room.guest.userId, displayName: room.guest.name, avatarUrl: room.guest.avatarUrl, tag: room.guest.tag }
+        ? { userId: room.guest.userId, displayName: room.guest.name, avatarUrl: room.guest.avatarUrl, tag: room.guest.tag, frameId: room.guest.frameId }
         : null,
       viewers: room.matchId ? await spectatorCount(room.matchId) : 0,
     });

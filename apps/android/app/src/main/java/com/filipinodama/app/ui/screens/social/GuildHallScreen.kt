@@ -416,7 +416,7 @@ fun GuildHallScreen(
             }
 
             when (tab) {
-                "chat" -> GuildChatPanel(guildId = g.id, guildName = g.name)
+                "chat" -> GuildChatPanel(guildId = g.id, guildName = g.name, onOpenProfile = onOpenProfile)
                 "wars" -> GuildWarsTab(myGuildId = g.id, onPlayRanked = onPlayRanked)
                 else -> SectionCard(title = "Members · ${g.memberCount}") {
                     detail!!.roster.sortedByDescending { it.weeklyContribution }.forEach { m ->
@@ -912,7 +912,7 @@ private fun ManageMemberDialog(member: GuildMemberDto, isLeader: Boolean, busy: 
 private data class GuildChatReportTarget(val accusedId: String, val messageId: String, val body: String)
 
 @Composable
-private fun GuildChatPanel(guildId: String, guildName: String) {
+private fun GuildChatPanel(guildId: String, guildName: String, onOpenProfile: (String) -> Unit = {}) {
     val state by GuildChatRepository.state.collectAsState()
     val scope = rememberCoroutineScope()
     var draft by remember { mutableStateOf("") }
@@ -955,8 +955,9 @@ private fun GuildChatPanel(guildId: String, guildName: String) {
                         verticalAlignment = Alignment.Bottom
                     ) {
                         if (!mine) {
+                            // Tap a member's avatar to open their profile (owner request).
                             Box(modifier = Modifier.padding(end = 10.dp).clip(RoundedCornerShape(10.dp))) {
-                                AvatarView(avatarUrl = m.author.avatarUrl, size = 34.dp, ring = false)
+                                AvatarView(avatarUrl = m.author.avatarUrl, frameId = m.author.frameId, size = 34.dp, ring = false, onClick = { onOpenProfile(m.author.id) })
                             }
                         }
                         Column(horizontalAlignment = if (mine) Alignment.End else Alignment.Start, modifier = Modifier.fillMaxWidth(0.74f)) {
@@ -966,13 +967,16 @@ private fun GuildChatPanel(guildId: String, guildName: String) {
                                 style = MaterialTheme.typography.labelSmall,
                                 modifier = Modifier.padding(bottom = 4.dp, start = 2.dp, end = 2.dp)
                             )
+                            val gBubbleShape = RoundedCornerShape(14.dp)
                             Box(
                                 modifier = Modifier
                                     .background(
                                         if (mine) androidx.compose.ui.graphics.Brush.verticalGradient(listOf(Color(0xFFEFC25A), Color(0xFFC9971F)))
-                                        else androidx.compose.ui.graphics.Brush.verticalGradient(listOf(Color(0xE61B1030), Color(0xE61B1030))),
-                                        RoundedCornerShape(14.dp)
+                                        else androidx.compose.ui.graphics.Brush.verticalGradient(listOf(Color(0xFF241833), Color(0xFF241833))),
+                                        gBubbleShape
                                     )
+                                    // Bubble border to define it against the dark bg (owner request).
+                                    .border(1.dp, if (mine) Color(0xFFC99A2E) else Color(0x33E8B84B), gBubbleShape)
                                     .padding(horizontal = 13.dp, vertical = 10.dp)
                             ) {
                                 Text(m.body, color = if (mine) Color(0xFF2A1608) else Color(0xFFEFE7FB), style = MaterialTheme.typography.bodySmall)
@@ -990,7 +994,7 @@ private fun GuildChatPanel(guildId: String, guildName: String) {
                         }
                         if (mine) {
                             Box(modifier = Modifier.padding(start = 10.dp).clip(RoundedCornerShape(10.dp))) {
-                                AvatarView(avatarUrl = me?.avatarUrl, size = 34.dp, ring = false)
+                                AvatarView(avatarUrl = me?.avatarUrl, frameId = me?.frameId, size = 34.dp, ring = false)
                             }
                         }
                     }
