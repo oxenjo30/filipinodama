@@ -1,21 +1,27 @@
-import { useEffect } from "react";
 import { useNavigate } from "react-router-dom";
+import { SiteHead } from "../../lib/seo";
 
 /**
  * NotFoundPage — branded 404 catch-all. Reproduces the v2 prototype markup in the
  * app's gold/dark theme: an ornate frame with the big gradient "404", an eyebrow,
- * a headline, a short blurb, and two ways back (Home / Play). Sets document.title
- * on mount so the tab reads "Page not found — FilipinoDama".
+ * a headline, a short blurb, and two ways back (Home / Play).
+ *
+ * SEO: the static host (`serve -s dist`) returns HTTP 200 for unknown paths, so we
+ * cannot send a real 404 status this phase (owner decision, Path A). Instead we emit
+ * <meta name="robots" content="noindex"> via <SiteHead> so unknown URLs are dropped
+ * from the index despite the 200.
  */
 export function NotFoundPage() {
   const navigate = useNavigate();
 
-  useEffect(() => {
-    document.title = "Page not found — FilipinoDama";
-  }, []);
-
   return (
     <div style={{ maxWidth: 760, margin: "0 auto", padding: "76px 26px", textAlign: "center" }}>
+      <SiteHead
+        title="Page not found — FilipinoDama"
+        description="The page you're looking for doesn't exist."
+        path="/404"
+        noindex
+      />
       <div className="frame" style={{ padding: "52px 40px" }}>
         <div
           style={{

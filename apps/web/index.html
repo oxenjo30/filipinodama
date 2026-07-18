@@ -14,23 +14,17 @@
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <meta name="apple-mobile-web-app-title" content="Dama" />
     <meta name="mobile-web-app-capable" content="yes" />
+
+    <!-- Per-route <head> (title, description, canonical, Open Graph, Twitter, and
+         JSON-LD) is owned by react-helmet-async and emitted per page — see
+         SiteHead (home default) and the per-route <Helmet> in BlogPage/ArticlePage.
+         These tags are intentionally NOT hardcoded here: a static shell <title>/
+         canonical/og:url would survive onto every prerendered route alongside
+         Helmet's, producing duplicate/conflicting canonicals that can deindex the
+         content pages. The shell keeps only globally-true tags (charset, viewport,
+         theme-color, icons, apple-*, manifest, analytics). A no-JS <title> fallback
+         lives just below so a script-less client still shows a sensible tab label. -->
     <title>FilipinoDama Royal — Play Filipino Dama Online</title>
-    <meta name="description" content="FilipinoDama Royal — a premium, real-time multiplayer Filipino Dama (checkers) game. Play ranked, challenge the AI, and rise through the ranks." />
-    <link rel="canonical" href="https://filipinodama.com/" />
-
-    <!-- Open Graph / Facebook -->
-    <meta property="og:type" content="website" />
-    <meta property="og:site_name" content="FilipinoDama Royal" />
-    <meta property="og:title" content="FilipinoDama Royal" />
-    <meta property="og:description" content="Play Filipino Dama online — ranked multiplayer checkers with Filipino heritage." />
-    <meta property="og:url" content="https://filipinodama.com/" />
-    <meta property="og:image" content="https://filipinodama.com/assets/brand/og-image.png" />
-
-    <!-- Twitter -->
-    <meta name="twitter:card" content="summary_large_image" />
-    <meta name="twitter:title" content="FilipinoDama Royal" />
-    <meta name="twitter:description" content="Play Filipino Dama online — ranked multiplayer checkers with Filipino heritage." />
-    <meta name="twitter:image" content="https://filipinodama.com/assets/brand/og-image.png" />
 
     <!-- Meta Pixel Code -->
     <script>

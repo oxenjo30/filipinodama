@@ -54,10 +54,24 @@ import { initAudioUnlock } from "./lib/sfx";
  * cookie; until it resolves (`ready`) we render a lightweight loading field so the
  * app never flashes a logged-out state over a valid session. The app still loads
  * fully for a logged-out visitor (me stays null).
+ *
+ * PRERENDER: during the build-time static render (`prerender.mjs`), there is no
+ * session cookie and no reachable API, so `bootstrap()` never resolves and the app
+ * would be frozen on the loading field — freezing the crawler on a blank spinner.
+ * The prerender script sets `globalThis.__PRERENDER__ = true`, which lets the
+ * router + content mount immediately so the emitted HTML contains real page text.
+ * There is no flash-of-logged-out concern at build time (no session exists), so
+ * this bypass changes nothing for real browser users, where the flag is undefined.
  */
+declare global {
+  // eslint-disable-next-line no-var
+  var __PRERENDER__: boolean | undefined;
+}
+
 export function App() {
   const bootstrap = useAuthStore((s) => s.bootstrap);
   const ready = useAuthStore((s) => s.ready);
+  const isPrerender = typeof globalThis !== "undefined" && globalThis.__PRERENDER__ === true;
 
   useEffect(() => {
     bootstrap();
@@ -67,7 +81,7 @@ export function App() {
     initAudioUnlock();
   }, [bootstrap]);
 
-  if (!ready) {
+  if (!ready && !isPrerender) {
     return (
       <div
         style={{
@@ -90,6 +104,20 @@ export function App() {
 
   return (
     <BrowserRouter>
+      <AppRoutes />
+    </BrowserRouter>
+  );
+}
+
+/**
+ * AppRoutes — the router-agnostic route table (ErrorBoundary + Routes), with no
+ * <BrowserRouter> of its own. The browser App wraps this in <BrowserRouter>; the
+ * build-time prerender entry (prerender.mjs → src/entry-prerender.tsx) wraps the
+ * same tree in <StaticRouter location=…>, so the exact same routes render to
+ * static HTML without pulling in browser-only history APIs.
+ */
+export function AppRoutes() {
+  return (
       <ErrorBoundary>
         <Routes>
         {/* ── auth (no AppLayout chrome — full-screen) ── */}
@@ -153,6 +181,5 @@ export function App() {
           </Route>
         </Routes>
       </ErrorBoundary>
-    </BrowserRouter>
   );
 }
