@@ -1,5 +1,20 @@
 # Lessons
 
+## 2026-07-18 - "Add borders to the chat" meant the message AREA, not the bubbles — and faint borders = "not fixed"
+
+- Mistake: The owner asked 3+ times to "add borders to the friends/guild chat." Prior attempts (incl. across sessions) added/kept borders on the message BUBBLES and the composer input — the wrong element — and even those were shipped at ~20% alpha (`#33E8B84B` incoming, `#C99A2E` on gold) which is INVISIBLE on a real phone. So the owner kept correctly saying it wasn't fixed.
+- Real ask: the whole CHAT MESSAGE AREA (the scrolling conversation region) had NO framing panel around it — messages floated on the bare page background while every other surface in the app sits inside a gold-bordered `GameFrameCard`. The fix is to frame the message-list region (DM + Guild), matching the app card language, at a CLEARLY VISIBLE alpha.
+- Rule:
+  1. When an owner repeats the same UI ask, STOP re-applying the same fix — you're solving the wrong element. Ask them to point at it on a live screenshot / clarify which element, then verify on-device.
+  2. A "border" shipped at ghost alpha (<~30%) is not visible on a phone and reads as "still broken." If the point is to be seen, use a border that is obviously present (test on a real device screenshot, not by reading the hex).
+  3. Static code/mockup review will PASS a technically-present-but-invisible style and MISS a "whole-area has no frame" gap. Live-device testing catches both.
+
+## 2026-07-18 - Modals were hand-built as fake bottom sheets → action button jammed the nav bar
+
+- Bug: Edit Avatar (AvatarPickerDialog.kt) and similar config modals were built as `Dialog(usePlatformDefaultWidth=false)` + `Box(contentAlignment = Alignment.BottomCenter)` with top-only rounded corners — a fake bottom sheet. On tall phones the pinned "Save Changes" footer sat too low / collided with the system nav/gesture bar even with navigationBarsPadding().
+- Owner's (correct) instinct: "why open at the bottom? make them center." There was no design reason for the bottom anchor.
+- Rule: for content/config modals, default to a CENTERED dialog (Alignment.Center, all-corners radius, capped height so the pinned footer stays inside the card above the nav bar). Reserve bottom sheets for genuine sheet UX. When a pinned action button "sits too low," suspect a bottom-anchored modal, not just padding.
+
 ## 2026-07-18 - A "feature not working" report was a missing prod CONFIG ROW, not a code bug
 
 - Symptom: Owner reported the in-app "update available" nudge never appears despite a newer version existing. Instinct is to debug the client code.
@@ -243,3 +258,39 @@
 - Mistake: While diagnosing a flaky test, I ran `git stash push -- apps/server` then `git checkout -- .` and later `git stash pop`. The `checkout -- .` silently WIPED my uncommitted guild-join-approval edit in guilds.ts, and the `stash pop` popped a STRAY stash from a different branch (feat/admin-fidelity-pass), dumping conflict markers into ~11 unrelated apps/admin files.
 - Cause: `git checkout -- .` discards ALL unstaged changes with no undo. `git stash pop` applies whatever is on top of the stash stack — which was old, unrelated work from another branch, not what I stashed.
 - Rule: NEVER use `git checkout -- .` / `git restore .` when there is uncommitted work I care about. To test "does this fail without my change", COPY the file aside (cp) or use `git stash push -- <specific file>` and `git stash pop` IMMEDIATELY (check `git stash list` first — never assume stash@{0} is mine). Prefer committing WIP to a temp branch over stashing. When a suite test is flaky, diagnose by cleaning the leftover DB row, not by stashing source.
+
+## 2026-07-17 - Don't add non-mockup elements without approval
+
+- Mistake: A "Messages/email" icon was added to the Home top bar (commits ffa49d0/ffbb5d0, "reach Messages inbox from Home") that is NOT in the mobile mockup — the mockup's Home top bar has only wallet + search + bell. It was added as a well-intentioned "the DM feature needs an entry point" gap-fill, but it overstepped the 1:1-mockup rule and had no owner approval.
+- Cause: An agent inferred a needed affordance and added UI not present in the handoff, reasoning it was a functional improvement.
+- Rule: NEVER add a UI element that isn't in the approved mockup — even for a good functional reason — without surfacing it to the owner first. If the mockup lacks an entry point a real feature needs, FLAG the conflict; don't silently invent one. Fidelity means 1:1, including NOT adding extras. (Owner also noted the search icon IS in the mockup, so it was correct — the violation was specifically the messages icon.)
+
+## 2026-07-19 - "Equipped cosmetic renders default" was a FLATTENED render (fixed-px gradient radius), not a broken key lookup
+
+- Symptom: Owner equipped a non-default board theme + piece skin on Android (green check confirmed the equip persisted), but the in-game board still looked like the default marble + flat discs, and even the DEFAULT board/pieces looked less polished than web.
+- Investigation (the important part — the obvious hypothesis was wrong): I traced the full data path for the equip → in-game render and it was ALL correct: the server persists the item ID on User.equippedBoard/equippedSkin (publicUser), the equip response DTO + AuthUser DTO both parse those fields, EconomyRepository.equip mirrors them into the cached user, both game screens pass them to BoardView, and the id-matchers (boardThemeFor/piecePaletteFor) resolved EVERY real item id correctly. So there was NO key-lookup bug — the palette/theme reaching the renderer WAS the right one.
+- Root cause: The BUG was in the RENDER. BoardSquare built its square gradient with a FIXED pixel radius (`Brush.radialGradient(radius = 420f)`). On a real phone a board cell is ~120px, so a 420px-radius gradient dwarfs the box and only the FIRST colour stop shows → every square rendered as a near-flat single colour. Different themes DID differ (their first stops differ) but subtly, and all the multi-stop marble/wood depth was thrown away — so it read as "default/unpolished" and "equip did nothing." The piece disc had flattened most of web's Piece.tsx layers (bevel highlight/shadow, inner disc, groove shading) too.
+- Also found (a real content gap): the paid "Marble Court Board" (id "marble") and the free default (id "board-marble-default") both mapped to the same BOARD_MARBLE theme, so equipping the PAID marble showed zero change — indistinguishable from "equip broken." Gave the paid board its own distinct (cooler platinum/court) theme.
+- Rule:
+  1. For Compose gradients that must scale to an element, derive the radius from `size` inside `drawBehind`/Canvas (`size.maxDimension * 1.2f` to mirror a CSS `radial-gradient(120% ...)`), NEVER a hardcoded pixel radius. A fixed radius that exceeds the element collapses a multi-stop gradient to its first colour — a silent, compile-clean fidelity bug invisible in code review and in a value-diff.
+  2. When "equipped X renders as default," trace the data path AND the render. If every id resolves to the right palette/theme, the bug is the DRAWING, not the lookup — don't keep re-checking the key matcher.
+  3. A paid cosmetic that renders identically to the free default reads to the user as "equip is broken." Give each equippable a visibly distinct look (or explicitly confirm with the owner that shared art is intended).
+  4. Resolve equipped item id → art key by an EXPLICIT id→key table (built from seed.ts), not fragile `key.contains(substring)` matching — substring scans risk cross-type false matches as the catalog grows and collapsed the paid-marble onto the default here.
+
+## 2026-07-19 - Build acceptance is not serve acceptance
+
+- Mistake: Declared the SEO prerender "verified" after checking the files in dist/ (correct body, canonical, JSON-LD per file) — but when the dist was actually served with the production command (`serve -s dist`), EVERY route returned the home index.html. The prerendered files existed and were never served: `serve -s`'s single-page rewrite suppresses directory-index resolution.
+- Cause: Verified the artifact on disk, not the flow a crawler actually experiences (HTTP request → server routing → response). The server's routing layer sat between the files and the world and silently discarded the work.
+- Rule: For anything whose consumer arrives over HTTP (SEO, webhooks, APIs), acceptance = curl against the PRODUCTION-EQUIVALENT serve command, never just inspection of build output. Also: serve-handler rewrites are NOT first-match-wins — a bare `**` catch-all poisons directory-index resolution for all other rules; enumerate SPA routes explicitly and let content routes resolve natively (proven by a 3-config controlled experiment).
+
+## 2026-07-19 - Windows: TaskStop/kill of npx leaves the child server alive
+
+- Mistake: Stopped a background `npx serve` task, started a new serve with a different config on the same port, and trusted the new results. The old serve CHILD process survived the task kill, kept the port, and answered every request — two full rounds of config testing were invalid (the "new" server had auto-switched ports silently).
+- Cause: Killing the npx wrapper on Windows does not kill its spawned node child. `serve` also auto-picks another port when the requested one is busy instead of failing.
+- Rule: After stopping a background server task, VERIFY the port is free (`Get-NetTCPConnection -LocalPort N`) and kill the exact child by PID/cmdline match before restarting. When a test result looks impossible (config provably loaded but behavior unchanged), first suspect the process topology, not the config. Never kill by process name — only by PID with a verified cmdline (Chrome protection rule).
+
+## 2026-07-19 - Prerender templates must be read once, pristine
+
+- Mistake: The prerender script wrote the home route's Helmet tags into dist/index.html, and a standalone re-run then read that same polluted file as the template for every page — injecting the HOME canonical into all 35 articles (the exact duplicate-canonical deindex hazard the plan warned about).
+- Cause: dist/index.html is both the injection TEMPLATE and the home-route OUTPUT; re-reading it per run made the pipeline non-idempotent.
+- Rule: Read the pristine template into memory ONCE before writing any output, and make regeneration idempotent (strip prior injected `data-rh` tags defensively). A clean `vite build` masks this (emptyOutDir), so test the standalone re-run path too.

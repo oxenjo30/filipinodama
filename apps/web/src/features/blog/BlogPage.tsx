@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { publishedArticles, categories, formatDate, type BlogCategory, type Article } from "./blog";
+import { SiteHead } from "../../lib/seo";
 import { api } from "../../lib/api";
 import { useAuthStore } from "../../stores/authStore";
 
@@ -168,9 +169,8 @@ export function BlogPage() {
   const [featured, setFeatured] = useState<FeaturedItem[]>([]);
   const [recent, setRecent] = useState<RecentMatch | null>(null);
 
-  useEffect(() => {
-    document.title = "Dama Blog — FilipinoDama";
-  }, []);
+  // Title/description/canonical are owned by <SiteHead> below (Helmet) so they
+  // land in the prerendered HTML — an imperative document.title runs too late.
 
   // Floating scroll-to-top: show once the reader is past ~500px.
   useEffect(() => {
@@ -268,6 +268,12 @@ export function BlogPage() {
   const viewKey = `${filter}|${query}|${page}`;
 
   return (
+    <>
+      <SiteHead
+        title="Dama Blog — Rules, Strategy & Filipino Checkers Guides"
+        description="Guides, rules explainers, and strategy for Filipino Dama (checkers) — how to play, how to win, and the history of the game Filipinos love."
+        path="/blog"
+      />
     <div className="fd-page-pad" style={{ maxWidth: 1200, margin: "0 auto", padding: "26px 26px 60px" }}>
       <style>{BLOG_CSS}</style>
 
@@ -576,6 +582,7 @@ export function BlogPage() {
         </button>
       )}
     </div>
+    </>
   );
 }
 

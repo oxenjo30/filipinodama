@@ -16,6 +16,12 @@ export default defineConfig({
         clientsClaim: true,
         cleanupOutdatedCaches: true,
         navigateFallback: "/index.html",
+        // Let the network/static host serve the PRERENDERED per-route HTML for the
+        // content routes instead of the SW shadowing them with the cached home
+        // shell. Without this, a returning (SW-installed) visitor — and any crawler
+        // that respects the SW — would get the generic index.html for /blog/<slug>,
+        // defeating the prerender. Matches "/", "/blog", and "/blog/<anything>".
+        navigateFallbackDenylist: [/^\/blog(\/.*)?$/, /^\/$/],
         // The app bundle grew past workbox's default 2 MiB precache limit (the
         // Damath variants + room pages pushed it over), which failed the PWA
         // step. Raise the cap so the main bundle is still precached.

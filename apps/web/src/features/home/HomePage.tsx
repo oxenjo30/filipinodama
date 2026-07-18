@@ -8,6 +8,7 @@ import { useAppStore } from "../../stores/appStore";
 import { useAuthStore } from "../../stores/authStore";
 import { useOnlineStore } from "../../stores/onlineStore";
 import { ICONS, avatar as avatarSrc } from "../../lib/assets";
+import { SiteHead, websiteJsonLd } from "../../lib/seo";
 import { recentUpdates, timeAgo } from "./updates";
 import { FORMAT_LABEL, STATUS_META, formatStartsAt, type TournamentListItem } from "../tournaments/types";
 
@@ -329,6 +330,13 @@ export function HomePage() {
   };
 
   return (
+    <>
+      <SiteHead
+        title="FilipinoDama Royal — Play Filipino Dama Online"
+        description="Play Filipino Dama online — real-time multiplayer Filipino checkers (dama). Challenge the AI, play ranked, learn the rules, and rise through the ranks."
+        path="/"
+        jsonLd={websiteJsonLd()}
+      />
     <div className="fd-home-grid fd-page-pad" style={{ maxWidth: 1560, margin: "0 auto", padding: 26, display: "grid", gridTemplateColumns: "minmax(0,1fr) 340px", gap: 22, alignItems: "start" }}>
       <div style={{ display: "flex", flexDirection: "column", gap: 22 }}>
         {/* HERO */}
@@ -589,6 +597,7 @@ export function HomePage() {
         )}
       </div>
     </div>
+    </>
   );
 }
 
