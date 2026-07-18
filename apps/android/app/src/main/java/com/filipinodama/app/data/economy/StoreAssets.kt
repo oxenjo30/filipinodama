@@ -36,22 +36,15 @@ sealed class StoreThumb {
     data class Image(val url: String) : StoreThumb()
     data class Portrait(val url: String) : StoreThumb()
     object Disc : StoreThumb()
-    data class Emoji(val glyph: String) : StoreThumb()
+    // Emoji member removed 2026-07-18 (EMOTE items gone; no emoji glyphs on
+    // Store/Inventory). storeThumbFor() never produces an Emoji thumb.
 }
 
 private fun assetUrl(file: String): String = "${BuildConfig.WEB_ORIGIN}/assets/$file"
 
-private val EMOTE_EMOJI: Map<String, String> = mapOf(
-    "victory" to "👑",
-    "focused" to "🎯",
-    "emote-resolve" to "💪"
-)
-
-private fun emoteGlyph(item: StoreItemDto): String {
-    val preview = item.previewKey
-    if (preview != null && preview.startsWith("emote:")) return preview.substring("emote:".length)
-    return EMOTE_EMOJI[item.id] ?: "👑"
-}
+// EMOTE thumbnails/emoji removed 2026-07-18 (owner: no Emote store/inventory
+// category, and no emoji glyphs on Store/Inventory). The in-match emote wheel
+// uses its own fixed built-in set (MatchChat.kt) and is unaffected.
 
 /** Resolve an item's thumbnail — mirrors StorePage.tsx thumbFor() exactly. */
 fun storeThumbFor(item: StoreItemDto): StoreThumb {
@@ -64,7 +57,6 @@ fun storeThumbFor(item: StoreItemDto): StoreThumb {
         }
         "AVATAR" -> StoreThumb.Portrait(assetUrl(if (a.startsWith("avatars/")) a else "avatars/$a"))
         "FRAME" -> StoreThumb.Image(assetUrl(a))
-        "EMOTE" -> StoreThumb.Emoji(emoteGlyph(item))
         "BUNDLE" -> StoreThumb.Image(assetUrl(if (a.endsWith(".png")) a else "me-banner.png"))
         "SEASON_PASS" -> StoreThumb.Image(assetUrl("me-crown.png"))
         else -> StoreThumb.Image(assetUrl("ic-chest.png"))
@@ -88,12 +80,12 @@ val STORE_TYPE_META: Map<String, StoreTypeMeta> = mapOf(
     "SKIN" to StoreTypeMeta("Piece Skins", "Piece Skin"),
     "AVATAR" to StoreTypeMeta("Avatars", "Avatar"),
     "FRAME" to StoreTypeMeta("Profile Frames", "Profile Frame"),
-    "EMOTE" to StoreTypeMeta("Emotes", "Emote"),
     "BUNDLE" to StoreTypeMeta("Bundles", "Bundle"),
     "SEASON_PASS" to StoreTypeMeta("Season Pass", "Season Pass")
 )
 
-val STORE_TYPE_ORDER = listOf("BOARD", "SKIN", "AVATAR", "FRAME", "EMOTE", "BUNDLE", "SEASON_PASS")
+// EMOTE removed from the store/inventory ordering (2026-07-18).
+val STORE_TYPE_ORDER = listOf("BOARD", "SKIN", "AVATAR", "FRAME", "BUNDLE", "SEASON_PASS")
 
 /** Currency an item is priced in — diamonds only when priceDiamonds is set (mirrors StorePage.tsx `resolve`). */
 fun storeItemCurrency(item: StoreItemDto): String = if (item.priceDiamonds != null) "DIAMONDS" else "GOLD"

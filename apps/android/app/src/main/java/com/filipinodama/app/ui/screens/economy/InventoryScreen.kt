@@ -19,7 +19,12 @@ import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Diamond
+import androidx.compose.material.icons.filled.Inventory2
+import androidx.compose.material.icons.filled.ReceiptLong
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -153,11 +158,17 @@ fun InventoryScreen(onBrowseStore: () -> Unit = {}, onBack: () -> Unit = {}) {
                                 modifier = Modifier.padding(bottom = 10.dp, top = 6.dp)
                             )
                         }
+                        // Reworked 2026-07-18: a DENSER 3-column grid of compact
+                        // square tiles (the old 2-col x 165dp cards were oversized
+                        // on phones). Tap a tile to equip; a small corner check
+                        // marks the equipped one. Cell height ≈ tile (square) +
+                        // name line ≈ 118dp.
+                        val cols = 3
                         LazyVerticalGrid(
-                            columns = GridCells.Fixed(2),
-                            modifier = Modifier.height((((items.size + 1) / 2) * 165).dp),
-                            horizontalArrangement = Arrangement.spacedBy(10.dp),
-                            verticalArrangement = Arrangement.spacedBy(10.dp)
+                            columns = GridCells.Fixed(cols),
+                            modifier = Modifier.height((((items.size + cols - 1) / cols) * 118).dp),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
                             items(items) { item ->
                                 InventoryItemCard(
@@ -175,7 +186,7 @@ fun InventoryScreen(onBrowseStore: () -> Unit = {}, onBack: () -> Unit = {}) {
                                 )
                             }
                         }
-                        Box(Modifier.height(16.dp))
+                        Box(Modifier.height(14.dp))
                     }
                 }
             }
@@ -200,70 +211,64 @@ private fun StatTile(label: String, value: String, valueColor: Color, modifier: 
 
 @Composable
 private fun InventoryItemCard(item: StoreItemDto, equipped: Boolean, onEquip: () -> Unit) {
-    // Mockup equipped-state card: gradient bg + green border vs. flat/gold
-    // border unequipped (mobile-split.txt Inventory item card).
-    Box {
-        Column(
+    // Compact tap-to-equip tile (2026-07-18 rework, replaces the oversized
+    // per-card "Equip" button). The WHOLE tile is tappable to equip; when
+    // equipped it gets a green ring + a small corner check. Denser 3-up grid.
+    Column(
+        modifier = Modifier
+            .clickable(enabled = !equipped, onClick = onEquip)
+            .background(
+                if (equipped) androidx.compose.ui.graphics.Brush.linearGradient(listOf(Color(0x243FBF6F), Color(0xD91B1030)))
+                else androidx.compose.ui.graphics.Brush.linearGradient(listOf(Color(0xCC1B1030), Color(0xCC1B1030))),
+                RoundedCornerShape(13.dp)
+            )
+            .border(1.dp, if (equipped) Color(0xB33FBF6F) else Color(0x24E8B84B), RoundedCornerShape(13.dp))
+            .padding(7.dp),
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Box(
             modifier = Modifier
+                .fillMaxWidth()
+                .aspectRatio(1f)
                 .background(
-                    if (equipped) androidx.compose.ui.graphics.Brush.linearGradient(listOf(Color(0x243FBF6F), Color(0xD91B1030))) else androidx.compose.ui.graphics.Brush.linearGradient(listOf(Color(0xCC1B1030), Color(0xCC1B1030))),
-                    RoundedCornerShape(16.dp)
-                )
-                .border(1.dp, if (equipped) Color(0x803FBF6F) else Color(0x24E8B84B), RoundedCornerShape(16.dp))
-                .padding(10.dp),
-            horizontalAlignment = Alignment.CenterHorizontally
+                    androidx.compose.ui.graphics.Brush.radialGradient(listOf(Color(0xFF2A1740), Color(0xFF160C28))),
+                    RoundedCornerShape(10.dp)
+                ),
+            contentAlignment = Alignment.Center
         ) {
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .aspectRatio(1f)
-                    .background(
-                        androidx.compose.ui.graphics.Brush.radialGradient(listOf(Color(0xFF2A1740), Color(0xFF160C28))),
-                        RoundedCornerShape(11.dp)
-                    ),
-                contentAlignment = Alignment.Center
-            ) {
-                when (val thumb = storeThumbFor(item)) {
-                    is com.filipinodama.app.data.economy.StoreThumb.Image -> coil.compose.AsyncImage(
-                        model = thumb.url, contentDescription = null, modifier = Modifier.size(48.dp)
-                    )
-                    is com.filipinodama.app.data.economy.StoreThumb.Portrait -> coil.compose.AsyncImage(
-                        model = thumb.url, contentDescription = null, modifier = Modifier.size(48.dp)
-                    )
-                    is com.filipinodama.app.data.economy.StoreThumb.Emoji -> Text(thumb.glyph, style = MaterialTheme.typography.headlineSmall)
-                    com.filipinodama.app.data.economy.StoreThumb.Disc -> Box(
-                        modifier = Modifier.size(40.dp).background(Color(0xFFA0303A), androidx.compose.foundation.shape.CircleShape)
-                    )
-                }
+            when (val thumb = storeThumbFor(item)) {
+                is com.filipinodama.app.data.economy.StoreThumb.Image -> coil.compose.AsyncImage(
+                    model = thumb.url, contentDescription = null, modifier = Modifier.fillMaxSize().padding(9.dp)
+                )
+                is com.filipinodama.app.data.economy.StoreThumb.Portrait -> coil.compose.AsyncImage(
+                    model = thumb.url, contentDescription = null, modifier = Modifier.fillMaxSize().padding(6.dp)
+                )
+                com.filipinodama.app.data.economy.StoreThumb.Disc -> Box(
+                    modifier = Modifier.fillMaxSize(0.6f).background(Color(0xFFA0303A), androidx.compose.foundation.shape.CircleShape)
+                )
+                else -> {} // Emoji thumbnails removed (no more emote items)
             }
-            Text(item.name, color = Color(0xFFE6DCF5), style = MaterialTheme.typography.labelLarge, textAlign = androidx.compose.ui.text.style.TextAlign.Center, modifier = Modifier.padding(top = 6.dp))
-            STORE_TYPE_META[item.type]?.sub?.let {
-                Text(it, color = Color(0xFF8B7CAE), style = MaterialTheme.typography.labelSmall, modifier = Modifier.padding(top = 1.dp))
-            }
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(top = 9.dp)
-                    .clickable(enabled = !equipped, onClick = onEquip)
-                    .background(
-                        if (equipped) androidx.compose.ui.graphics.Brush.verticalGradient(listOf(Color(0x293FBF6F), Color(0x293FBF6F))) else androidx.compose.ui.graphics.Brush.verticalGradient(listOf(Color(0xFFEFC25A), Color(0xFFC9971F))),
-                        RoundedCornerShape(10.dp)
-                    )
-                    .padding(vertical = 8.dp),
-                contentAlignment = Alignment.Center
-            ) {
-                Text(if (equipped) "Equipped" else "Equip", color = if (equipped) Color(0xFF7FE0A3) else Color(0xFF2A1608), style = MaterialTheme.typography.labelSmall)
+            // Small equipped check in the corner (replaces the big EQUIPPED pill).
+            if (equipped) {
+                Box(
+                    modifier = Modifier
+                        .align(Alignment.TopEnd)
+                        .padding(4.dp)
+                        .size(18.dp)
+                        .background(Color(0xF23FBF6F), androidx.compose.foundation.shape.CircleShape),
+                    contentAlignment = Alignment.Center
+                ) { Text("✓", color = Color(0xFF0A1F12), style = MaterialTheme.typography.labelSmall) }
             }
         }
-        if (equipped) {
-            Box(
-                modifier = Modifier
-                    .align(Alignment.TopEnd)
-                    .padding(8.dp)
-                    .background(Color(0xE63FBF6F), RoundedCornerShape(100.dp))
-                    .padding(horizontal = 7.dp, vertical = 3.dp)
-            ) { Text("EQUIPPED", color = Color(0xFF0A1F12), style = MaterialTheme.typography.labelSmall) }
-        }
+        Text(
+            item.name,
+            color = if (equipped) Color(0xFF9BE8B8) else Color(0xFFE6DCF5),
+            style = MaterialTheme.typography.labelSmall,
+            textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+            maxLines = 1,
+            overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+            modifier = Modifier.fillMaxWidth().padding(top = 5.dp)
+        )
     }
 }
 
@@ -274,7 +279,7 @@ private fun EmptyInventoryState(onBrowseStore: () -> Unit) {
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center
     ) {
-        Text("🎒", style = MaterialTheme.typography.displayMedium)
+        Icon(imageVector = Icons.Filled.Inventory2, contentDescription = null, tint = Color(0xFFC9A4FF), modifier = Modifier.size(52.dp))
         Text("No items yet", color = GoldLt, style = MaterialTheme.typography.titleLarge, modifier = Modifier.padding(top = 12.dp))
         Text(
             "Items you buy from the Store will show up here.",
@@ -364,7 +369,7 @@ fun OrdersScreen(onBrowseStore: () -> Unit = {}, onBack: () -> Unit = {}) {
                 modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(top = 40.dp),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
-                Text("🧾", style = MaterialTheme.typography.displayMedium)
+                Icon(imageVector = Icons.Filled.ReceiptLong, contentDescription = null, tint = Color(0xFFC9A4FF), modifier = Modifier.size(52.dp))
                 Text("No purchases yet", color = GoldLt, style = MaterialTheme.typography.titleLarge, modifier = Modifier.padding(top = 12.dp))
                 Text(
                     "Items you buy from the store will show up here with the date and price.",
@@ -479,14 +484,13 @@ private fun PurchaseItemRow(r: ReceiptDto, line: ReceiptItemDto, catalog: Map<St
             contentAlignment = Alignment.Center
         ) {
             when {
-                isTopup -> Text("💎", style = MaterialTheme.typography.titleMedium)
+                isTopup -> Icon(imageVector = Icons.Filled.Diamond, contentDescription = null, tint = Color(0xFF8FB3FF), modifier = Modifier.size(22.dp))
                 catalogItem != null -> when (val thumb = storeThumbFor(catalogItem)) {
                     is com.filipinodama.app.data.economy.StoreThumb.Image -> coil.compose.AsyncImage(model = thumb.url, contentDescription = null, modifier = Modifier.size(46.dp))
                     is com.filipinodama.app.data.economy.StoreThumb.Portrait -> coil.compose.AsyncImage(model = thumb.url, contentDescription = null, modifier = Modifier.size(46.dp))
-                    is com.filipinodama.app.data.economy.StoreThumb.Emoji -> Text(thumb.glyph, style = MaterialTheme.typography.titleLarge)
                     com.filipinodama.app.data.economy.StoreThumb.Disc -> Box(modifier = Modifier.size(38.dp).background(Color(0xFFA0303A), androidx.compose.foundation.shape.CircleShape))
                 }
-                else -> Text("🧾", style = MaterialTheme.typography.titleMedium)
+                else -> Icon(imageVector = Icons.Filled.ReceiptLong, contentDescription = null, tint = Color(0xFFC9A4FF), modifier = Modifier.size(22.dp))
             }
         }
         Column(modifier = Modifier.weight(1f)) {

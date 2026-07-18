@@ -60,6 +60,14 @@ const schema = z.object({
   S3_SECRET_KEY: z.string().default(""),
 
   WEB_ORIGIN: z.string().default("http://localhost:5173"),
+
+  // Google Play Developer API — auto-syncs ANDROID_LATEST_VERSION (the update
+  // nudge's "latest live versionCode") from the actual PRODUCTION track on Play,
+  // so it's never a manual admin step and never nudges toward an unreleased
+  // build. PLAY_SERVICE_ACCOUNT_JSON = the full service-account key JSON (one
+  // line). Empty ⇒ the sync is DISABLED (the config value stays as set).
+  PLAY_SERVICE_ACCOUNT_JSON: z.string().default(""),
+  PLAY_PACKAGE_NAME: z.string().default("com.filipinodama.app"),
 });
 
 export const env = schema.parse(process.env);

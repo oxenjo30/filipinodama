@@ -70,17 +70,10 @@ class StoreAssetsTest {
         assertTrue(thumb.url.endsWith("/assets/avatars/sovereign.png"))
     }
 
-    @Test
-    fun `emote thumb reads the previewKey glyph over the id fallback map`() {
-        val thumb = storeThumbFor(item(type = "EMOTE", assetKey = "x", previewKey = "emote:🔥", id = "victory")) as StoreThumb.Emoji
-        assertEquals("🔥", thumb.glyph)
-    }
-
-    @Test
-    fun `emote thumb falls back to the per-id map when previewKey is absent`() {
-        val thumb = storeThumbFor(item(type = "EMOTE", assetKey = "x", previewKey = null, id = "victory")) as StoreThumb.Emoji
-        assertEquals("👑", thumb.glyph)
-    }
+    // EMOTE thumbnail tests removed 2026-07-18 — EMOTE store items and the
+    // StoreThumb.Emoji type were removed (owner: no Emote store/inventory
+    // category, no emoji glyphs on Store/Inventory). storeThumbFor() no longer
+    // has an EMOTE/emoji branch.
 
     @Test
     fun `currency is diamonds only when priceDiamonds is set`() {

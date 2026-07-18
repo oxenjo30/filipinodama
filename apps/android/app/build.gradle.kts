@@ -204,8 +204,18 @@ android {
         // guild) gained a border so they read against the dark background. (4)
         // Tapping an avatar in the DM header or a guild-chat message opens that
         // player's profile.
-        versionCode = 32
-        versionName = "0.1.32"
+        // 33 = cosmetics + inventory corrections. The DEFAULT profile frame is now
+        // the ROUND "laurel" (the v32 "filigree" default was a SQUARE border —
+        // wrong for round avatars); the seed re-points frameless + old-square
+        // users to laurel and hides it from the store (it's free now). The EMOTE
+        // category is removed from the Store + Inventory (the in-match emote wheel
+        // stays, on its own fixed set); no emoji glyphs remain on the Store or
+        // Inventory pages (replaced with Material icons). The Inventory grid is
+        // reworked to a denser 3-column tap-to-equip tile layout (the old cards
+        // were oversized on phones). Server also auto-syncs ANDROID_LATEST_VERSION
+        // from the live Play production track (update nudge, no manual admin step).
+        versionCode = 33
+        versionName = "0.1.33"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 

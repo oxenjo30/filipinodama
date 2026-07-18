@@ -23,7 +23,10 @@ const STORE = [
   // ── free defaults (granted to every new player) ──
   { id: "board-marble-default", type: "BOARD", name: "Marble & Gold", description: "The classic default board.", assetKey: "board-marble.png", previewKey: "board:board-marble.png", priceGold: 0, sortOrder: 0 },
   { id: "skin-classic", type: "SKIN", name: "Classic", description: "The classic default pieces.", assetKey: "classic", previewKey: "skin:classic", priceGold: 0, sortOrder: 1 },
-  { id: "emote-resolve", type: "EMOTE", name: "Warrior's Resolve", assetKey: "victory", previewKey: "emote:💪", priceGold: 0, sortOrder: 2 },
+  // EMOTE items removed 2026-07-18 (owner: no Emote category in Store/Inventory).
+  // The in-MATCH emote wheel stays, backed by a fixed built-in set on the client
+  // (it no longer depends on owned EMOTE inventory items). Existing EMOTE rows in
+  // prod are deactivated by the sweep in main() below.
 
   // ── FREE starter avatars (priceGold:0 → auto-granted to every new player via
   //    grantDefaults; shown in the profile Avatar picker). These are the ONLY
@@ -76,13 +79,15 @@ const STORE = [
 
   // ── Profile Frames ──
   // FREE house/default frame every player starts with (granted + equipped by
-  // grantDefaults, like the default board/skin/avatar). Its art already exists
-  // on web + Android (frames/filigree.webp, a recognized key in both FRAMES /
-  // NAMED_FRAMES) and it was never a purchasable item — so it's the natural
-  // "everyone has a frame" default. sortOrder 49 so it sits just before the
-  // paid frames. Owner directive 2026-07-18.
-  { id: "filigree", type: "FRAME", name: "Filigree Frame", description: "The classic default profile frame.", assetKey: "frames/filigree.webp", previewKey: "frame:frames/filigree.webp", priceGold: 0, sortOrder: 49 },
-  { id: "laurel", type: "FRAME", name: "Golden Laurel Frame", assetKey: "laurel.png", previewKey: "frame:laurel.png", priceGold: 2200, sortOrder: 50 },
+  // grantDefaults). Golden Laurel is a ROUND gold laurel-wreath ring that fits
+  // the round avatars everywhere in the app (the previous "filigree" default was
+  // a SQUARE ornamental border — wrong shape — and has been removed). Because
+  // it's now the free default, it is HIDDEN from the store (see the store list
+  // filter in economy.ts / StoreScreen — DEFAULT_FRAME_ID). priceGold 0 +
+  // sortOrder 49 so grantDefaults' free-item query picks it up. Owner directive
+  // 2026-07-18. Players who previously BOUGHT laurel keep it (owned); no refund
+  // needed since it's now free for everyone anyway.
+  { id: "laurel", type: "FRAME", name: "Golden Laurel Frame", description: "The classic default profile frame.", assetKey: "laurel.png", previewKey: "frame:laurel.png", priceGold: 0, sortOrder: 49 },
   { id: "silver", type: "FRAME", name: "Silver Knight Frame", assetKey: "frames/silver.png", previewKey: "frame:frames/silver.png", priceGold: 2500, salePrice: 1500, onSale: true, sortOrder: 51 },
   { id: "obsidianf", type: "FRAME", name: "Obsidian Sovereign Frame", assetKey: "frames/obsidian.png", previewKey: "frame:frames/obsidian.png", priceDiamonds: 340, tag: "PREMIUM", isPremium: true, sortOrder: 52 },
   // NEW premium frames (Meshy-generated; transparent-center rings at frames/<key>.png)
@@ -92,24 +97,13 @@ const STORE = [
   { id: "sampaguitaf", type: "FRAME", name: "Sampaguita Bloom Frame", assetKey: "frames/sampaguita.png", previewKey: "frame:frames/sampaguita.png", priceGold: 2200, sortOrder: 56 },
   { id: "capizf", type: "FRAME", name: "Capiz Pearl Frame", assetKey: "frames/capiz.png", previewKey: "frame:frames/capiz.png", priceDiamonds: 300, tag: "NEW", isPremium: true, sortOrder: 57 },
 
-  // ── Emotes ──
-  { id: "emote-wave", type: "EMOTE", name: "Wave", assetKey: "emote", previewKey: "emote:👋", priceGold: 0, sortOrder: 40 },
-  { id: "emote-laugh", type: "EMOTE", name: "Laugh", assetKey: "emote", previewKey: "emote:😄", priceGold: 0, sortOrder: 41 },
-  { id: "emote-wow", type: "EMOTE", name: "Wow", assetKey: "emote", previewKey: "emote:😮", priceGold: 0, sortOrder: 42 },
-  { id: "emote-cry", type: "EMOTE", name: "Cry", assetKey: "emote", previewKey: "emote:😢", priceGold: 0, sortOrder: 43 },
-  { id: "emote-thumbsup", type: "EMOTE", name: "Thumbs Up", assetKey: "emote", previewKey: "emote:👍", priceGold: 0, sortOrder: 44 },
-  { id: "emote-fire", type: "EMOTE", name: "Fire", assetKey: "emote", previewKey: "emote:🔥", priceGold: 0, sortOrder: 45 },
-  { id: "emote-cool", type: "EMOTE", name: "Cool", assetKey: "emote", previewKey: "emote:😎", priceGold: 0, sortOrder: 46 },
-  { id: "emote-handshake", type: "EMOTE", name: "Good Game", assetKey: "emote", previewKey: "emote:🤝", priceGold: 0, sortOrder: 47 },
-  { id: "emote-salute", type: "EMOTE", name: "Salute", assetKey: "emote", previewKey: "emote:🫡", priceGold: 0, sortOrder: 48 },
-  { id: "emote-clap", type: "EMOTE", name: "Clap", assetKey: "emote", previewKey: "emote:👏", priceGold: 0, sortOrder: 49 },
-  { id: "emote-pray", type: "EMOTE", name: "Respect", assetKey: "emote", previewKey: "emote:🙏", priceGold: 0, sortOrder: 50 },
-  { id: "victory", type: "EMOTE", name: "Victory Royale", assetKey: "victory", previewKey: "emote:👑", priceGold: 1500, sortOrder: 60 },
-  { id: "focused", type: "EMOTE", name: "Focused", assetKey: "focused", previewKey: "emote:🎯", priceGold: 2000, salePrice: 1200, onSale: true, sortOrder: 61 },
+  // ── Emotes REMOVED 2026-07-18 (owner: no Emote store/inventory category).
+  //    The in-match emote wheel uses a fixed built-in set on the client now. ──
 
-  // ── Bundles ──
-  { id: "heritage", type: "BUNDLE", name: "Royal Heritage Pack", assetKey: "me-banner.png", previewKey: "bundle:heritage", priceDiamonds: 1200, tag: "VALUE", isPremium: true, bundleItems: ["ebony", "crimsonskin", "laurel", "victory"], featured: true, sortOrder: 70 },
-  { id: "lunar", type: "BUNDLE", name: "Lunar New Year Bundle", assetKey: "me-banner.png", previewKey: "bundle:lunar", priceDiamonds: 1080, tag: "-35%", isPremium: true, bundleItems: ["jadeskin", "marble", "focused"], sortOrder: 71 },
+  // ── Bundles ── (emote members dropped with the Emote category: heritage's
+  //    "victory" and lunar's "focused" are removed from their bundleItems).
+  { id: "heritage", type: "BUNDLE", name: "Royal Heritage Pack", assetKey: "me-banner.png", previewKey: "bundle:heritage", priceDiamonds: 1200, tag: "VALUE", isPremium: true, bundleItems: ["ebony", "crimsonskin", "laurel"], featured: true, sortOrder: 70 },
+  { id: "lunar", type: "BUNDLE", name: "Lunar New Year Bundle", assetKey: "me-banner.png", previewKey: "bundle:lunar", priceDiamonds: 1080, tag: "-35%", isPremium: true, bundleItems: ["jadeskin", "marble"], sortOrder: 71 },
 
   // ── Season Pass ── active:false so it is NOT sold via the generic /store/purchase
   // path (which wouldn't set hasPass). It exists only as the price source for
@@ -184,6 +178,21 @@ async function main() {
     await prisma.storeItem.upsert({ where: { id: it.id }, update: it as any, create: it as any });
   }
 
+  // Deactivate any store items that used to exist but were REMOVED from the seed
+  // (2026-07-18: the whole EMOTE category + the square "filigree" default frame).
+  // Setting active:false hides them from the store + inventory without deleting
+  // history/inventory rows (a hard delete would orphan InventoryItem FKs). Only
+  // touches rows whose id is not in the current catalog. Idempotent.
+  const currentIds = STORE.map((s) => s.id);
+  const deactivated = await prisma.storeItem.updateMany({
+    where: { id: { notIn: currentIds }, active: true },
+    data: { active: false },
+  });
+  if (deactivated.count > 0) {
+    // eslint-disable-next-line no-console
+    console.log(`Deactivated ${deactivated.count} removed store items (emotes + old default frame).`);
+  }
+
   // Backfill the FREE starter avatars to EXISTING users. grantDefaults only runs
   // at signup, so users created before these avatars existed wouldn't own them
   // (their Avatar picker would be empty). Grant each free avatar to every user's
@@ -207,16 +216,21 @@ async function main() {
     console.log(`Backfilled ${freeAvatarIds.length} free avatars to ${users.length} users.`);
   }
 
-  // Backfill the DEFAULT "filigree" frame to EXISTING users (owner directive
+  // Backfill the DEFAULT round "laurel" frame to EXISTING users (owner directive
   // 2026-07-18: every player gets a house frame so no avatar is ever bare).
   // grantDefaults only runs at signup, so pre-existing users have frameId = null.
-  // Grant the frame to inventory (equipped) AND set frameId — but ONLY for users
-  // who don't already have a frame, so we never overwrite a paid/chosen frame.
-  // Idempotent: re-running the seed skips anyone who already has frameId set.
+  // We target TWO groups: (a) users with NO frame, and (b) users the EARLIER
+  // seed run gave the wrong SQUARE "filigree" default — those must be moved to
+  // the correct round laurel. We do NOT touch anyone on a DIFFERENT frame (a
+  // paid/chosen one). Idempotent: re-running skips users already on laurel.
   {
-    const DEFAULT_FRAME_ID = "filigree";
-    const frameless = await prisma.user.findMany({ where: { frameId: null }, select: { id: true } });
-    for (const u of frameless) {
+    const DEFAULT_FRAME_ID = "laurel";
+    const OLD_SQUARE_DEFAULT = "filigree";
+    const toFix = await prisma.user.findMany({
+      where: { OR: [{ frameId: null }, { frameId: OLD_SQUARE_DEFAULT }] },
+      select: { id: true },
+    });
+    for (const u of toFix) {
       await prisma.inventoryItem.upsert({
         where: { userId_itemId: { userId: u.id, itemId: DEFAULT_FRAME_ID } },
         update: { equipped: true },
@@ -225,7 +239,7 @@ async function main() {
       await prisma.user.update({ where: { id: u.id }, data: { frameId: DEFAULT_FRAME_ID } });
     }
     // eslint-disable-next-line no-console
-    console.log(`Backfilled the default frame to ${frameless.length} frameless users.`);
+    console.log(`Backfilled the default (laurel) frame to ${toFix.length} users (frameless + old-square-default).`);
   }
 
   for (const q of QUESTS) {

@@ -26,7 +26,12 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.ShoppingCart
+import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -82,6 +87,12 @@ import com.filipinodama.app.ui.theme.Ink
 import com.filipinodama.app.ui.theme.Ink2
 import com.filipinodama.app.ui.theme.Panel
 import kotlinx.coroutines.launch
+
+// Owner directive 2026-07-18: "laurel" is now the FREE default profile frame
+// granted to every player at signup, so it must NOT appear as a browsable
+// store item. Excluded from the display list (and from the tab set) below;
+// purchase/equip logic is untouched — this only hides it from browsing.
+private const val DEFAULT_FRAME_ID = "laurel"
 
 /**
  * Store — mobile-screen-inventory.md SCREEN 14, EARNED-CURRENCY ONLY per the
@@ -223,16 +234,21 @@ fun StoreScreen(
         }
     }
 
-    val presentTypes = remember(items) {
-        val set = items?.map { it.type }?.toSet() ?: emptySet()
+    // The browsable catalog with the free default frame ("laurel") removed, so
+    // it never shows as a store item and can't leave an all-laurel FRAME tab
+    // empty. Everything the UI displays (tabs, grid, deals) derives from this.
+    val displayItems = remember(items) { items?.filter { it.id != DEFAULT_FRAME_ID } }
+
+    val presentTypes = remember(displayItems) {
+        val set = displayItems?.map { it.type }?.toSet() ?: emptySet()
         STORE_TYPE_ORDER.filter { it in set }
     }
     val isFeatured = tab == "All"
-    val grid = remember(items, tab) {
-        val list = items ?: emptyList()
+    val grid = remember(displayItems, tab) {
+        val list = displayItems ?: emptyList()
         if (isFeatured) list.filter { it.featured } else list.filter { STORE_TYPE_META[it.type]?.label == tab }
     }
-    val deals = remember(items) { (items ?: emptyList()).filter { storeItemIsDeal(it) } }
+    val deals = remember(displayItems) { (displayItems ?: emptyList()).filter { storeItemIsDeal(it) } }
 
     fun doBuy(item: StoreItemDto) {
         // Pre-empt: an anonymous user can't own anything — guide them to sign in
@@ -295,7 +311,7 @@ fun StoreScreen(
                     BalancePill(icon = CurrencyIconKind.GEM, value = me?.diamonds ?: 0, color = Color(0xFF8FB3FF), tint = Color(0xFF5A96FF))
                 }
                 // Cart button (mockup line 795) — REPLACES the former
-                // Inventory/backpack (🎒) affordance in the Store top bar.
+                // Inventory/backpack affordance in the Store top bar.
                 // Inventory remains reachable via Profile -> Inventory
                 // (onOpenInventory param kept for that caller); it is simply
                 // no longer surfaced here, matching the mockup exactly.
@@ -306,7 +322,12 @@ fun StoreScreen(
                         .border(1.dp, Color(0x47E8B84B), CircleShape)
                         .padding(10.dp)
                 ) {
-                    Text("🛒", color = Color(0xFFF0CF72), style = MaterialTheme.typography.labelLarge)
+                    Icon(
+                        imageVector = Icons.Filled.ShoppingCart,
+                        contentDescription = "Cart",
+                        tint = Color(0xFFF0CF72),
+                        modifier = Modifier.size(20.dp)
+                    )
                     if (cart.isNotEmpty()) {
                         Box(
                             modifier = Modifier
@@ -522,9 +543,6 @@ private fun StoreThumbView(thumb: StoreThumb, size: androidx.compose.ui.unit.Dp)
         StoreThumb.Disc -> Box(
             modifier = Modifier.size(size).background(Color(0xFFA0303A), CircleShape)
         )
-        is StoreThumb.Emoji -> Box(modifier = Modifier.size(size), contentAlignment = Alignment.Center) {
-            Text(thumb.glyph, style = MaterialTheme.typography.headlineMedium)
-        }
     }
 }
 
@@ -598,7 +616,7 @@ private fun StoreItemCard(
         )
         Text(meta?.sub ?: "", color = Ink2, style = MaterialTheme.typography.labelSmall, modifier = Modifier.padding(top = 2.dp, bottom = 6.dp))
 
-        // Visible "Preview" affordance — matches the web card's 🔍 Preview link
+        // Visible "Preview" affordance — matches the web card's Preview link
         // (StorePage.tsx). Without it the tap-to-preview on the image above is
         // invisible, so users don't know a preview exists (owner-reported).
         PreviewLabel(onClick = onPreviewOrBuy)
@@ -692,9 +710,11 @@ private fun BuyButton(label: String = "Buy", modifier: Modifier = Modifier, onCl
 }
 
 /**
- * "🔍 Preview" text link under a store card, mirroring the web card's Preview
- * affordance (StorePage.tsx). Makes the tap-to-preview on the item art
+ * Search-icon "Preview" text link under a store card, mirroring the web card's
+ * Preview affordance (StorePage.tsx). Makes the tap-to-preview on the item art
  * discoverable — the art itself is also tappable, but nothing signalled it.
+ * (Uses a Material Search icon, not an emoji glyph — owner directive: no emoji
+ * on the Store page.)
  */
 @Composable
 private fun PreviewLabel(onClick: () -> Unit) {
@@ -705,7 +725,12 @@ private fun PreviewLabel(onClick: () -> Unit) {
         horizontalArrangement = Arrangement.spacedBy(4.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Text("🔍", style = MaterialTheme.typography.labelSmall)
+        Icon(
+            imageVector = Icons.Filled.Search,
+            contentDescription = null,
+            tint = Color(0xFFF0CF72),
+            modifier = Modifier.size(13.dp)
+        )
         Text(
             "PREVIEW",
             color = Color(0xFFF0CF72),
@@ -1038,7 +1063,7 @@ private fun PurchaseErrorOverlay(message: String, onDismiss: () -> Unit) {
             modifier = Modifier.royalDialogPanel().padding(28.dp).clickable(enabled = false) {},
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            Text("⚠", style = MaterialTheme.typography.displaySmall)
+            Icon(imageVector = Icons.Filled.Warning, contentDescription = null, tint = Color(0xFFFF9AA8), modifier = Modifier.size(44.dp))
             Text("Purchase Failed", color = GoldLt, style = MaterialTheme.typography.titleLarge, modifier = Modifier.padding(top = 8.dp))
             Text(message, color = Ink, style = MaterialTheme.typography.bodyMedium, textAlign = androidx.compose.ui.text.style.TextAlign.Center, modifier = Modifier.padding(top = 4.dp, bottom = 16.dp))
             Box(
