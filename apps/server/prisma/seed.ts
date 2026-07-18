@@ -75,6 +75,13 @@ const STORE = [
   { id: "panday", type: "AVATAR", name: "Panday Smith-King", assetKey: "avatars/panday.png", previewKey: "avatar:avatars/panday.png", priceGold: 3000, sortOrder: 45 },
 
   // ── Profile Frames ──
+  // FREE house/default frame every player starts with (granted + equipped by
+  // grantDefaults, like the default board/skin/avatar). Its art already exists
+  // on web + Android (frames/filigree.webp, a recognized key in both FRAMES /
+  // NAMED_FRAMES) and it was never a purchasable item — so it's the natural
+  // "everyone has a frame" default. sortOrder 49 so it sits just before the
+  // paid frames. Owner directive 2026-07-18.
+  { id: "filigree", type: "FRAME", name: "Filigree Frame", description: "The classic default profile frame.", assetKey: "frames/filigree.webp", previewKey: "frame:frames/filigree.webp", priceGold: 0, sortOrder: 49 },
   { id: "laurel", type: "FRAME", name: "Golden Laurel Frame", assetKey: "laurel.png", previewKey: "frame:laurel.png", priceGold: 2200, sortOrder: 50 },
   { id: "silver", type: "FRAME", name: "Silver Knight Frame", assetKey: "frames/silver.png", previewKey: "frame:frames/silver.png", priceGold: 2500, salePrice: 1500, onSale: true, sortOrder: 51 },
   { id: "obsidianf", type: "FRAME", name: "Obsidian Sovereign Frame", assetKey: "frames/obsidian.png", previewKey: "frame:frames/obsidian.png", priceDiamonds: 340, tag: "PREMIUM", isPremium: true, sortOrder: 52 },
@@ -199,6 +206,28 @@ async function main() {
     // eslint-disable-next-line no-console
     console.log(`Backfilled ${freeAvatarIds.length} free avatars to ${users.length} users.`);
   }
+
+  // Backfill the DEFAULT "filigree" frame to EXISTING users (owner directive
+  // 2026-07-18: every player gets a house frame so no avatar is ever bare).
+  // grantDefaults only runs at signup, so pre-existing users have frameId = null.
+  // Grant the frame to inventory (equipped) AND set frameId — but ONLY for users
+  // who don't already have a frame, so we never overwrite a paid/chosen frame.
+  // Idempotent: re-running the seed skips anyone who already has frameId set.
+  {
+    const DEFAULT_FRAME_ID = "filigree";
+    const frameless = await prisma.user.findMany({ where: { frameId: null }, select: { id: true } });
+    for (const u of frameless) {
+      await prisma.inventoryItem.upsert({
+        where: { userId_itemId: { userId: u.id, itemId: DEFAULT_FRAME_ID } },
+        update: { equipped: true },
+        create: { userId: u.id, itemId: DEFAULT_FRAME_ID, equipped: true },
+      });
+      await prisma.user.update({ where: { id: u.id }, data: { frameId: DEFAULT_FRAME_ID } });
+    }
+    // eslint-disable-next-line no-console
+    console.log(`Backfilled the default frame to ${frameless.length} frameless users.`);
+  }
+
   for (const q of QUESTS) {
     await prisma.quest.upsert({ where: { id: q.id }, update: q, create: q });
   }

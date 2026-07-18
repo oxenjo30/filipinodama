@@ -118,6 +118,10 @@ fun OfflineGameScreen(difficulty: String, onChangeDifficulty: () -> Unit, onHome
             onSquareClick = { GameRepository.onSquareClick(it) },
             flip = false,
             interactive = myTurn,
+            // Your equipped board + piece skin apply here (you play RED). The AI
+            // opponent (blue) keeps the classic default pieces.
+            boardId = me?.equippedBoard,
+            redSkinId = me?.equippedSkin,
             modifier = Modifier.padding(top = 10.dp)
         )
 

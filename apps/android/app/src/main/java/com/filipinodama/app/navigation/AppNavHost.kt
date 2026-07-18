@@ -490,7 +490,11 @@ fun AppNavHost() {
                 arguments = listOf(navArgument("userId") { type = NavType.StringType })
             ) { backStackEntry ->
                 val userId = backStackEntry.arguments?.getString("userId") ?: ""
-                DmThreadScreen(userId = userId, onBack = { navController.popBackStack() })
+                DmThreadScreen(
+                    userId = userId,
+                    onBack = { navController.popBackStack() },
+                    onOpenProfile = { id -> navController.navigate(AppDestinations.publicProfile(id)) }
+                )
             }
 
             // ---- Phase 6a: profile + social (replay viewer, public profiles, leaderboard) ----

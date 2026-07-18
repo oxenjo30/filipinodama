@@ -65,18 +65,22 @@ fun BoardView(
     onSquareClick: (Square) -> Unit,
     flip: Boolean = false,
     interactive: Boolean = true,
+    // Equipped cosmetics (item ids). boardId → board theme; red/blueSkinId → each
+    // colour's piece skin (per-colour so online, each player sees their own skin).
+    // Null = the default marble board / classic pieces (the prior hardcoded look).
+    boardId: String? = null,
+    redSkinId: String? = null,
+    blueSkinId: String? = null,
     modifier: Modifier = Modifier
 ) {
-    // Gold-bevel frame — matches web's marble surround:
-    // linear-gradient(145deg,#f5d88a,#d3a63c,#8a5a1e).
+    val theme = boardThemeFor(boardId)
+    // Gold-bevel frame — colour comes from the equipped board theme.
     Box(
         modifier = modifier
             .fillMaxWidth()
             .aspectRatio(1f)
             .background(
-                brush = Brush.linearGradient(
-                    listOf(Color(0xFFF5D88A), Color(0xFFD3A63C), Color(0xFF8A5A1E))
-                ),
+                brush = Brush.linearGradient(theme.frame),
                 shape = RoundedCornerShape(12.dp)
             )
             .padding(BOARD_FRAME_PADDING)
@@ -103,7 +107,10 @@ fun BoardView(
 
                         BoardSquare(
                             dark = dark,
+                            theme = theme,
                             piece = piece?.let { PieceRender(it.color, it.king) },
+                            redSkinId = redSkinId,
+                            blueSkinId = blueSkinId,
                             selected = isSelected,
                             moveTarget = isMoveTarget,
                             captureTarget = isCaptureTarget,
@@ -122,25 +129,13 @@ private val BOARD_FRAME_PADDING = 10.dp
 
 data class PieceRender(val color: String, val king: Boolean)
 
-/**
- * Procedural marble square gradients, ported verbatim from the web's
- * `MARBLE` constant (apps/web/src/components/Board.tsx) so the default
- * board matches the live web app: a radial gradient anchored at the
- * top-left of each square, light 25% highlight fading to a darker base.
- */
-private val MarbleDark = Brush.radialGradient(
-    colors = listOf(Color(0xFF454B59), Color(0xFF2A2F3B), Color(0xFF181B23)),
-    radius = 420f
-)
-private val MarbleLight = Brush.radialGradient(
-    colors = listOf(Color(0xFFFAF6EC), Color(0xFFECE5D5), Color(0xFFD4CBB6)),
-    radius = 420f
-)
-
 @Composable
 private fun BoardSquare(
     dark: Boolean,
+    theme: BoardTheme,
     piece: PieceRender?,
+    redSkinId: String?,
+    blueSkinId: String?,
     selected: Boolean,
     moveTarget: Boolean,
     captureTarget: Boolean,
@@ -148,7 +143,12 @@ private fun BoardSquare(
     onClick: (() -> Unit)?,
     modifier: Modifier = Modifier
 ) {
-    val bg = if (dark) MarbleDark else MarbleLight
+    // Square gradient comes from the equipped board theme (radial highlight
+    // anchored top-left, matching the web MARBLE/IMAGE_THEMES look).
+    val bg = Brush.radialGradient(
+        colors = if (dark) theme.darkSquare else theme.lightSquare,
+        radius = 420f
+    )
     Box(
         modifier = modifier
             .background(bg)
@@ -160,7 +160,13 @@ private fun BoardSquare(
         // fills the whole weighted cell so the effective hit target is the
         // full square, never smaller than the rendered cell itself.
         if (piece != null) {
-            PieceDisc(piece = piece, ringGold = selected)
+            // Resolve the piece palette from the equipped skin for THIS piece's
+            // colour (red uses redSkinId, blue uses blueSkinId).
+            val palette = piecePaletteFor(
+                if (piece.color == PieceColors.RED) redSkinId else blueSkinId,
+                piece.color
+            )
+            PieceDisc(piece = piece, palette = palette, ringGold = selected)
         } else if (moveTarget) {
             Box(
                 modifier = Modifier
@@ -183,19 +189,10 @@ private fun BoardSquare(
     }
 }
 
-/** Glossy face/rim palette per piece color, ported from apps/web/src/components/Piece.tsx FACE. */
-private data class PiecePalette(val faceColors: List<Color>, val rim: Color, val ringLo: Color)
-
-private val RedPalette = PiecePalette(
-    faceColors = listOf(Color(0xFFFF9AA0), Color(0xFFE5434F), Color(0xFFB3222E), Color(0xFF7A1420)),
-    rim = Color(0xFF5C0F18),
-    ringLo = Color(0xFF781422).copy(alpha = 0.85f)
-)
-private val BluePalette = PiecePalette(
-    faceColors = listOf(Color(0xFFA3C8FF), Color(0xFF3F79D6), Color(0xFF255AA8), Color(0xFF153A72)),
-    rim = Color(0xFF0F2B57),
-    ringLo = Color(0xFF142D5F).copy(alpha = 0.85f)
-)
+/** Glossy face/rim palette per piece color. The concrete palettes (default +
+ *  each equippable skin) live in BoardCosmetics.kt so an equipped skin changes
+ *  the piece look. */
+data class PiecePalette(val faceColors: List<Color>, val rim: Color, val ringLo: Color)
 
 /**
  * A single glossy Dama disc, ported from the web's `Piece.tsx` CSS layering:
@@ -206,8 +203,8 @@ private val BluePalette = PiecePalette(
  * missing before this pass.
  */
 @Composable
-private fun PieceDisc(piece: PieceRender, ringGold: Boolean) {
-    val pal = if (piece.color == PieceColors.RED) RedPalette else BluePalette
+private fun PieceDisc(piece: PieceRender, palette: PiecePalette, ringGold: Boolean) {
+    val pal = palette
     Box(
         modifier = Modifier
             .fillMaxWidth(0.82f)

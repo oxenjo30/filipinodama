@@ -18,6 +18,7 @@ data class RoomMemberDto(
     val userId: String,
     val name: String,
     val avatarUrl: String? = null,
+    val frameId: String? = null,
     val tag: String = ""
 )
 
@@ -90,6 +91,7 @@ data class LiveMatchPlayerDto(
     val displayName: String,
     val tag: String = "",
     val avatarUrl: String? = null,
+    val frameId: String? = null,
     val trophies: Int = 0
 )
 

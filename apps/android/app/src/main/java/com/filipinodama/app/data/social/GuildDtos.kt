@@ -200,7 +200,8 @@ data class GuildMemberRemovedResponse(
 data class GuildChatAuthorDto(
     val id: String,
     val displayName: String,
-    val avatarUrl: String? = null
+    val avatarUrl: String? = null,
+    val frameId: String? = null
 )
 
 @Serializable

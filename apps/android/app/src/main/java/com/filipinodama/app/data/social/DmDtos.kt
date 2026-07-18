@@ -30,7 +30,8 @@ data class DmUserDto(
     val id: String,
     val displayName: String,
     val tag: String? = null,
-    val avatarUrl: String? = null
+    val avatarUrl: String? = null,
+    val frameId: String? = null
 )
 
 /** One row in the conversation list (GET /api/dm). */

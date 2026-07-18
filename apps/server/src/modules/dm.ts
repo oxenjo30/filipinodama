@@ -44,7 +44,7 @@ export async function dmRoutes(app: FastifyInstance) {
         const [other, last, unread] = await Promise.all([
           prisma.user.findUnique({
             where: { id: otherId },
-            select: { id: true, displayName: true, tag: true, avatarUrl: true },
+            select: { id: true, displayName: true, tag: true, avatarUrl: true, frameId: true },
           }),
           prisma.message.findFirst({
             where: { channelId: m.channelId },
@@ -91,7 +91,7 @@ export async function dmRoutes(app: FastifyInstance) {
     const [messages] = await Promise.all([loadHistory(channelId), markRead(channelId, me)]);
     const user = await prisma.user.findUnique({
       where: { id: other },
-      select: { id: true, displayName: true, tag: true, avatarUrl: true },
+      select: { id: true, displayName: true, tag: true, avatarUrl: true, frameId: true },
     });
     return ok({ channelId, user, messages });
   });

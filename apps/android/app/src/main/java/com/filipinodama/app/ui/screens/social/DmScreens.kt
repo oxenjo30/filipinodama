@@ -1,6 +1,7 @@
 package com.filipinodama.app.ui.screens.social
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -137,7 +138,7 @@ private fun ConversationRow(conversation: DmConversationDto, online: Boolean, on
         verticalAlignment = Alignment.CenterVertically
     ) {
         Box {
-            AvatarView(avatarUrl = conversation.user.avatarUrl, size = 42.dp)
+            AvatarView(avatarUrl = conversation.user.avatarUrl, frameId = conversation.user.frameId, size = 42.dp)
             Box(modifier = Modifier.align(Alignment.BottomEnd).size(12.dp).background(if (online) Green else Ink2, CircleShape))
         }
         Column(modifier = Modifier.weight(1f).padding(start = 12.dp)) {
@@ -168,7 +169,7 @@ private fun ConversationRow(conversation: DmConversationDto, online: Boolean, on
  * per-bubble Report button.
  */
 @Composable
-fun DmThreadScreen(userId: String, onBack: () -> Unit) {
+fun DmThreadScreen(userId: String, onBack: () -> Unit, onOpenProfile: (String) -> Unit = {}) {
     val me = AuthRepository.state.collectAsState().value.user
     val dmState by DmRepository.state.collectAsState()
     val onlineSet by PresenceRepository.online.collectAsState()
@@ -203,7 +204,8 @@ fun DmThreadScreen(userId: String, onBack: () -> Unit) {
     Column(modifier = Modifier.fillMaxSize().screenInsetsTopOnly().background(MaterialTheme.colorScheme.background)) {
         Row(modifier = Modifier.fillMaxWidth().padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
             com.filipinodama.app.ui.components.MockupBackButton(onClick = onBack, modifier = Modifier.padding(end = 12.dp))
-            if (openUser != null) AvatarView(avatarUrl = openUser.avatarUrl, size = 38.dp)
+            // Tap the avatar to open this person's profile (owner request).
+            if (openUser != null) AvatarView(avatarUrl = openUser.avatarUrl, frameId = openUser.frameId, size = 38.dp, onClick = { onOpenProfile(openUser.id) })
             Column(modifier = Modifier.weight(1f).padding(start = 10.dp)) {
                 Text(openUser?.displayName ?: if (dmState.loadingThread) "Loading…" else "Conversation", color = GoldLt, style = MaterialTheme.typography.titleMedium)
                 if (openUser != null) {
@@ -348,11 +350,20 @@ private fun MessageBubble(message: DmMessageDto, mine: Boolean, onReport: () -> 
             if (!mine) {
                 Text(message.author.displayName, color = Color(0xFFC9A6FF), style = MaterialTheme.typography.labelSmall, modifier = Modifier.padding(bottom = 3.dp))
             }
+            val bubbleShape = RoundedCornerShape(topStart = 14.dp, topEnd = 14.dp, bottomStart = if (mine) 14.dp else 4.dp, bottomEnd = if (mine) 4.dp else 14.dp)
             Box(
                 modifier = Modifier
                     .background(
-                        if (mine) Gold else Color.White.copy(alpha = 0.06f),
-                        RoundedCornerShape(topStart = 14.dp, topEnd = 14.dp, bottomStart = if (mine) 14.dp else 4.dp, bottomEnd = if (mine) 4.dp else 14.dp)
+                        if (mine) Gold else Color(0xFF241833),
+                        bubbleShape
+                    )
+                    // Border to define the bubble against the dark background
+                    // (owner request): a darker gold edge on my bubble, a subtle
+                    // gold-tinted edge on incoming ones.
+                    .border(
+                        1.dp,
+                        if (mine) Color(0xFFC99A2E) else Color(0x33E8B84B),
+                        bubbleShape
                     )
                     .padding(horizontal = 13.dp, vertical = 9.dp)
             ) {

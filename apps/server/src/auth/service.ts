@@ -87,15 +87,17 @@ export async function grantDefaults(prisma: PrismaClient, userId: string) {
   let equippedBoard: string | undefined;
   let equippedSkin: string | undefined;
   let equippedAvatar: string | undefined;
+  let equippedFrame: string | undefined;
   const freeEmoteIds: string[] = [];
   for (const item of defaults) {
-    // Grant every free item to the inventory. For BOARD/SKIN the single default
-    // is auto-equipped. For AVATAR there are several free starters, so we only
-    // MARK the inventory equipped flag for the chosen default one — the others
-    // are owned-but-not-equipped, ready to pick in the profile Avatar modal.
+    // Grant every free item to the inventory. For BOARD/SKIN/FRAME the single
+    // free default is auto-equipped. For AVATAR there are several free starters,
+    // so we only MARK the inventory equipped flag for the chosen default one —
+    // the others are owned-but-not-equipped, ready to pick in the profile modal.
     const isDefaultAvatar = item.type === "AVATAR" && item.id === DEFAULT_AVATAR_KEY;
     const equipped =
-      item.type === "BOARD" || item.type === "SKIN" || item.type === "EMOTE" || isDefaultAvatar;
+      item.type === "BOARD" || item.type === "SKIN" || item.type === "FRAME" ||
+      item.type === "EMOTE" || isDefaultAvatar;
     await prisma.inventoryItem.upsert({
       where: { userId_itemId: { userId, itemId: item.id } },
       update: {},
@@ -103,11 +105,14 @@ export async function grantDefaults(prisma: PrismaClient, userId: string) {
     });
     if (item.type === "BOARD" && !equippedBoard) equippedBoard = item.id;
     if (item.type === "SKIN" && !equippedSkin) equippedSkin = item.id;
+    // The free default FRAME (owner directive 2026-07-18: every player starts
+    // with the house "filigree" frame, so no avatar is ever bare).
+    if (item.type === "FRAME" && !equippedFrame) equippedFrame = item.id;
     if (isDefaultAvatar) equippedAvatar = item.id;
     if (item.type === "EMOTE") freeEmoteIds.push(item.id);
   }
   const equippedEmotes = freeEmoteIds.slice(0, 6); // default loadout, respects the 6-slot cap
-  if (equippedBoard || equippedSkin || equippedAvatar || equippedEmotes.length) {
+  if (equippedBoard || equippedSkin || equippedAvatar || equippedFrame || equippedEmotes.length) {
     await prisma.user.update({
       where: { id: userId },
       data: {
@@ -115,6 +120,8 @@ export async function grantDefaults(prisma: PrismaClient, userId: string) {
         ...(equippedSkin ? { equippedSkin } : {}),
         // avatarUrl stores the bare avatar key (see AvatarPickerModal.avatarValue).
         ...(equippedAvatar ? { avatarUrl: equippedAvatar } : {}),
+        // frameId stores the FRAME item id (users.ts equip writes the same).
+        ...(equippedFrame ? { frameId: equippedFrame } : {}),
         ...(equippedEmotes.length ? { equippedEmotes } : {}),
       },
     });

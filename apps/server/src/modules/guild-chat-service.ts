@@ -19,6 +19,7 @@ const authorSelect = {
   id: true,
   displayName: true,
   avatarUrl: true,
+  frameId: true,
 } as const;
 
 export type ChatMessage = {
@@ -26,7 +27,7 @@ export type ChatMessage = {
   guildId: string;
   body: string;
   createdAt: string;
-  author: { id: string; displayName: string; avatarUrl: string | null };
+  author: { id: string; displayName: string; avatarUrl: string | null; frameId: string | null };
   /** the author's guild role at send time, for the name colour (Leader/Officer/Member) */
   role: "LEADER" | "OFFICER" | "MEMBER" | null;
 };

@@ -296,7 +296,14 @@ fun OnlineMatchScreen(
                 MatchRepository.onSquareClick(it)
             },
             flip = flip,
-            interactive = myTurn && !isSpectating
+            interactive = myTurn && !isSpectating,
+            // Your equipped board applies for you; your piece skin paints YOUR
+            // colour's pieces. The opponent keeps the classic default pieces —
+            // the public match DTO doesn't carry their equipped skin (a future
+            // server addition could paint each player's own skin for both sides).
+            boardId = me?.equippedBoard,
+            redSkinId = if (myColor == PieceColors.RED) me?.equippedSkin else null,
+            blueSkinId = if (myColor == PieceColors.BLUE) me?.equippedSkin else null
         )
 
         // Self bar (bottom) — the mockup's red-tinted "me" bar.

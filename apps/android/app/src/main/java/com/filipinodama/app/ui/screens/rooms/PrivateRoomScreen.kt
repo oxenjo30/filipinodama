@@ -716,6 +716,7 @@ private fun PlayersCard(
             PlayerSeat(
                 name = host?.name ?: "Host",
                 avatarUrl = host?.avatarUrl,
+                frameId = host?.frameId,
                 badge = "HOST",
                 badgeColor = GoldLt,
                 nameColor = GoldLt,
@@ -742,6 +743,7 @@ private fun PlayersCard(
                     PlayerSeat(
                         name = guest.name,
                         avatarUrl = guest.avatarUrl,
+                        frameId = guest.frameId,
                         badge = "● READY",
                         badgeColor = Color(0xFF3FBF6F),
                         nameColor = Color(0xFFFF8FAE),
@@ -909,12 +911,14 @@ private fun PlayerSeat(
     badge: String,
     badgeColor: Color,
     nameColor: Color,
+    frameId: String? = null,
     avatarRingColor: Color = Gold.copy(alpha = 0.5f),
     modifier: Modifier = Modifier
 ) {
     Column(modifier = modifier, horizontalAlignment = Alignment.CenterHorizontally) {
         com.filipinodama.app.ui.screens.profile.AvatarView(
             avatarUrl = avatarUrl,
+            frameId = frameId,
             size = 64.dp,
             ring = true
         )
@@ -1054,7 +1058,7 @@ private fun SpectatorsCard(
                                         .border(1.dp, Gold.copy(alpha = 0.16f), RoundedCornerShape(100.dp))
                                         .padding(start = 5.dp, end = 8.dp, top = 5.dp, bottom = 5.dp)
                                 ) {
-                                    AvatarView(avatarUrl = spec.avatarUrl, size = 24.dp)
+                                    AvatarView(avatarUrl = spec.avatarUrl, frameId = spec.frameId, size = 24.dp)
                                     Text(spec.name, color = Color(0xFFF4ECD6), style = MaterialTheme.typography.labelMedium)
                                     if (isHost) {
                                         Box(
