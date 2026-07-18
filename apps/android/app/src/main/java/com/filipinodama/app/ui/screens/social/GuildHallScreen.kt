@@ -81,13 +81,13 @@ import kotlinx.coroutines.launch
  * guild-chat socket via GuildChatRepository), Join Requests panel
  * (officer+), Edit Guild (leader/officer), Leave.
  *
- * War tab / War Log: HONEST-HIDDEN. Verified against apps/server/src/modules
- * (no guild-war routes) and apps/server/src/realtime (no war socket events)
- * and apps/web (GuildsPage.tsx has only a cosmetic "Weekly Guild War" progress
- * bar driven by the real weeklyPoints field — no opponent/schedule/war-log
- * data exists anywhere). Wiring a "Wars" tab would mean fabricating an
- * opponent, a countdown, and a war log — against the no-fake-data rule. The
- * inventory's Wars tab rows are therefore deferred pending a real backend.
+ * Wars tab: REAL and wired (GuildWarsTab below). Reads GET /api/guilds/war
+ * (GuildsRepository.war()) for the weekly contribution-ladder: real rank,
+ * points, reset countdown, standings, and personal contribution, plus a
+ * Play-Ranked CTA (ranked wins score war points). No opponent/schedule/war-log
+ * is fabricated — the tab only renders fields the server actually returns; when
+ * none exist it shows honest empty/error states. (An earlier version of this
+ * doc predated the war backend and called the tab "honest-hidden"; it is not.)
  */
 @Composable
 fun GuildHallScreen(
@@ -941,6 +941,18 @@ private fun GuildChatPanel(guildId: String, guildName: String, onOpenProfile: (S
     val visibleMessages = state.messages.filter { !blockedIds.contains(it.author.id) }
 
     Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp)) {
+        // Frame the conversation region so it reads as a bounded "chat area"
+        // instead of messages floating on the raw page background (owner
+        // request) — matches the DM chat frame + the app's card language:
+        // gold hairline border + inset panel surface + rounded corners.
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(18.dp))
+                .background(Color(0xFF160B28).copy(alpha = 0.55f), RoundedCornerShape(18.dp))
+                .border(1.dp, Color(0x59E8B84B), RoundedCornerShape(18.dp))
+                .padding(12.dp)
+        ) {
         when {
             state.loading -> Box(Modifier.fillMaxWidth().padding(vertical = 30.dp), contentAlignment = Alignment.Center) { CircularProgressIndicator(color = Gold) }
             visibleMessages.isEmpty() -> Box(Modifier.fillMaxWidth().padding(vertical = 30.dp), contentAlignment = Alignment.Center) {
@@ -975,8 +987,9 @@ private fun GuildChatPanel(guildId: String, guildName: String, onOpenProfile: (S
                                         else androidx.compose.ui.graphics.Brush.verticalGradient(listOf(Color(0xFF241833), Color(0xFF241833))),
                                         gBubbleShape
                                     )
-                                    // Bubble border to define it against the dark bg (owner request).
-                                    .border(1.dp, if (mine) Color(0xFFC99A2E) else Color(0x33E8B84B), gBubbleShape)
+                                    // Bubble border to define it against the dark bg (owner request):
+                                    // bumped incoming edge from 0x33 ghost to 0x66 so it's clearly visible.
+                                    .border(1.dp, if (mine) Color(0xFFC99A2E) else Color(0x66E8B84B), gBubbleShape)
                                     .padding(horizontal = 13.dp, vertical = 10.dp)
                             ) {
                                 Text(m.body, color = if (mine) Color(0xFF2A1608) else Color(0xFFEFE7FB), style = MaterialTheme.typography.bodySmall)
@@ -1001,6 +1014,7 @@ private fun GuildChatPanel(guildId: String, guildName: String, onOpenProfile: (S
                 }
             }
         }
+        } // chat-area frame Box
 
         // Composer — mockup pill input + round gold send. GuildHall is a
         // tab route so BottomTabBar already owns the nav-bar inset — only
@@ -1037,11 +1051,23 @@ private fun GuildChatPanel(guildId: String, guildName: String, onOpenProfile: (S
                 modifier = Modifier
                     .size(38.dp)
                     .clickable(enabled = draft.isNotBlank() && !state.sending) {
-                        val body = draft.trim(); draft = ""
-                        scope.launch { GuildChatRepository.send(guildId, body) }
+                        // Keep the draft until the send SUCCEEDS; restore it on
+                        // failure (review M-6 — the old code cleared the draft
+                        // before sending and lost it silently on error, unlike DM).
+                        val body = draft.trim()
+                        draft = ""
+                        scope.launch {
+                            GuildChatRepository.send(guildId, body)
+                            if (GuildChatRepository.state.value.error != null) draft = body
+                        }
                     }
                     .background(
-                        androidx.compose.ui.graphics.Brush.verticalGradient(listOf(Color(0xFFEFC25A), Color(0xFFC9971F))),
+                        // Dim the send button when it can't send (review m-11): a
+                        // disabled Send used to look identical to an enabled one.
+                        if (draft.isNotBlank() && !state.sending)
+                            androidx.compose.ui.graphics.Brush.verticalGradient(listOf(Color(0xFFEFC25A), Color(0xFFC9971F)))
+                        else
+                            androidx.compose.ui.graphics.Brush.verticalGradient(listOf(Color(0x66EFC25A), Color(0x66C9971F))),
                         CircleShape
                     ),
                 contentAlignment = Alignment.Center

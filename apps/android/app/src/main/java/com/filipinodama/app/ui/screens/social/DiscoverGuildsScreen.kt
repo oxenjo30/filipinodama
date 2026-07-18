@@ -349,38 +349,30 @@ fun GuildPreviewSheet(guildId: String, signedIn: Boolean, onClose: () -> Unit, o
         }
     }
 
+    // CENTERED dialog (owner: "why do modals open at the bottom? make them
+    // open in the middle") — was a bottom sheet. Centered card with a
+    // horizontal margin, all-corners rounding; navigationBarsPadding keeps a
+    // near-full-height card's Join CTA clear of the system nav/gesture bar.
     Box(
         modifier = Modifier
             .fillMaxSize()
             .background(Color(0xB8080414))
-            .clickable(onClick = onClose),
-        contentAlignment = Alignment.BottomCenter
+            .clickable(onClick = onClose)
+            .padding(horizontal = 16.dp),
+        contentAlignment = Alignment.Center
     ) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
                 .background(
                     Brush.verticalGradient(listOf(Color(0xFF1E1140), Color(0xFF160B30))),
-                    RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp)
+                    RoundedCornerShape(24.dp)
                 )
-                .border(1.dp, Color(0x33E8B84B), RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp))
+                .border(1.dp, Color(0x59E8B84B), RoundedCornerShape(24.dp))
                 .clickable(enabled = false) {}
-                // navigationBarsPadding (owner: "Sign in to join is too low to
-                // click") — the sheet is anchored to the very bottom, so without
-                // the system nav-bar inset the CTA sits UNDER the gesture/nav bar
-                // and is hard/impossible to tap. This lifts the whole sheet above it.
                 .navigationBarsPadding()
-                .padding(start = 18.dp, end = 18.dp, top = 14.dp, bottom = 24.dp)
+                .padding(start = 18.dp, end = 18.dp, top = 20.dp, bottom = 20.dp)
         ) {
-            // Drag handle (its own row so it doesn't clip the content below).
-            Box(
-                modifier = Modifier
-                    .align(Alignment.CenterHorizontally)
-                    .padding(bottom = 16.dp)
-                    .width(38.dp)
-                    .height(4.dp)
-                    .background(Color(0x4DE8B84B), RoundedCornerShape(100.dp))
-            )
             // Content wrapper MUST be a Column — a Box would stack the crest,
             // name, stat tiles, and Join button all on top of each other.
             // Capped + scrollable so a tall guild card (long description, large

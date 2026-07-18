@@ -35,6 +35,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import com.filipinodama.app.data.AuthRepository
@@ -236,7 +237,20 @@ fun DmThreadScreen(userId: String, onBack: () -> Unit, onOpenProfile: (String) -
             if (dmState.messages.isNotEmpty()) listState.animateScrollToItem(dmState.messages.size - 1)
         }
 
-        Box(modifier = Modifier.weight(1f)) {
+        // Frame the whole conversation region so it reads as a bounded "chat
+        // area" instead of messages floating on the raw page background
+        // (owner request). Matches the app's card language: gold hairline
+        // border + inset panel surface + rounded corners, like GameFrameCard.
+        Box(
+            modifier = Modifier
+                .weight(1f)
+                .fillMaxWidth()
+                .padding(horizontal = 12.dp, vertical = 8.dp)
+                .clip(RoundedCornerShape(18.dp))
+                .background(Color(0xFF160B28).copy(alpha = 0.55f), RoundedCornerShape(18.dp))
+                .border(1.dp, Color(0x59E8B84B), RoundedCornerShape(18.dp))
+                .padding(6.dp)
+        ) {
             when {
                 dmState.loadingThread && dmState.messages.isEmpty() -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator(color = Gold) }
                 dmState.error != null && dmState.messages.isEmpty() -> Box(Modifier.fillMaxSize().padding(24.dp), contentAlignment = Alignment.Center) {
@@ -253,7 +267,7 @@ fun DmThreadScreen(userId: String, onBack: () -> Unit, onOpenProfile: (String) -
                 dmState.messages.isEmpty() -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                     Text("No messages yet.\nSay hello 👋", color = Ink2, style = MaterialTheme.typography.bodyMedium, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
                 }
-                else -> LazyColumn(state = listState, modifier = Modifier.fillMaxSize().padding(horizontal = 16.dp)) {
+                else -> LazyColumn(state = listState, modifier = Modifier.fillMaxSize().padding(horizontal = 10.dp, vertical = 4.dp)) {
                     items(dmState.messages, key = { it.id }) { m ->
                         MessageBubble(message = m, mine = m.author.id == myId, onReport = { reportTarget = m.id to m.body })
                     }
@@ -330,10 +344,19 @@ fun DmThreadScreen(userId: String, onBack: () -> Unit, onOpenProfile: (String) -
                                 if (DmRepository.state.value.error == null) draft = ""
                             }
                         }
-                        .background(Gold, RoundedCornerShape(10.dp))
+                        // Dim Send when it can't send (review m-11).
+                        .background(
+                            if (!dmState.sending && draft.isNotBlank()) Gold else Gold.copy(alpha = 0.4f),
+                            RoundedCornerShape(10.dp)
+                        )
                         .padding(horizontal = 16.dp, vertical = 14.dp)
                 ) {
-                    Text("Send", color = Color(0xFF2A1607), style = MaterialTheme.typography.labelMedium)
+                    val canSend = !dmState.sending && draft.isNotBlank()
+                    Text(
+                        "Send",
+                        color = Color(0xFF2A1607).copy(alpha = if (canSend) 1f else 0.6f),
+                        style = MaterialTheme.typography.labelMedium
+                    )
                 }
             }
         }
@@ -358,11 +381,12 @@ private fun MessageBubble(message: DmMessageDto, mine: Boolean, onReport: () -> 
                         bubbleShape
                     )
                     // Border to define the bubble against the dark background
-                    // (owner request): a darker gold edge on my bubble, a subtle
-                    // gold-tinted edge on incoming ones.
+                    // (owner request): a readable gold edge on my bubble, a
+                    // clearly visible gold-tinted edge on incoming ones (bumped
+                    // from the near-invisible 0x33 ghost to 0x66).
                     .border(
                         1.dp,
-                        if (mine) Color(0xFFC99A2E) else Color(0x33E8B84B),
+                        if (mine) Color(0xFFC99A2E) else Color(0x66E8B84B),
                         bubbleShape
                     )
                     .padding(horizontal = 13.dp, vertical = 9.dp)

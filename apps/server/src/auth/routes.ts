@@ -151,7 +151,7 @@ export async function authRoutes(app: FastifyInstance) {
     const p = req.params.provider as OAuthProvider;
     if (p !== "google" && p !== "facebook") throw new ApiError(404, "UNKNOWN_PROVIDER", "Unknown provider");
     if (!isConfigured(p)) throw new ApiError(503, "NOT_CONFIGURED", `${p} sign-in is not configured yet`);
-    const state = makeState(safeNext(req.query.next));
+    const state = await makeState(safeNext(req.query.next));
     reply.redirect(authUrl(p, state));
   });
 
@@ -166,7 +166,7 @@ export async function authRoutes(app: FastifyInstance) {
       if (!isConfigured(p)) return fail(`${p} sign-in is not configured`);
       if (error) return fail("Sign-in was cancelled");
       // consumeState returns the stored `next` path (or null if invalid/expired).
-      const next = code && state ? consumeState(state) : null;
+      const next = code && state ? await consumeState(state) : null;
       if (!code || !state || next === null) return fail("Sign-in expired, please try again");
       try {
         const profile = await fetchProfile(p, code);

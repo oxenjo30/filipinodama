@@ -24,7 +24,9 @@ val Purple = Color(0xFF4A2D7A) // accent
 
 // ---- Ink / text ----
 val Ink = Color(0xFFC9B8E0) // body text on dark
-val Ink2 = Color(0xFF9A86BD) // muted / secondary
+val Ink2 = Color(0xFFB0A0CE) // muted / secondary — lifted from #9A86BD for WCAG-AA
+                             // contrast (~4.0:1 → ~5.0:1 on the #160B28 ground;
+                             // review: muted labels were under the 4.5:1 threshold)
 val TextDefault = Color(0xFFEFE7FB) // default foreground
 
 // ---- Surfaces ----

@@ -197,11 +197,18 @@ async function main() {
   // at signup, so users created before these avatars existed wouldn't own them
   // (their Avatar picker would be empty). Grant each free avatar to every user's
   // inventory (owned, NOT equipped — we never change a user's current avatar).
+  // Gated by a one-time sentinel in Config so this O(users × avatars) write storm
+  // runs ONCE (first deploy that has it) and is skipped on every subsequent deploy
+  // — the seed runs in the deploy's preDeployCommand, so an ungated per-user loop
+  // would re-hammer the DB on every release. The upserts stay idempotent; the
+  // sentinel just avoids the needless work.
+  const AVATARS_SENTINEL = "SEED_BACKFILL_AVATARS_DONE";
+  const avatarsDone = await prisma.config.findUnique({ where: { key: AVATARS_SENTINEL } });
   const freeAvatarIds = STORE.filter(
     (s): s is typeof s & { priceGold: number } =>
       s.type === "AVATAR" && "priceGold" in s && (s as { priceGold?: number }).priceGold === 0,
   ).map((s) => s.id);
-  if (freeAvatarIds.length > 0) {
+  if (!avatarsDone && freeAvatarIds.length > 0) {
     const users = await prisma.user.findMany({ select: { id: true } });
     for (const u of users) {
       for (const itemId of freeAvatarIds) {
@@ -212,6 +219,11 @@ async function main() {
         });
       }
     }
+    await prisma.config.upsert({
+      where: { key: AVATARS_SENTINEL },
+      update: {},
+      create: { key: AVATARS_SENTINEL, value: "true", type: "bool", category: "internal", label: "Seed: free-avatar backfill done" },
+    });
     // eslint-disable-next-line no-console
     console.log(`Backfilled ${freeAvatarIds.length} free avatars to ${users.length} users.`);
   }
@@ -224,22 +236,37 @@ async function main() {
   // the correct round laurel. We do NOT touch anyone on a DIFFERENT frame (a
   // paid/chosen one). Idempotent: re-running skips users already on laurel.
   {
-    const DEFAULT_FRAME_ID = "laurel";
-    const OLD_SQUARE_DEFAULT = "filigree";
-    const toFix = await prisma.user.findMany({
-      where: { OR: [{ frameId: null }, { frameId: OLD_SQUARE_DEFAULT }] },
-      select: { id: true },
-    });
-    for (const u of toFix) {
-      await prisma.inventoryItem.upsert({
-        where: { userId_itemId: { userId: u.id, itemId: DEFAULT_FRAME_ID } },
-        update: { equipped: true },
-        create: { userId: u.id, itemId: DEFAULT_FRAME_ID, equipped: true },
+    // Gated by a DISTINCT, release-specific sentinel (NOT the avatars one): this
+    // laurel migration re-points old square-"filigree" default-frame users to the
+    // correct round laurel, and must still run ONCE for this release even on an
+    // instance where the earlier avatar backfill already left its sentinel behind.
+    // Its own sentinel then skips it on every subsequent deploy (avoids the
+    // O(users) frame-update storm each release).
+    const FRAME_SENTINEL = "SEED_BACKFILL_FRAME_LAUREL_DONE";
+    const frameDone = await prisma.config.findUnique({ where: { key: FRAME_SENTINEL } });
+    if (!frameDone) {
+      const DEFAULT_FRAME_ID = "laurel";
+      const OLD_SQUARE_DEFAULT = "filigree";
+      const toFix = await prisma.user.findMany({
+        where: { OR: [{ frameId: null }, { frameId: OLD_SQUARE_DEFAULT }] },
+        select: { id: true },
       });
-      await prisma.user.update({ where: { id: u.id }, data: { frameId: DEFAULT_FRAME_ID } });
+      for (const u of toFix) {
+        await prisma.inventoryItem.upsert({
+          where: { userId_itemId: { userId: u.id, itemId: DEFAULT_FRAME_ID } },
+          update: { equipped: true },
+          create: { userId: u.id, itemId: DEFAULT_FRAME_ID, equipped: true },
+        });
+        await prisma.user.update({ where: { id: u.id }, data: { frameId: DEFAULT_FRAME_ID } });
+      }
+      await prisma.config.upsert({
+        where: { key: FRAME_SENTINEL },
+        update: {},
+        create: { key: FRAME_SENTINEL, value: "true", type: "bool", category: "internal", label: "Seed: laurel-frame backfill done" },
+      });
+      // eslint-disable-next-line no-console
+      console.log(`Backfilled the default (laurel) frame to ${toFix.length} users (frameless + old-square-default).`);
     }
-    // eslint-disable-next-line no-console
-    console.log(`Backfilled the default (laurel) frame to ${toFix.length} users (frameless + old-square-default).`);
   }
 
   for (const q of QUESTS) {

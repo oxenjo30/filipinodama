@@ -107,6 +107,8 @@ fun FriendsScreen(
     var mutedIds by remember { mutableStateOf(setOf<String>()) }
     var swipeState by remember { mutableStateOf(SwipeListState()) }
     var addOpen by remember { mutableStateOf(false) }
+    // The friend awaiting unfriend-confirmation (review M-1), or null.
+    var pendingUnfriend by remember { mutableStateOf<FriendUserDto?>(null) }
 
     // Extracted as a suspend fun (not just scope.launch'd) so pull-to-refresh can
     // await it directly via PullRefreshContainer's onRefresh.
@@ -195,7 +197,9 @@ fun FriendsScreen(
         }
     }
 
-    fun removeFriend(u: FriendUserDto) {
+    // Unfriend is DESTRUCTIVE + irreversible, so it goes through a confirm
+    // dialog (review M-1) — the old one-tap swipe/kebab delete had no guard.
+    fun doRemoveFriend(u: FriendUserDto) {
         swipeState = swipeState.close(u.id)
         scope.launch {
             when (val r = FriendsRepository.removeFriend(u.id)) {
@@ -203,6 +207,11 @@ fun FriendsScreen(
                 is SocialResult.Failure -> surface(r)
             }
         }
+    }
+    // Tapping delete/remove just ARMS the confirmation; doRemoveFriend runs it.
+    fun removeFriend(u: FriendUserDto) {
+        swipeState = swipeState.close(u.id)
+        pendingUnfriend = u
     }
 
     val filteredFriends = remember(friends, query) {
@@ -220,6 +229,29 @@ fun FriendsScreen(
             Text("Sign in to build your circle", color = GoldLt, style = MaterialTheme.typography.titleLarge)
         }
         return
+    }
+
+    // Unfriend confirmation (review M-1): destructive + irreversible, so confirm.
+    pendingUnfriend?.let { target ->
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = { pendingUnfriend = null },
+            containerColor = Color(0xFF1E1134),
+            titleContentColor = GoldLt,
+            textContentColor = Ink,
+            title = { Text("Remove friend?") },
+            text = { Text("Remove ${target.displayName} from your friends? You can add them again later.") },
+            confirmButton = {
+                androidx.compose.material3.TextButton(onClick = {
+                    pendingUnfriend = null
+                    doRemoveFriend(target)
+                }) { Text("Remove", color = Color(0xFFFF8F9E)) }
+            },
+            dismissButton = {
+                androidx.compose.material3.TextButton(onClick = { pendingUnfriend = null }) {
+                    Text("Cancel", color = Ink2)
+                }
+            }
+        )
     }
 
     if (addOpen) {
@@ -345,7 +377,10 @@ fun FriendsScreen(
                                 isOpen = swipeState.isOpen(f.id),
                                 onOpenChange = { open -> swipeState = if (open) swipeState.open(f.id) else swipeState.close(f.id) },
                                 onOpenProfile = { onOpenProfile(f.id) },
-                                onMessage = null,
+                                // Review m-15: offline friends can be messaged too —
+                                // DMs are asynchronous, so a friend being offline is no
+                                // reason to hide the message button (it was null before).
+                                onMessage = { onOpenChat(f.id) },
                                 onMute = { mutedIds = if (mutedIds.contains(f.id)) mutedIds - f.id else mutedIds + f.id; swipeState = swipeState.close(f.id) },
                                 onDelete = { removeFriend(f) }
                             )
