@@ -437,7 +437,11 @@ fun ProfileScreen(
                 // Stat tiles — mockup profStats (line 4022): Wins / Win Rate /
                 // Best Streak / Games, in that exact order+colors. "Best
                 // Streak" has no longest-historical-streak field anywhere
-                // server-side (verified) — relabeled "Current Streak" and
+                // server-side (verified). Owner directive 2026-07-18: label it
+                // "Best Streak" (mockup wording) even though it's wired to the
+                // real CURRENT-streak field — there is no server bestStreak field
+                // to source a true all-time best yet. Tradeoff accepted by owner.
+                // The tile is labeled "Best Streak" and
                 // wired to the real User.streak column instead of fabricating
                 // a running maximum (see file kdoc).
                 val total = me.wins + me.losses + me.draws
@@ -445,7 +449,7 @@ fun ProfileScreen(
                 val stats: List<Triple<String, String, Color>> = listOf(
                     Triple("Wins", me.wins.toString(), Green),
                     Triple("Win Rate", "$winRate%", GoldLt),
-                    Triple("Current Streak", me.streak.toString(), Color(0xFFFF8F9C)),
+                    Triple("Best Streak", me.streak.toString(), Color(0xFFFF8F9C)),
                     Triple("Games", total.toString(), Color(0xFF8FB3FF))
                 )
                 LazyVerticalGrid(
@@ -456,11 +460,15 @@ fun ProfileScreen(
                     items(stats) { stat ->
                         val (label, value, color) = stat
                         Column(
-                            modifier = Modifier.background(Panel, RoundedCornerShape(14.dp)).padding(vertical = 13.dp, horizontal = 4.dp),
+                            // fillMaxWidth so every tile fills its equal grid cell —
+                            // without it the Panel background shrank to the content
+                            // width, making the longer-labelled "Current Streak" tile
+                            // wider than its neighbours (owner: make them same size).
+                            modifier = Modifier.fillMaxWidth().background(Panel, RoundedCornerShape(14.dp)).padding(vertical = 13.dp, horizontal = 4.dp),
                             horizontalAlignment = Alignment.CenterHorizontally
                         ) {
                             Text(value, color = color, style = MaterialTheme.typography.titleMedium)
-                            Text(label, color = Ink2, style = MaterialTheme.typography.labelSmall, textAlign = androidx.compose.ui.text.style.TextAlign.Center, modifier = Modifier.padding(top = 3.dp))
+                            Text(label, color = Ink2, style = MaterialTheme.typography.labelSmall, textAlign = androidx.compose.ui.text.style.TextAlign.Center, maxLines = 1, modifier = Modifier.padding(top = 3.dp))
                         }
                     }
                 }

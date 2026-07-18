@@ -9,30 +9,63 @@ import com.filipinodama.app.data.engine.PieceColors
  * Android (before this, BoardView was hardcoded — equipping did nothing).
  *
  * Both board themes and piece skins are PROCEDURAL colour values on web
- * (Board.tsx IMAGE_THEMES for board squares, Piece.tsx SKIN_FACE for pieces) —
- * not images — so we mirror them here as gradients/palettes and select by the
- * equipped item's key. The equipped values come from
- * AuthRepository.state.user.equippedBoard / equippedSkin (item ids), resolved
- * to keys by [boardKeyFor] / [skinKeyFor].
+ * (Board.tsx MARBLE / IMAGE_THEMES for board squares, Piece.tsx FACE /
+ * SKIN_FACE for pieces) — so we mirror them here as gradients/palettes and
+ * select by the equipped item's key. The equipped values come from
+ * AuthRepository.state.user.equippedBoard / equippedSkin (STORE ITEM IDS —
+ * e.g. "ebony", "jadeskin"), resolved to a theme/palette by [boardThemeFor] /
+ * [piecePaletteFor].
+ *
+ * ── KEY RESOLUTION (the PROBLEM-1 fix) ──
+ * The value flowing in is the item ID (the server persists item.id on
+ * User.equippedBoard/equippedSkin — see apps/server/src/auth/service.ts
+ * publicUser()). The web resolves that id → the art key via the store catalog
+ * assetKey (cosmeticsStore.boardKey/skinKey). We can't fetch the catalog on the
+ * offline path, so we resolve by EXPLICIT id→key tables built from seed.ts
+ * (the authoritative id/assetKey source). This replaces the old fragile
+ * `key.contains(...)` substring matching, which (a) risked cross-type false
+ * matches as ids grow and (b) collapsed the paid "marble" board onto the free
+ * default so equipping the paid Marble Court Board showed NO change.
  */
 
-// ── Board themes (mirrors web Board.tsx IMAGE_THEMES + the default MARBLE) ──
+// ── Board themes (mirrors web Board.tsx MARBLE default + IMAGE_THEMES) ──
 
-/** A board theme = the frame gradient + the dark/light square gradients. */
+/** A board theme = the frame gradient + the dark/light square gradients. The
+ *  square lists are multi-stop so BoardSquare's proportional radial gradient
+ *  reads with real marble/wood depth (the web uses 3–4 stop radial-gradients). */
 data class BoardTheme(
     val frame: List<Color>,
     val darkSquare: List<Color>,
     val lightSquare: List<Color>,
 )
 
-/** Default "Marble & Gold" — the current hardcoded look (unchanged). */
+/**
+ * Free default "Marble & Gold" — the classic gold-bevel marble board.
+ * Web: MARBLE dark `#454b59→#2a2f3b→#181b23`, light `#faf6ec→#ece5d5→#d4cbb6`,
+ * gold bevel frame `#f5d88a→#d3a63c→#8a5a1e`.
+ */
 val BOARD_MARBLE = BoardTheme(
     frame = listOf(Color(0xFFF5D88A), Color(0xFFD3A63C), Color(0xFF8A5A1E)),
     darkSquare = listOf(Color(0xFF454B59), Color(0xFF2A2F3B), Color(0xFF181B23)),
     lightSquare = listOf(Color(0xFFFAF6EC), Color(0xFFECE5D5), Color(0xFFD4CBB6)),
 )
 
+/**
+ * Paid "Marble Court Board" (id "marble") — DISTINCT from the free default so
+ * equipping it is visibly different (PROBLEM-1 content gap: on web both use
+ * board-marble.png, but a paid board that renders identically to the free one
+ * reads as "equip did nothing"). A cooler blue-grey court marble inside a
+ * platinum/steel bevel, so it reads as an upgraded court, not the warm default.
+ */
+private val BOARD_MARBLE_COURT = BoardTheme(
+    frame = listOf(Color(0xFFE8EDF5), Color(0xFFB7C2D2), Color(0xFF6E7A8E)),
+    darkSquare = listOf(Color(0xFF3C4658), Color(0xFF262E3C), Color(0xFF141922)),
+    lightSquare = listOf(Color(0xFFF4F7FC), Color(0xFFDCE3EE), Color(0xFFBEC8D8)),
+)
+
 // Wood / Classic — warm walnut/maple checker inside a plain wood frame.
+// Web IMAGE_THEMES.wood/classic dark `#6b4a2c→#4e3417→#3a2410`,
+// light `#f0dcb0→#e6c98c→#d8b673`.
 private val BOARD_WOOD = BoardTheme(
     frame = listOf(Color(0xFF7A5230), Color(0xFF54371C), Color(0xFF34210F)),
     darkSquare = listOf(Color(0xFF6B4A2C), Color(0xFF4E3417), Color(0xFF3A2410)),
@@ -40,6 +73,8 @@ private val BOARD_WOOD = BoardTheme(
 )
 
 // Ebony — cream vs deep-ebony inside a gold-filigree black frame.
+// Web IMAGE_THEMES.ebony dark `#3a2c22→#241812→#160d09`,
+// light `#f4e7c8→#e8d6a8→#dcc890`.
 private val BOARD_EBONY = BoardTheme(
     frame = listOf(Color(0xFFE8C87A), Color(0xFF6E5A2C), Color(0xFF160D09)),
     darkSquare = listOf(Color(0xFF3A2C22), Color(0xFF241812), Color(0xFF160D09)),
@@ -47,6 +82,8 @@ private val BOARD_EBONY = BoardTheme(
 )
 
 // Obsidian — charcoal vs near-black slate inside a purple-rimmed stone frame.
+// Web IMAGE_THEMES.obsidian dark `#1c1c22→#101014→#08080b`,
+// light `#3a3a44→#2a2a32→#1e1e24`.
 private val BOARD_OBSIDIAN = BoardTheme(
     frame = listOf(Color(0xFF6E5AA0), Color(0xFF322A48), Color(0xFF120E1E)),
     darkSquare = listOf(Color(0xFF1C1C22), Color(0xFF101014), Color(0xFF08080B)),
@@ -54,24 +91,27 @@ private val BOARD_OBSIDIAN = BoardTheme(
 )
 
 /**
- * Map an equipped BOARD item id (or its assetKey) → a theme. Board item
- * assetKeys are filenames like "board-ebony.png"; the ids are "ebony",
- * "classicwood", "marble", "obsidian", "board-marble-default". We normalise on
- * the recognisable substring so either the id or the assetKey resolves.
+ * Explicit BOARD item-id → theme table (ids from seed.ts). Kept as a `when` so
+ * every real id resolves deterministically and a paid board that shares its art
+ * with the free default still gets its OWN distinct look. Unknown ids fall back
+ * to the free marble default (never a blank board).
  */
 fun boardThemeFor(equippedBoardId: String?): BoardTheme {
-    val key = (equippedBoardId ?: "").lowercase()
-    return when {
-        key.contains("ebony") -> BOARD_EBONY
-        key.contains("obsidian") -> BOARD_OBSIDIAN
-        key.contains("wood") || key.contains("classic") -> BOARD_WOOD
-        else -> BOARD_MARBLE // marble / default / unknown
+    return when (equippedBoardId) {
+        "board-marble-default" -> BOARD_MARBLE        // free default
+        "marble" -> BOARD_MARBLE_COURT                // paid Marble Court — distinct
+        "ebony" -> BOARD_EBONY
+        "classicwood" -> BOARD_WOOD
+        "obsidian" -> BOARD_OBSIDIAN
+        else -> BOARD_MARBLE                          // null / unknown → default
     }
 }
 
 // ── Piece skins (mirrors web Piece.tsx FACE + SKIN_FACE) ──
 
-/** Default classic discs — deep crimson (red) / royal blue (blue). */
+/** Default classic discs — deep crimson (red) / royal blue (blue).
+ *  Web FACE.red `#ff9aa0→#e5434f→#b3222e→#7a1420` rim `#5c0f18`;
+ *  FACE.blue `#a3c8ff→#3f79d6→#255aa8→#153a72` rim `#0f2b57`. */
 val PIECE_RED_DEFAULT = PiecePalette(
     faceColors = listOf(Color(0xFFFF9AA0), Color(0xFFE5434F), Color(0xFFB3222E), Color(0xFF7A1420)),
     rim = Color(0xFF5C0F18),
@@ -93,6 +133,7 @@ private fun pal(face: List<Long>, rim: Long, ringLo: Long) = PiecePalette(
 )
 
 // Ported verbatim from web Piece.tsx SKIN_FACE (face gradient stops + rim + ring).
+// Keyed by the item's ASSET KEY (the PieceSkin key the web uses, e.g. "jade").
 private val SKINS: Map<String, SkinPalettes> = mapOf(
     "jade" to SkinPalettes(
         red = pal(listOf(0xFFFFD9A0, 0xFFE8A23C, 0xFFB8781F, 0xFF7A4D12), 0xFF5C3A0F, 0xFF785014),
@@ -129,13 +170,32 @@ private val SKINS: Map<String, SkinPalettes> = mapOf(
 )
 
 /**
- * Resolve an equipped SKIN item id / assetKey → the per-colour piece palette.
- * The SKIN item's assetKey IS the key ("jade", "crimson", …); "classic" / null
- * / unknown fall back to the default crimson-vs-royal look.
+ * Explicit SKIN item-id → assetKey table (ids/assetKeys from seed.ts). The
+ * SKINS map is keyed by ASSET KEY, but the value flowing in is the item ID, so
+ * we resolve id→assetKey first (exactly what the web's cosmeticsStore.skinKey
+ * does via the catalog). This is deterministic and avoids the substring-match
+ * collision risk of the old `key.contains(it.key)` scan. "skin-classic" / null /
+ * unknown → the default crimson-vs-royal disc.
+ */
+private fun skinAssetKeyFor(equippedSkinId: String?): String? = when (equippedSkinId) {
+    "jadeskin" -> "jade"
+    "crimsonskin" -> "crimson"
+    "obsidianskin" -> "obsidian"
+    "sarimanokskin" -> "sarimanok"
+    "bakunawaskin" -> "bakunawa"
+    "sunstarsskin" -> "sunstars"
+    "tamarawskin" -> "tamaraw"
+    "baybayinskin" -> "baybayin"
+    else -> null // "skin-classic" / null / unknown → default disc
+}
+
+/**
+ * Resolve an equipped SKIN item id → the per-colour piece palette. Resolves the
+ * item id → assetKey → palette; "skin-classic" / null / unknown fall back to the
+ * default crimson-vs-royal look.
  */
 fun piecePaletteFor(equippedSkinId: String?, color: String): PiecePalette {
-    val key = (equippedSkinId ?: "").lowercase()
-    val skin = SKINS.entries.firstOrNull { key.contains(it.key) }?.value
+    val skin = skinAssetKeyFor(equippedSkinId)?.let { SKINS[it] }
     val isRed = color == PieceColors.RED
     return when {
         skin != null -> if (isRed) skin.red else skin.blue

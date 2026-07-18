@@ -19,8 +19,11 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.unit.dp
 import com.filipinodama.app.data.engine.GameState
 import com.filipinodama.app.data.engine.PieceColors
@@ -74,15 +77,26 @@ fun BoardView(
     modifier: Modifier = Modifier
 ) {
     val theme = boardThemeFor(boardId)
-    // Gold-bevel frame — colour comes from the equipped board theme.
+    // Gold-bevel frame — colour comes from the equipped board theme. The web's
+    // marble frame is a 145° linear-gradient bevel (`145deg` top-left→bottom-
+    // right) plus a raised bevel: `inset 0 2px 4px rgba(255,255,255,.45)` top
+    // highlight + `inset 0 -3px 8px rgba(0,0,0,.5)` bottom shadow + a drop
+    // shadow. We reproduce the 145° direction (top-left→bottom-right) and paint
+    // the bevel highlight/shadow as thin inset borders on top of the frame fill.
     Box(
         modifier = modifier
             .fillMaxWidth()
             .aspectRatio(1f)
             .background(
-                brush = Brush.linearGradient(theme.frame),
+                brush = Brush.linearGradient(
+                    colors = theme.frame,
+                    start = Offset.Zero,
+                    end = Offset.Infinite // top-left → bottom-right, ≈ web's 145deg
+                ),
                 shape = RoundedCornerShape(12.dp)
             )
+            // Raised bevel: bright top edge + dark bottom edge (web inset shadows).
+            .border(1.dp, Color.White.copy(alpha = 0.40f), RoundedCornerShape(12.dp))
             .padding(BOARD_FRAME_PADDING)
     ) {
         Column(
@@ -90,7 +104,12 @@ fun BoardView(
                 .fillMaxWidth()
                 .aspectRatio(1f)
                 .clip(RoundedCornerShape(4.dp))
-                // thin gold hairline inset, matching web's boxShadow inset ring
+                // Web frames OUR grid with `inset 0 0 0 2px rgba(232,184,75,.4)`
+                // (gold hairline) + `inset 0 0 46px rgba(0,0,0,.55)` (a heavy dark
+                // vignette so the perfect 8×8 reads as inset). The gold hairline
+                // is this 2dp inset border; the inset depth is carried by each
+                // square's own inset shadow (BoardSquare, matching web's
+                // per-cell `inset 0 0 18px rgba(0,0,0,.45)`).
                 .border(2.dp, Gold.copy(alpha = 0.4f), RoundedCornerShape(4.dp))
         ) {
             for (rowIndex in 0..7) {
@@ -143,15 +162,59 @@ private fun BoardSquare(
     onClick: (() -> Unit)?,
     modifier: Modifier = Modifier
 ) {
-    // Square gradient comes from the equipped board theme (radial highlight
-    // anchored top-left, matching the web MARBLE/IMAGE_THEMES look).
-    val bg = Brush.radialGradient(
-        colors = if (dark) theme.darkSquare else theme.lightSquare,
-        radius = 420f
-    )
+    // Square background — mirrors the web MARBLE / IMAGE_THEMES cell exactly:
+    //   background: radial-gradient(120% 120% at 25% 20%, <3 stops>)
+    //   box-shadow (dark): inset 0 0 18px rgba(0,0,0,.45)
+    //             (light): inset 0 0 12px rgba(0,0,0,.25)
+    //             + inset 0 0 0 1px rgba(232,184,75,.22)   (gold hairline)
+    //             + (selected) inset 0 0 0 3px rgba(245,215,131,.95)
+    //             + (mustCapture source) inset 0 0 0 3px rgba(245,215,131,.6)
+    // The OLD code used a FIXED 420px radius, which — over a ~120px phone cell —
+    // dwarfed the box so only the FIRST colour stop showed (a near-flat fill,
+    // the cause of "the default board looks less polished than web"). Radius is
+    // now proportional (`120%` of the cell → `size.maxDimension * 1.2`) and the
+    // highlight is anchored at 25%/20% like the web, so all stops read.
+    val colors = if (dark) theme.darkSquare else theme.lightSquare
+    val insetShadow = if (dark) 0.45f else 0.25f       // web inset 18px/.45 vs 12px/.25
+    val goldRingAlpha = when {
+        selected -> 0.95f
+        mustCapture -> 0.60f
+        else -> 0.22f
+    }
+    val goldRingWidthPx = if (selected || mustCapture) 3f else 1f
     Box(
         modifier = modifier
-            .background(bg)
+            .drawBehind {
+                // Proportional radial marble/wood gradient (web `120% 120% at 25% 20%`).
+                drawRect(
+                    brush = Brush.radialGradient(
+                        colors = colors,
+                        center = Offset(size.width * 0.25f, size.height * 0.20f),
+                        radius = size.maxDimension * 1.2f
+                    )
+                )
+                // Inset edge shadow (web `inset 0 0 Npx rgba(0,0,0,a)`): a dark
+                // vignette hugging the cell edges, drawn as a radial gradient that
+                // is transparent in the centre and dark at the corners.
+                val shadowSpan = size.maxDimension * (if (dark) 0.18f else 0.12f)
+                drawRect(
+                    brush = Brush.radialGradient(
+                        colors = listOf(Color.Transparent, Color.Black.copy(alpha = insetShadow)),
+                        center = Offset(size.width / 2f, size.height / 2f),
+                        radius = size.maxDimension * 0.72f
+                    )
+                )
+                // Gold hairline (+ selection / must-capture ring) — an inset stroke
+                // hugging the cell border. Width & alpha escalate for selected /
+                // must-capture, matching web's inset ring boxShadows.
+                val w = goldRingWidthPx
+                drawRect(
+                    color = Color(0xFFF5D783).copy(alpha = goldRingAlpha),
+                    topLeft = Offset(w / 2f, w / 2f),
+                    size = Size(size.width - w, size.height - w),
+                    style = Stroke(width = w)
+                )
+            }
             .then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier),
         contentAlignment = Alignment.Center
     ) {
@@ -195,70 +258,140 @@ private fun BoardSquare(
 data class PiecePalette(val faceColors: List<Color>, val rim: Color, val ringLo: Color)
 
 /**
- * A single glossy Dama disc, ported from the web's `Piece.tsx` CSS layering:
- * radial-gradient face (bright top-left specular anchor) + dark bevel rim,
- * a raised concentric inner ring (the classic checker groove), a top-left
- * specular highlight blob, and a gold ♛ crown for kings. Pieces stay drawn
- * discs (approved design, not sprite art) — only the gloss treatment was
- * missing before this pass.
+ * A single glossy Dama disc, ported 1:1 from the web's `Piece.tsx` CSS layering
+ * so mobile pieces carry the same depth as web (this is the PROBLEM-2 fidelity
+ * pass — the old mobile disc flattened most of these layers). The whole disc is
+ * painted in ONE Canvas pass (performant on an 8×8 board redrawn each move):
+ *
+ *   1. FACE     radial-gradient(circle at 36% 26%, <4 stops>)         — glossy face
+ *   2. BOTTOM   inset 0 -6px 10px rgba(0,0,0,.55)                     — bevel shade
+ *   3. TOP      inset 0 5px 8px rgba(255,255,255,.42)                 — bevel light
+ *   4. RIM      0 0 0 2px pal.rim  (gold on kings)                    — dark rim
+ *   5. GROOVE   ring at 17% inset, 2px pal.ringLo + inset shading     — checker groove
+ *   6. INNER    inner disc face at 27% inset (re-drawn face)          — added depth
+ *   7. SPECULAR radial highlight blob top-left (10% top / 18% left)   — glossy glint
+ *   8. STATE    gold selection ring / green must-capture ring         — overlay
+ *   + ♛ gold king crown (drawn as Text on top).
  */
 @Composable
 private fun PieceDisc(piece: PieceRender, palette: PiecePalette, ringGold: Boolean) {
     val pal = palette
+    val rimColor = if (piece.king || ringGold) Gold else pal.rim
     Box(
         modifier = Modifier
-            .fillMaxWidth(0.82f)
-            .aspectRatio(1f),
-        contentAlignment = Alignment.Center
-    ) {
-        // outer disc: glossy face + dark bevel rim (gold rim on kings, or a
-        // gold selection ring when this piece is the tapped/selected one).
-        // The face brush needs the real pixel size to place its specular
-        // anchor at 36%/26% (matching Piece.tsx's `circle at 36% 26%`), so
-        // it's built in drawBehind where size is known, not a static Brush.
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .drawBehind {
+            .fillMaxWidth(0.82f) // web disc = 82% of the cell
+            .aspectRatio(1f)
+            .drawBehind {
+                val w = size.width
+                val h = size.height
+                val cx = w / 2f
+                val cy = h / 2f
+                val r = size.minDimension / 2f
+
+                // 1. FACE — glossy radial gradient anchored at 36%/26% (web).
+                val faceBrush = Brush.radialGradient(
+                    colors = pal.faceColors,
+                    center = Offset(w * 0.36f, h * 0.26f),
+                    radius = r * 1.5f // reach the far rim so all 4 stops read
+                )
+                drawCircle(brush = faceBrush, radius = r, center = Offset(cx, cy))
+
+                // 2. BOTTOM bevel shade (web inset 0 -6px 10px rgba(0,0,0,.55)):
+                //    a dark gradient welling up from the bottom edge.
+                drawCircle(
+                    brush = Brush.verticalGradient(
+                        0.55f to Color.Transparent,
+                        1f to Color.Black.copy(alpha = 0.55f),
+                        startY = cy,
+                        endY = cy + r
+                    ),
+                    radius = r, center = Offset(cx, cy)
+                )
+                // 3. TOP bevel light (web inset 0 5px 8px rgba(255,255,255,.42)):
+                //    a soft highlight from the top edge.
+                drawCircle(
+                    brush = Brush.verticalGradient(
+                        0f to Color.White.copy(alpha = 0.42f),
+                        0.45f to Color.Transparent,
+                        startY = cy - r,
+                        endY = cy
+                    ),
+                    radius = r, center = Offset(cx, cy)
+                )
+
+                // 4. RIM — dark bevel rim (gold on kings). 2dp ≈ web's 0 0 0 2px.
+                val rimPx = 2.dp.toPx()
+                drawCircle(
+                    color = rimColor,
+                    radius = r - rimPx / 2f,
+                    center = Offset(cx, cy),
+                    style = Stroke(width = rimPx)
+                )
+
+                // 5. GROOVE — raised concentric checker ring at 17% inset (web
+                //    inset:17% → radius ≈ 0.66 of the disc). ringLo colour + a
+                //    thin dark inner + light outer edge sells the "raised" look.
+                val grooveR = r * 0.66f
+                drawCircle(
+                    color = Color.Black.copy(alpha = 0.5f),
+                    radius = grooveR + 1f, center = Offset(cx, cy),
+                    style = Stroke(width = 2.dp.toPx())
+                )
+                drawCircle(
+                    color = pal.ringLo,
+                    radius = grooveR, center = Offset(cx, cy),
+                    style = Stroke(width = 2.dp.toPx())
+                )
+
+                // 6. INNER disc face at 27% inset (web inner face, radius ≈ 0.46)
+                //    — re-draw the face gradient smaller for layered depth, with
+                //    its own top-shadow / bottom-light (web inset shading).
+                val innerR = r * 0.46f
+                drawCircle(brush = faceBrush, radius = innerR, center = Offset(cx, cy))
+                drawCircle(
+                    brush = Brush.verticalGradient(
+                        0f to Color.Black.copy(alpha = 0.40f),
+                        0.5f to Color.Transparent,
+                        1f to Color.White.copy(alpha = 0.25f),
+                        startY = cy - innerR,
+                        endY = cy + innerR
+                    ),
+                    radius = innerR, center = Offset(cx, cy)
+                )
+
+                // 7. SPECULAR highlight blob — top-left glossy glint (web top:10%
+                //    left:18%, 44%×30%). An oval radial white→transparent.
+                val specCx = w * 0.40f
+                val specCy = h * 0.28f
+                drawCircle(
+                    brush = Brush.radialGradient(
+                        colors = listOf(Color.White.copy(alpha = 0.70f), Color.Transparent),
+                        center = Offset(specCx, specCy),
+                        radius = r * 0.42f
+                    ),
+                    radius = r * 0.42f,
+                    center = Offset(specCx, specCy)
+                )
+
+                // 8. STATE ring — gold selection ring (web `0 0 0 4px #F5D783`).
+                if (ringGold) {
+                    val ringPx = 3.dp.toPx()
                     drawCircle(
-                        brush = Brush.radialGradient(
-                            colors = pal.faceColors,
-                            center = androidx.compose.ui.geometry.Offset(size.width * 0.36f, size.height * 0.26f),
-                            radius = size.minDimension * 0.75f
-                        )
+                        color = Gold,
+                        radius = r + ringPx / 2f,
+                        center = Offset(cx, cy),
+                        style = Stroke(width = ringPx)
                     )
                 }
-                .border(2.dp, if (piece.king || ringGold) Gold else pal.rim, CircleShape)
-                .then(
-                    if (ringGold) Modifier.border(3.dp, Gold, CircleShape) else Modifier
-                ),
-            contentAlignment = Alignment.Center
-        ) {
-            // raised concentric ring (the classic checker groove)
-            Box(
-                modifier = Modifier
-                    .fillMaxSize(0.66f)
-                    .border(1.5.dp, pal.ringLo, CircleShape)
+            },
+        contentAlignment = Alignment.Center
+    ) {
+        if (piece.king) {
+            Text(
+                text = "♛", // crown / king glyph (web king ♛ #F7E29A), matches DESIGN_SYSTEM.md
+                color = Color(0xFFF7E29A),
+                style = MaterialTheme.typography.titleMedium
             )
-            // specular highlight
-            Box(
-                modifier = Modifier
-                    .fillMaxSize(0.4f)
-                    .padding(bottom = 6.dp, end = 6.dp)
-                    .background(
-                        brush = Brush.radialGradient(
-                            colors = listOf(Color.White.copy(alpha = 0.7f), Color.Transparent)
-                        ),
-                        shape = CircleShape
-                    )
-            )
-            if (piece.king) {
-                Text(
-                    text = "♛", // crown / king glyph, matches DESIGN_SYSTEM.md's "king carries a crown"
-                    color = Gold,
-                    style = MaterialTheme.typography.titleMedium
-                )
-            }
         }
     }
 }
