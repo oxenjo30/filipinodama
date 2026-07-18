@@ -15,6 +15,9 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.ShoppingCart
+import androidx.compose.material3.Icon
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -269,7 +272,12 @@ private fun CheckoutEmptyState(onBrowseStore: () -> Unit) {
                     .border(1.dp, Color(0x33E8B84B), RoundedCornerShape(20.dp)),
                 contentAlignment = Alignment.Center
             ) {
-                Text("🛒", style = TextStyle(fontSize = 34.sp))
+                Icon(
+                    imageVector = Icons.Filled.ShoppingCart,
+                    contentDescription = null,
+                    tint = Color(0xFFF0CF72),
+                    modifier = Modifier.size(34.dp)
+                )
             }
             Text(
                 "Your cart is empty",
@@ -369,7 +377,6 @@ private fun CheckoutThumb(thumb: StoreThumb) {
             )
         }
         StoreThumb.Disc -> Box(modifier = Modifier.size(40.dp).background(Color(0xFFA0303A), CircleShape))
-        is StoreThumb.Emoji -> Text(thumb.glyph, style = TextStyle(fontSize = 30.sp))
     }
 }
 

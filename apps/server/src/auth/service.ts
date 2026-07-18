@@ -106,7 +106,8 @@ export async function grantDefaults(prisma: PrismaClient, userId: string) {
     if (item.type === "BOARD" && !equippedBoard) equippedBoard = item.id;
     if (item.type === "SKIN" && !equippedSkin) equippedSkin = item.id;
     // The free default FRAME (owner directive 2026-07-18: every player starts
-    // with the house "filigree" frame, so no avatar is ever bare).
+    // with the round house "laurel" frame, so no avatar is ever bare). Generic:
+    // picks the first free FRAME by sortOrder, which the seed makes laurel.
     if (item.type === "FRAME" && !equippedFrame) equippedFrame = item.id;
     if (isDefaultAvatar) equippedAvatar = item.id;
     if (item.type === "EMOTE") freeEmoteIds.push(item.id);

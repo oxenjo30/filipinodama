@@ -51,6 +51,7 @@ import { startJobPoller } from "./realtime/jobs.js";
 import { sweepAbandonedMatches } from "./realtime/match.js";
 import { runDueCampaigns } from "./modules/campaign-scheduler.js";
 import { runWarResetTick } from "./lib/guild-wars.js";
+import { startPlayVersionSync } from "./modules/play-version-sync.js";
 
 export { prisma };
 
@@ -219,6 +220,11 @@ async function main() {
   setInterval(() => {
     sweepAbandonedMatches(io).catch((e) => app.log.error({ err: e }, "abandon-sweep tick failed"));
   }, 60_000);
+
+  // Play version sync — keeps ANDROID_LATEST_VERSION in step with the live Play
+  // production track so the update nudge is never a manual admin step. No-op
+  // unless PLAY_SERVICE_ACCOUNT_JSON is configured. Runs once at boot + every 6h.
+  startPlayVersionSync();
 
   app.log.info(`FilipinoDama server listening on :${env.PORT}`);
 }
