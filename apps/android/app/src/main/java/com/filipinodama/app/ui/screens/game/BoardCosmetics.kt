@@ -202,3 +202,25 @@ fun piecePaletteFor(equippedSkinId: String?, color: String): PiecePalette {
         else -> if (isRed) PIECE_RED_DEFAULT else PIECE_BLUE_DEFAULT
     }
 }
+
+/**
+ * Skins that ship real coin-art PNGs under
+ * /assets/pieces/skins/<assetKey>/<color>-<man|king>.png. Ported VERBATIM from
+ * the web renderer's `SKINS_WITH_ART` set (apps/web/src/components/Piece.tsx):
+ * these render the actual art in-game (matching the store preview) instead of
+ * the procedural disc. "default"/"classic" has no art → procedural fallback.
+ */
+private val SKINS_WITH_ART: Set<String> = setOf(
+    "jade", "crimson", "obsidian",
+    "sarimanok", "bakunawa", "sunstars", "tamaraw", "baybayin",
+)
+
+/**
+ * Resolve an equipped SKIN item id → its PNG art assetKey, but ONLY for skins
+ * that actually ship coin art (per web's SKINS_WITH_ART). Returns null for the
+ * classic/default skin and for any skin without art — those keep using the
+ * procedural [piecePaletteFor] disc so a piece is never blank. Mirrors web:
+ * `skin !== "default" && SKINS_WITH_ART.has(skin)` gates the PNG path.
+ */
+fun skinArtKeyFor(equippedSkinId: String?): String? =
+    skinAssetKeyFor(equippedSkinId)?.takeIf { it in SKINS_WITH_ART }

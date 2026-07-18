@@ -24,7 +24,10 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.unit.dp
+import coil.compose.AsyncImage
+import com.filipinodama.app.BuildConfig
 import com.filipinodama.app.data.engine.GameState
 import com.filipinodama.app.data.engine.PieceColors
 import com.filipinodama.app.data.engine.Square
@@ -223,13 +226,19 @@ private fun BoardSquare(
         // fills the whole weighted cell so the effective hit target is the
         // full square, never smaller than the rendered cell itself.
         if (piece != null) {
-            // Resolve the piece palette from the equipped skin for THIS piece's
-            // colour (red uses redSkinId, blue uses blueSkinId).
-            val palette = piecePaletteFor(
-                if (piece.color == PieceColors.RED) redSkinId else blueSkinId,
-                piece.color
-            )
-            PieceDisc(piece = piece, palette = palette, ringGold = selected)
+            // Per-colour skin id (red uses redSkinId, blue uses blueSkinId) so
+            // each player sees their own equipped skin online.
+            val skinId = if (piece.color == PieceColors.RED) redSkinId else blueSkinId
+            // Skins that ship real coin-art PNGs render the actual art (matching
+            // web + the store preview); classic / art-less skins fall back to the
+            // procedural disc so a piece is NEVER blank.
+            val artKey = skinArtKeyFor(skinId)
+            if (artKey != null) {
+                PieceArt(piece = piece, assetKey = artKey, ringGold = selected)
+            } else {
+                val palette = piecePaletteFor(skinId, piece.color)
+                PieceDisc(piece = piece, palette = palette, ringGold = selected)
+            }
         } else if (moveTarget) {
             Box(
                 modifier = Modifier
@@ -256,6 +265,62 @@ private fun BoardSquare(
  *  each equippable skin) live in BoardCosmetics.kt so an equipped skin changes
  *  the piece look. */
 data class PiecePalette(val faceColors: List<Color>, val rim: Color, val ringLo: Color)
+
+/**
+ * A piece rendered from its real coin-art PNG — the in-game equivalent of the
+ * store preview, ported 1:1 from the web's `Piece.tsx` art path (the
+ * `SKINS_WITH_ART` branch). Coil loads the art REMOTELY from
+ * `${BuildConfig.WEB_ORIGIN}/assets/pieces/skins/<assetKey>/<color>-<man|king>.png`
+ * — the exact static path web serves + [StoreAssets] already uses — so the
+ * catalog can grow without an APK re-release (see StoreAssets.kt rationale).
+ *
+ * Web sizes the art at 86% of the cell (`objectFit: contain`) with a drop
+ * shadow, and draws the selection / must-capture ring as an OVERLAY at `inset:
+ * 3%` so those states still read over the art. We mirror that: [AsyncImage] at
+ * 86% + Fit, then a gold selection ring stroked at ~3% inset on top.
+ */
+@Composable
+private fun PieceArt(piece: PieceRender, assetKey: String, ringGold: Boolean) {
+    // Web src: `/assets/pieces/skins/${skin}/${color}-${king ? "king" : "man"}.png`.
+    // piece.color is already "red"/"blue" (PieceColors.RED/BLUE), matching web's
+    // interpolated `color` token; king → "king", else "man".
+    val face = if (piece.king) "king" else "man"
+    val url = "${BuildConfig.WEB_ORIGIN}/assets/pieces/skins/$assetKey/${piece.color}-$face.png"
+    Box(
+        modifier = Modifier
+            .fillMaxWidth(0.86f) // web art wrapper = 86% of the cell
+            .aspectRatio(1f),
+        contentAlignment = Alignment.Center
+    ) {
+        AsyncImage(
+            model = url,
+            contentDescription = null,
+            modifier = Modifier.fillMaxSize(),
+            contentScale = ContentScale.Fit
+        )
+        // Selection ring overlay drawn OVER the art (web draws it on top at
+        // inset 3%, gold `0 0 0 4px #F5D783`) — a sibling Box AFTER the image so
+        // it paints above the PNG. must-capture on mobile stays on the SQUARE
+        // (gold ring + red capture-target border), preserving board semantics.
+        if (ringGold) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .drawBehind {
+                        val inset = size.minDimension * 0.03f
+                        val r = size.minDimension / 2f - inset
+                        val ringPx = 3.dp.toPx()
+                        drawCircle(
+                            color = Gold,
+                            radius = r - ringPx / 2f,
+                            center = Offset(size.width / 2f, size.height / 2f),
+                            style = Stroke(width = ringPx)
+                        )
+                    }
+            )
+        }
+    }
+}
 
 /**
  * A single glossy Dama disc, ported 1:1 from the web's `Piece.tsx` CSS layering
