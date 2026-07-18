@@ -460,7 +460,11 @@ fun StoreScreen(
             onConfirm = { doBuy(state.item) }
         )
         is BuyFlowState.Purchasing -> PurchasingOverlay()
-        is BuyFlowState.Success -> PurchaseSuccessOverlay(item = state.item, onDismiss = { buyFlow = BuyFlow.dismiss() })
+        is BuyFlowState.Success -> PurchaseSuccessOverlay(
+            item = state.item,
+            onDismiss = { buyFlow = BuyFlow.dismiss() },
+            onGoToInventory = { buyFlow = BuyFlow.dismiss(); onOpenInventory() }
+        )
         is BuyFlowState.Error -> PurchaseErrorOverlay(message = state.message, onDismiss = { buyFlow = BuyFlow.dismiss() })
         BuyFlowState.Idle -> {}
     }
@@ -1039,7 +1043,7 @@ private fun PurchasingOverlay() {
 }
 
 @Composable
-private fun PurchaseSuccessOverlay(item: StoreItemDto, onDismiss: () -> Unit) {
+private fun PurchaseSuccessOverlay(item: StoreItemDto, onDismiss: () -> Unit, onGoToInventory: () -> Unit) {
     Box(modifier = Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.6f)).clickable(onClick = onDismiss), contentAlignment = Alignment.Center) {
         Column(
             modifier = Modifier.royalDialogPanel().padding(28.dp).clickable(enabled = false) {},
@@ -1048,10 +1052,26 @@ private fun PurchaseSuccessOverlay(item: StoreItemDto, onDismiss: () -> Unit) {
             Text("✓", color = Color(0xFF3FBF6F), style = MaterialTheme.typography.displaySmall)
             Text("Purchase Complete", color = GoldLt, style = MaterialTheme.typography.titleLarge, modifier = Modifier.padding(top = 8.dp))
             Text(item.name, color = Ink, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(top = 4.dp))
-            Text("Added to your locker", color = Ink2, style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(top = 2.dp, bottom = 16.dp))
-            Box(
-                modifier = Modifier.clickable(onClick = onDismiss).background(Gold, RoundedCornerShape(10.dp)).padding(horizontal = 24.dp, vertical = 12.dp)
-            ) { Text("Keep Browsing", color = Color(0xFF2A1607), style = MaterialTheme.typography.labelLarge) }
+            // Review M-9: "locker" was jargon inconsistent with the rest of the
+            // app, which calls this surface "Inventory" everywhere else.
+            Text("Added to your Inventory", color = Ink2, style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(top = 2.dp, bottom = 16.dp))
+            // Review M-8: close the Store→Inventory loop — a fresh purchase now
+            // offers a direct route to equip it, not only "keep browsing".
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                Box(
+                    modifier = Modifier
+                        .clickable(onClick = onGoToInventory)
+                        .background(Gold, RoundedCornerShape(10.dp))
+                        .padding(horizontal = 20.dp, vertical = 12.dp)
+                ) { Text("Go to Inventory", color = Color(0xFF2A1607), style = MaterialTheme.typography.labelLarge) }
+                Box(
+                    modifier = Modifier
+                        .clickable(onClick = onDismiss)
+                        .background(Color(0x1AE8B84B), RoundedCornerShape(10.dp))
+                        .border(1.dp, Color(0x47E8B84B), RoundedCornerShape(10.dp))
+                        .padding(horizontal = 20.dp, vertical = 12.dp)
+                ) { Text("Keep Browsing", color = Color(0xFFF0CF72), style = MaterialTheme.typography.labelLarge) }
+            }
         }
     }
 }

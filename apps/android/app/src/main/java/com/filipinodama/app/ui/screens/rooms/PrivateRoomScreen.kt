@@ -401,10 +401,18 @@ private fun JoinState(input: String, onInputChange: (String) -> Unit, error: Str
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 repeat(com.filipinodama.app.data.rooms.ROOM_CODE_LENGTH) { i ->
                     val ch = input.getOrNull(i)?.toString() ?: ""
+                    // Review M-7: highlight the ACTIVE box (the next empty slot the
+                    // keystroke lands in) so the user can see where they're typing —
+                    // the boxes were all identical before, giving no focus cue.
+                    val active = i == input.length.coerceAtMost(com.filipinodama.app.data.rooms.ROOM_CODE_LENGTH - 1)
                     Box(
                         modifier = Modifier.size(44.dp, 56.dp)
-                            .background(Color(0xD91B1030), RoundedCornerShape(12.dp))
-                            .border(1.dp, Color(0x4D5A96FF), RoundedCornerShape(12.dp)),
+                            .background(if (active) Color(0x265A96FF) else Color(0xD91B1030), RoundedCornerShape(12.dp))
+                            .border(
+                                if (active) 2.dp else 1.dp,
+                                if (active) Color(0xFF5A96FF) else Color(0x4D5A96FF),
+                                RoundedCornerShape(12.dp)
+                            ),
                         contentAlignment = Alignment.Center
                     ) { Text(ch, color = Color(0xFFCFE0FF), style = MaterialTheme.typography.headlineSmall) }
                 }
@@ -834,6 +842,11 @@ private fun MatchSettingsBlock(settings: GameSettings, isHost: Boolean, onSettin
             enabled = isHost,
             onSelect = { mode = it }
         )
+        // Review M-2/M-5: Game Mode and Time Control have no server field yet, so
+        // selecting one doesn't change the actual match — say so, or the player
+        // assumes they've configured a Blitz/timed game when they haven't. (Move
+        // Timer below IS real and carries no such note.)
+        SettingComingSoonNote()
 
         SettingLabel("Time Control", topPad = 14.dp)
         ChipRow(
@@ -842,6 +855,7 @@ private fun MatchSettingsBlock(settings: GameSettings, isHost: Boolean, onSettin
             enabled = isHost,
             onSelect = { time = it }
         )
+        SettingComingSoonNote()
 
         // Move Timer — real. Header row carries a live subtitle.
         Row(
@@ -876,6 +890,17 @@ private fun MatchSettingsBlock(settings: GameSettings, isHost: Boolean, onSettin
             )
         }
     }
+}
+
+/** Honest "not wired yet" note under the cosmetic-only setting rows (M-2/M-5). */
+@Composable
+private fun SettingComingSoonNote() {
+    Text(
+        "Preview only — coming soon; doesn't change this match yet.",
+        color = Ink2.copy(alpha = 0.85f),
+        style = MaterialTheme.typography.labelSmall,
+        modifier = Modifier.padding(top = 6.dp)
+    )
 }
 
 /** Uppercase gold section label used by the match-settings rows (mockup 1708). */
@@ -1039,7 +1064,10 @@ private fun SpectatorsCard(
                 Column(modifier = Modifier.weight(1f)) {
                     Text("Spectators", color = Color(0xFFF4D886), style = MaterialTheme.typography.titleSmall)
                     Text(
-                        if (allowSpec) "${spectators.size} watching · friends can tune in" else "Match is private",
+                        // Review (honesty): "off" is a local view preference, not a
+                        // real privacy control — anyone with the link can still
+                        // spectate. Don't claim "Match is private" (it isn't).
+                        if (allowSpec) "${spectators.size} watching · friends can tune in" else "Hidden from your view",
                         color = Ink2,
                         style = MaterialTheme.typography.labelSmall,
                         modifier = Modifier.padding(top = 2.dp)
@@ -1123,7 +1151,10 @@ private fun SpectatorsCard(
                 }
             } else {
                 Text(
-                    "Spectators are turned off. Only you and your opponent can see this match.",
+                    // Honest copy: this only hides the spectator list from the host's
+                    // view. Anyone with the room link can still watch — the server
+                    // has no real privacy flag yet, so don't imply one exists.
+                    "The spectator list is hidden from your view. Anyone with the room link can still watch.",
                     color = Ink2,
                     style = MaterialTheme.typography.bodySmall,
                     modifier = Modifier.padding(top = 12.dp)

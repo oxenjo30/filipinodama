@@ -81,13 +81,13 @@ import kotlinx.coroutines.launch
  * guild-chat socket via GuildChatRepository), Join Requests panel
  * (officer+), Edit Guild (leader/officer), Leave.
  *
- * War tab / War Log: HONEST-HIDDEN. Verified against apps/server/src/modules
- * (no guild-war routes) and apps/server/src/realtime (no war socket events)
- * and apps/web (GuildsPage.tsx has only a cosmetic "Weekly Guild War" progress
- * bar driven by the real weeklyPoints field — no opponent/schedule/war-log
- * data exists anywhere). Wiring a "Wars" tab would mean fabricating an
- * opponent, a countdown, and a war log — against the no-fake-data rule. The
- * inventory's Wars tab rows are therefore deferred pending a real backend.
+ * Wars tab: REAL and wired (GuildWarsTab below). Reads GET /api/guilds/war
+ * (GuildsRepository.war()) for the weekly contribution-ladder: real rank,
+ * points, reset countdown, standings, and personal contribution, plus a
+ * Play-Ranked CTA (ranked wins score war points). No opponent/schedule/war-log
+ * is fabricated — the tab only renders fields the server actually returns; when
+ * none exist it shows honest empty/error states. (An earlier version of this
+ * doc predated the war backend and called the tab "honest-hidden"; it is not.)
  */
 @Composable
 fun GuildHallScreen(
