@@ -12,10 +12,10 @@
     "typecheck": "turbo run typecheck",
     "test": "turbo run test",
     "e2e": "turbo run e2e",
-    "db:migrate": "pnpm --filter server prisma migrate dev",
-    "db:deploy": "pnpm --filter server prisma migrate deploy",
-    "db:seed": "pnpm --filter server prisma db seed",
-    "db:studio": "pnpm --filter server prisma studio"
+    "db:migrate": "pnpm --filter server exec prisma migrate dev",
+    "db:deploy": "pnpm --filter server exec prisma migrate deploy",
+    "db:seed": "pnpm --filter server exec prisma db seed",
+    "db:studio": "pnpm --filter server exec prisma studio"
   },
   "devDependencies": {
     "eslint": "^9.0.0",
