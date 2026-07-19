@@ -310,6 +310,25 @@ export function App() {
   // (see AccountMenu.signOut). Captured here (not in AccountMenu) so it can
   // render ON TOP of the whole shell, matching the mockup's full-screen overlay.
   const [signOutInfo, setSignOutInfo] = useState<{ me: { displayName: string; email: string | null; username: string }; time: string } | null>(null);
+  // Live sidebar badge counts (open reports/tickets awaiting an admin) — fetched
+  // on mount and refreshed every 45s so the red count-bubbles stay current like a
+  // notification bell. A failed fetch keeps the last-known counts (never crashes
+  // the nav); Map: /moderation → openReports, /support → openTickets.
+  const [counts, setCounts] = useState<{ openReports: number; openTickets: number }>({ openReports: 0, openTickets: 0 });
+
+  const signedIn = auth.status === "ok";
+  useEffect(() => {
+    if (!signedIn) return;
+    let alive = true;
+    const load = () =>
+      api
+        .get<{ openReports: number; openTickets: number }>("/api/admin/counts")
+        .then((d) => { if (alive) setCounts(d); })
+        .catch(() => {});
+    load();
+    const t = setInterval(load, 45_000);
+    return () => { alive = false; clearInterval(t); };
+  }, [signedIn]);
 
   if (auth.status === "loading") return <Center>Loading console…</Center>;
   if (signOutInfo) return <SignOutScreen me={signOutInfo.me} signOutTime={signOutInfo.time} />;
@@ -349,17 +368,26 @@ export function App() {
           {grouped.map(({ g, items }) => (
             <div key={g}>
               <div className="navsec">{g}</div>
-              {items.map(([to, label, dot, , , phase2]) => (
-                <NavLink key={to} to={to} className={({ isActive }) => `navitem${isActive ? " on" : ""}`}>
-                  {({ isActive }) => (
-                    <>
-                      <span className="ndot" style={{ background: dot, boxShadow: isActive ? `0 0 8px ${dot}` : "none" }} />
-                      <span className="lbl">{label}</span>
-                      {phase2 && <span className="badge" style={{ background: "rgba(240,207,114,.15)", color: "var(--amber)", border: "1px solid rgba(240,207,114,.35)" }}>P2</span>}
-                    </>
-                  )}
-                </NavLink>
-              ))}
+              {items.map(([to, label, dot, , , phase2]) => {
+                // Live actionable count for this item (only Moderation/Support have one).
+                const count = to === "/moderation" ? counts.openReports : to === "/support" ? counts.openTickets : 0;
+                return (
+                  <NavLink key={to} to={to} className={({ isActive }) => `navitem${isActive ? " on" : ""}`}>
+                    {({ isActive }) => (
+                      <>
+                        <span className="ndot" style={{ background: dot, boxShadow: isActive ? `0 0 8px ${dot}` : "none" }} />
+                        <span className="lbl">{label}</span>
+                        {/* A real count takes precedence; otherwise the Phase-2 stub badge. */}
+                        {count > 0 ? (
+                          <span className="count">{count}</span>
+                        ) : (
+                          phase2 && <span className="badge" style={{ background: "rgba(240,207,114,.15)", color: "var(--amber)", border: "1px solid rgba(240,207,114,.35)" }}>P2</span>
+                        )}
+                      </>
+                    )}
+                  </NavLink>
+                );
+              })}
             </div>
           ))}
         </div>

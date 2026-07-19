@@ -30,6 +30,7 @@ import { adminConfigRoutes } from "./modules/admin-config.js";
 import { adminCampaignsRoutes } from "./modules/admin-campaigns.js";
 import { adminAnalyticsRoutes } from "./modules/admin-analytics.js";
 import { adminTicketsRoutes } from "./modules/admin-tickets.js";
+import { adminCountsRoutes } from "./modules/admin-counts.js";
 import { adminSearchRoutes } from "./modules/admin-search.js";
 import { adminFinancialsRoutes } from "./modules/admin-financials.js";
 import { adminGatewaysRoutes } from "./modules/admin-gateways.js";
@@ -60,7 +61,12 @@ function corsOriginsFromEnv(): string[] {
 }
 
 export async function buildApp(): Promise<FastifyInstance> {
-  const app = Fastify({ logger: true });
+  // trustProxy: 1 — Railway terminates TLS at exactly one proxy hop in front of
+  // us, so trust ONLY the last hop's X-Forwarded-For entry. This makes req.ip the
+  // real client IP (what the rate-limiter keys on) while refusing to trust any
+  // client-supplied X-Forwarded-For beyond that single trusted hop (no spoofing
+  // your way past the per-IP limit). @fastify/rate-limit keys on req.ip by default.
+  const app = Fastify({ logger: true, trustProxy: 1 });
 
   // Global safety net: a floating promise rejection anywhere (e.g. a fired-and-
   // forgotten socket handler hitting a transient DB fault) must NOT terminate the
@@ -88,6 +94,53 @@ export async function buildApp(): Promise<FastifyInstance> {
   const corsOrigins = corsOriginsFromEnv();
   await app.register(cors, { origin: corsOrigins.length > 1 ? corsOrigins : corsOrigins[0], credentials: true });
   await app.register(cookie);
+
+  // ── CSRF defense (Origin/Referer allow-list) ──────────────────────────────
+  // The auth cookies are SameSite=None+Secure in prod (the SPA and API live on
+  // different subdomains), so a browser will attach them to CROSS-SITE requests
+  // too — which makes body-less "simple" POSTs (e.g. friend accept, logout,
+  // notifications read) forgeable from any origin unless we check who sent them.
+  //
+  // We validate the browser-set Origin (falling back to Referer) against the same
+  // CORS allow-list. A browser CANNOT spoof Origin cross-site (it's set by the UA,
+  // not page JS), so this is a robust, client-transparent CSRF guard:
+  //  - Web SPA: always sends Origin = one of our origins → allowed (no client change).
+  //  - Native Android app (OkHttp, cookie-authed): sends NO Origin/Referer, and a
+  //    native app is not a browser-CSRF vector → allowed.
+  //  - Server-to-server (PayMongo webhook, cron): no Origin → allowed (also
+  //    path-exempted below for defense-in-depth).
+  //  - Forged cross-site browser request from evil.com: Origin = https://evil.com,
+  //    not in the allow-list → 403.
+  //
+  // We chose this over "require Content-Type: application/json" (the other candidate
+  // fix) because the exact body-less mutating routes we need to protect (friends
+  // accept/decline/remove, blocks remove, notifications read/read-all/dismiss,
+  // logout) send NO Content-Type from BOTH current clients today — so a
+  // Content-Type requirement would break them without touching client code (which
+  // is out of scope here). Origin validation needs zero client changes. Only
+  // state-changing methods are checked (GET/HEAD/OPTIONS pass; PUT/PATCH/DELETE
+  // already force a CORS preflight our allow-list gates, but we check them too).
+  const csrfAllowedOrigins = new Set(corsOrigins);
+  const MUTATING = new Set(["POST", "PUT", "PATCH", "DELETE"]);
+  app.addHook("onRequest", async (req, reply) => {
+    if (!MUTATING.has(req.method)) return;
+    // Server-to-server callback that legitimately never carries a browser Origin.
+    if (req.url.startsWith("/api/payments/webhook")) return;
+    const origin = req.headers.origin;
+    // Fall back to Referer's origin when Origin is absent (some browsers omit
+    // Origin on same-site requests; Referer still pins the source).
+    let source = origin;
+    if (!source && typeof req.headers.referer === "string") {
+      try { source = new URL(req.headers.referer).origin; } catch { source = undefined; }
+    }
+    // No Origin AND no Referer ⇒ not a browser (native app / server-to-server) ⇒
+    // not a browser-CSRF vector ⇒ allow. A browser making a cross-site fetch
+    // ALWAYS sets Origin, so a forged request can never reach here header-less.
+    if (!source) return;
+    if (!csrfAllowedOrigins.has(source)) {
+      return reply.status(403).send(fail("CSRF_ORIGIN", "Cross-site request blocked"));
+    }
+  });
 
   // Global rate limit — a sane ceiling on every route (keyed by client IP).
   // Auth routes add their own stricter per-route limits via config in routes.ts.
@@ -132,6 +185,7 @@ export async function buildApp(): Promise<FastifyInstance> {
   await app.register(adminCampaignsRoutes, { prefix: "/api" });
   await app.register(adminAnalyticsRoutes, { prefix: "/api" });
   await app.register(adminTicketsRoutes, { prefix: "/api" });
+  await app.register(adminCountsRoutes, { prefix: "/api" });
   await app.register(adminTournamentsRoutes, { prefix: "/api" });
   await app.register(adminSearchRoutes, { prefix: "/api" });
   await app.register(adminFinancialsRoutes, { prefix: "/api" });

@@ -89,6 +89,12 @@ export async function adminReportsRoutes(app: FastifyInstance) {
       const rep = await prisma.report.findUnique({ where: { id: req.params.id }, select: { accusedId: true } });
       if (!rep) throw err.notFound("NO_REPORT", "Report not found");
       if (rep.accusedId === null) throw err.conflict("ACCUSED_GONE", "The reported account no longer exists");
+      // A moderator resolving a report can't be turned into a back door around the
+      // "only a superadmin can sanction another admin" rule the direct routes enforce.
+      if (rep.accusedId === req.userId) throw err.badRequest(kind === "mute" ? "SELF_MUTE" : "SELF_BAN", `You can't ${kind} yourself`);
+      const accused = await prisma.user.findUnique({ where: { id: rep.accusedId }, select: { adminRole: true } });
+      if (accused?.adminRole && req.adminRole !== "SUPERADMIN")
+        throw err.forbidden(kind === "mute" ? "MUTE_ADMIN" : "BAN_ADMIN", `Only a superadmin can ${kind} another admin`);
       const resolution = kind === "mute" ? "muted" : "banned";
       const email = await prisma.$transaction(async (tx) => {
         const claimed = await claim(tx, req.params.id, "RESOLVED", resolution, req.userId!);

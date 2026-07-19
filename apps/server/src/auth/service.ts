@@ -185,9 +185,14 @@ export async function verifyEmail(prisma: PrismaClient, token: string) {
 export async function login(prisma: PrismaClient, input: { email: string; password: string }) {
   const user = await prisma.user.findUnique({ where: { email: input.email.toLowerCase() } });
   if (!user || !user.passwordHash) throw err.unauthorized("BAD_CREDENTIALS", "Wrong email or password");
-  if (user.bannedUntil && user.bannedUntil > new Date()) throw err.forbidden("BANNED", "This account is suspended");
+  // Verify the password FIRST so a wrong password on a banned account returns the
+  // SAME generic BAD_CREDENTIALS as any other wrong password — never an oracle
+  // that reveals "this email exists and is banned" before authentication.
   if (!(await verifyPassword(input.password, user.passwordHash)))
     throw err.unauthorized("BAD_CREDENTIALS", "Wrong email or password");
+  // Only AFTER a correct password do we reveal the sanction state, so a
+  // legitimately-authenticated banned user still learns they're suspended.
+  if (user.bannedUntil && user.bannedUntil > new Date()) throw err.forbidden("BANNED", "This account is suspended");
   return user;
 }
 

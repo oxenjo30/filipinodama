@@ -103,6 +103,26 @@ if (isProd) {
         "\nSet these in the Railway service variables before deploying.",
     );
   }
+  // SECRETS_KEY hardening (WARN, not FATAL — see rationale below). When unset,
+  // secrets.ts derives the at-rest encryption key from JWT_ACCESS_SECRET, so a
+  // JWT-secret rotation would silently orphan every stored admin secret. We only
+  // WARN (never throw) because prod may ALREADY be running with SECRETS_KEY unset:
+  // hard-requiring a distinct value would (a) refuse the next deploy's boot and
+  // (b) make already-encrypted secrets undecryptable under a new key. Warn loudly
+  // so an operator sets a dedicated SECRETS_KEY, without risking a running deploy.
+  if (!env.SECRETS_KEY) {
+    console.warn(
+      "WARN: SECRETS_KEY is not set in production — admin secret encryption is " +
+        "falling back to JWT_ACCESS_SECRET. Set a dedicated SECRETS_KEY (distinct " +
+        "from JWT_ACCESS_SECRET) in the Railway service variables so stored secrets " +
+        "survive a JWT-secret rotation.",
+    );
+  } else if (env.SECRETS_KEY === env.JWT_ACCESS_SECRET) {
+    console.warn(
+      "WARN: SECRETS_KEY equals JWT_ACCESS_SECRET in production — set it to a " +
+        "DISTINCT value so admin secrets don't share a key with JWT signing.",
+    );
+  }
 }
 /** Which optional integrations are configured (drives "not configured" responses). */
 export const features = {

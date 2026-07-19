@@ -295,8 +295,10 @@ export async function adminRoutes(app: FastifyInstance) {
 
   app.post<{ Params: { id: string } }>("/admin/users/:id/mute", { preHandler: requireAdmin("MODERATOR") }, async (req) => {
     const { durationHours, reason } = durationSchema.parse(req.body);
-    const target = await prisma.user.findUnique({ where: { id: req.params.id }, select: { id: true } });
+    if (req.params.id === req.userId) throw err.badRequest("SELF_MUTE", "You can't mute yourself");
+    const target = await prisma.user.findUnique({ where: { id: req.params.id }, select: { adminRole: true } });
     if (!target) throw err.notFound("NO_USER", "Player not found");
+    if (target.adminRole && req.adminRole !== "SUPERADMIN") throw err.forbidden("MUTE_ADMIN", "Only a superadmin can mute another admin");
     const { mutedUntil } = await prisma.$transaction((tx) =>
       muteUser(tx, { targetId: req.params.id, actorId: req.userId!, durationHours, reason }),
     );
@@ -326,7 +328,14 @@ export async function adminRoutes(app: FastifyInstance) {
     const { currency, amount, reason } = z
       .object({
         currency: z.enum(["GOLD", "DIAMONDS", "TROPHIES"]),
-        amount: z.number().int().refine((n) => n !== 0, "amount must be non-zero"),
+        // Bounded so a single manual adjustment can't mint/burn an absurd balance
+        // (or be used to grief); +/-10M covers any legitimate manual correction.
+        amount: z
+          .number()
+          .int()
+          .min(-10_000_000)
+          .max(10_000_000)
+          .refine((n) => n !== 0, "amount must be non-zero"),
         reason: z.string().trim().min(1).max(500),
       })
       .parse(req.body);
