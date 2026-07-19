@@ -63,6 +63,33 @@ export const HOWTO_STEPS: { name: string; text: string }[] = [
   { name: "Win the game", text: "Capture all enemy pieces, or leave your opponent with no legal move. If neither side makes progress for 40 moves, the game is drawn." },
 ];
 
+/**
+ * GameFigure — section illustration, same pattern as TraditionalGamesPage /
+ * the /tl pages: AI-generated painterly golden-hour art served as 1200×670
+ * WebP (~100KB) from /assets/culture/. Explicit width/height prevent layout
+ * shift; lazy loading keeps it off the critical path.
+ */
+function GameFigure({ src, alt }: { src: string; alt: string }) {
+  return (
+    <img
+      src={`/assets/culture/${src}`}
+      alt={alt}
+      width={1200}
+      height={670}
+      loading="lazy"
+      decoding="async"
+      style={{
+        width: "100%",
+        height: "auto",
+        borderRadius: 10,
+        margin: "4px 0 14px",
+        border: "1px solid rgba(232,184,75,.22)",
+        boxShadow: "0 10px 28px rgba(0,0,0,.35)",
+      }}
+    />
+  );
+}
+
 const H2: React.CSSProperties = {
   font: "800 22px Cinzel,serif",
   color: "var(--gold-lt)",
@@ -126,6 +153,10 @@ export function RulesGuide() {
         </header>
 
         <h2 style={H2}>The Board and Starting Setup</h2>
+        <GameFigure
+          src="dama-plaza.webp"
+          alt="Illustration of two Filipino players at a dama board with red and blue bottle-cap pieces on a hand-drawn grid, at a town plaza at sunset"
+        />
         <p style={P}>
           Dama is played on the 32 dark squares of a standard 8×8 checkerboard. Each player begins
           with <strong>12 men</strong> arranged on the dark squares of the three rows nearest them;
