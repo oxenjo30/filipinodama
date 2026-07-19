@@ -88,12 +88,18 @@ fun OfflineGameScreen(difficulty: String, onChangeDifficulty: () -> Unit, onHome
             .padding(16.dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
+        // Even vertical rhythm between the major blocks (owner: "fix the spacing").
+        // The header block sits at the top; every section below is separated by a
+        // consistent GAP (14dp) so the AI card / move pill / board / Guest card /
+        // buttons breathe evenly, instead of the old patchwork (8/0/10/12/12) that
+        // jammed the "Your move" pill against the AI card.
+        val gap = 14.dp
         Text("✦ OFFLINE PRACTICE ✦", color = Gold, style = MaterialTheme.typography.labelMedium)
         Text(
             "Play vs AI",
             color = GoldLt,
             style = MaterialTheme.typography.headlineSmall,
-            modifier = Modifier.padding(top = 4.dp, bottom = 10.dp)
+            modifier = Modifier.padding(top = 4.dp)
         )
 
         // Opponent card (the AI, plays BLUE) — mirrors the mockup's board-screen
@@ -104,10 +110,12 @@ fun OfflineGameScreen(difficulty: String, onChangeDifficulty: () -> Unit, onHome
             avatarUrl = null,
             frameId = null,
             blueTint = true,
-            modifier = Modifier.padding(top = 8.dp)
+            modifier = Modifier.padding(top = gap)
         )
 
-        AiTurnBanner(status = ui.status, myTurn = myTurn, mustCapture = ui.mustCapture)
+        Box(modifier = Modifier.padding(top = gap)) {
+            AiTurnBanner(status = ui.status, myTurn = myTurn, mustCapture = ui.mustCapture)
+        }
 
         BoardView(
             state = gs,
@@ -122,7 +130,7 @@ fun OfflineGameScreen(difficulty: String, onChangeDifficulty: () -> Unit, onHome
             // opponent (blue) keeps the classic default pieces.
             boardId = me?.equippedBoard,
             redSkinId = me?.equippedSkin,
-            modifier = Modifier.padding(top = 10.dp)
+            modifier = Modifier.padding(top = gap)
         )
 
         // Self card (you, play RED) — shows your name + rank, or "Guest" for an
@@ -133,11 +141,11 @@ fun OfflineGameScreen(difficulty: String, onChangeDifficulty: () -> Unit, onHome
             avatarUrl = me?.avatarUrl,
             frameId = me?.frameId,
             blueTint = false,
-            modifier = Modifier.padding(top = 12.dp)
+            modifier = Modifier.padding(top = gap)
         )
 
         Row(
-            modifier = Modifier.fillMaxWidth().padding(top = 12.dp),
+            modifier = Modifier.fillMaxWidth().padding(top = gap),
             horizontalArrangement = Arrangement.spacedBy(10.dp)
         ) {
             GameButton(
