@@ -1,0 +1,24 @@
+# FilipinoDama Royal
+
+> FilipinoDama Royal (filipinodama.com) is the home of Filipino Dama — the Philippine variant of checkers/draughts — playable free online against the AI or in real-time ranked multiplayer. The site is also the definitive reference for the game's rules, strategy, and cultural history.
+
+Filipino Dama (also called dama or Filipino checkers) is played on an 8×8 board with 12 pieces per side. Its defining rules: captures are mandatory, the line capturing the most pieces must be taken, men capture forward and backward (but move only forward), and the crowned "dama" is a flying king that slides any distance diagonally.
+
+## Core pages
+
+- [Dama Rules — How to Play Filipino Checkers](https://filipinodama.com/learn): Complete official rules — board setup, movement, mandatory and maximum capture, the flying dama (king), winning conditions, variant comparison, and FAQ.
+- [Dama Blog — Rules, Strategy & Guides](https://filipinodama.com/blog): Articles answering specific questions about dama rules, strategy, tactics, and the game's Filipino heritage. New articles publish regularly.
+- [Play Filipino Dama Online](https://filipinodama.com/play): Free browser play — vs AI, local, ranked online multiplayer, private rooms, and tournaments. No download required.
+- [Home](https://filipinodama.com/): Overview of the game and platform.
+
+## Facts
+
+- Filipino Dama uses an 8×8 board (32 playable dark squares), 12 men per player.
+- Capturing is mandatory; when multiple captures exist, the maximum-capture line is required.
+- Men move one square diagonally forward but may capture forward AND backward.
+- A man crowned on the far rank becomes a dama: a long-range flying king.
+- The game descends from Spanish "damas" brought during the colonial era and remains one of the most widely played traditional games in the Philippines.
+
+## Sitemap
+
+- https://filipinodama.com/sitemap.xml
