@@ -36,6 +36,34 @@ export const CULTURE_FAQ: { q: string; a: string }[] = [
   },
 ];
 
+/**
+ * GameFigure — a section illustration. All 8 are AI-generated painterly artworks
+ * (Meshy, nano-banana-2) in a consistent golden-hour style matching the site's
+ * purple/gold theme, served as 1200×670 WebP (~100KB each). Explicit width/height
+ * prevent layout shift; lazy loading keeps them off the critical path. Alt text is
+ * descriptive and keyword-bearing — it feeds image search and screen readers.
+ */
+function GameFigure({ src, alt }: { src: string; alt: string }) {
+  return (
+    <img
+      src={`/assets/culture/${src}`}
+      alt={alt}
+      width={1200}
+      height={670}
+      loading="lazy"
+      decoding="async"
+      style={{
+        width: "100%",
+        height: "auto",
+        borderRadius: 10,
+        margin: "4px 0 14px",
+        border: "1px solid rgba(232,184,75,.22)",
+        boxShadow: "0 10px 28px rgba(0,0,0,.35)",
+      }}
+    />
+  );
+}
+
 const H2: React.CSSProperties = { font: "800 22px Cinzel,serif", color: "var(--gold-lt)", margin: "34px 0 10px" };
 const H3: React.CSSProperties = { font: "700 15px Inter", color: "var(--gold-lt)", margin: "18px 0 6px" };
 const P: React.CSSProperties = { font: "400 14px/1.75 Inter", color: "var(--ink)", margin: "0 0 12px" };
@@ -87,6 +115,10 @@ export function TraditionalGamesPage() {
         </header>
 
         <h2 style={H2}>Dama — the Board Game of the Plaza</h2>
+        <GameFigure
+          src="dama-plaza.webp"
+          alt="Illustration of two Filipino men playing dama with red and blue bottle-cap pieces on a hand-drawn board at a town plaza at sunset"
+        />
         <p style={P}>
           Walk past a sari-sari store, a barbershop, or a town plaza and you may still find two
           players hunched over a checkered board — often a hand-drawn grid with bottle caps for
@@ -116,6 +148,10 @@ export function TraditionalGamesPage() {
         </p>
 
         <h2 style={H2}>Sungka — Shells, Pits, and Counting</h2>
+        <GameFigure
+          src="sungka.webp"
+          alt="Illustration of a Filipino grandmother and grandchild playing sungka on a carved wooden sungkahan board with cowrie shells"
+        />
         <p style={P}>
           <strong>Sungka</strong> is the Philippine member of the worldwide mancala family: a
           carved wooden boat of fourteen pits and two heads, sown with shells or pebbles. Players
@@ -126,6 +162,10 @@ export function TraditionalGamesPage() {
 
         <h2 style={H2}>The Street Games</h2>
         <h3 style={H3}>Patintero</h3>
+        <GameFigure
+          src="patintero.webp"
+          alt="Illustration of Filipino children playing patintero, a runner dodging taggers on a chalk grid drawn on a barangay street at dusk"
+        />
         <p style={P}>
           The classic team chase: a grid is drawn on the road (chalk or water), taggers guard its
           lines, and runners try to cross the whole court and back without being touched. Whole
@@ -133,23 +173,39 @@ export function TraditionalGamesPage() {
           larong Pinoy street game.
         </p>
         <h3 style={H3}>Tumbang Preso</h3>
+        <GameFigure
+          src="tumbang-preso.webp"
+          alt="Illustration of children playing tumbang preso in a barangay alley, a slipper flying toward the tin can as the guard scrambles"
+        />
         <p style={P}>
           An empty can, one guard (the <em>preso</em>'s jailer), and a fistful of slippers.
           Players hurl their tsinelas to knock the can down while the guard scrambles to restore
           it and tag someone. Loud, chaotic, beloved.
         </p>
         <h3 style={H3}>Luksong Tinik and Luksong Baka</h3>
+        <GameFigure
+          src="luksong-tinik.webp"
+          alt="Illustration of Filipino children playing luksong tinik, a girl leaping over the stacked hands and feet of two seated players under a mango tree"
+        />
         <p style={P}>
           Jumping games of escalating difficulty: in <em>luksong tinik</em>, seated players stack
           hands and feet into a growing "thorn" the jumpers must clear; in <em>luksong baka</em>,
           the crouching "cow" rises higher each round. No equipment, pure nerve.
         </p>
         <h3 style={H3}>Piko</h3>
+        <GameFigure
+          src="piko.webp"
+          alt="Illustration of a Filipino girl hopping on one leg across a chalk-drawn piko hopscotch grid at sunset, her flat pamato stone on a numbered square"
+        />
         <p style={P}>
           The Filipino hopscotch — a chalk grid, a flat marker (the <em>pamato</em>), and one leg
           to hop through it. Every region draws the court a little differently.
         </p>
         <h3 style={H3}>Agawan Base, Langit-Lupa, and Sipa</h3>
+        <GameFigure
+          src="sipa.webp"
+          alt="Illustration of a Filipino schoolboy playing sipa, kicking a woven rattan ball into the air in a schoolyard while classmates cheer"
+        />
         <p style={P}>
           <em>Agawan base</em> is capture-the-base team tag; <em>langit-lupa</em> is tag with a
           twist — anything elevated ("langit", heaven) is safe ground; and <em>sipa</em>, kicking
@@ -159,6 +215,10 @@ export function TraditionalGamesPage() {
         </p>
 
         <h2 style={H2}>Damath — When Dama Went to School</h2>
+        <GameFigure
+          src="damath.webp"
+          alt="Illustration of two Filipino students playing damath on a math-operation checkerboard in a classroom while their teacher looks on"
+        />
         <p style={P}>
           The Philippines even gave dama an academic child: <strong>Damath</strong>, invented by a
           Sorsogon schoolteacher in the 1970s, plays dama on a board of math operations — every
