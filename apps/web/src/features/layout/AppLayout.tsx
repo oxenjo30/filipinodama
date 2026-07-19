@@ -323,7 +323,12 @@ export function AppLayout() {
         )}
 
         {/* ============ TOP NAV ============ */}
-        <header style={{ borderBottom: "1px solid rgba(232,184,75,.28)", background: "linear-gradient(180deg,rgba(24,12,44,.9),rgba(18,9,34,.75))", backdropFilter: "blur(10px)", position: "sticky", top: 0, zIndex: 50 }}>
+        {/* paddingTop: env(safe-area-inset-top) — installed as an iOS PWA the
+            status bar is "black-translucent", so the web content draws UNDER the
+            clock/notch. Without the safe-area inset the header overlapped the
+            status bar (owner-reported). The inset is 0 in a normal browser tab,
+            so this only takes effect in the installed/standalone app. */}
+        <header style={{ borderBottom: "1px solid rgba(232,184,75,.28)", background: "linear-gradient(180deg,rgba(24,12,44,.9),rgba(18,9,34,.75))", backdropFilter: "blur(10px)", position: "sticky", top: 0, zIndex: 50, paddingTop: "env(safe-area-inset-top)" }}>
           <div style={{ maxWidth: 1560, margin: "0 auto", padding: "12px 26px", display: "flex", alignItems: "center", gap: 22 }}>
             {/* Hamburger — LEFT of the logo on mobile (standard pattern). CSS
                 (.fd-burger) shows it only ≤1100px; on desktop the logo leads and
