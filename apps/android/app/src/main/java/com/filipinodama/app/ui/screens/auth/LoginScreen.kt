@@ -184,7 +184,8 @@ fun LoginScreen(
                     onValueChange = { email = it },
                     placeholder = "you@example.com",
                     keyboardType = KeyboardType.Email,
-                    enabled = !busy
+                    enabled = !busy,
+                    autofill = AuthAutofill.EMAIL
                 )
             }
             Column {
@@ -194,7 +195,8 @@ fun LoginScreen(
                     onValueChange = { password = it },
                     placeholder = "••••••••",
                     isPassword = true,
-                    enabled = !busy
+                    enabled = !busy,
+                    autofill = AuthAutofill.PASSWORD
                 )
             }
 
