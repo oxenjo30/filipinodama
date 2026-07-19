@@ -54,7 +54,7 @@ async function main() {
   // live article. (/learn renders its logged-out state — the public RulesGuide —
   // which is exactly what crawlers should see; per-user lesson progress stays
   // client-side.)
-  const routes = ["/", "/blog", "/learn", "/strategy", ...live.map((a) => `/blog/${a.slug}`)];
+  const routes = ["/", "/blog", "/learn", "/strategy", "/play", ...live.map((a) => `/blog/${a.slug}`)];
 
   let written = 0;
   for (const route of routes) {
@@ -88,7 +88,7 @@ async function main() {
   //    else falls through to 404.html with a real HTTP 404 status.
   const SPA_SEGMENTS = [
     "login", "register", "reset", "verify",
-    "play", "damath", "rooms", "leaderboard", "store", "orders",
+    "damath", "rooms", "leaderboard", "store", "orders",
     "inventory", "profile", "friends", "messages", "guilds", "quests",
     "season", "tournaments", "watch", "settings", "legal", "privacy",
     "terms", "community", "anti-cheat", "data", "contact",
@@ -105,13 +105,15 @@ async function main() {
         { source: seg, destination: "/index.html" },
         { source: `${seg}/**`, destination: "/index.html" },
       ]),
-      // /learn is PRERENDERED (resolves natively to dist/learn/index.html — no
-      // rewrite for the bare segment), but the per-lesson pages under it are
-      // auth-gated SPA screens and still need the shell. NOTE: this must be
-      // "learn/:id" (one path param, mirroring the router's /learn/:id) and NOT
-      // "learn/**" — the ** form also matches bare /learn and, because rewrites
-      // are not first-match-wins, it would shadow the prerendered file.
+      // /learn and /play are PRERENDERED (they resolve natively to their
+      // dist/<route>/index.html — no rewrite for the bare segments), but the
+      // screens under them are SPA and still need the shell. NOTE: these must be
+      // :param rules mirroring the router's actual sub-routes and NOT "seg/**" —
+      // the ** form also matches the bare segment and, because rewrites are not
+      // first-match-wins, it would shadow the prerendered file.
       { source: "learn/:id", destination: "/index.html" },
+      { source: "play/:mode", destination: "/index.html" },
+      { source: "play/:mode/:screen", destination: "/index.html" },
     ],
   };
   await writeFile(join(DIST, "serve.json"), JSON.stringify(serveConfig, null, 2) + "\n", "utf8");
@@ -121,7 +123,7 @@ async function main() {
 
   console.log(
     `[prerender] Asia/Manila today=${today}: wrote ${written} pages ` +
-      `(/, /blog, ${live.length} articles) + 404.html + serve.json + sitemap.xml`,
+      `(/, /blog, /learn, /strategy, /play, ${live.length} articles) + 404.html + serve.json + sitemap.xml`,
   );
 }
 
@@ -177,6 +179,7 @@ async function writeSitemap(live) {
     `  <url>\n    <loc>${ORIGIN}/</loc>${lastmod(latest)}\n    <changefreq>daily</changefreq>\n    <priority>1.0</priority>\n  </url>`,
     `  <url>\n    <loc>${ORIGIN}/learn</loc>\n    <changefreq>monthly</changefreq>\n    <priority>0.9</priority>\n  </url>`,
     `  <url>\n    <loc>${ORIGIN}/strategy</loc>\n    <changefreq>monthly</changefreq>\n    <priority>0.9</priority>\n  </url>`,
+    `  <url>\n    <loc>${ORIGIN}/play</loc>\n    <changefreq>monthly</changefreq>\n    <priority>0.9</priority>\n  </url>`,
     `  <url>\n    <loc>${ORIGIN}/blog</loc>${lastmod(latest)}\n    <changefreq>daily</changefreq>\n    <priority>0.8</priority>\n  </url>`,
     ...live.map(
       (a) =>

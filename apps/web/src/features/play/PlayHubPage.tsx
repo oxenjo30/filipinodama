@@ -2,6 +2,7 @@ import type { CSSProperties, ReactNode } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAppStore } from "../../stores/appStore";
 import { useAuthStore } from "../../stores/authStore";
+import { PlaySeo } from "./PlaySeo";
 
 /**
  * PlayHubPage — "/play" Choose-Mode hub, ported verbatim from the approved
@@ -332,6 +333,10 @@ export function PlayHubPage() {
           </div>
         </div>
       </div>
+
+      {/* ── PUBLIC SEO LANDING BLOCK (head + marketing + FAQ; additive only —
+             the approved hub layout above is untouched) ── */}
+      <PlaySeo />
     </div>
   );
 }
