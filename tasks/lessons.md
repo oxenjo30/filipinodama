@@ -313,3 +313,13 @@
   2. EncryptedSharedPreferences keeps its wrapping keyset in a SEPARATE prefs file (`__androidx_security_crypto_encrypted_prefs_key_keyset__`). To truly reset a corrupt encrypted store you must delete BOTH files; deleting only the data file can leave create() still throwing.
   3. "Persists across restart but NOT across update" points at something that differs between the two — process re-creation + first-Keystore-access-after-update — not at cookie expiry or splash timing. Don't re-audit the parts that are identical on both paths.
   4. When a hardening/never-crash fix ships, check its RECOVERY branch for collateral damage (here: un-bricking launch silently logged everyone out on update). The safe-launch goal and the keep-session goal both have to hold.
+
+## 2026-07-19 - git stash -u swept the owner's untracked asset libraries
+
+- Mistake: a session resolving PR #42 merge conflicts ran a blanket `git stash push -u -m "pre-conflict-resolve safety"` in the MAIN checkout. `-u` stashes UNTRACKED files, so it silently removed the owner's on-disk-only asset libraries from the working tree: play-store-assets/ (54 Play Store screenshots/graphics), handoffv3/ (approved mockups), .backups/ (a DB dump), and ~470 other untracked files. The owner discovered the loss hours later.
+- Cause: play-store-assets/, handoffv3/, and .backups/ were untracked but NOT gitignored, so untracked-sweeping commands treated them as disposable. (Ironically *.zip WAS ignored, which is why one zip survived.)
+- Recovery: everything was intact in the stash's untracked-files commit (9b163a9, "untracked files on feat/seo-phase1-blog-prerender"); restored all 530 files via `git restore --source=9b163a9 --worktree --pathspec-from-file=<list>`. The stash was left in place as a backup.
+- Rule:
+  1. NEVER run blanket `git stash -u` / `git stash -a` or `git clean` variants in this repo's main checkout. If a stash is needed, stash tracked changes only, or pathspec it to the files being worked on.
+  2. Precious on-disk-only folders must be in .gitignore (now: /play-store-assets/, /handoffv3/, /.backups/) — ignored files are immune to `stash -u` and `git clean -fd`. Never use `git clean -x`, which deletes ignored files too.
+  3. When untracked files vanish with no Recycle Bin entry, check `git stash list` and the stash's third-parent "untracked files on ..." commit BEFORE assuming permanent loss; folder mtimes pinpoint the sweep time to correlate with session transcripts.

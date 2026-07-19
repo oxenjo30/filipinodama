@@ -28,3 +28,11 @@ _asset-previews/
 
 # Local AAB/APK delivery folder (build artifacts — never commit)
 /builds/
+
+# Owner's local asset libraries — precious, on-disk-only, never committed.
+# MUST stay gitignored: ignored files are immune to `git stash -u` and plain
+# `git clean -fd` (a blanket `git stash push -u` swept these into a stash on
+# 2026-07-19; recovered — see tasks/lessons.md). Never run `git clean -x` here.
+/play-store-assets/
+/handoffv3/
+/.backups/
