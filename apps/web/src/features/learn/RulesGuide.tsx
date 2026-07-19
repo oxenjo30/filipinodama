@@ -118,6 +118,11 @@ export function RulesGuide() {
             diagonal. This guide covers everything you need to play, exactly as the game is played
             on FilipinoDama Royal.
           </p>
+          <p style={{ ...P, font: "600 13px Inter" }}>
+            <Link to="/tl/learn" style={{ color: "var(--gold)" }} hrefLang="tl-PH">
+              Basahin ang gabay na ito sa Tagalog →
+            </Link>
+          </p>
         </header>
 
         <h2 style={H2}>The Board and Starting Setup</h2>

@@ -43,6 +43,15 @@ type SiteHeadProps = {
   noindex?: boolean;
   /** One or more JSON-LD objects to embed. */
   jsonLd?: object | object[];
+  /**
+   * hreflang alternates for translated pages. Each entry emits
+   * <link rel="alternate" hreflang="..." href={canonical(path)}>. The page's own
+   * language must be included too (hreflang sets are reciprocal and
+   * self-referential), plus an "x-default" pointing at the English page.
+   */
+  alternates?: { hrefLang: string; path: string }[];
+  /** Locale of the page for og:locale, e.g. "tl_PH". Default en_PH. */
+  ogLocale?: string;
 };
 
 /**
@@ -58,6 +67,8 @@ export function SiteHead({
   image = SITE.ogImage,
   noindex = false,
   jsonLd,
+  alternates,
+  ogLocale = "en_PH",
 }: SiteHeadProps) {
   const url = canonical(path);
   const blocks = jsonLd ? (Array.isArray(jsonLd) ? jsonLd : [jsonLd]) : [];
@@ -68,7 +79,11 @@ export function SiteHead({
       <meta name="description" content={description} />
       <link rel="canonical" href={url} />
       {noindex && <meta name="robots" content="noindex" />}
+      {(alternates ?? []).map((a) => (
+        <link key={a.hrefLang} rel="alternate" hrefLang={a.hrefLang} href={canonical(a.path)} />
+      ))}
 
+      <meta property="og:locale" content={ogLocale} />
       <meta property="og:type" content={ogType} />
       <meta property="og:site_name" content={SITE.name} />
       <meta property="og:title" content={title} />

@@ -318,6 +318,11 @@ export function LearnPage() {
         title="Dama Rules — How to Play Filipino Checkers (Complete Guide)"
         description="Learn the official rules of Filipino Dama (dama / Filipino checkers): board setup, mandatory captures, the maximum-capture rule, the flying dama (king), and how to win — with FAQ and interactive lessons."
         path="/learn"
+        alternates={[
+          { hrefLang: "en-PH", path: "/learn" },
+          { hrefLang: "tl-PH", path: "/tl/learn" },
+          { hrefLang: "x-default", path: "/learn" },
+        ]}
         jsonLd={[
           faqJsonLd(RULES_FAQ),
           howToJsonLd(
