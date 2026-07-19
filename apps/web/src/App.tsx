@@ -29,6 +29,7 @@ import { TournamentDetailPage } from "./features/tournaments/TournamentDetailPag
 import { WatchLiveGate } from "./features/watch/WatchLiveGate";
 import { LeaderboardPage } from "./features/leaderboard/LeaderboardPage";
 import { StrategyPage } from "./features/strategy/StrategyPage";
+import { TraditionalGamesPage } from "./features/culture/TraditionalGamesPage";
 import { AuthPage } from "./features/auth/AuthPage";
 import { ResetPasswordPage } from "./features/auth/ResetPasswordPage";
 import { VerifyEmailPage } from "./features/auth/VerifyEmailPage";
@@ -147,6 +148,7 @@ export function AppRoutes() {
           {/* ── styled placeholders (no dead links) ── */}
           <Route path="/leaderboard" element={<LeaderboardPage />} />
           <Route path="/strategy" element={<StrategyPage />} />
+          <Route path="/traditional-filipino-games" element={<TraditionalGamesPage />} />
           <Route path="/learn" element={<LearnPage />} />
           <Route path="/learn/:id" element={<LessonPage />} />
           <Route path="/store" element={<StorePage />} />

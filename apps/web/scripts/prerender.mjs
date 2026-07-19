@@ -54,7 +54,10 @@ async function main() {
   // live article. (/learn renders its logged-out state — the public RulesGuide —
   // which is exactly what crawlers should see; per-user lesson progress stays
   // client-side.)
-  const routes = ["/", "/blog", "/learn", "/strategy", "/play", ...live.map((a) => `/blog/${a.slug}`)];
+  const routes = [
+    "/", "/blog", "/learn", "/strategy", "/play", "/traditional-filipino-games",
+    ...live.map((a) => `/blog/${a.slug}`),
+  ];
 
   let written = 0;
   for (const route of routes) {
@@ -180,6 +183,7 @@ async function writeSitemap(live) {
     `  <url>\n    <loc>${ORIGIN}/learn</loc>\n    <changefreq>monthly</changefreq>\n    <priority>0.9</priority>\n  </url>`,
     `  <url>\n    <loc>${ORIGIN}/strategy</loc>\n    <changefreq>monthly</changefreq>\n    <priority>0.9</priority>\n  </url>`,
     `  <url>\n    <loc>${ORIGIN}/play</loc>\n    <changefreq>monthly</changefreq>\n    <priority>0.9</priority>\n  </url>`,
+    `  <url>\n    <loc>${ORIGIN}/traditional-filipino-games</loc>\n    <changefreq>monthly</changefreq>\n    <priority>0.8</priority>\n  </url>`,
     `  <url>\n    <loc>${ORIGIN}/blog</loc>${lastmod(latest)}\n    <changefreq>daily</changefreq>\n    <priority>0.8</priority>\n  </url>`,
     ...live.map(
       (a) =>
