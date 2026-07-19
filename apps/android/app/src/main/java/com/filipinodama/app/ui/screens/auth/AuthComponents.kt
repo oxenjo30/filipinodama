@@ -31,6 +31,9 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.layout.boundsInWindow
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.input.KeyboardType
@@ -64,6 +67,16 @@ fun AuthLabel(text: String) {
     )
 }
 
+/**
+ * Autofill hint for a credential field — kept as a plain enum so callers don't
+ * touch the experimental Compose autofill API (the mapping to the real
+ * [androidx.compose.ui.autofill.AutofillType] is done internally under @OptIn).
+ * EMAIL/USERNAME/PASSWORD fill an existing credential; NEW_PASSWORD prompts the
+ * password manager to SAVE a new one (create-account).
+ */
+enum class AuthAutofill { NONE, EMAIL, USERNAME, PASSWORD, NEW_PASSWORD }
+
+@OptIn(androidx.compose.ui.ExperimentalComposeUiApi::class)
 @Composable
 fun AuthTextField(
     value: String,
@@ -72,9 +85,19 @@ fun AuthTextField(
     modifier: Modifier = Modifier,
     keyboardType: KeyboardType = KeyboardType.Text,
     isPassword: Boolean = false,
-    enabled: Boolean = true
+    enabled: Boolean = true,
+    // Autofill hint so Google Password Manager / Chrome / a password vault can
+    // SAVE the credential after login and AUTO-FILL it next time.
+    autofill: AuthAutofill = AuthAutofill.NONE
 ) {
     var visible by remember { mutableStateOf(false) }
+    val autofillTypes: List<androidx.compose.ui.autofill.AutofillType>? = when (autofill) {
+        AuthAutofill.NONE -> null
+        AuthAutofill.EMAIL -> listOf(androidx.compose.ui.autofill.AutofillType.EmailAddress)
+        AuthAutofill.USERNAME -> listOf(androidx.compose.ui.autofill.AutofillType.Username)
+        AuthAutofill.PASSWORD -> listOf(androidx.compose.ui.autofill.AutofillType.Password)
+        AuthAutofill.NEW_PASSWORD -> listOf(androidx.compose.ui.autofill.AutofillType.NewPassword)
+    }
     // Password fields MUST use the Password IME type and disable autocorrect +
     // auto-capitalization. With the plain Text keyboard the soft keyboard would
     // silently autocorrect / capitalize the first character of a typed password
@@ -88,6 +111,39 @@ fun AuthTextField(
         autoCorrect = false,
         capitalization = androidx.compose.ui.text.input.KeyboardCapitalization.None
     )
+
+    // ── Autofill wiring (LocalAutofill tree — the stable API on this Compose
+    // BOM). Registers an AutofillNode for the credential fields; on focus we ask
+    // the framework to offer its saved values, and when the user picks one the
+    // node's onFill routes it into our state via onValueChange. ──
+    val autofill = androidx.compose.ui.platform.LocalAutofill.current
+    val autofillTree = androidx.compose.ui.platform.LocalAutofillTree.current
+    val autofillNode = remember(autofillTypes) {
+        autofillTypes?.let {
+            androidx.compose.ui.autofill.AutofillNode(
+                autofillTypes = it,
+                onFill = { filled -> onValueChange(filled) }
+            )
+        }
+    }
+    if (autofillNode != null) {
+        androidx.compose.runtime.DisposableEffect(autofillNode) {
+            autofillTree += autofillNode
+            onDispose { }
+        }
+    }
+
+    val autofillModifier = if (autofillNode != null) {
+        Modifier
+            .onGloballyPositioned { autofillNode.boundingBox = it.boundsInWindow() }
+            .onFocusChanged { focusState ->
+                autofill?.run {
+                    if (focusState.isFocused) requestAutofillForNode(autofillNode)
+                    else cancelAutofillForNode(autofillNode)
+                }
+            }
+    } else Modifier
+
     OutlinedTextField(
         value = value,
         onValueChange = onValueChange,
@@ -119,7 +175,7 @@ fun AuthTextField(
         shape = RoundedCornerShape(11.dp),
         // OutlinedTextField's default min height already exceeds the 44dp
         // touch-target bar; no extra height constraint needed.
-        modifier = modifier.fillMaxWidth()
+        modifier = modifier.fillMaxWidth().then(autofillModifier)
     )
 }
 

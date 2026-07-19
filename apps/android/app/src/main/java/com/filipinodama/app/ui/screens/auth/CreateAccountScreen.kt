@@ -182,7 +182,8 @@ fun CreateAccountScreen(
                     value = username,
                     onValueChange = { username = it },
                     placeholder = "e.g. Datu Rico",
-                    enabled = !busy
+                    enabled = !busy,
+                    autofill = AuthAutofill.USERNAME
                 )
             }
             Column {
@@ -192,7 +193,8 @@ fun CreateAccountScreen(
                     onValueChange = { email = it },
                     placeholder = "you@example.com",
                     keyboardType = KeyboardType.Email,
-                    enabled = !busy
+                    enabled = !busy,
+                    autofill = AuthAutofill.EMAIL
                 )
             }
             Column {
@@ -202,7 +204,10 @@ fun CreateAccountScreen(
                     onValueChange = { password = it },
                     placeholder = "••••••••",
                     isPassword = true,
-                    enabled = !busy
+                    enabled = !busy,
+                    // NEW_PASSWORD so the manager offers to SAVE a new credential
+                    // on signup (vs. filling an existing one on login).
+                    autofill = AuthAutofill.NEW_PASSWORD
                 )
             }
 
