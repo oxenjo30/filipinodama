@@ -95,6 +95,11 @@ async function main() {
   ];
   const serveConfig = {
     directoryListing: false,
+    // The old prototype's blog lived at /blog/posts/<slug> and Google indexed at
+    // least one of those URLs. 301 them to the current /blog/<slug> so the earned
+    // equity transfers instead of dying on a 404 (a slug with no current article
+    // 301s onto our 404 page, which is no worse than before).
+    redirects: [{ source: "blog/posts/:slug", destination: "/blog/:slug", type: 301 }],
     rewrites: [
       ...SPA_SEGMENTS.flatMap((seg) => [
         { source: seg, destination: "/index.html" },
