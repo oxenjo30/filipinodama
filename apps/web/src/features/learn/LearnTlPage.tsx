@@ -346,6 +346,10 @@ export function LearnTlPage() {
           <Link to="/traditional-filipino-games" style={{ color: "var(--gold)" }}>
             larong Pinoy
           </Link>
+          , at puwede mo ring i-download ang{" "}
+          <a href="/downloads/dama-rules-classroom-guide.pdf" style={{ color: "var(--gold)" }}>
+            libreng printable na classroom rules guide (PDF)
+          </a>
           .
         </p>
 

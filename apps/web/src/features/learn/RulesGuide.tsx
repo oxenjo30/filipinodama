@@ -150,6 +150,11 @@ export function RulesGuide() {
               Basahin ang gabay na ito sa Tagalog →
             </Link>
           </p>
+          <p style={{ ...P, font: "600 13px Inter" }}>
+            <a href="/downloads/dama-rules-classroom-guide.pdf" style={{ color: "var(--gold)" }}>
+              Teachers &amp; students: free printable classroom rules guide (PDF) →
+            </a>
+          </p>
         </header>
 
         <h2 style={H2}>The Board and Starting Setup</h2>
