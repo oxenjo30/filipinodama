@@ -163,7 +163,10 @@ function ConstantsForm({ rows, onDone }: { rows: ConfigRow[]; onDone: () => void
           </div>
         ))}
       </div>
-      <button className="abtn btn-gold-pill full" style={{ marginTop: 16 }} disabled={dirty.length === 0} onClick={save}>
+      {/* Content-width pill (was `full` = 100%, which stretched oversized across
+          the whole panel). Matches the other admin action buttons — Save season /
+          Save quest / Store save all use `abtn btn-gold-pill` without `full`. */}
+      <button className="abtn btn-gold-pill" style={{ marginTop: 16 }} disabled={dirty.length === 0} onClick={save}>
         Save constants
       </button>
     </>
