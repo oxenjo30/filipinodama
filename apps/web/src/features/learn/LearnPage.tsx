@@ -3,6 +3,8 @@ import { Link, useNavigate } from "react-router-dom";
 import { api } from "../../lib/api";
 import { useAppStore } from "../../stores/appStore";
 import { useAuthStore } from "../../stores/authStore";
+import { SiteHead, faqJsonLd, howToJsonLd } from "../../lib/seo";
+import { RulesGuide, RULES_FAQ, HOWTO_STEPS } from "./RulesGuide";
 
 /**
  * LearnPage (/learn) — ported faithfully from the approved prototype
@@ -312,6 +314,19 @@ export function LearnPage() {
         alignItems: "start",
       }}
     >
+      <SiteHead
+        title="Dama Rules — How to Play Filipino Checkers (Complete Guide)"
+        description="Learn the official rules of Filipino Dama (dama / Filipino checkers): board setup, mandatory captures, the maximum-capture rule, the flying dama (king), and how to win — with FAQ and interactive lessons."
+        path="/learn"
+        jsonLd={[
+          faqJsonLd(RULES_FAQ),
+          howToJsonLd(
+            "How to Play Filipino Dama",
+            "Set up the board and learn movement, mandatory captures, crowning, and winning in Filipino Dama (Filipino checkers).",
+            HOWTO_STEPS,
+          ),
+        ]}
+      />
       {/* ── LEFT RAIL ── */}
       <div className="fd-order-2" style={{ display: "flex", flexDirection: "column", gap: 18 }}>
         {/* Your Learning Journey */}
@@ -843,6 +858,10 @@ export function LearnPage() {
           ))}
         </div>
       </div>
+
+      {/* ── PUBLIC RULES GUIDE (SEO pillar; spans all 3 columns; additive only —
+             the approved layout above is untouched) ── */}
+      <RulesGuide />
     </div>
   );
 }

@@ -25,22 +25,36 @@ async function main() {
   // 1. Load the SSR render() from the Node build.
   const { render } = await import(pathToFileURL(SSR_ENTRY).href);
 
-  // 2. The built client shell we inject into. CRITICAL: read it ONCE into memory as
-  //    the pristine template BEFORE writing any route. "/" is written back to
-  //    dist/index.html, so if we re-read the file per page we'd pollute every
-  //    subsequent page with the home route's head (two canonicals). Vite empties
-  //    dist on each build, so on a real build this file is always the clean shell;
-  //    holding it in a const also makes a standalone re-run idempotent.
-  const template = await readFile(join(DIST, "index.html"), "utf8");
-  // Guard: if a prior standalone run already injected the home head into index.html,
-  // strip any injected per-route Helmet tags so we start from a clean base.
-  const cleanTemplate = stripInjectedHead(template);
+  // 2. The built client shell we inject into. "/" is written back over
+  //    dist/index.html, so the pristine template must be preserved elsewhere for
+  //    standalone re-runs: on a fresh `vite build` (which empties dist) we read the
+  //    clean shell and snapshot it into dist-ssr/ (never served, never shipped); if
+  //    dist/index.html already carries injected Helmet tags (data-rh) we're in a
+  //    re-run and use the snapshot instead. Regex-stripping a nested-div body to
+  //    "undo" injection is not reliably possible — don't reintroduce it.
+  const templateSnapshot = join(WEB_ROOT, "dist-ssr", "template.html");
+  const distIndex = await readFile(join(DIST, "index.html"), "utf8");
+  let cleanTemplate;
+  if (distIndex.includes("data-rh=")) {
+    cleanTemplate = await readFile(templateSnapshot, "utf8").catch(() => {
+      throw new Error(
+        "[prerender] dist/index.html is already injected and no pristine snapshot " +
+          "exists — run a full `pnpm build` instead of a standalone re-run.",
+      );
+    });
+  } else {
+    cleanTemplate = distIndex;
+    await writeFile(templateSnapshot, cleanTemplate, "utf8");
+  }
 
   // 3. The drip-aware live set (Asia/Manila anchored — see live-articles.mjs).
   const { live, liveSlugs, today } = await liveArticles();
 
-  // Routes to prerender: home, blog index, and each live article.
-  const routes = ["/", "/blog", ...live.map((a) => `/blog/${a.slug}`)];
+  // Routes to prerender: home, blog index, the /learn rules pillar, and each
+  // live article. (/learn renders its logged-out state — the public RulesGuide —
+  // which is exactly what crawlers should see; per-user lesson progress stays
+  // client-side.)
+  const routes = ["/", "/blog", "/learn", ...live.map((a) => `/blog/${a.slug}`)];
 
   let written = 0;
   for (const route of routes) {
@@ -74,17 +88,26 @@ async function main() {
   //    else falls through to 404.html with a real HTTP 404 status.
   const SPA_SEGMENTS = [
     "login", "register", "reset", "verify",
-    "play", "damath", "rooms", "leaderboard", "learn", "store", "orders",
+    "play", "damath", "rooms", "leaderboard", "store", "orders",
     "inventory", "profile", "friends", "messages", "guilds", "quests",
     "season", "tournaments", "watch", "settings", "legal", "privacy",
     "terms", "community", "anti-cheat", "data", "contact",
   ];
   const serveConfig = {
     directoryListing: false,
-    rewrites: SPA_SEGMENTS.flatMap((seg) => [
-      { source: seg, destination: "/index.html" },
-      { source: `${seg}/**`, destination: "/index.html" },
-    ]),
+    rewrites: [
+      ...SPA_SEGMENTS.flatMap((seg) => [
+        { source: seg, destination: "/index.html" },
+        { source: `${seg}/**`, destination: "/index.html" },
+      ]),
+      // /learn is PRERENDERED (resolves natively to dist/learn/index.html — no
+      // rewrite for the bare segment), but the per-lesson pages under it are
+      // auth-gated SPA screens and still need the shell. NOTE: this must be
+      // "learn/:id" (one path param, mirroring the router's /learn/:id) and NOT
+      // "learn/**" — the ** form also matches bare /learn and, because rewrites
+      // are not first-match-wins, it would shadow the prerendered file.
+      { source: "learn/:id", destination: "/index.html" },
+    ],
   };
   await writeFile(join(DIST, "serve.json"), JSON.stringify(serveConfig, null, 2) + "\n", "utf8");
 
@@ -110,20 +133,6 @@ function deLinkFutureTargets(html, liveSlugs) {
       return `<span${pre}${post}>${text}</span>`; // future → strip the link
     },
   );
-}
-
-/**
- * Undo a prior prerender injection so a standalone re-run starts from a clean base.
- * Helmet tags all carry data-rh="true"; the shell's own tags never do. We also
- * clear any previously-injected #root body. On a real `vite build` (which empties
- * dist) index.html is already pristine, so this is a no-op there — it only matters
- * for repeated standalone `node scripts/prerender.mjs` runs during development.
- */
-function stripInjectedHead(template) {
-  return template
-    .replace(/\s*<[a-z]+[^>]*\sdata-rh="true"[^>]*>[\s\S]*?<\/[a-z]+>/gi, "")
-    .replace(/\s*<(meta|link)[^>]*\sdata-rh="true"[^>]*\/?>/gi, "")
-    .replace(/<div id="root">[\s\S]*?<\/div>/, '<div id="root"></div>');
 }
 
 /** Inject rendered body + head into the built index.html template. */
@@ -161,6 +170,7 @@ async function writeSitemap(live) {
 
   const urls = [
     `  <url>\n    <loc>${ORIGIN}/</loc>${lastmod(latest)}\n    <changefreq>daily</changefreq>\n    <priority>1.0</priority>\n  </url>`,
+    `  <url>\n    <loc>${ORIGIN}/learn</loc>\n    <changefreq>monthly</changefreq>\n    <priority>0.9</priority>\n  </url>`,
     `  <url>\n    <loc>${ORIGIN}/blog</loc>${lastmod(latest)}\n    <changefreq>daily</changefreq>\n    <priority>0.8</priority>\n  </url>`,
     ...live.map(
       (a) =>
