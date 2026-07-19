@@ -109,18 +109,6 @@ fun OfflineGameScreen(difficulty: String, onChangeDifficulty: () -> Unit, onHome
 
         AiTurnBanner(status = ui.status, myTurn = myTurn, mustCapture = ui.mustCapture)
 
-        // TEMP DIAGNOSTIC (cosmetics bug) — shows the exact runtime values that
-        // reach BoardView. Remove once the skin/board render is confirmed. If
-        // these read "board=null skin=null" the equip isn't reaching the game
-        // user; if they read a real id that still renders default, it's a
-        // key-match/render bug.
-        Text(
-            "DBG board=${me?.equippedBoard ?: "null"} skin=${me?.equippedSkin ?: "null"}",
-            color = Color(0xFFFFE08A),
-            style = MaterialTheme.typography.labelSmall,
-            modifier = Modifier.padding(vertical = 4.dp)
-        )
-
         BoardView(
             state = gs,
             selected = ui.selected,
