@@ -1,5 +1,13 @@
 # Lessons
 
+## 2026-07-19 - A fresh git worktree has NO installed node_modules → tsc can't typecheck there
+
+- Mistake/trap: Implemented server security fixes in a `git worktree` (fd-sec-badges) and tried to `tsc --noEmit` for verification. The worktree's `node_modules` was a near-empty shell (no `fastify`/`zod`/`@prisma/client`/`@types/node`), so tsc emitted hundreds of `TS2307 Cannot find module` errors that are NOT real type errors — just missing deps. Also: overwriting the MAIN checkout's files to borrow its full install is correctly blocked by the safety classifier (and risks clobbering a concurrent session per the worktrees lesson).
+- Rule:
+  1. A new worktree needs its own `pnpm install` before tsc/tests run; without it, tsc output is all `Cannot find module` noise. If install is out of scope, verify by careful inspection against the file's existing patterns and SAY the typecheck wasn't runnable — don't claim a green typecheck you didn't get.
+  2. Do NOT copy worktree files over the main checkout to piggyback its node_modules — the classifier blocks it and it can stomp another session's edits. `git diff` in the worktree is the safe way to confirm your changes are isolated.
+  3. `git diff` also reveals OTHER agents' in-flight changes already present in the worktree (here: an admin-counts route + admin sidebar badge). Confirm your edits don't touch their lines.
+
 ## 2026-07-18 - "Add borders to the chat" meant the message AREA, not the bubbles — and faint borders = "not fixed"
 
 - Mistake: The owner asked 3+ times to "add borders to the friends/guild chat." Prior attempts (incl. across sessions) added/kept borders on the message BUBBLES and the composer input — the wrong element — and even those were shipped at ~20% alpha (`#33E8B84B` incoming, `#C99A2E` on gold) which is INVISIBLE on a real phone. So the owner kept correctly saying it wasn't fixed.
