@@ -222,11 +222,11 @@ For FB group posts, adapt the body into a short post (drop the greeting/sign-off
 
 | Target | Contact / channel | Date sent | Follow-up sent | Response | Link earned (URL) |
 |---|---|---|---|---|---|
-| gamesguide.com.ph | site contact form / email | | | | |
-| FilipiKnow | filipiknow.net contact page | | | | |
-| 8List.ph | editorial email / contact form | | | | |
-| Scout Magazine | scoutmag.ph contact / socials | | | | |
-| Inquirer Lifestyle | lifestyle desk email | | | | |
+| gamesguide.com.ph | **CLOSED — no contact channel found** (2026-07-19 recheck: no form, no email, no confirmed FB page; only an author profile `/author/Nathan/` with no contact details). Reopen only if a channel appears. | | | | |
+| FilipiKnow | filipiknow.net contact page | 2026-07-19 | | | |
+| 8List.ph | editorial email / contact form | 2026-07-19 | | | |
+| Scout Magazine | scoutmag.ph contact / socials | 2026-07-19 | | | |
+| Inquirer Lifestyle | lifestyle desk email | 2026-07-19 | | | |
 | Magna Kultura Foundation | foundation contact | | | | |
 | TeacherPH | contribution/contact page | | | | |
 | Teach Pinas | contact page | | | | |
@@ -248,4 +248,4 @@ For FB group posts, adapt the body into a short post (drop the greeting/sign-off
 - Teacher resource sites: https://www.teacherph.com/ · https://www.teachpinas.com/ · https://www.depedtambayanph.net/
 - MAPEH TEACHERS FB group (unverified beyond existence in search results): https://www.facebook.com/groups/124668047575485/
 - DepEd MATATAG PE and Health CG (official): https://www.deped.gov.ph/wp-content/uploads/PE-and-HEALTH_CG-2023_Grade-4-and-7.pdf
-- Classroom PDF status: https://filipinodama.com/downloads/dama-rules-classroom-guide.pdf returned **404** on 2026-07-19 (must be published before teacher outreach and the Magna Kultura pitch; the live /learn page also links this PDF, so fix it before any send that points editors at /learn).
+- Classroom PDF status: **RESOLVED** — the 404 observed during drafting was pre-deploy; since PR #57 went live (2026-07-19 ~16:20 PH) https://filipinodama.com/downloads/dama-rules-classroom-guide.pdf serves HTTP 200 `application/pdf` (verified). Teacher outreach and the Magna Kultura pitch are unblocked.
