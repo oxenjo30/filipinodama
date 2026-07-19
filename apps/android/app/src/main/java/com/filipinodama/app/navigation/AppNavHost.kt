@@ -21,6 +21,18 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.Alignment
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.unit.dp
 import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
@@ -297,7 +309,40 @@ fun AppNavHost() {
             // Scaffold add the bottom system inset a second time (would push the
             // content up by the gesture-bar height and leave a gap).
             contentWindowInsets = WindowInsets(0, 0, 0, 0),
-            snackbarHost = { SnackbarHost(snackbar.hostState) },
+            // On-brand snackbar (owner: the default grey Material toast jammed at
+            // the very bottom edge was barely visible + off-design). Royal purple
+            // panel, gold border + gold text, rounded, and lifted clear of the
+            // system nav/gesture bar.
+            snackbarHost = {
+                SnackbarHost(snackbar.hostState) { data ->
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .navigationBarsPadding()
+                            .padding(horizontal = 16.dp, vertical = 12.dp),
+                        contentAlignment = Alignment.BottomCenter
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .background(
+                                    Brush.verticalGradient(listOf(Color(0xFF241638), Color(0xFF1A0F2C))),
+                                    RoundedCornerShape(14.dp)
+                                )
+                                .border(1.dp, Color(0x66E8B84B), RoundedCornerShape(14.dp))
+                                .padding(horizontal = 16.dp, vertical = 13.dp)
+                        ) {
+                            Text(
+                                data.visuals.message,
+                                color = Color(0xFFF4ECD6),
+                                style = MaterialTheme.typography.bodyMedium,
+                                modifier = Modifier.weight(1f)
+                            )
+                        }
+                    }
+                }
+            },
             bottomBar = {
                 if (showTabBar) {
                     BottomTabBar(navController)

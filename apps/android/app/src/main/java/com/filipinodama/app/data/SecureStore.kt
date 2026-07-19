@@ -80,20 +80,39 @@ class SecureStore(context: Context) : KeyValueStore {
         return try {
             buildEncrypted()
         } catch (_: Throwable) {
-            // Likely a corrupt encrypted store or a keystore key that no longer
-            // matches the file. Wipe the encrypted prefs and try a clean rebuild.
-            runCatching {
-                context.deleteSharedPreferences(PREFS_FILE_NAME)
-            }
+            // BUG FIX (logout-on-UPDATE): the first post-update launch on some
+            // devices throws here from a TRANSIENT Keystore/provider hiccup — the
+            // AndroidKeyStore or the Tink keyset can momentarily fail to
+            // initialise when the app process is recreated after an in-place APK
+            // update. The previous code responded by immediately DELETING the
+            // encrypted prefs file (deleteSharedPreferences(PREFS_FILE_NAME)),
+            // which threw away the persisted cookie blob — the 30-day fd_refresh
+            // token — so the user was silently logged out even though the failure
+            // was recoverable. A plain retry (NO wipe) clears the transient case
+            // while keeping the token intact.
             try {
                 buildEncrypted()
             } catch (_: Throwable) {
-                // Encryption is unavailable on this device/state — never crash the
-                // app for it. Use a plain prefs file so the session layer works.
-                // Flag it (review M1) so the plaintext-at-rest state is VISIBLE,
-                // never silent — a caller can log/telemeter or force re-auth.
-                usingPlaintextFallback = true
-                context.getSharedPreferences(PREFS_FILE_NAME + "_plain", Context.MODE_PRIVATE)
+                // The no-wipe retry also failed → the encrypted store is genuinely
+                // unreadable (keystore key no longer matches the file / corrupt
+                // blob). Only NOW wipe, and wipe BOTH the data file AND Tink's
+                // separate keyset prefs so a key/data mismatch is fully reset
+                // (deleting only the data file can leave a stale keyset that keeps
+                // create() throwing). The user re-authenticates in this last-resort
+                // path only — not on a transient post-update throw.
+                runCatching { context.deleteSharedPreferences(PREFS_FILE_NAME) }
+                runCatching { context.deleteSharedPreferences(KEYSET_PREFS_FILE_NAME) }
+                try {
+                    buildEncrypted()
+                } catch (_: Throwable) {
+                    // Encryption is unavailable on this device/state — never crash
+                    // the app for it. Use a plain prefs file so the session layer
+                    // works. Flag it (review M1) so the plaintext-at-rest state is
+                    // VISIBLE, never silent — a caller can log/telemeter or force
+                    // re-auth.
+                    usingPlaintextFallback = true
+                    context.getSharedPreferences(PREFS_FILE_NAME + "_plain", Context.MODE_PRIVATE)
+                }
             }
         }
     }
@@ -120,6 +139,16 @@ class SecureStore(context: Context) : KeyValueStore {
 
     companion object {
         private const val PREFS_FILE_NAME = "fd_secure_prefs"
+
+        // androidx.security-crypto (Tink) stores the AEAD keyset that wraps the
+        // encrypted values in a SEPARATE SharedPreferences file, not in
+        // PREFS_FILE_NAME. When we must reset a genuinely corrupt encrypted store
+        // as a last resort (see createPrefs), both the data file AND this keyset
+        // file have to go — deleting only the data file can leave a stale keyset
+        // that keeps EncryptedSharedPreferences.create() throwing. This is the
+        // library's fixed default keyset-prefs file name.
+        private const val KEYSET_PREFS_FILE_NAME =
+            "__androidx_security_crypto_encrypted_prefs_key_keyset__"
 
         // Well-known keys used elsewhere in the data layer.
         const val KEY_COOKIE_JAR_BLOB = "cookie_jar_blob"
