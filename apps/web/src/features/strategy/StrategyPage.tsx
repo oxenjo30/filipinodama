@@ -45,6 +45,34 @@ export const STRATEGY_FAQ: { q: string; a: string }[] = [
   },
 ];
 
+/**
+ * GameFigure — section illustration, same pattern as TraditionalGamesPage /
+ * the /tl pages: AI-generated painterly golden-hour art (this one: Meshy
+ * nano-banana-2) served as 1200×670 WebP (~100KB) from /assets/culture/.
+ * Explicit width/height prevent layout shift; lazy loading keeps it off the
+ * critical path.
+ */
+function GameFigure({ src, alt }: { src: string; alt: string }) {
+  return (
+    <img
+      src={`/assets/culture/${src}`}
+      alt={alt}
+      width={1200}
+      height={670}
+      loading="lazy"
+      decoding="async"
+      style={{
+        width: "100%",
+        height: "auto",
+        borderRadius: 10,
+        margin: "4px 0 14px",
+        border: "1px solid rgba(232,184,75,.22)",
+        boxShadow: "0 10px 28px rgba(0,0,0,.35)",
+      }}
+    />
+  );
+}
+
 const H2: React.CSSProperties = { font: "800 22px Cinzel,serif", color: "var(--gold-lt)", margin: "34px 0 10px" };
 const H3: React.CSSProperties = { font: "700 15px Inter", color: "var(--gold-lt)", margin: "18px 0 6px" };
 const P: React.CSSProperties = { font: "400 14px/1.75 Inter", color: "var(--ink)", margin: "0 0 12px" };
@@ -109,6 +137,11 @@ export function StrategyPage() {
             </Link>
           </p>
         </header>
+
+        <GameFigure
+          src="dama-strategy.webp"
+          alt="Illustration of a young Filipino player deep in thought, lifting a red bottle-cap piece for a multi-capture on a dama board while an older onlooker watches at dusk"
+        />
 
         <h2 style={H2}>Opening Principles</h2>
         <ul style={{ paddingLeft: 22, margin: "0 0 12px" }}>
