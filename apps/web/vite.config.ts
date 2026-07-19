@@ -23,7 +23,7 @@ export default defineConfig({
         // defeating the prerender. Matches "/", "/blog", and "/blog/<anything>".
         // /learn is exact-only: the bare route is prerendered, but /learn/<id>
         // lesson pages are auth-gated SPA screens that still want the shell.
-        navigateFallbackDenylist: [/^\/blog(\/.*)?$/, /^\/learn$/, /^\/$/],
+        navigateFallbackDenylist: [/^\/blog(\/.*)?$/, /^\/learn$/, /^\/strategy$/, /^\/$/],
         // The app bundle grew past workbox's default 2 MiB precache limit (the
         // Damath variants + room pages pushed it over), which failed the PWA
         // step. Raise the cap so the main bundle is still precached.
