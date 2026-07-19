@@ -22,6 +22,7 @@ import { InventoryPage } from "./features/inventory/InventoryPage";
 import { SettingsPage } from "./features/settings/SettingsPage";
 import { PrivacyPage, TermsPage, CommunityPage, AntiCheatPage, DataPage } from "./features/legal/LegalPages";
 import { LearnPage } from "./features/learn/LearnPage";
+import { LearnTlPage } from "./features/learn/LearnTlPage";
 import { LessonPage } from "./features/learn/LessonPage";
 import { SeasonPage } from "./features/season/SeasonPage";
 import { TournamentsPage } from "./features/tournaments/TournamentsPage";
@@ -29,6 +30,7 @@ import { TournamentDetailPage } from "./features/tournaments/TournamentDetailPag
 import { WatchLiveGate } from "./features/watch/WatchLiveGate";
 import { LeaderboardPage } from "./features/leaderboard/LeaderboardPage";
 import { StrategyPage } from "./features/strategy/StrategyPage";
+import { StrategyTlPage } from "./features/strategy/StrategyTlPage";
 import { TraditionalGamesPage } from "./features/culture/TraditionalGamesPage";
 import { AuthPage } from "./features/auth/AuthPage";
 import { ResetPasswordPage } from "./features/auth/ResetPasswordPage";
@@ -151,6 +153,9 @@ export function AppRoutes() {
           <Route path="/traditional-filipino-games" element={<TraditionalGamesPage />} />
           <Route path="/learn" element={<LearnPage />} />
           <Route path="/learn/:id" element={<LessonPage />} />
+          {/* ── Tagalog pillar pages (hreflang tl-PH twins of /learn + /strategy) ── */}
+          <Route path="/tl/learn" element={<LearnTlPage />} />
+          <Route path="/tl/strategy" element={<StrategyTlPage />} />
           <Route path="/store" element={<StorePage />} />
           <Route path="/orders" element={<OrdersPage />} />
           <Route path="/inventory" element={<InventoryPage />} />

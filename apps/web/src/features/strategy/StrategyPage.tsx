@@ -59,6 +59,11 @@ export function StrategyPage() {
         title="Filipino Dama Strategy — How to Win at Dama (Complete Guide)"
         description="Winning Filipino Dama strategy: opening principles, forcing sacrifices under the mandatory-capture rule, tempo and exchanges, flying-dama endgames, and the traps every beginner falls for."
         path="/strategy"
+        alternates={[
+          { hrefLang: "en-PH", path: "/strategy" },
+          { hrefLang: "tl-PH", path: "/tl/strategy" },
+          { hrefLang: "x-default", path: "/strategy" },
+        ]}
         jsonLd={[
           faqJsonLd(STRATEGY_FAQ),
           {
@@ -97,6 +102,11 @@ export function StrategyPage() {
             flying dama. This guide covers each skill in the order you should learn them, and it
             assumes the standard rules used on FilipinoDama Royal: captures are mandatory, the
             maximum-capture line is required, and men capture both forward and backward.
+          </p>
+          <p style={{ ...P, font: "600 13px Inter" }}>
+            <Link to="/tl/strategy" style={{ color: "var(--gold)" }} hrefLang="tl-PH">
+              Basahin ang gabay na ito sa Tagalog →
+            </Link>
           </p>
         </header>
 

@@ -56,6 +56,7 @@ async function main() {
   // client-side.)
   const routes = [
     "/", "/blog", "/learn", "/strategy", "/play", "/traditional-filipino-games",
+    "/tl/learn", "/tl/strategy",
     ...live.map((a) => `/blog/${a.slug}`),
   ];
 
@@ -126,7 +127,8 @@ async function main() {
 
   console.log(
     `[prerender] Asia/Manila today=${today}: wrote ${written} pages ` +
-      `(/, /blog, /learn, /strategy, /play, ${live.length} articles) + 404.html + serve.json + sitemap.xml`,
+      `(/, /blog, /learn, /strategy, /play, /traditional-filipino-games, /tl/learn, /tl/strategy, ` +
+      `${live.length} articles) + 404.html + serve.json + sitemap.xml`,
   );
 }
 
@@ -178,10 +180,24 @@ async function writeSitemap(live) {
     .at(-1);
   const lastmod = (iso) => (iso ? `\n    <lastmod>${iso.slice(0, 10)}</lastmod>` : "");
 
+  // hreflang annotations for the translated pillar pairs. Google requires the
+  // full reciprocal set on EVERY member of a pair (self-referential included),
+  // mirroring the <link rel="alternate"> tags each page emits in its head.
+  // "tl-PH" (Tagalog) NOT "fil-PH": Google's hreflang only accepts ISO 639-1
+  // languages, and Filipino has no 639-1 code — "fil" would be ignored.
+  const alternatesFor = (en, tl) =>
+    `\n    <xhtml:link rel="alternate" hreflang="en-PH" href="${ORIGIN}${en}"/>` +
+    `\n    <xhtml:link rel="alternate" hreflang="tl-PH" href="${ORIGIN}${tl}"/>` +
+    `\n    <xhtml:link rel="alternate" hreflang="x-default" href="${ORIGIN}${en}"/>`;
+  const learnAlts = alternatesFor("/learn", "/tl/learn");
+  const strategyAlts = alternatesFor("/strategy", "/tl/strategy");
+
   const urls = [
     `  <url>\n    <loc>${ORIGIN}/</loc>${lastmod(latest)}\n    <changefreq>daily</changefreq>\n    <priority>1.0</priority>\n  </url>`,
-    `  <url>\n    <loc>${ORIGIN}/learn</loc>\n    <changefreq>monthly</changefreq>\n    <priority>0.9</priority>\n  </url>`,
-    `  <url>\n    <loc>${ORIGIN}/strategy</loc>\n    <changefreq>monthly</changefreq>\n    <priority>0.9</priority>\n  </url>`,
+    `  <url>\n    <loc>${ORIGIN}/learn</loc>${learnAlts}\n    <changefreq>monthly</changefreq>\n    <priority>0.9</priority>\n  </url>`,
+    `  <url>\n    <loc>${ORIGIN}/strategy</loc>${strategyAlts}\n    <changefreq>monthly</changefreq>\n    <priority>0.9</priority>\n  </url>`,
+    `  <url>\n    <loc>${ORIGIN}/tl/learn</loc>${learnAlts}\n    <changefreq>monthly</changefreq>\n    <priority>0.8</priority>\n  </url>`,
+    `  <url>\n    <loc>${ORIGIN}/tl/strategy</loc>${strategyAlts}\n    <changefreq>monthly</changefreq>\n    <priority>0.8</priority>\n  </url>`,
     `  <url>\n    <loc>${ORIGIN}/play</loc>\n    <changefreq>monthly</changefreq>\n    <priority>0.9</priority>\n  </url>`,
     `  <url>\n    <loc>${ORIGIN}/traditional-filipino-games</loc>\n    <changefreq>monthly</changefreq>\n    <priority>0.8</priority>\n  </url>`,
     `  <url>\n    <loc>${ORIGIN}/blog</loc>${lastmod(latest)}\n    <changefreq>daily</changefreq>\n    <priority>0.8</priority>\n  </url>`,
@@ -193,7 +209,8 @@ async function writeSitemap(live) {
 
   const xml =
     `<?xml version="1.0" encoding="UTF-8"?>\n` +
-    `<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n` +
+    `<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"\n` +
+    `        xmlns:xhtml="http://www.w3.org/1999/xhtml">\n` +
     urls.join("\n") +
     `\n</urlset>\n`;
 

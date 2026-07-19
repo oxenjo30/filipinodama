@@ -7,6 +7,10 @@ Filipino Dama (also called dama or Filipino checkers) is played on an 8×8 board
 ## Core pages
 
 - [Dama Rules — How to Play Filipino Checkers](https://filipinodama.com/learn): Complete official rules — board setup, movement, mandatory and maximum capture, the flying dama (king), winning conditions, variant comparison, and FAQ.
+- [Filipino Dama Strategy — How to Win at Dama](https://filipinodama.com/strategy): Opening principles, forcing sacrifices under the mandatory-capture rule, tempo and exchanges, flying-dama endgames, and common beginner traps.
+- [Traditional Filipino Games — Larong Pinoy Guide](https://filipinodama.com/traditional-filipino-games): Dama's place among the Philippines' traditional games, plus sungka, patintero, tumbang preso, and more.
+- [Mga Patakaran ng Dama (Tagalog)](https://filipinodama.com/tl/learn): Ang kumpletong gabay sa mga patakaran ng dama, nakasulat sa Tagalog.
+- [Diskarte sa Dama (Tagalog)](https://filipinodama.com/tl/strategy): Gabay sa diskarte at estratehiya para manalo sa dama, nakasulat sa Tagalog.
 - [Dama Blog — Rules, Strategy & Guides](https://filipinodama.com/blog): Articles answering specific questions about dama rules, strategy, tactics, and the game's Filipino heritage. New articles publish regularly.
 - [Play Filipino Dama Online](https://filipinodama.com/play): Free browser play — vs AI, local, ranked online multiplayer, private rooms, and tournaments. No download required.
 - [Home](https://filipinodama.com/): Overview of the game and platform.
