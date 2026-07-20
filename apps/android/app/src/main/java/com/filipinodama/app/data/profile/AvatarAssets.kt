@@ -95,7 +95,7 @@ fun resolveAvatarUrl(avatarUrl: String?): String {
     return assetUrl("avatars/$key.png")
 }
 
-/** Cosmetic profile frames — mirrors assets.ts FRAMES keys exactly. */
+/** Cosmetic profile frames — mirrors assets.ts FRAMES keys exactly (art keys). */
 private val NAMED_FRAMES: Map<String, String> = mapOf(
     "laurel" to "laurel.png",
     "silver" to "silver.png",
@@ -109,6 +109,27 @@ private val NAMED_FRAMES: Map<String, String> = mapOf(
 )
 
 /**
+ * FRAME STORE-ITEM ID → art key (from seed.ts). The equipped `frameId` stored on
+ * the user is the STORE ITEM ID (e.g. "sunburstf") — the inventory/store use
+ * `frameId == item.id` for the equipped checkmark, so it can't be the assetKey.
+ * But most item ids DON'T equal their art key ("sunburstf" ≠ "sunburst",
+ * "jadedragonf" ≠ "jade-dragon"), so resolving `frames/<id>` 404s. This table
+ * maps the id to its real art key so a purchased frame actually renders.
+ * (Ids whose id already equals the art key — laurel, silver — resolve via
+ * NAMED_FRAMES and don't need an entry, but are included for clarity.)
+ */
+private val FRAME_ID_TO_KEY: Map<String, String> = mapOf(
+    "laurel" to "laurel",
+    "silver" to "silver",
+    "obsidianf" to "obsidian",
+    "sunburstf" to "sunburst",
+    "jadedragonf" to "jade-dragon",
+    "kalasagf" to "kalasag",
+    "sampaguitaf" to "sampaguita",
+    "capizf" to "capiz"
+)
+
+/**
  * Resolve a frameId (a FRAME ITEM ID, e.g. "jadedragonf", OR a legacy art key
  * like "laurel") to a renderable remote URL, or null when there is no frame
  * to render. Mirrors assets.ts frameArt(), with the same "frames/" prefix
@@ -119,6 +140,12 @@ private val NAMED_FRAMES: Map<String, String> = mapOf(
  */
 fun resolveFrameUrl(frameId: String?): String? {
     if (frameId.isNullOrBlank()) return null
+    // Store item id → art key first (e.g. "sunburstf" → "sunburst"), so a
+    // PURCHASED frame (frameId == item id) actually resolves to its real art.
+    FRAME_ID_TO_KEY[frameId]?.let { artKey ->
+        NAMED_FRAMES[artKey]?.let { return assetUrl("frames/$it") }
+        return assetUrl("frames/$artKey.png")
+    }
     val known = NAMED_FRAMES[frameId]
     if (known != null) return assetUrl("frames/$known")
     if (frameId.startsWith("/")) return "${BuildConfig.WEB_ORIGIN}$frameId"

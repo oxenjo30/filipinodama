@@ -120,7 +120,27 @@ export const FRAMES = {
 } as const;
 export type FrameKey = keyof typeof FRAMES;
 
+/**
+ * FRAME store-item id → art key (from seed.ts). The equipped `frameId` on the
+ * user is the STORE ITEM ID (the inventory uses `frameId === item.id` for the
+ * equipped check), and most ids don't equal their art key ("sunburstf" ≠
+ * "sunburst", "jadedragonf" ≠ "jade-dragon"), so `frames/<id>` 404s. Map the id
+ * to its real art key so a PURCHASED frame renders.
+ */
+const FRAME_ID_TO_KEY: Record<string, FrameKey> = {
+  laurel: "laurel",
+  silver: "silver",
+  obsidianf: "obsidian",
+  sunburstf: "sunburst",
+  jadedragonf: "jade-dragon",
+  kalasagf: "kalasag",
+  sampaguitaf: "sampaguita",
+  capizf: "capiz",
+};
+
 export function frameArt(key: FrameKey | (string & {})): string {
+  // Purchased-frame item id (e.g. "sunburstf") → its real art first.
+  if (key in FRAME_ID_TO_KEY) return FRAMES[FRAME_ID_TO_KEY[key]];
   if (key in FRAMES) return FRAMES[key as FrameKey];
   if (key.startsWith("/") || key.startsWith("http")) return key;
   if (key.startsWith("assets/")) return `/${key}`;
