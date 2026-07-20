@@ -84,6 +84,8 @@ fun CheckoutScreen(
     // in, prompt sign-in instead of showing a generic error.
     onRequireSignIn: () -> Unit = {}
 ) {
+    // Keep purchase details out of screenshots / Recents (M-2).
+    com.filipinodama.app.ui.components.SecureScreen()
     val scope = rememberCoroutineScope()
     var placeState by remember { mutableStateOf(PlaceOrderState.IDLE) }
     var errorMessage by remember { mutableStateOf("") }

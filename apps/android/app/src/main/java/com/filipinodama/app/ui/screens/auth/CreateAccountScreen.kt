@@ -53,6 +53,8 @@ fun CreateAccountScreen(
     onBack: () -> Unit,
     onAccountCreated: () -> Unit
 ) {
+    // Block screenshots / Recents capture of typed credentials (M-2).
+    com.filipinodama.app.ui.components.SecureScreen()
     var username by remember { mutableStateOf("") }
     var email by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }

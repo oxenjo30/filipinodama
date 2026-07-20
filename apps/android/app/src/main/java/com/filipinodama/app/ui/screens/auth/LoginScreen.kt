@@ -64,6 +64,8 @@ fun LoginScreen(
     // where Login is a hard entry point with nothing behind it.
     onBack: (() -> Unit)? = null
 ) {
+    // Block screenshots / Recents capture of typed credentials (M-2).
+    com.filipinodama.app.ui.components.SecureScreen()
     var email by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
     var error by remember { mutableStateOf<String?>(null) }

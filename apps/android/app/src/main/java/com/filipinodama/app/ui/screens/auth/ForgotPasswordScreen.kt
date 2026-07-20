@@ -47,6 +47,8 @@ import kotlinx.coroutines.launch
  */
 @Composable
 fun ForgotPasswordScreen(onBack: () -> Unit) {
+    // Consistent with the other auth screens (M-2).
+    com.filipinodama.app.ui.components.SecureScreen()
     var email by remember { mutableStateOf("") }
     var error by remember { mutableStateOf<String?>(null) }
     var busy by remember { mutableStateOf(false) }
