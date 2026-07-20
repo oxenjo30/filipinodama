@@ -187,26 +187,25 @@ fun LoginScreen(
         ) {
             Column {
                 AuthLabel("EMAIL")
-                AuthTextField(
+                // View-backed field so the PLATFORM autofill handles fill AND the
+                // "Save password?" prompt (Compose autofill only fills). LOGIN_ID
+                // advertises username+email so the vault offers on this field too.
+                AuthAutofillField(
                     value = email,
                     onValueChange = { email = it },
                     placeholder = "you@example.com",
-                    keyboardType = KeyboardType.Email,
-                    enabled = !busy,
-                    // LOGIN_ID (Username + EmailAddress) so the vault offers the
-                    // saved identifier on THIS field too, not only the password.
-                    autofill = AuthAutofill.LOGIN_ID
+                    kind = AuthFieldKind.LOGIN_ID,
+                    enabled = !busy
                 )
             }
             Column {
                 AuthLabel("PASSWORD")
-                AuthTextField(
+                AuthAutofillField(
                     value = password,
                     onValueChange = { password = it },
                     placeholder = "••••••••",
-                    isPassword = true,
-                    enabled = !busy,
-                    autofill = AuthAutofill.PASSWORD
+                    kind = AuthFieldKind.PASSWORD,
+                    enabled = !busy
                 )
             }
 

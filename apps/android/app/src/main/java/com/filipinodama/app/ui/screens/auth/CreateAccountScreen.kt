@@ -194,26 +194,25 @@ fun CreateAccountScreen(
             }
             Column {
                 AuthLabel("EMAIL")
-                AuthTextField(
+                // View-backed for reliable fill + save (see AuthAutofillField).
+                AuthAutofillField(
                     value = email,
                     onValueChange = { email = it },
                     placeholder = "you@example.com",
-                    keyboardType = KeyboardType.Email,
-                    enabled = !busy,
-                    autofill = AuthAutofill.EMAIL
+                    kind = AuthFieldKind.EMAIL,
+                    enabled = !busy
                 )
             }
             Column {
                 AuthLabel("PASSWORD")
-                AuthTextField(
+                // NEW_PASSWORD → prompts the manager to SAVE a new credential on
+                // signup (vs. filling an existing one on login).
+                AuthAutofillField(
                     value = password,
                     onValueChange = { password = it },
                     placeholder = "••••••••",
-                    isPassword = true,
-                    enabled = !busy,
-                    // NEW_PASSWORD so the manager offers to SAVE a new credential
-                    // on signup (vs. filling an existing one on login).
-                    autofill = AuthAutofill.NEW_PASSWORD
+                    kind = AuthFieldKind.NEW_PASSWORD,
+                    enabled = !busy
                 )
             }
 
