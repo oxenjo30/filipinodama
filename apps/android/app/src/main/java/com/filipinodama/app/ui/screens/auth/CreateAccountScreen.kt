@@ -131,7 +131,11 @@ fun CreateAccountScreen(
         busy = true
         scope.launch {
             when (val result = AuthRepository.register(cleanEmail, cleanPass, cleanUsername)) {
-                is AuthResult.Success -> onAccountCreated()
+                is AuthResult.Success -> {
+                    // Offer to SAVE the new credential to the vault before leaving.
+                    commitAutofillOnAuthSuccess(context)
+                    onAccountCreated()
+                }
                 is AuthResult.Failure -> error = result.message
             }
             busy = false
