@@ -117,7 +117,13 @@ fun LoginScreen(
         busy = true
         scope.launch {
             when (val result = AuthRepository.login(cleanEmail, cleanPass)) {
-                is AuthResult.Success -> onLoginSuccess()
+                is AuthResult.Success -> {
+                    // Commit the autofill session BEFORE navigating away so the OS
+                    // shows "Save password?" (the fill-only tree API never triggers
+                    // save on its own). No-op if autofill is off / no session.
+                    commitAutofillOnAuthSuccess(context)
+                    onLoginSuccess()
+                }
                 is AuthResult.Failure -> error = result.message
             }
             busy = false
@@ -185,7 +191,9 @@ fun LoginScreen(
                     placeholder = "you@example.com",
                     keyboardType = KeyboardType.Email,
                     enabled = !busy,
-                    autofill = AuthAutofill.EMAIL
+                    // LOGIN_ID (Username + EmailAddress) so the vault offers the
+                    // saved identifier on THIS field too, not only the password.
+                    autofill = AuthAutofill.LOGIN_ID
                 )
             }
             Column {

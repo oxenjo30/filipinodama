@@ -73,8 +73,15 @@ fun AuthLabel(text: String) {
  * [androidx.compose.ui.autofill.AutofillType] is done internally under @OptIn).
  * EMAIL/USERNAME/PASSWORD fill an existing credential; NEW_PASSWORD prompts the
  * password manager to SAVE a new one (create-account).
+ *
+ * LOGIN_ID is the LOGIN-IDENTIFIER field: it advertises BOTH `Username` AND
+ * `EmailAddress`. Password managers store a saved credential's identifier as a
+ * USERNAME (a username+password pair), so a field hinted `EmailAddress` ONLY does
+ * not get matched a fill suggestion — which is why the vault appeared on the
+ * password field but NOT on the email field. Advertising both hints makes the
+ * manager offer the saved identifier regardless of how it was stored.
  */
-enum class AuthAutofill { NONE, EMAIL, USERNAME, PASSWORD, NEW_PASSWORD }
+enum class AuthAutofill { NONE, EMAIL, USERNAME, LOGIN_ID, PASSWORD, NEW_PASSWORD }
 
 @OptIn(androidx.compose.ui.ExperimentalComposeUiApi::class)
 @Composable
@@ -95,6 +102,13 @@ fun AuthTextField(
         AuthAutofill.NONE -> null
         AuthAutofill.EMAIL -> listOf(androidx.compose.ui.autofill.AutofillType.EmailAddress)
         AuthAutofill.USERNAME -> listOf(androidx.compose.ui.autofill.AutofillType.Username)
+        // Login identifier — advertise BOTH so the manager offers the saved
+        // credential whether it stored the id as a username or an email. Username
+        // first: it's the more reliable match key on a login form.
+        AuthAutofill.LOGIN_ID -> listOf(
+            androidx.compose.ui.autofill.AutofillType.Username,
+            androidx.compose.ui.autofill.AutofillType.EmailAddress
+        )
         AuthAutofill.PASSWORD -> listOf(androidx.compose.ui.autofill.AutofillType.Password)
         AuthAutofill.NEW_PASSWORD -> listOf(androidx.compose.ui.autofill.AutofillType.NewPassword)
     }
