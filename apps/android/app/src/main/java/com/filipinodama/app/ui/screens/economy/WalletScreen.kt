@@ -88,6 +88,8 @@ import kotlinx.coroutines.launch
  */
 @Composable
 fun WalletScreen(onBack: () -> Unit = {}) {
+    // Keep balances out of screenshots / Recents (M-2).
+    com.filipinodama.app.ui.components.SecureScreen()
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
     val authState by AuthRepository.state.collectAsState()

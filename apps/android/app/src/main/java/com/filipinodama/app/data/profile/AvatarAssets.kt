@@ -16,6 +16,43 @@ import com.filipinodama.app.BuildConfig
 
 private fun assetUrl(path: String): String = "${BuildConfig.WEB_ORIGIN}/assets/$path"
 
+/**
+ * Hosts an absolute avatar/frame URL is allowed to point at (security review
+ * M-1). `avatarUrl`/`frameId` are SERVER-STORED, OTHER-USER-controlled fields;
+ * without this guard a malicious value like `https://attacker/x.png` would make
+ * every viewer's device fetch that host when rendering the profile/match. We
+ * restrict absolute-URL passthrough to our own origins (derived from BuildConfig
+ * so it's correct for debug and release); any other host falls back to the
+ * champion avatar — the same "ambiguous → champion" rule this file already uses.
+ */
+private val ALLOWED_ASSET_HOSTS: Set<String> = buildSet {
+    fun hostOf(origin: String): String? =
+        runCatching { java.net.URI(origin).host }.getOrNull()?.lowercase()
+    hostOf(BuildConfig.WEB_ORIGIN)?.let { add(it) }
+    hostOf(BuildConfig.BASE_URL)?.let { add(it) }
+}
+
+/**
+ * OAuth provider avatar hosts. On Google/Facebook signup the server stores the
+ * provider's profile-picture URL as `avatarUrl` (oauth.ts: `avatar: info.picture`),
+ * so these MUST pass the allowlist or those users' avatars would fall back to the
+ * champion. Matched as a suffix (`endsWith`) because Google shards its photo CDN
+ * across `lh3/lh4/lh5/lh6.googleusercontent.com` and regional Facebook CDN hosts.
+ */
+private val ALLOWED_ASSET_HOST_SUFFIXES: List<String> = listOf(
+    ".googleusercontent.com",  // Google account photos (lh3-lh6.googleusercontent.com)
+    ".fbcdn.net",              // Facebook graph/CDN profile photos
+    "graph.facebook.com"
+)
+
+/** True if an absolute http(s) URL points at one of our own or a trusted
+ *  OAuth-provider avatar host. */
+private fun isAllowedAssetUrl(url: String): Boolean {
+    val host = runCatching { java.net.URI(url).host }.getOrNull()?.lowercase() ?: return false
+    if (host in ALLOWED_ASSET_HOSTS) return true
+    return ALLOWED_ASSET_HOST_SUFFIXES.any { host == it.trimStart('.') || host.endsWith(it) }
+}
+
 /** Named hero avatars — mirrors assets.ts AVATARS keys exactly. */
 private val NAMED_AVATARS: Set<String> = setOf(
     "champion", "sovereign", "strategist", "babaylan", "bagani", "diwata",
@@ -42,10 +79,15 @@ fun resolveAvatarUrl(avatarUrl: String?): String {
     val key = avatarUrl
     if (key.isNullOrBlank()) return CHAMPION_FALLBACK
     if (key in NAMED_AVATARS) return assetUrl("avatars/$key.png")
-    if (key.startsWith("/") || key.startsWith("http")) {
+    if (key.startsWith("/")) {
         // A leading "/assets/..." path is already web-root-relative; prefix the
         // origin so it resolves on Android (which has no same-origin web root).
-        return if (key.startsWith("/")) "${BuildConfig.WEB_ORIGIN}$key" else key
+        return "${BuildConfig.WEB_ORIGIN}$key"
+    }
+    if (key.startsWith("http")) {
+        // Absolute URL — only pass through if it's one of OUR hosts (M-1); a
+        // server-stored URL pointing anywhere else is treated as ambiguous.
+        return if (isAllowedAssetUrl(key)) key else CHAMPION_FALLBACK
     }
     if (key.startsWith("assets/")) return "${BuildConfig.WEB_ORIGIN}/$key"
     if (key.startsWith("avatars/")) return assetUrl(key)
@@ -79,8 +121,11 @@ fun resolveFrameUrl(frameId: String?): String? {
     if (frameId.isNullOrBlank()) return null
     val known = NAMED_FRAMES[frameId]
     if (known != null) return assetUrl("frames/$known")
-    if (frameId.startsWith("/") || frameId.startsWith("http")) {
-        return if (frameId.startsWith("/")) "${BuildConfig.WEB_ORIGIN}$frameId" else frameId
+    if (frameId.startsWith("/")) return "${BuildConfig.WEB_ORIGIN}$frameId"
+    if (frameId.startsWith("http")) {
+        // Absolute URL — pass through only for our own hosts (M-1); otherwise no
+        // frame renders rather than fetching an attacker-controlled host.
+        return if (isAllowedAssetUrl(frameId)) frameId else null
     }
     if (frameId.startsWith("assets/")) return "${BuildConfig.WEB_ORIGIN}/$frameId"
     val rel = frameId.removePrefix("frames/")
