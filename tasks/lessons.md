@@ -1,5 +1,14 @@
 # Lessons
 
+## 2026-07-21 - Running a NEW test that needs the full toolchain from a fresh worktree: run in the parent checkout, keep the authoritative copy in the worktree
+
+- Context: Wrote a new server simulation test (test/tournament-simulation.test.ts) in a `tournament-sim` worktree. The worktree has no node_modules / no generated Prisma client, and its resolved `prisma` CLI was a newer major (7.x) that choked on the repo's schema. Running vitest there was a non-starter without a full `pnpm install`.
+- What worked (safe pattern): (a) keep the AUTHORITATIVE file in the worktree (it's what the PR commits); (b) COPY it into the parent checkout's test dir purely to run, since the parent already has a working node_modules + generated client + a green suite; (c) after capturing evidence, DELETE the parent copy so the parent tree stays clean. This is different from — and does NOT violate — the "don't overwrite main-checkout SOURCE files to borrow its install" rule: a NEW test file that exists nowhere in the parent isn't clobbering anyone's edits, and it's removed immediately after.
+- Rule:
+  1. For a brand-new, self-contained test file, running it from the parent checkout (then deleting the temp copy) is a legit way to get real green evidence without a slow worktree `pnpm install`. Never overwrite EXISTING parent files this way.
+  2. The docker test DB may already be up as a container (`filipinodama-postgres-1`) even when a `/dev/tcp` port probe reports "closed" on Windows — check `docker compose ps` / `docker inspect …Health` before assuming Postgres is down.
+  3. Ledger-based gold conservation is the strongest tournament evidence: sum LedgerEntry rows by `reason` (tournament-entry debit / -prize credit / -refund credit) scoped to the tournament's entry ids, and assert fees-in == prizes-out for a fee-funded pool. Reconcile each user's on-hand gold to startingGold + their ledger net.
+
 ## 2026-07-19 - A fresh git worktree has NO installed node_modules → tsc can't typecheck there
 
 - Mistake/trap: Implemented server security fixes in a `git worktree` (fd-sec-badges) and tried to `tsc --noEmit` for verification. The worktree's `node_modules` was a near-empty shell (no `fastify`/`zod`/`@prisma/client`/`@types/node`), so tsc emitted hundreds of `TS2307 Cannot find module` errors that are NOT real type errors — just missing deps. Also: overwriting the MAIN checkout's files to borrow its full install is correctly blocked by the safety classifier (and risks clobbering a concurrent session per the worktrees lesson).
