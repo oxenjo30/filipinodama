@@ -11,6 +11,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import kotlinx.coroutines.launch
@@ -62,10 +63,15 @@ fun PullRefreshContainer(
         state = state,
         indicator = {
             // Royal-gold indicator instead of the default Material purple.
+            // MUST re-apply Modifier.align(TopCenter): PullToRefreshBox centers
+            // the DEFAULT indicator itself, but a custom `indicator` lambda runs
+            // in this BoxScope with no default alignment, so it falls back to
+            // top-START (far left). Without this the spinner appears in the top-
+            // left corner instead of centered at the top.
             PullToRefreshDefaults.Indicator(
                 state = state,
                 isRefreshing = refreshing,
-                modifier = Modifier,
+                modifier = Modifier.align(Alignment.TopCenter),
                 color = Color(0xFFE8B84B),
                 containerColor = Color(0xFF1E1134),
             )
