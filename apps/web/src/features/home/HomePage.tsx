@@ -503,6 +503,13 @@ export function HomePage() {
 
       {/* RIGHT RAIL */}
       <div style={{ display: "flex", flexDirection: "column", gap: 18 }}>
+        {/* Google Play download panel — live on the main site. The badge reads
+            "Coming soon to Google Play" (honest: the Android app is in testing,
+            not yet public), so it's safe to show publicly. When the app is
+            published, update GetTheAppCard: make the badge a link to the real
+            Play listing and change the label from "Coming soon" to "Get it on". */}
+        <GetTheAppCard />
+
         <DailyChallengeCard
           me={me}
           quest={dailyQuest}
@@ -598,6 +605,66 @@ export function HomePage() {
       </div>
     </div>
     </>
+  );
+}
+
+/**
+ * "Get the App" card — a Google Play download panel for the Android build,
+ * shown on the main site's home page right rail.
+ *
+ * The Android app is in testing (not yet public on Google Play), so the badge
+ * is a non-clickable "Coming soon to Google Play" element — honest, no dead
+ * link. At LAUNCH, update this component: turn the badge into a link to
+ * https://play.google.com/store/apps/details?id=com.filipinodama.app and change
+ * the label from "Coming soon to" → "Get it on".
+ *
+ * Self-styled in the site's own gold/frame language rather than embedding
+ * Google's official badge image — swap for the official clickable badge at
+ * launch if desired (no external asset needed for the "coming soon" state).
+ */
+function GetTheAppCard() {
+  return (
+    <div className="frame" style={{ padding: 20, textAlign: "center" }}>
+      <div className="ptitle">Get the App</div>
+      <div style={{ font: "600 13px Inter", color: "var(--ink)", margin: "10px 0 14px" }}>
+        Play FilipinoDama on your Android phone — take your rank on the go.
+      </div>
+      {/* Non-clickable "Coming soon" badge — styled like Google Play's dark
+          pill (triangle mark + "GET IT ON / Google Play"), but not a link
+          since the app isn't published yet. */}
+      <div
+        role="img"
+        aria-label="Coming soon to Google Play"
+        style={{
+          display: "inline-flex",
+          alignItems: "center",
+          gap: 12,
+          padding: "10px 18px",
+          borderRadius: 10,
+          border: "1px solid rgba(255,255,255,.18)",
+          background: "linear-gradient(180deg,#1a1330,#120c26)",
+          cursor: "default",
+          userSelect: "none",
+        }}
+      >
+        {/* Google Play triangle mark (brand quad-colour) */}
+        <svg width="22" height="24" viewBox="0 0 24 26" aria-hidden="true" style={{ flex: "none" }}>
+          <path d="M1.6 1.2 13.9 13 1.6 24.8A2 2 0 0 1 1 23.4V2.6a2 2 0 0 1 .6-1.4Z" fill="#00d0ff" />
+          <path d="M1.6 1.2 13.9 13 18.1 8.8 4.3.2A2 2 0 0 0 1.6 1.2Z" fill="#00e676" />
+          <path d="M1.6 24.8 13.9 13l4.2 4.2L4.3 25.8a2 2 0 0 1-2.7-1Z" fill="#ff3d57" />
+          <path d="M18.1 8.8 13.9 13l4.2 4.2 4.6-3.2a1.6 1.6 0 0 0 0-2.8Z" fill="#ffc400" />
+        </svg>
+        <div style={{ textAlign: "left", lineHeight: 1.1 }}>
+          <div style={{ font: "600 8px Inter", letterSpacing: "1.2px", textTransform: "uppercase", color: "rgba(255,255,255,.72)" }}>
+            Coming soon to
+          </div>
+          <div style={{ font: "700 16px Inter", color: "#fff", marginTop: 2 }}>Google Play</div>
+        </div>
+      </div>
+      <div style={{ font: "500 11px Inter", color: "var(--ink2)", marginTop: 12 }}>
+        Android app in testing — launching soon.
+      </div>
+    </div>
   );
 }
 
