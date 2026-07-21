@@ -38,6 +38,14 @@ export const BOARDS = {
   wood: `${BASE}/board-wood.png`,
   ebony: `${BASE}/board-ebony.png`,
   obsidian: `${BASE}/board-obsidian.png`,
+  // Batch 2 boards (Meshy-generated thumbnails; in-game surface is procedural,
+  // themed in Board.tsx IMAGE_THEMES). Item id === texture key here.
+  sapphire: `${BASE}/board-sapphire.png`,
+  emeraldjade: `${BASE}/board-emeraldjade.png`,
+  bloodnarra: `${BASE}/board-bloodnarra.png`,
+  pearlivory: `${BASE}/board-pearlivory.png`,
+  volcanicember: `${BASE}/board-volcanicember.png`,
+  amethyst: `${BASE}/board-amethyst.png`,
 } as const;
 export type BoardTextureKey = keyof typeof BOARDS;
 
@@ -117,6 +125,13 @@ export const FRAMES = {
   kalasag: `${BASE}/frames/kalasag.png`,
   sampaguita: `${BASE}/frames/sampaguita.png`,
   capiz: `${BASE}/frames/capiz.png`,
+  // Batch 2 premium frames (Meshy-generated; transparent-center rings).
+  "bakunawa-ring": `${BASE}/frames/bakunawa-ring.png`,
+  sarimanok: `${BASE}/frames/sarimanok.png`,
+  "sampaguita-vine": `${BASE}/frames/sampaguita-vine.png`,
+  "sunstars-frame": `${BASE}/frames/sunstars-frame.png`,
+  "tribal-weave": `${BASE}/frames/tribal-weave.png`,
+  "volcanic-frame": `${BASE}/frames/volcanic-frame.png`,
 } as const;
 export type FrameKey = keyof typeof FRAMES;
 
@@ -136,6 +151,13 @@ const FRAME_ID_TO_KEY: Record<string, FrameKey> = {
   kalasagf: "kalasag",
   sampaguitaf: "sampaguita",
   capizf: "capiz",
+  // Batch 2 frames (item id → art key).
+  bakunawaf: "bakunawa-ring",
+  sarimanokf: "sarimanok",
+  sampaguitavf: "sampaguita-vine",
+  sunstarsf: "sunstars-frame",
+  tribalweavef: "tribal-weave",
+  volcanicf: "volcanic-frame",
 };
 
 export function frameArt(key: FrameKey | (string & {})): string {

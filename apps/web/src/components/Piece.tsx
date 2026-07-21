@@ -82,6 +82,8 @@ export type PieceProps = {
 const SKINS_WITH_ART = new Set([
   "jade", "crimson", "obsidian",
   "sarimanok", "bakunawa", "sunstars", "tamaraw", "baybayin",
+  // Batch 2 skins (assetKey = the key here; red+blue × man+king coin art).
+  "rosegold", "verdant", "pearl", "amethyst", "ember", "bronze",
 ]);
 
 export function Piece({ color, king = false, skin = "default", selected = false, glow = false }: PieceProps) {

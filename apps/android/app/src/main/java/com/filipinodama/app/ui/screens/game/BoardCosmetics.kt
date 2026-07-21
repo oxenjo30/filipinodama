@@ -90,6 +90,44 @@ private val BOARD_OBSIDIAN = BoardTheme(
     lightSquare = listOf(Color(0xFF3A3A44), Color(0xFF2A2A32), Color(0xFF1E1E24)),
 )
 
+// ── Batch 2 boards — colors mirror web Board.tsx IMAGE_THEMES exactly ──
+// Sapphire — deep sapphire-blue vs silver-pearl, silver filigree frame.
+private val BOARD_SAPPHIRE = BoardTheme(
+    frame = listOf(Color(0xFFE8EDF5), Color(0xFFB7C2D2), Color(0xFF6E7A8E)),
+    darkSquare = listOf(Color(0xFF1C3A86), Color(0xFF0D215C), Color(0xFF06123F)),
+    lightSquare = listOf(Color(0xFFEEF1F6), Color(0xFFD3D9E6), Color(0xFFB9C2D6)),
+)
+// Emerald Jade — deep emerald vs pale cream-jade, gold dragon frame.
+private val BOARD_EMERALD_JADE = BoardTheme(
+    frame = listOf(Color(0xFFF5D88A), Color(0xFFB78A34), Color(0xFF5A3E14)),
+    darkSquare = listOf(Color(0xFF256B3F), Color(0xFF154028), Color(0xFF0D2A1A)),
+    lightSquare = listOf(Color(0xFFEEF0D8), Color(0xFFD6DBB0), Color(0xFFC2C99A)),
+)
+// Blood Narra — rich red narra hardwood vs dark walnut, carved wood frame.
+private val BOARD_BLOOD_NARRA = BoardTheme(
+    frame = listOf(Color(0xFF8A6038), Color(0xFF5A3A20), Color(0xFF34210F)),
+    darkSquare = listOf(Color(0xFF7A2E22), Color(0xFF54180F), Color(0xFF3A0F08)),
+    lightSquare = listOf(Color(0xFFD99A6C), Color(0xFFC17C4C), Color(0xFFA8633A)),
+)
+// Pearl Ivory — iridescent pearl vs champagne-ivory, rose-gold frame.
+private val BOARD_PEARL_IVORY = BoardTheme(
+    frame = listOf(Color(0xFFF0D2B8), Color(0xFFD4A484), Color(0xFFA8785C)),
+    darkSquare = listOf(Color(0xFFE6E0D0), Color(0xFFD3CBB6), Color(0xFFC2B89F)),
+    lightSquare = listOf(Color(0xFFFBF8F0), Color(0xFFF3EEDE), Color(0xFFE9E2CC)),
+)
+// Volcanic Ember — black basalt vs charcoal veined with molten orange, iron frame.
+private val BOARD_VOLCANIC_EMBER = BoardTheme(
+    frame = listOf(Color(0xFFE07A20), Color(0xFF6E3A12), Color(0xFF1A1210)),
+    darkSquare = listOf(Color(0xFF2A2422), Color(0xFF171210), Color(0xFF0C0908)),
+    lightSquare = listOf(Color(0xFF5A4A44), Color(0xFF40332E), Color(0xFF2C221E)),
+)
+// Royal Amethyst — violet amethyst vs polished silver, silver-purple frame.
+private val BOARD_AMETHYST = BoardTheme(
+    frame = listOf(Color(0xFFCEC2E4), Color(0xFF8A72B0), Color(0xFF432C66)),
+    darkSquare = listOf(Color(0xFF6A4F8E), Color(0xFF432C66), Color(0xFF2C1A48)),
+    lightSquare = listOf(Color(0xFFF0EEF5), Color(0xFFD8D2E4), Color(0xFFC2BAD2)),
+)
+
 /**
  * Explicit BOARD item-id → theme table (ids from seed.ts). Kept as a `when` so
  * every real id resolves deterministically and a paid board that shares its art
@@ -103,6 +141,13 @@ fun boardThemeFor(equippedBoardId: String?): BoardTheme {
         "ebony" -> BOARD_EBONY
         "classicwood" -> BOARD_WOOD
         "obsidian" -> BOARD_OBSIDIAN
+        // Batch 2 boards (keyed on the item id from seed.ts).
+        "sapphire" -> BOARD_SAPPHIRE
+        "emeraldjade" -> BOARD_EMERALD_JADE
+        "bloodnarra" -> BOARD_BLOOD_NARRA
+        "pearlivory" -> BOARD_PEARL_IVORY
+        "volcanicember" -> BOARD_VOLCANIC_EMBER
+        "amethystboard" -> BOARD_AMETHYST
         else -> BOARD_MARBLE                          // null / unknown → default
     }
 }
@@ -186,6 +231,13 @@ private fun skinAssetKeyFor(equippedSkinId: String?): String? = when (equippedSk
     "sunstarsskin" -> "sunstars"
     "tamarawskin" -> "tamaraw"
     "baybayinskin" -> "baybayin"
+    // Batch 2 skins (item id → assetKey).
+    "rosegoldskin" -> "rosegold"
+    "verdantskin" -> "verdant"
+    "pearlskin" -> "pearl"
+    "amethystskin" -> "amethyst"
+    "emberskin" -> "ember"
+    "bronzeskin" -> "bronze"
     else -> null // "skin-classic" / null / unknown → default disc
 }
 
@@ -213,6 +265,8 @@ fun piecePaletteFor(equippedSkinId: String?, color: String): PiecePalette {
 private val SKINS_WITH_ART: Set<String> = setOf(
     "jade", "crimson", "obsidian",
     "sarimanok", "bakunawa", "sunstars", "tamaraw", "baybayin",
+    // Batch 2 skins.
+    "rosegold", "verdant", "pearl", "amethyst", "ember", "bronze",
 )
 
 /**
