@@ -44,12 +44,15 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.keyframes
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.ui.graphics.Color
@@ -818,15 +821,114 @@ private fun DealRow(item: StoreItemDto, owned: Boolean, inCart: Boolean, onBuy: 
 }
 
 /**
+ * One auto-flipping skin coin — mirrors the web modal's `SkinCoin` 3D flip
+ * (StorePreviewModal.tsx). A coin continuously rotates on its Y axis; the
+ * MAN (soldier) art is on the front face and the KING art on the back face,
+ * so the flip reveals both ranks for a single colour. Art is the real
+ * pieces/skins/<key>/<color>-<man|king>.png set. `delayMs` offsets the red vs
+ * blue coins so they don't flip in perfect lockstep (matches web's stagger).
+ */
+@Composable
+private fun FlippingSkinCoin(baseRedKingUrl: String, color: String, label: String, labelColor: Color, delayMs: Int) {
+    // Derive all four coin URLs from the base "…/red-king.png" that storeThumbFor
+    // already produces — swap the colour + rank segments. Keeps URL construction
+    // in one place (StoreAssets.assetUrl is private) and matches web's paths.
+    val manUrl = baseRedKingUrl.replace("red-king.png", "$color-man.png")
+    val kingUrl = baseRedKingUrl.replace("red-king.png", "$color-king.png")
+
+    val flip = rememberInfiniteTransition(label = "coin-flip-$color")
+    // Mirror the web `fdcoinflip` keyframes EXACTLY: hold on a face, flip fast,
+    // hold on the other, flip back — so the coin is almost always showing a
+    // face (man or king) and only briefly edge-on. A plain linear 0..360 spins
+    // through the edge-on angles (90°/270°) for half the loop, which reads as
+    // the coin "disappearing". 5s loop: 0/16% front(0°), 42/58% back(180°),
+    // 84/100% front(360°).
+    val angle by flip.animateFloat(
+        initialValue = 0f,
+        targetValue = 360f,
+        animationSpec = infiniteRepeatable(
+            animation = keyframes {
+                durationMillis = 5000
+                delayMillis = delayMs
+                0f at 0 using LinearEasing          // front (man)
+                0f at 800 using FastOutSlowInEasing // hold front to 16%
+                180f at 2100 using LinearEasing     // flipped to back (king) by 42%
+                180f at 2900 using FastOutSlowInEasing // hold back to 58%
+                360f at 4200 using LinearEasing     // flipped back to front by 84%
+                360f at 5000                        // hold to 100%
+            },
+            repeatMode = RepeatMode.Restart
+        ),
+        label = "coin-angle-$color"
+    )
+    // King face shows while the coin is rotated onto its back (roughly 90°..270°).
+    val showKingFace = angle > 90f && angle < 270f
+    val coinSize = 96.dp
+
+    Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        Box(
+            modifier = Modifier
+                .size(coinSize)
+                .graphicsLayer {
+                    rotationY = angle
+                    cameraDistance = 12f * density
+                },
+            contentAlignment = Alignment.Center
+        ) {
+            // Both faces are drawn; only the one currently facing the viewer is
+            // opaque. The king face is counter-rotated 180° so it reads
+            // right-way-round (not mirrored) when it comes around.
+            AsyncImage(
+                model = manUrl,
+                contentDescription = null,
+                modifier = Modifier.fillMaxSize().graphicsLayer { alpha = if (showKingFace) 0f else 1f }
+            )
+            AsyncImage(
+                model = kingUrl,
+                contentDescription = null,
+                modifier = Modifier.fillMaxSize().graphicsLayer {
+                    rotationY = 180f
+                    alpha = if (showKingFace) 1f else 0f
+                }
+            )
+        }
+        Text(
+            label,
+            color = labelColor,
+            style = MaterialTheme.typography.labelSmall,
+            textAlign = TextAlign.Center
+        )
+    }
+}
+
+/**
+ * The two skin coins (your RED side + opponent BLUE side), each auto-flipping
+ * man↔king. Matches the web store preview so a shopper sees both colours and
+ * both ranks. Replaces the old single-red-coin tap-to-flip simplification.
+ */
+@Composable
+private fun SkinCoinPair(item: StoreItemDto) {
+    // storeThumbFor(item) gives ".../pieces/skins/<key>/red-king.png"; both coins
+    // derive their four faces from it (colour + rank string swaps).
+    val base = (storeThumbFor(item) as? StoreThumb.Image)?.url ?: return
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(20.dp, Alignment.CenterHorizontally),
+        verticalAlignment = Alignment.Top
+    ) {
+        FlippingSkinCoin(base, "red", "Your Side · Soldier → King", Color(0xFFFF9AA8), delayMs = 0)
+        FlippingSkinCoin(base, "blue", "Opponent · Soldier → King", Color(0xFF9AC2FF), delayMs = 900)
+    }
+}
+
+/**
  * Store Item Preview bottom sheet — mobile-screen-inventory.md
  * "[MODAL: Store Item Preview]" (`storePrevShow`, .dc.html lines 964-990 /
  * 1364-1417), finding ECON-1. Opened by a card/deal-row tap BEFORE the
  * purchase confirm sheet. Reuses the existing [storeThumbFor] art resolution
- * (no new art loader) — for SKIN items the mockup does a 3D king/soldier
- * flip; here that is honestly simplified to a King/Soldier label-pill toggle
- * over the two real renders (red-king.png / red-man.png, the same asset
- * naming [storeThumbFor] already produces for skins) rather than inventing a
- * 3D flip animation or referencing image files that don't exist.
+ * (no new art loader). For SKIN items with real coin art, the preview shows
+ * BOTH colours (red + blue) each auto-flipping man↔King via [SkinCoinPair]
+ * (matches the web modal). Non-skin items keep the single bobbing thumbnail.
  */
 @Composable
 private fun StoreItemPreviewSheet(
@@ -843,7 +945,6 @@ private fun StoreItemPreviewSheet(
     val isDeal = storeItemIsDeal(item)
     val meta = STORE_TYPE_META[item.type]
     val isSkin = item.type == "SKIN"
-    var showSoldier by remember(item.id) { mutableStateOf(false) }
 
     // Preview "bob" — the Android port of the web modal's `fdcoinbob` float
     // (StorePreviewModal.tsx): the previewed art gently rises + falls and the
@@ -896,49 +997,34 @@ private fun StoreItemPreviewSheet(
                 }
             }
 
-            // Big preview stage (150x150, radial-gradient bg). The art inside
-            // floats (bobs) and the radial glow breathes — mirrors web.
-            Box(
-                modifier = Modifier
-                    .size(150.dp)
-                    .clickable(enabled = isSkin, onClick = { showSoldier = !showSoldier }),
-                contentAlignment = Alignment.Center
-            ) {
-                // Breathing glow layer (scales gently behind the art).
+            // SKIN preview: two auto-flipping coins (red + blue), each man↔King,
+            // matching the web store modal. Only skins with real coin art
+            // (assetKey != "classic") use this; the default "Classic" skin has
+            // no art and falls back to the single bobbing thumbnail below.
+            val skinHasArt = isSkin && item.assetKey != "classic"
+            if (skinHasArt) {
+                SkinCoinPair(item)
+            } else {
+                // Big preview stage (150x150, radial-gradient bg). The art inside
+                // floats (bobs) and the radial glow breathes — mirrors web.
                 Box(
-                    modifier = Modifier
-                        .size(150.dp)
-                        .graphicsLayer(scaleX = glowScale, scaleY = glowScale)
-                        .background(
-                            Brush.radialGradient(listOf(Color(0x33E8B84B), Color(0x001B1030))),
-                            RoundedCornerShape(20.dp)
-                        )
-                )
-                val thumb = if (isSkin && showSoldier) {
-                    val base = storeThumbFor(item)
-                    if (base is StoreThumb.Image) StoreThumb.Image(base.url.replace("red-king.png", "red-man.png")) else base
-                } else {
-                    storeThumbFor(item)
-                }
-                // Bobbing art (translationY is in px; convert the dp bob offset).
-                val bobPx = with(androidx.compose.ui.platform.LocalDensity.current) { bobY.dp.toPx() }
-                Box(modifier = Modifier.graphicsLayer(translationY = bobPx)) {
-                    StoreThumbView(thumb, size = 96.dp)
-                }
-                if (isSkin) {
+                    modifier = Modifier.size(150.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    // Breathing glow layer (scales gently behind the art).
                     Box(
                         modifier = Modifier
-                            .align(Alignment.BottomCenter)
-                            .padding(bottom = 8.dp)
-                            .background(Color(0xCC1B1030), RoundedCornerShape(100.dp))
-                            .border(1.dp, Color(0x47E8B84B), RoundedCornerShape(100.dp))
-                            .padding(horizontal = 10.dp, vertical = 4.dp)
-                    ) {
-                        Text(
-                            if (showSoldier) "Soldier · tap to flip" else "King · tap to flip",
-                            color = Color(0xFFF0CF72),
-                            style = MaterialTheme.typography.labelSmall
-                        )
+                            .size(150.dp)
+                            .graphicsLayer(scaleX = glowScale, scaleY = glowScale)
+                            .background(
+                                Brush.radialGradient(listOf(Color(0x33E8B84B), Color(0x001B1030))),
+                                RoundedCornerShape(20.dp)
+                            )
+                    )
+                    // Bobbing art (translationY is in px; convert the dp bob offset).
+                    val bobPx = with(androidx.compose.ui.platform.LocalDensity.current) { bobY.dp.toPx() }
+                    Box(modifier = Modifier.graphicsLayer(translationY = bobPx)) {
+                        StoreThumbView(storeThumbFor(item), size = 96.dp)
                     }
                 }
             }
