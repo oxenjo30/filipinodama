@@ -317,7 +317,27 @@ fun ProfileScreen(
                     }
                 }
                 Column(modifier = Modifier.weight(1f).padding(start = 20.dp)) {
-                    Text("${me.displayName}${me.tag}", color = Color(0xFFF4ECD6), style = MaterialTheme.typography.titleLarge)
+                    // Name + tag on one line, but the TAG must never be the part
+                    // that gets clipped when the display name is long: give the
+                    // name a fill=false weight so it ellipsizes, and let the tag
+                    // keep its natural (non-shrinking) width so it's always shown.
+                    // Renders "Really Long Display Nam… #1234", not a cut-off tag.
+                    Row(verticalAlignment = Alignment.Bottom) {
+                        Text(
+                            me.displayName,
+                            color = Color(0xFFF4ECD6),
+                            style = MaterialTheme.typography.titleLarge,
+                            maxLines = 1,
+                            overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                            modifier = Modifier.weight(1f, fill = false)
+                        )
+                        Text(
+                            me.tag,
+                            color = Color(0xFFF4ECD6),
+                            style = MaterialTheme.typography.titleLarge,
+                            maxLines = 1
+                        )
+                    }
                     // Guild line — always rendered; "No guild" fallback when the
                     // player isn't in one (PROF-7), matching the mockup which
                     // always shows a guild subtitle.
