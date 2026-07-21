@@ -214,8 +214,8 @@ android {
         // reworked to a denser 3-column tap-to-equip tile layout (the old cards
         // were oversized on phones). Server also auto-syncs ANDROID_LATEST_VERSION
         // from the live Play production track (update nudge, no manual admin step).
-        versionCode = 45
-        versionName = "0.1.45"
+        versionCode = 46
+        versionName = "0.1.46"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
