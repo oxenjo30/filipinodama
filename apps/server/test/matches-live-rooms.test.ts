@@ -152,8 +152,15 @@ describe("GET /api/matches/live — open private rooms", () => {
     // Resign so the match settles → clearRoomForMatch reclaims the room
     // (module-level `rooms` state in rooms.ts persists across tests in this
     // file otherwise, since it's a singleton, not per-test).
+    //
+    // WAIT for the real matchEnded broadcast rather than a blind setTimeout:
+    // settleMatch applies the ledger grants BEFORE it emits matchEnded, so
+    // receiving the event guarantees the LedgerEntry write has landed. A fixed
+    // 100ms sleep raced that write under CI load — the late insert landed after
+    // afterEach's truncateAll, so the follow-up user deleteMany hit a
+    // LedgerEntry_userId_fkey P2003 (the flaky failure this fixes).
     hostSock.emit(EV.matchResign, { matchId });
-    await new Promise((r) => setTimeout(r, 100));
+    await waitFor(hostSock, EV.matchEnded);
 
     await app.close();
   }, 15000);

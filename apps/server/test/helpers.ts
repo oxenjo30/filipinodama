@@ -70,12 +70,38 @@ export async function seedUser(
  *  TRUNCATE gives them DB isolation — at one convention point. Scoped to the rt:
  *  prefix (never flushall/flushdb) so a dev Redis's non-realtime keys are safe;
  *  .env.test points at a dedicated test Redis regardless. */
+const TRUNCATE_TABLES =
+  `"Report", "AuditLog", "Message", "ChannelMember", "Channel", "Ticket", "Tournament", "TournamentEntry", "TournamentMatch", "Match", "LedgerEntry", "LiveEvent", "Order"`;
+
 export async function truncateAll() {
-  await prisma.$executeRawUnsafe(
-    `TRUNCATE "Report", "AuditLog", "Message", "ChannelMember", "Channel", "Ticket", "Tournament", "TournamentEntry", "TournamentMatch", "Match", "LedgerEntry", "LiveEvent", "Order" RESTART IDENTITY CASCADE`,
-  );
-  // remove only test-created users (prefix-scoped) to keep seed accounts
-  await prisma.user.deleteMany({ where: { username: { startsWith: "t_user_" } } });
+  // The TRUNCATE is a point-in-time clear. A test can trigger an ASYNC write
+  // that lands AFTER this call — e.g. a socket resign kicks off settleMatch,
+  // which inserts a LedgerEntry (FK → User) a beat later. If that late insert
+  // arrives between the TRUNCATE and the user deleteMany below, the deleteMany
+  // hits a LedgerEntry_userId_fkey P2003 and the whole suite flakes.
+  //
+  // Guard against it: TRUNCATE, then attempt the prefix-scoped user delete; if
+  // a late FK insert makes it fail, re-TRUNCATE the child tables (clearing the
+  // straggler) and retry. Deterministic tests (which await their settles) hit
+  // the happy path on the first try; only a genuinely-late async write pays for
+  // the retry. Bounded to a few attempts so a real, non-transient FK bug still
+  // surfaces loudly instead of looping.
+  await prisma.$executeRawUnsafe(`TRUNCATE ${TRUNCATE_TABLES} RESTART IDENTITY CASCADE`);
+  let lastErr: unknown = null;
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try {
+      // remove only test-created users (prefix-scoped) to keep seed accounts
+      await prisma.user.deleteMany({ where: { username: { startsWith: "t_user_" } } });
+      lastErr = null;
+      break;
+    } catch (e) {
+      // P2003 = FK violation: a late async write re-referenced a t_user_ row.
+      // Re-clear the child tables and try the user delete again.
+      lastErr = e;
+      await prisma.$executeRawUnsafe(`TRUNCATE ${TRUNCATE_TABLES} RESTART IDENTITY CASCADE`);
+    }
+  }
+  if (lastErr) throw lastErr;
   await flushRealtimeKeys();
 }
 
