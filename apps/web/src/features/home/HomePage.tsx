@@ -503,10 +503,12 @@ export function HomePage() {
 
       {/* RIGHT RAIL */}
       <div style={{ display: "flex", flexDirection: "column", gap: 18 }}>
-        {/* DEV-ONLY: Google Play download panel. Shows in local dev, stripped
-            from production builds (import.meta.env.DEV). Remove the guard when
-            the Android app is published to make it live on the main site. */}
-        {import.meta.env.DEV && <GetTheAppCard />}
+        {/* Google Play download panel — live on the main site. The badge reads
+            "Coming soon to Google Play" (honest: the Android app is in testing,
+            not yet public), so it's safe to show publicly. When the app is
+            published, update GetTheAppCard: make the badge a link to the real
+            Play listing and change the label from "Coming soon" to "Get it on". */}
+        <GetTheAppCard />
 
         <DailyChallengeCard
           me={me}
@@ -607,18 +609,18 @@ export function HomePage() {
 }
 
 /**
- * "Get the App" card — a Google Play download panel for the Android build.
+ * "Get the App" card — a Google Play download panel for the Android build,
+ * shown on the main site's home page right rail.
  *
- * DEV-ONLY: rendered behind `import.meta.env.DEV`, so it shows during local
- * development (`pnpm dev`) but is stripped from every production build. The
- * Android app isn't published yet, so the badge is a non-clickable "Coming
- * soon" element (no dead link). When the app goes live, make this always-on
- * (drop the DEV guard) and turn the badge into a real link to
- * https://play.google.com/store/apps/details?id=com.filipinodama.app.
+ * The Android app is in testing (not yet public on Google Play), so the badge
+ * is a non-clickable "Coming soon to Google Play" element — honest, no dead
+ * link. At LAUNCH, update this component: turn the badge into a link to
+ * https://play.google.com/store/apps/details?id=com.filipinodama.app and change
+ * the label from "Coming soon to" → "Get it on".
  *
  * Self-styled in the site's own gold/frame language rather than embedding
- * Google's official badge image — honest "coming soon" placeholder, no
- * external asset, swap for the official clickable badge at launch.
+ * Google's official badge image — swap for the official clickable badge at
+ * launch if desired (no external asset needed for the "coming soon" state).
  */
 function GetTheAppCard() {
   return (
