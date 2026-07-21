@@ -77,13 +77,16 @@ function CurIcon({ cur, size = 20 }: { cur: "gold" | "gem"; size?: number }) {
  * pulsing ground shadow. `delay` offsets the red/blue coins.
  */
 function SkinCoin({ color, skinArt, pieceSkin, label, labelColor, delay }: { color: PieceColor; skinArt?: string; pieceSkin: PieceSkin; label: string; labelColor: string; delay: string }) {
-  const S = 116;
+  // Responsive coin size: shrinks on narrow phones so the two coins stay
+  // side-by-side inside the modal instead of ballooning / wrapping (bug: on
+  // mobile the fixed 116px coins + long labels overflowed and stacked huge).
+  const S = "clamp(72px, 20vw, 116px)";
 
   // Default "Classic" skin (no skinArt) → render the procedural CSS disc, which
   // is exactly what the prototype's default pieces are. NO character webp art.
   if (!skinArt) {
     return (
-      <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 14 }}>
+      <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 14, maxWidth: 150 }}>
         <div style={{ width: S, height: S, position: "relative", animation: "fdcoinbob 3s ease-in-out infinite", animationDelay: delay }}>
           <Piece color={color} king={false} skin={pieceSkin} />
         </div>
@@ -91,7 +94,7 @@ function SkinCoin({ color, skinArt, pieceSkin, label, labelColor, delay }: { col
         <div style={{ width: S, height: S, position: "relative", animation: "fdcoinbob 3s ease-in-out infinite", animationDelay: delay }}>
           <Piece color={color} king skin={pieceSkin} />
         </div>
-        <div style={{ marginTop: 6, font: "700 11px Inter", letterSpacing: "2px", textTransform: "uppercase", color: labelColor }}>{label}</div>
+        <div style={{ marginTop: 6, font: "700 11px Inter", letterSpacing: "2px", textTransform: "uppercase", color: labelColor, textAlign: "center" }}>{label}</div>
       </div>
     );
   }
@@ -112,7 +115,7 @@ function SkinCoin({ color, skinArt, pieceSkin, label, labelColor, delay }: { col
   });
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 14 }}>
+    <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 14, maxWidth: 150 }}>
       <div style={{ width: S, height: S, perspective: "620px", animation: "fdcoinbob 3s ease-in-out infinite", animationDelay: delay }}>
         <div style={{ position: "relative", width: "100%", height: "100%", transformStyle: "preserve-3d", WebkitTransformStyle: "preserve-3d", animation: "fdcoinflip 5s cubic-bezier(.66,0,.34,1) infinite", animationDelay: delay }}>
           <img src={artFor(false)} alt="" style={face(artFor(false), false)} />
@@ -120,8 +123,10 @@ function SkinCoin({ color, skinArt, pieceSkin, label, labelColor, delay }: { col
           <div style={{ position: "absolute", top: "6%", left: "8%", width: "40%", height: "26%", borderRadius: "50%", background: "linear-gradient(120deg,rgba(255,255,255,.85),transparent)", filter: "blur(3px)", animation: "fdsheen 5s ease-in-out infinite", animationDelay: delay, pointerEvents: "none" }} />
         </div>
       </div>
-      <div style={{ width: S * 0.62, height: 14, borderRadius: "50%", background: "radial-gradient(ellipse,rgba(0,0,0,.6),transparent 72%)", animation: "fdshadowpulse 3s ease-in-out infinite", animationDelay: delay }} />
-      <div style={{ marginTop: 6, font: "700 11px Inter", letterSpacing: "2px", textTransform: "uppercase", color: labelColor }}>{label}</div>
+      {/* Contact shadow — 62% of the coin width via calc so it tracks the
+          responsive clamp() coin size (S is a CSS string, not a number). */}
+      <div style={{ width: `calc(${S} * 0.62)`, height: 14, borderRadius: "50%", background: "radial-gradient(ellipse,rgba(0,0,0,.6),transparent 72%)", animation: "fdshadowpulse 3s ease-in-out infinite", animationDelay: delay }} />
+      <div style={{ marginTop: 6, font: "700 11px Inter", letterSpacing: "2px", textTransform: "uppercase", color: labelColor, textAlign: "center" }}>{label}</div>
       {/* pieceSkin kept for the disc fallback signature; not needed for image art */}
       <span style={{ display: "none" }}>{pieceSkin}</span>
     </div>
@@ -153,7 +158,7 @@ function PreviewArt({ pv }: { pv: StorePreview }) {
     if (pv.portraitFile) return <AvatarToken file={pv.portraitFile} />;
     // The two animated 3D flipping coins (red + blue), soldier → king.
     return (
-      <div style={{ display: "flex", justifyContent: "center", gap: "clamp(16px, 6vw, 52px)", flexWrap: "wrap" }}>
+      <div style={{ display: "flex", justifyContent: "center", gap: "clamp(10px, 4vw, 52px)", flexWrap: "nowrap", width: "100%" }}>
         <SkinCoin color="red" skinArt={pv.skinArt} pieceSkin={pv.pieceSkin ?? "default"} label="Your Side · Soldier → King" labelColor="#ff9aa8" delay="0s" />
         <SkinCoin color="blue" skinArt={pv.skinArt} pieceSkin={pv.pieceSkin ?? "default"} label="Opponent · Soldier → King" labelColor="#9ac2ff" delay=".9s" />
       </div>
