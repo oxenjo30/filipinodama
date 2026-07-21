@@ -44,6 +44,15 @@ const STORE = [
   { id: "marble", type: "BOARD", name: "Marble Court Board", assetKey: "board-marble.png", previewKey: "board:board-marble.png", priceGold: 4200, sortOrder: 11 },
   { id: "classicwood", type: "BOARD", name: "Classic Wood Board", assetKey: "board-wood.png", previewKey: "board:board-wood.png", priceGold: 4500, salePrice: 2250, onSale: true, sortOrder: 12 },
   { id: "obsidian", type: "BOARD", name: "Obsidian Court Board", assetKey: "board-obsidian.png", previewKey: "board:board-obsidian.png", priceDiamonds: 520, tag: "PREMIUM", isPremium: true, sortOrder: 13 },
+  // NEW premium boards (Meshy-generated; procedural in-game color themes wired in
+  // Board.tsx/cosmeticsStore.ts (web) + BoardCosmetics.kt (Android); board-<key>.png
+  // is the store/inventory thumbnail).
+  { id: "sapphire", type: "BOARD", name: "Royal Sapphire Board", assetKey: "board-sapphire.png", previewKey: "board:board-sapphire.png", priceGold: 4300, tag: "NEW", featured: true, sortOrder: 14 },
+  { id: "emeraldjade", type: "BOARD", name: "Emerald Jade Board", assetKey: "board-emeraldjade.png", previewKey: "board:board-emeraldjade.png", priceGold: 4400, tag: "PREMIUM", isPremium: true, sortOrder: 15 },
+  { id: "bloodnarra", type: "BOARD", name: "Blood Narra Board", assetKey: "board-bloodnarra.png", previewKey: "board:board-bloodnarra.png", priceGold: 4200, sortOrder: 16 },
+  { id: "pearlivory", type: "BOARD", name: "Pearl Ivory Board", assetKey: "board-pearlivory.png", previewKey: "board:board-pearlivory.png", priceGold: 4400, sortOrder: 17 },
+  { id: "volcanicember", type: "BOARD", name: "Volcanic Ember Board", assetKey: "board-volcanicember.png", previewKey: "board:board-volcanicember.png", priceGold: 4500, tag: "PREMIUM", isPremium: true, sortOrder: 18 },
+  { id: "amethystboard", type: "BOARD", name: "Royal Amethyst Board", assetKey: "board-amethyst.png", previewKey: "board:board-amethyst.png", priceGold: 4300, sortOrder: 19 },
 
   // ── Piece Skins ──
   { id: "jadeskin", type: "SKIN", name: "Jade Dragon Pieces", assetKey: "jade", previewKey: "skin:jade", priceDiamonds: 360, tag: "NEW", featured: true, sortOrder: 20 },
@@ -57,6 +66,15 @@ const STORE = [
   { id: "sunstarsskin", type: "SKIN", name: "Sun & Three Stars", assetKey: "sunstars", previewKey: "skin:sunstars", priceGold: 3400, sortOrder: 25 },
   { id: "tamarawskin", type: "SKIN", name: "Golden Tamaraw", assetKey: "tamaraw", previewKey: "skin:tamaraw", priceGold: 3800, sortOrder: 26 },
   { id: "baybayinskin", type: "SKIN", name: "Baybayin Ancestral", assetKey: "baybayin", previewKey: "skin:baybayin", priceDiamonds: 380, tag: "NEW", isPremium: true, sortOrder: 27 },
+  // NEW premium skins (Meshy-generated; red+blue × man+king coin art at
+  // pieces/skins/<assetKey>/<color>-<rank>.png; wired into SKINS_WITH_ART on both
+  // platforms + skinAssetKeyFor (Android) + SKIN_FOLDERS (web store preview)).
+  { id: "rosegoldskin", type: "SKIN", name: "Rose Gold Pieces", assetKey: "rosegold", previewKey: "skin:rosegold", priceGold: 3600, tag: "NEW", featured: true, sortOrder: 28 },
+  { id: "verdantskin", type: "SKIN", name: "Verdant Jade Pieces", assetKey: "verdant", previewKey: "skin:verdant", priceGold: 3500, sortOrder: 29 },
+  { id: "pearlskin", type: "SKIN", name: "Pearl Nacre Pieces", assetKey: "pearl", previewKey: "skin:pearl", priceDiamonds: 370, tag: "PREMIUM", isPremium: true, sortOrder: 291 },
+  { id: "amethystskin", type: "SKIN", name: "Royal Amethyst Pieces", assetKey: "amethyst", previewKey: "skin:amethyst", priceDiamonds: 380, tag: "PREMIUM", isPremium: true, sortOrder: 292 },
+  { id: "emberskin", type: "SKIN", name: "Volcanic Ember Pieces", assetKey: "ember", previewKey: "skin:ember", priceGold: 3800, tag: "NEW", isPremium: true, sortOrder: 293 },
+  { id: "bronzeskin", type: "SKIN", name: "Baybayin Bronze Pieces", assetKey: "bronze", previewKey: "skin:bronze", priceGold: 3400, sortOrder: 294 },
 
   // ── Avatars ──
   { id: "sovereign", type: "AVATAR", name: "Royal Sovereign", assetKey: "avatars/sovereign.png", previewKey: "avatar:avatars/sovereign.png", priceDiamonds: 280, tag: "NEW", sortOrder: 30 },
@@ -76,6 +94,17 @@ const STORE = [
   { id: "datu", type: "AVATAR", name: "Datu Warlord", assetKey: "avatars/datu.png", previewKey: "avatar:avatars/datu.png", priceGold: 2800, sortOrder: 43 },
   { id: "magwayen", type: "AVATAR", name: "Magwayen, Sea Goddess", assetKey: "avatars/magwayen.png", previewKey: "avatar:avatars/magwayen.png", priceDiamonds: 360, tag: "PREMIUM", isPremium: true, sortOrder: 44 },
   { id: "panday", type: "AVATAR", name: "Panday Smith-King", assetKey: "avatars/panday.png", previewKey: "avatar:avatars/panday.png", priceGold: 3000, sortOrder: 45 },
+  // NEW premium avatars (Meshy-generated painted heritage portraits at
+  // avatars/<key>.png; fully DATA-DRIVEN — no renderer code needed on either
+  // platform, the bare-key path resolves them automatically).
+  { id: "lapulapu", type: "AVATAR", name: "Lapu-Lapu, Mactan Chief", assetKey: "avatars/lapulapu.png", previewKey: "avatar:avatars/lapulapu.png", priceGold: 3200, tag: "PREMIUM", isPremium: true, featured: true, sortOrder: 46 },
+  { id: "urduja", type: "AVATAR", name: "Princess Urduja", assetKey: "avatars/urduja.png", previewKey: "avatar:avatars/urduja.png", priceDiamonds: 340, tag: "PREMIUM", isPremium: true, sortOrder: 47 },
+  { id: "gabriela", type: "AVATAR", name: "Gabriela Silang", assetKey: "avatars/gabriela.png", previewKey: "avatar:avatars/gabriela.png", priceGold: 2600, tag: "NEW", sortOrder: 48 },
+  { id: "makiling", type: "AVATAR", name: "Maria Makiling", assetKey: "avatars/makiling.png", previewKey: "avatar:avatars/makiling.png", priceDiamonds: 320, tag: "PREMIUM", isPremium: true, sortOrder: 461 },
+  { id: "amihan", type: "AVATAR", name: "Amihan, Wind Goddess", assetKey: "avatars/amihan.png", previewKey: "avatar:avatars/amihan.png", priceDiamonds: 300, tag: "NEW", isPremium: true, sortOrder: 462 },
+  { id: "bathala", type: "AVATAR", name: "Bathala, Sky Father", assetKey: "avatars/bathala.png", previewKey: "avatar:avatars/bathala.png", priceDiamonds: 360, tag: "PREMIUM", isPremium: true, featured: true, sortOrder: 463 },
+  { id: "tandangsora", type: "AVATAR", name: "Tandang Sora", assetKey: "avatars/tandangsora.png", previewKey: "avatar:avatars/tandangsora.png", priceGold: 2400, sortOrder: 464 },
+  { id: "kudarat", type: "AVATAR", name: "Sultan Kudarat", assetKey: "avatars/kudarat.png", previewKey: "avatar:avatars/kudarat.png", priceGold: 3000, tag: "PREMIUM", isPremium: true, sortOrder: 465 },
 
   // ── Profile Frames ──
   // FREE house/default frame every player starts with (granted + equipped by
@@ -96,6 +125,16 @@ const STORE = [
   { id: "kalasagf", type: "FRAME", name: "Kalasag War Frame", assetKey: "frames/kalasag.png", previewKey: "frame:frames/kalasag.png", priceGold: 2600, sortOrder: 55 },
   { id: "sampaguitaf", type: "FRAME", name: "Sampaguita Bloom Frame", assetKey: "frames/sampaguita.png", previewKey: "frame:frames/sampaguita.png", priceGold: 2200, sortOrder: 56 },
   { id: "capizf", type: "FRAME", name: "Capiz Pearl Frame", assetKey: "frames/capiz.png", previewKey: "frame:frames/capiz.png", priceDiamonds: 300, tag: "NEW", isPremium: true, sortOrder: 57 },
+  // NEW premium frames (Meshy-generated transparent-center rings at frames/<key>.png).
+  // NB: item id gets an `f` suffix ≠ art key, so each MUST be added to
+  // FRAME_ID_TO_KEY in BOTH apps/web/src/lib/assets.ts AND
+  // apps/android/.../data/profile/AvatarAssets.kt (id→art-key) or it renders nothing.
+  { id: "bakunawaf", type: "FRAME", name: "Bakunawa Eclipse Frame", assetKey: "frames/bakunawa-ring.png", previewKey: "frame:frames/bakunawa-ring.png", priceGold: 2600, tag: "PREMIUM", isPremium: true, featured: true, sortOrder: 58 },
+  { id: "sarimanokf", type: "FRAME", name: "Sarimanok Frame", assetKey: "frames/sarimanok.png", previewKey: "frame:frames/sarimanok.png", priceDiamonds: 340, tag: "PREMIUM", isPremium: true, sortOrder: 59 },
+  { id: "sampaguitavf", type: "FRAME", name: "Sampaguita Vine Frame", assetKey: "frames/sampaguita-vine.png", previewKey: "frame:frames/sampaguita-vine.png", priceGold: 2200, tag: "NEW", sortOrder: 591 },
+  { id: "sunstarsf", type: "FRAME", name: "Sun & Stars Frame", assetKey: "frames/sunstars-frame.png", previewKey: "frame:frames/sunstars-frame.png", priceGold: 2400, sortOrder: 592 },
+  { id: "tribalweavef", type: "FRAME", name: "Tribal Weave Frame", assetKey: "frames/tribal-weave.png", previewKey: "frame:frames/tribal-weave.png", priceGold: 2300, sortOrder: 593 },
+  { id: "volcanicf", type: "FRAME", name: "Volcanic Obsidian Frame", assetKey: "frames/volcanic-frame.png", previewKey: "frame:frames/volcanic-frame.png", priceDiamonds: 350, tag: "PREMIUM", isPremium: true, sortOrder: 594 },
 
   // ── Emotes REMOVED 2026-07-18 (owner: no Emote store/inventory category).
   //    The in-match emote wheel uses a fixed built-in set on the client now. ──

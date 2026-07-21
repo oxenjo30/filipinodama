@@ -91,7 +91,13 @@ export const useCosmeticsStore = create<CosmeticsState>((set, get) => ({
     // it's a real texture key — otherwise null so the caller keeps the default
     // and the board never renders blank.
     const derived = it.assetKey.replace(/^board-/, "").replace(/\.\w+$/, "");
-    const known = new Set(["marble", "classic", "wood", "ebony", "obsidian"]);
+    const known = new Set([
+      "marble", "classic", "wood", "ebony", "obsidian",
+      // Batch 2 boards — derived key = assetKey minus "board-"/extension. NB the
+      // amethyst board's assetKey is "board-amethyst.png" → derives to "amethyst"
+      // (NOT its item id "amethystboard"), so the texture key is "amethyst".
+      "sapphire", "emeraldjade", "bloodnarra", "pearlivory", "volcanicember", "amethyst",
+    ]);
     return known.has(derived) ? derived : null;
   },
 

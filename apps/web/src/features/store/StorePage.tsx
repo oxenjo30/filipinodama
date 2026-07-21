@@ -305,6 +305,8 @@ const SKIN_FOLDERS = new Set([
   "crimson", "jade", "obsidian",
   // Meshy-generated premium skins (red+blue × man+king coins present in each).
   "sarimanok", "bakunawa", "sunstars", "tamaraw", "baybayin",
+  // Batch 2 premium skins.
+  "rosegold", "verdant", "pearl", "amethyst", "ember", "bronze",
 ]);
 /** The premium skin folder for an item, from its assetKey; undefined = default. */
 function skinArtOf(assetKey: string): string | undefined {

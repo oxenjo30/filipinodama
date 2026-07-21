@@ -105,7 +105,14 @@ private val NAMED_FRAMES: Map<String, String> = mapOf(
     "jade-dragon" to "jade-dragon.png",
     "kalasag" to "kalasag.png",
     "sampaguita" to "sampaguita.png",
-    "capiz" to "capiz.png"
+    "capiz" to "capiz.png",
+    // Batch 2 premium frames (Meshy-generated; transparent-center rings).
+    "bakunawa-ring" to "bakunawa-ring.png",
+    "sarimanok" to "sarimanok.png",
+    "sampaguita-vine" to "sampaguita-vine.png",
+    "sunstars-frame" to "sunstars-frame.png",
+    "tribal-weave" to "tribal-weave.png",
+    "volcanic-frame" to "volcanic-frame.png"
 )
 
 /**
@@ -126,7 +133,14 @@ private val FRAME_ID_TO_KEY: Map<String, String> = mapOf(
     "jadedragonf" to "jade-dragon",
     "kalasagf" to "kalasag",
     "sampaguitaf" to "sampaguita",
-    "capizf" to "capiz"
+    "capizf" to "capiz",
+    // Batch 2 frames (item id → art key).
+    "bakunawaf" to "bakunawa-ring",
+    "sarimanokf" to "sarimanok",
+    "sampaguitavf" to "sampaguita-vine",
+    "sunstarsf" to "sunstars-frame",
+    "tribalweavef" to "tribal-weave",
+    "volcanicf" to "volcanic-frame"
 )
 
 /**

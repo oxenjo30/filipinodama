@@ -47,6 +47,43 @@ const IMAGE_THEMES: Record<Exclude<BoardTextureKey, "marble">, ImageTheme> = {
     dark: "radial-gradient(120% 120% at 25% 20%,#1c1c22 0%,#101014 55%,#08080b 100%)",
     light: "radial-gradient(120% 120% at 25% 20%,#3a3a44 0%,#2a2a32 55%,#1e1e24 100%)",
   },
+  // ── Batch 2 boards (Meshy-generated; colors sampled from the thumbnails) ──
+  // Sapphire: deep sapphire-blue vs silver-pearl, silver filigree frame.
+  sapphire: {
+    frameInset: 11,
+    dark: "radial-gradient(120% 120% at 25% 20%,#1c3a86 0%,#0d215c 55%,#06123f 100%)",
+    light: "radial-gradient(120% 120% at 25% 20%,#eef1f6 0%,#d3d9e6 55%,#b9c2d6 100%)",
+  },
+  // Emerald Jade: deep emerald vs pale cream-jade, gold dragon frame.
+  emeraldjade: {
+    frameInset: 11,
+    dark: "radial-gradient(120% 120% at 25% 20%,#256b3f 0%,#154028 55%,#0d2a1a 100%)",
+    light: "radial-gradient(120% 120% at 25% 20%,#eef0d8 0%,#d6dbb0 55%,#c2c99a 100%)",
+  },
+  // Blood Narra: rich red narra hardwood vs dark walnut, carved wood frame.
+  bloodnarra: {
+    frameInset: 8,
+    dark: "radial-gradient(120% 120% at 25% 20%,#7a2e22 0%,#54180f 55%,#3a0f08 100%)",
+    light: "radial-gradient(120% 120% at 25% 20%,#d99a6c 0%,#c17c4c 55%,#a8633a 100%)",
+  },
+  // Pearl Ivory: iridescent pearl vs champagne-ivory, rose-gold frame.
+  pearlivory: {
+    frameInset: 10,
+    dark: "radial-gradient(120% 120% at 25% 20%,#e6e0d0 0%,#d3cbb6 55%,#c2b89f 100%)",
+    light: "radial-gradient(120% 120% at 25% 20%,#fbf8f0 0%,#f3eede 55%,#e9e2cc 100%)",
+  },
+  // Volcanic Ember: black basalt vs charcoal veined with molten orange, iron frame.
+  volcanicember: {
+    frameInset: 10,
+    dark: "radial-gradient(120% 120% at 25% 20%,#2a2422 0%,#171210 55%,#0c0908 100%)",
+    light: "radial-gradient(120% 120% at 25% 20%,#5a4a44 0%,#40332e 55%,#2c221e 100%)",
+  },
+  // Royal Amethyst: violet amethyst vs polished silver, silver-purple frame.
+  amethyst: {
+    frameInset: 11,
+    dark: "radial-gradient(120% 120% at 25% 20%,#6a4f8e 0%,#432c66 55%,#2c1a48 100%)",
+    light: "radial-gradient(120% 120% at 25% 20%,#f0eef5 0%,#d8d2e4 55%,#c2bad2 100%)",
+  },
 };
 
 export type BoardProps = {
