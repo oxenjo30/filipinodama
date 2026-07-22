@@ -269,6 +269,11 @@ export function PlayHubPage() {
               ← Back to Home
             </button>
           </div>
+
+          {/* ── PUBLIC SEO LANDING BLOCK (head + marketing + FAQ; additive only —
+                 placed in the main column so it follows the play controls instead
+                 of waiting for the taller right rail to finish) ── */}
+          <PlaySeo />
         </div>
 
         {/* RIGHT RAIL */}
@@ -333,10 +338,6 @@ export function PlayHubPage() {
           </div>
         </div>
       </div>
-
-      {/* ── PUBLIC SEO LANDING BLOCK (head + marketing + FAQ; additive only —
-             the approved hub layout above is untouched) ── */}
-      <PlaySeo />
     </div>
   );
 }
