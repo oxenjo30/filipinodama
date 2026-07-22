@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useMemo, useState, type MouseEvent } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { articles, allBySlug, isPublished, formatDate, type BlogCategory } from "./blog";
+import { BlogArticleImage } from "./BlogArticleImage";
+import { articleImageFor } from "./blogImages";
 import { SiteHead, articleJsonLd } from "../../lib/seo";
 import { api } from "../../lib/api";
 
@@ -15,9 +17,9 @@ import { api } from "../../lib/api";
  * Renders category/date/read-time meta, the <h1> title, then the pre-sanitized
  * static HTML body via dangerouslySetInnerHTML (safe: we author & ship this HTML,
  * it contains no scripts). Prose is styled for the dark theme, scoped to
- * `.fd-article` so it never leaks into the rest of the app. On mount we set
- * document.title and the meta description for SEO, and render a related-articles
- * strip (up to 3 other LIVE articles from the same category) plus a CTA.
+ * `.fd-article` so it never leaks into the rest of the app. It renders
+ * article-level SEO metadata and a related-articles strip (up to 3 other LIVE
+ * articles from the same category) plus a CTA.
  */
 
 const CAT_ACCENT: Record<BlogCategory, string> = {
@@ -227,6 +229,7 @@ export function ArticlePage() {
 
   const accent = CAT_ACCENT[article.category];
   const date = formatDate(article.datePublished);
+  const heroImage = articleImageFor(article);
 
   return (
     <div className="fd-page-pad" style={{ maxWidth: 1200, margin: "0 auto", padding: "26px 26px 60px" }}>
@@ -235,7 +238,8 @@ export function ArticlePage() {
         description={article.description}
         path={`/blog/${article.slug}`}
         ogType="article"
-        jsonLd={articleJsonLd(article)}
+        image={heroImage.url}
+        jsonLd={articleJsonLd({ ...article, image: heroImage.url })}
       />
       <style>{PROSE_CSS}</style>
 
@@ -277,6 +281,8 @@ export function ArticlePage() {
           <h1 style={{ font: "800 clamp(26px,3.6vw,34px)/1.25 Cinzel,serif", color: "var(--gold-lt)", margin: "0 0 24px", overflowWrap: "anywhere" }}>
             {article.title}
           </h1>
+
+          <BlogArticleImage article={article} variant="article" priority />
 
           {/* BODY — pre-sanitized static HTML we ship (no scripts); safe to render.
               The .fd-article measure caps at 720px so long prose stays readable

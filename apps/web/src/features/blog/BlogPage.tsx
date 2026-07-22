@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { publishedArticles, categories, formatDate, type BlogCategory, type Article } from "./blog";
+import { BlogArticleImage } from "./BlogArticleImage";
 import { SiteHead } from "../../lib/seo";
 import { api } from "../../lib/api";
 import { useAuthStore } from "../../stores/authStore";
@@ -16,9 +17,8 @@ import { useAuthStore } from "../../stores/authStore";
  * the drip schedule). A floating "scroll to top" arrow appears once the reader
  * scrolls down.
  *
- * The articles carry no image assets, so the CATEGORY is the visual system:
- * each has an accent colour and a glyph that tint the pill, drive a faint
- * corner watermark, and give a per-card background wash.
+ * Article images resolve through blogImages.ts, while the category accent/glyph
+ * still tints the pill, faint watermark, and card background wash.
  */
 
 type Filter = "All" | BlogCategory;
@@ -404,6 +404,7 @@ export function BlogPage() {
                         {CAT_GLYPH[heroArticle.category]}
                       </span>
                       <div style={{ position: "relative", zIndex: 1, padding: "clamp(24px,3.5vw,34px)" }}>
+                        <BlogArticleImage article={heroArticle} variant="hero" priority />
                         <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap", marginBottom: 16 }}>
                           <span style={{ display: "inline-flex", alignItems: "center", gap: 6, font: "800 10px Inter", letterSpacing: "1.5px", textTransform: "uppercase", color: "#2a1a06", background: "linear-gradient(180deg,#f7e2a0,#d5a63a)", padding: "4px 11px", borderRadius: 100 }}>
                             ★ Latest
@@ -457,6 +458,7 @@ export function BlogPage() {
                         >
                           <CardWatermark glyph={CAT_GLYPH[a.category]} accent={accent} />
                           <div style={{ position: "relative", zIndex: 1, display: "flex", flexDirection: "column", gap: 10, height: "100%" }}>
+                            <BlogArticleImage article={a} variant="card" />
                             <CategoryPill category={a.category} />
                             <div style={{ font: "700 19px/1.32 Cinzel,serif", color: "var(--gold-lt)", overflowWrap: "anywhere" }}>{a.title}</div>
                             <div style={{ font: "400 13.5px/1.6 Inter", color: "var(--ink)", display: "-webkit-box", WebkitLineClamp: 3, WebkitBoxOrient: "vertical", overflow: "hidden" }}>{a.description}</div>

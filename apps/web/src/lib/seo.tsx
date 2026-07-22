@@ -106,8 +106,9 @@ export function SiteHead({
 }
 
 // ── JSON-LD builders ────────────────────────────────────────────────────────
-// articles.json carries no author / dateModified / per-article image, so those
-// fields are filled from site-level defaults here rather than migrating 145 rows.
+// articles.json carries no author / dateModified fields, so those are filled from
+// site-level defaults here. Per-article images are supplied by the blog image
+// resolver when available.
 
 const publisher = {
   "@type": "Organization",
@@ -171,6 +172,7 @@ export function articleJsonLd(a: {
   description: string;
   datePublished: string | null;
   dateModified?: string | null;
+  image?: string;
 }): object[] {
   const url = canonical(`/blog/${a.slug}`);
   const published = a.datePublished ?? undefined;
@@ -182,7 +184,7 @@ export function articleJsonLd(a: {
       "@type": "Article",
       headline: a.title.slice(0, 110),
       description: a.description,
-      image: SITE.ogImage,
+      image: a.image ?? SITE.ogImage,
       ...(published ? { datePublished: published } : {}),
       ...(modified ? { dateModified: modified } : {}),
       author: { "@type": "Organization", name: SITE.brand },
