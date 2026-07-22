@@ -1,5 +1,8 @@
 [versions]
-agp = "8.7.3"
+# AGP 8.13 is the minimum in-major (8.x) release that supports compileSdk 36
+# (Android 16), required by Play's "target API 36+" policy (deadline Aug 31 2026).
+# It requires Gradle 8.13 (see gradle-wrapper.properties) and JDK 17+.
+agp = "8.13.0"
 kotlin = "2.0.21"
 composeBom = "2024.10.01"
 navigationCompose = "2.8.4"
@@ -17,7 +20,12 @@ kotlinxCoroutinesTest = "1.9.0"
 mockwebserver = "4.12.0"
 credentials = "1.3.0"
 googleid = "1.1.1"
-billing = "7.1.1"
+# Play Billing 8.0.0+ required by Play policy (deadline Aug 31 2026). The 8.0
+# removals (querySkuDetailsAsync, queryPurchaseHistory, parameterless
+# enablePendingPurchases, the String-skuType queryPurchasesAsync overload) are
+# NOT used here — BillingRepository already targets the 8.0 API surface
+# (PendingPurchasesParams builder + QueryPurchasesParams + KTX queryProductDetails).
+billing = "8.0.0"
 
 [libraries]
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
