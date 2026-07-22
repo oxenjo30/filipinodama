@@ -112,6 +112,13 @@ export function ArticlePage() {
   const { slug } = useParams<{ slug: string }>();
   const navigate = useNavigate();
 
+  // React Router keeps the current window scroll position during same-app
+  // navigation. Reset article reads to the top so clicking a blog card from
+  // mid-list doesn't land the reader halfway down the new article.
+  useEffect(() => {
+    window.scrollTo({ top: 0, left: 0, behavior: "auto" });
+  }, [slug]);
+
   // Featured store items for the sidebar rail (public catalog; real data only).
   const [featured, setFeatured] = useState<FeaturedItem[]>([]);
   useEffect(() => {
