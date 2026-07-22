@@ -274,7 +274,11 @@ fun AppNavHost() {
     DisposableEffect(context) {
         var job: kotlinx.coroutines.Job? = null
         job = scope.launch {
-            ConnectivityObserver.observe(context).collect { online -> isOnline = online }
+            // observeOnline (not observe): suppresses the brief "reconnecting…"
+            // flash caused by Android's network-validation lag on app open, while
+            // still surfacing a real, sustained outage and clearing instantly on
+            // reconnect. See ConnectivityObserver.observeOnline.
+            ConnectivityObserver.observeOnline(context).collect { online -> isOnline = online }
         }
         onDispose { job?.cancel() }
     }
