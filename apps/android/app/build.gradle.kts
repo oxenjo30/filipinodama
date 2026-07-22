@@ -17,12 +17,12 @@ val keystoreProps = Properties().apply {
 
 android {
     namespace = "com.filipinodama.app"
-    compileSdk = 35
+    compileSdk = 36
 
     defaultConfig {
         applicationId = "com.filipinodama.app"
         minSdk = 26
-        targetSdk = 35
+        targetSdk = 36
         // Play permanently reserves every uploaded versionCode (even deleted
         // ones), so each upload must bump it. 1 = uploaded then deleted; 2 =
         // first accepted internal-testing bundle; 3 = tablet width-cap build;
@@ -214,8 +214,16 @@ android {
         // reworked to a denser 3-column tap-to-equip tile layout (the old cards
         // were oversized on phones). Server also auto-syncs ANDROID_LATEST_VERSION
         // from the live Play production track (update nudge, no manual admin step).
-        versionCode = 46
-        versionName = "0.1.46"
+        // 47 = PLAY POLICY COMPLIANCE (deadline Aug 31 2026): (1) target Android 16
+        // — compileSdk/targetSdk 35 → 36 (needs AGP 8.13 + Gradle 8.13, see the
+        // version catalog + wrapper). (2) Play Billing 7.1.1 → 8.0.0. No source
+        // change was needed for billing: BillingRepository already used the 8.0
+        // API surface (PendingPurchasesParams builder, QueryPurchasesParams, the
+        // KTX queryProductDetails suspend fn) and none of 8.0's removed methods.
+        // Diamond top-up stays dark (DIAMOND_TOPUP_ENABLED off); this only clears
+        // the two "app updates will be rejected" warnings on the Play console.
+        versionCode = 47
+        versionName = "0.1.47"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
