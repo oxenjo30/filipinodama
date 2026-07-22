@@ -222,8 +222,18 @@ android {
         // KTX queryProductDetails suspend fn) and none of 8.0's removed methods.
         // Diamond top-up stays dark (DIAMOND_TOPUP_ENABLED off); this only clears
         // the two "app updates will be rejected" warnings on the Play console.
-        versionCode = 47
-        versionName = "0.1.47"
+        // 48 = OFFLINE-BANNER FLASH FIX: the "You're offline — reconnecting…"
+        // strip no longer flashes on app open. Root cause was Android's own
+        // network-validation lag — ConnectivityObserver requires
+        // NET_CAPABILITY_VALIDATED (correct: guards against captive portals),
+        // but on a cold open Android hasn't finished its captive-portal probe,
+        // so it briefly reports "not validated" on a perfectly good connection.
+        // Fix: an asymmetric debounce (ConnectivityObserver.observeOnline /
+        // Flow.debounceOffline) that only shows the banner after ~2.5s of
+        // continuous offline, while clearing INSTANTLY on reconnect — the
+        // on-open blip is swallowed, a real sustained outage still surfaces.
+        versionCode = 48
+        versionName = "0.1.48"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
