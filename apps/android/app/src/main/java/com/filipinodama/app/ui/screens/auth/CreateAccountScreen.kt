@@ -200,7 +200,8 @@ fun CreateAccountScreen(
                     onValueChange = { email = it },
                     placeholder = "you@example.com",
                     kind = AuthFieldKind.EMAIL,
-                    enabled = !busy
+                    enabled = !busy,
+                    imeAction = AuthImeAction.NEXT
                 )
             }
             Column {
@@ -212,7 +213,10 @@ fun CreateAccountScreen(
                     onValueChange = { password = it },
                     placeholder = "••••••••",
                     kind = AuthFieldKind.NEW_PASSWORD,
-                    enabled = !busy
+                    enabled = !busy,
+                    // DONE hides the keyboard, drops focus, and submits signup.
+                    imeAction = AuthImeAction.DONE,
+                    onImeAction = { submit() }
                 )
             }
 

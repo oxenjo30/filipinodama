@@ -98,6 +98,7 @@ fun OnlineMatchScreen(
     val authState by AuthRepository.state.collectAsState()
     val me = authState.user
     var showResignConfirm by remember { mutableStateOf(false) }
+    var showLeaveConfirm by remember { mutableStateOf(false) }
     var chatOpen by remember { mutableStateOf(false) }
     var lastSeenChatCount by remember { mutableStateOf(0) }
     var seasonNum by remember { mutableStateOf<Int?>(null) }
@@ -166,11 +167,25 @@ fun OnlineMatchScreen(
     // Unread badge: count messages that arrived since the panel was last opened.
     val unread = if (chatOpen) 0 else (ui.chat.size - lastSeenChatCount).coerceAtLeast(0)
 
-    fun leave() {
+    // Actually exit the match screen (clears local state; the match keeps
+    // running server-side and is re-enterable from the global banner).
+    fun doLeave() {
         MatchRepository.leaveQueue()
         MatchRepository.reset()
         onExit()
     }
+
+    // Leaving a LIVE game you're playing is easy to do by accident and used to
+    // drop you out silently — confirm first. Spectating, or a match that's
+    // already over, exits immediately (nothing to lose).
+    fun leave() {
+        val isLivePlayer = !isSpectating && gs.result == null && ui.status == MatchStatus.PLAYING
+        if (isLivePlayer) showLeaveConfirm = true else doLeave()
+    }
+
+    // Route system/gesture back through the same confirm gate (this inner
+    // BackHandler wins over the NavHost one while this screen is on top).
+    androidx.activity.compose.BackHandler(enabled = true) { leave() }
 
     Column(
         modifier = Modifier
@@ -404,6 +419,13 @@ fun OnlineMatchScreen(
             subtitle = "Your opponent will be awarded the win. This can't be undone.",
             onCancel = { showResignConfirm = false },
             onResign = { showResignConfirm = false; MatchRepository.resign() }
+        )
+    }
+
+    if (showLeaveConfirm) {
+        com.filipinodama.app.ui.components.LeaveMatchConfirmDialog(
+            onCancel = { showLeaveConfirm = false },
+            onLeave = { showLeaveConfirm = false; doLeave() }
         )
     }
 

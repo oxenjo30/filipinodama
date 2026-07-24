@@ -232,8 +232,22 @@ android {
         // Flow.debounceOffline) that only shows the banner after ~2.5s of
         // continuous offline, while clearing INSTANTLY on reconnect — the
         // on-open blip is swallowed, a real sustained outage still surfaces.
-        versionCode = 48
-        versionName = "0.1.48"
+        // 49 = TWO LOGIN/MATCH UX FIXES. (1) Login keyboard no longer stays up
+        // after the password vault autofills + Enter: the view-backed
+        // AuthAutofillField had no imeOptions/editor-action, so Enter was a
+        // no-op and the soft keyboard never hid (covering the bottom nav). Now
+        // email → IME NEXT (advance to password), password → IME DONE (hide
+        // keyboard + drop focus + submit); imeOptions is re-applied after the
+        // password-visibility inputType toggle (setInputType resets it).
+        // Applied to Login + Create Account. (2) RETURN-TO-MATCH: leaving a live
+        // online match no longer strands you. A global "▶ Return to match" bar
+        // (ActiveMatchStore + ReturnToMatchBanner, backed by GET
+        // /api/matches/active) now shows on EVERY screen while a match is live
+        // (was Home-card-only), and back/chevron on the match screen shows a
+        // "Leave the match?" confirm (the game keeps running server-side, so
+        // leaving is non-destructive — you can jump back from the bar).
+        versionCode = 49
+        versionName = "0.1.49"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 

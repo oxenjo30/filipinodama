@@ -6,6 +6,8 @@ import android.text.InputType
 import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
+import android.view.inputmethod.EditorInfo
+import android.view.inputmethod.InputMethodManager
 import android.widget.EditText
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -39,6 +41,16 @@ import com.filipinodama.app.ui.theme.TextDefault
 enum class AuthFieldKind { LOGIN_ID, EMAIL, PASSWORD, NEW_PASSWORD }
 
 /**
+ * The keyboard's bottom-right action key for a field.
+ *  - [NEXT]: advance focus to the next field (e.g. email → password).
+ *  - [DONE]: finish input — hide the soft keyboard, drop focus, and fire
+ *    [AuthAutofillField]'s onImeAction (used to submit the form). This is the
+ *    fix for "keyboard stays up after autofill + Enter": a bare EditText with
+ *    no imeOptions/editor-action listener never dismisses the IME on Enter.
+ */
+enum class AuthImeAction { NEXT, DONE }
+
+/**
  * An auth credential field backed by a real Android [EditText] (via AndroidView)
  * so the PLATFORM autofill service (Google Password Manager / Samsung Pass /
  * Chrome / 1Password) handles both FILL and — crucially — the "Save password?"
@@ -60,9 +72,19 @@ fun AuthAutofillField(
     kind: AuthFieldKind,
     modifier: Modifier = Modifier,
     enabled: Boolean = true,
+    // The keyboard action key. NEXT advances focus; DONE hides the keyboard,
+    // drops focus, and calls [onImeAction]. Defaults to DONE so a lone field
+    // still dismisses the IME on Enter instead of leaving it stuck up.
+    imeAction: AuthImeAction = AuthImeAction.DONE,
+    // Invoked when the DONE action fires (e.g. submit the login form). Only
+    // meaningful when imeAction == DONE.
+    onImeAction: () -> Unit = {},
 ) {
     var visible by remember { mutableStateOf(false) }
     val isPassword = kind == AuthFieldKind.PASSWORD || kind == AuthFieldKind.NEW_PASSWORD
+    // Keep the latest onImeAction without re-running the AndroidView factory (the
+    // editor-action listener is installed once in factory but reads this holder).
+    val imeActionState = androidx.compose.runtime.rememberUpdatedState(onImeAction)
 
     val hints: Array<String> = when (kind) {
         // Login identifier: advertise BOTH so the manager offers the saved id
@@ -104,6 +126,37 @@ fun AuthAutofillField(
                                 InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_EMAIL_ADDRESS
                             else -> InputType.TYPE_CLASS_TEXT
                         }
+                        // IME action key + handler. Without this a singleLine
+                        // EditText leaves Enter as a no-op, so after autofill the
+                        // soft keyboard never hides and covers the bottom nav.
+                        // NEXT advances to the next field; DONE hides the keyboard,
+                        // drops focus, and submits.
+                        imeOptions = when (imeAction) {
+                            AuthImeAction.NEXT -> EditorInfo.IME_ACTION_NEXT
+                            AuthImeAction.DONE -> EditorInfo.IME_ACTION_DONE
+                        }
+                        setOnEditorActionListener { v, actionId, _ ->
+                            when (actionId) {
+                                EditorInfo.IME_ACTION_NEXT -> {
+                                    // Move focus to the next focusable (password).
+                                    val next = v.focusSearch(View.FOCUS_DOWN)
+                                    if (next != null) next.requestFocus() else v.clearFocus()
+                                    true
+                                }
+                                EditorInfo.IME_ACTION_DONE,
+                                EditorInfo.IME_ACTION_GO -> {
+                                    // Hide the soft keyboard + release focus, then submit.
+                                    val imm = v.context
+                                        .getSystemService(android.content.Context.INPUT_METHOD_SERVICE)
+                                        as? InputMethodManager
+                                    imm?.hideSoftInputFromWindow(v.windowToken, 0)
+                                    v.clearFocus()
+                                    imeActionState.value.invoke()
+                                    true
+                                }
+                                else -> false
+                            }
+                        }
                         // Keep Compose state in sync (single source of truth = the
                         // caller's `value`); guard against loops by only firing when
                         // the text actually differs from the model.
@@ -136,6 +189,13 @@ fun AuthAutofillField(
                         val base = InputType.TYPE_CLASS_TEXT
                         et.inputType = if (visible) base or InputType.TYPE_TEXT_VARIATION_VISIBLE_PASSWORD
                         else base or InputType.TYPE_TEXT_VARIATION_PASSWORD
+                        // setInputType RESETS imeOptions to the default, which would
+                        // silently undo the DONE action and bring the keyboard-stuck
+                        // bug right back on the password field — re-apply it here.
+                        et.imeOptions = when (imeAction) {
+                            AuthImeAction.NEXT -> EditorInfo.IME_ACTION_NEXT
+                            AuthImeAction.DONE -> EditorInfo.IME_ACTION_DONE
+                        }
                         et.setSelection(et.text.length)
                     }
                 },
