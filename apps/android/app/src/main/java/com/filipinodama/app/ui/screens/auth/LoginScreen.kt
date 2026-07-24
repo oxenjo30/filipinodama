@@ -195,7 +195,8 @@ fun LoginScreen(
                     onValueChange = { email = it },
                     placeholder = "you@example.com",
                     kind = AuthFieldKind.LOGIN_ID,
-                    enabled = !busy
+                    enabled = !busy,
+                    imeAction = AuthImeAction.NEXT
                 )
             }
             Column {
@@ -205,7 +206,12 @@ fun LoginScreen(
                     onValueChange = { password = it },
                     placeholder = "••••••••",
                     kind = AuthFieldKind.PASSWORD,
-                    enabled = !busy
+                    enabled = !busy,
+                    // DONE on the password field hides the keyboard, drops focus,
+                    // and submits — matching the web form's Enter-to-submit and
+                    // fixing the "keyboard stuck up after autofill" report.
+                    imeAction = AuthImeAction.DONE,
+                    onImeAction = { submit() }
                 )
             }
 

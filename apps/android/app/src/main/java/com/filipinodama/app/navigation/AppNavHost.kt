@@ -49,6 +49,8 @@ import com.filipinodama.app.data.config.ConfigRepository
 import com.filipinodama.app.data.config.MaintenanceState
 import com.filipinodama.app.data.match.GameRepository
 import com.filipinodama.app.data.match.MatchRepository
+import com.filipinodama.app.data.match.ActiveMatchStore
+import com.filipinodama.app.data.match.PublicUserDto
 import com.filipinodama.app.data.rooms.RoomRepository
 import com.filipinodama.app.data.system.ConnectivityObserver
 import com.filipinodama.app.data.system.offlineBannerVisible
@@ -92,6 +94,7 @@ import com.filipinodama.app.ui.screens.settings.MyTicketsScreen
 import com.filipinodama.app.ui.screens.settings.SettingsScreen
 import com.filipinodama.app.ui.screens.system.MaintenanceScreen
 import com.filipinodama.app.ui.screens.system.OfflineBanner
+import com.filipinodama.app.ui.screens.system.ReturnToMatchBanner
 import com.filipinodama.app.ui.screens.system.SanctionBanner
 import com.filipinodama.app.data.AuthRepository
 import com.filipinodama.app.ui.screens.social.DiscoverGuildsScreen
@@ -261,10 +264,26 @@ fun AppNavHost() {
         val observer = LifecycleEventObserver { _, event ->
             if (event == Lifecycle.Event.ON_RESUME) {
                 scope.launch { ConfigRepository.refresh() }
+                // Refresh the global "Return to match" banner on foreground so a
+                // match started/left while backgrounded surfaces (or a finished
+                // one clears).
+                scope.launch { ActiveMatchStore.refresh() }
             }
         }
         lifecycleOwner.lifecycle.addObserver(observer)
         onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
+
+    // Global "Return to match" banner state. Re-fetch GET /api/matches/active
+    // whenever the visible route changes (so leaving the match screen, or
+    // landing on any tab, refreshes it) and on foreground (above). Only shown
+    // when a live match exists AND we're not already on the match screen.
+    val activeMatch by ActiveMatchStore.active.collectAsState()
+    val onMatchRoute = currentDestination?.route == AppDestinations.ONLINE_MATCH
+    LaunchedEffect(currentDestination?.route) {
+        // Skip refreshing while on the match screen itself (we're already there);
+        // refresh on every other route so the banner is current everywhere else.
+        if (!onMatchRoute) ActiveMatchStore.refresh()
     }
 
     // Offline strip (SYSTEM_STATES.md z-index 400 — "coexists above
@@ -308,6 +327,50 @@ fun AppNavHost() {
     ) {
         OfflineBanner(visible = offlineBannerVisible(isOnline))
         SanctionBanner()
+        // Global "Return to match" strip — lets a player jump back into a live
+        // online match from ANY screen (not just the Home card), fixing "I
+        // clicked away and there's no way back". Hidden on the match screen
+        // itself. The match keeps running server-side, so tapping resyncs it.
+        run {
+            val am = activeMatch
+            val myId = AuthRepository.state.value.user?.id
+            val myColor = when {
+                am == null -> null
+                am.red?.id == myId -> "red"
+                am.blue?.id == myId -> "blue"
+                else -> null
+            }
+            val opponentDto = if (am == null) null else if (myColor == "red") am.blue else am.red
+            ReturnToMatchBanner(
+                visible = am != null && myId != null && !onMatchRoute,
+                opponentLabel = opponentDto?.displayName ?: "Opponent",
+                modeLabel = matchModeLabel(am?.mode),
+                onResume = {
+                    // am/myId are non-null whenever the banner is visible (the
+                    // only time this fires); resume the live match by resync.
+                    if (am != null) {
+                        MatchRepository.enterFromRoom(
+                            matchId = am.id,
+                            yourColor = myColor,
+                            opponent = opponentDto?.let {
+                                PublicUserDto(
+                                    id = it.id,
+                                    username = it.username,
+                                    displayName = it.displayName,
+                                    tag = it.tag,
+                                    avatarUrl = it.avatarUrl,
+                                    trophies = it.trophies,
+                                    rankTier = it.rankTier
+                                )
+                            }
+                        )
+                        navController.navigate(AppDestinations.onlineMatch(am.mode)) {
+                            popUpTo(AppDestinations.HOME)
+                        }
+                    }
+                },
+            )
+        }
         Scaffold(
             // The tab bar handles its own navigation-bar inset; don't let the
             // Scaffold add the bottom system inset a second time (would push the
@@ -731,14 +794,11 @@ fun AppNavHost() {
                 arguments = listOf(navArgument("mode") { type = NavType.StringType })
             ) { backStackEntry ->
                 val mode = backStackEntry.arguments?.getString("mode") ?: "CASUAL"
-                // System/gesture back mid-match must not silently pop to whatever
-                // was underneath (mirrors the "explicit back target per screen"
-                // convention in the header doc) — route through Leave explicitly.
-                BackHandler(enabled = true) {
-                    MatchRepository.leaveQueue()
-                    MatchRepository.reset()
-                    navController.popBackStack(AppDestinations.MODE_SELECT, inclusive = false)
-                }
+                // Back handling now lives INSIDE OnlineMatchScreen (it shows a
+                // "Leave the match?" confirm for a live game before exiting, then
+                // calls onExit below). No BackHandler here — the screen's own one
+                // takes priority while it's on top, and duplicating it risked a
+                // double-pop that skipped the confirm.
                 // Mockup: enterMatchmaking()/startRoomMatch()/submitJoin() all
                 // funnel into playWithLoader(ctx, ...) before the board shows
                 // (finding #1/#2). RANKED gets the crimson-tinted loader
@@ -834,4 +894,15 @@ fun AppNavHost() {
             )
         }
     }
+}
+
+/** Short mode label for the global "Return to match" banner. */
+private fun matchModeLabel(mode: String?): String = when (mode) {
+    "CASUAL" -> "Casual"
+    "RANKED" -> "Ranked"
+    "PRIVATE" -> "Private"
+    "AI" -> "vs AI"
+    "LOCAL" -> "Local"
+    null -> "Match"
+    else -> mode
 }
