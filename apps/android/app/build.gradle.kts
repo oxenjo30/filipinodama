@@ -246,8 +246,19 @@ android {
         // (was Home-card-only), and back/chevron on the match screen shows a
         // "Leave the match?" confirm (the game keeps running server-side, so
         // leaving is non-destructive — you can jump back from the bar).
-        versionCode = 49
-        versionName = "0.1.49"
+        // 50 = TESTER-REPORT UX FIXES. (1) A11y contrast: secondary text on the
+        // tester-named surfaces (Achievements subtext, the Home "Master the
+        // Board" labels/quest counters, Mode Select mode descriptions) was
+        // hardcoded to sub-WCAG-AA hex (#9A8BBF/#8B7CAE/#7C6DA3 ≈ 4:1); routed to
+        // the AA-corrected Ink2 token (~5:1). (2) Store "can't afford" state: the
+        // Buy button was always enabled regardless of balance (insufficient funds
+        // only failed after tapping) — now, when price > your balance in that
+        // item's currency, the price dims, a "Not enough gold/gems" hint shows,
+        // and Buy is dimmed + disabled (+ add-to-cart stays enabled). Applied to
+        // the store grid card and the Daily Deals row. Owned/Equipped green
+        // states were already present and unchanged.
+        versionCode = 50
+        versionName = "0.1.50"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 

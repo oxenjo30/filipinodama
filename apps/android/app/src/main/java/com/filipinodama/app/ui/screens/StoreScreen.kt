@@ -401,6 +401,9 @@ fun StoreScreen(
                                 // so this recomposes reactively.
                                 equipped = isItemEquipped(item, me?.equippedBoard, me?.equippedSkin, me?.frameId, me?.avatarUrl),
                                 inCart = item.id in cartIds,
+                                // Balance in the item's own currency → drives the
+                                // "can't afford" dim/disable state on the card.
+                                balance = if (storeItemCurrency(item) == "DIAMONDS") (me?.diamonds ?: 0) else (me?.gold ?: 0),
                                 onPreviewOrBuy = { previewItem = item },
                                 onAddToCart = { addToCart(item) },
                                 onEquip = {
@@ -423,6 +426,7 @@ fun StoreScreen(
                             item = item,
                             owned = item.id in owned,
                             inCart = item.id in cartIds,
+                            balance = if (storeItemCurrency(item) == "DIAMONDS") (me?.diamonds ?: 0) else (me?.gold ?: 0),
                             onBuy = { previewItem = item },
                             onAddToCart = { addToCart(item) }
                         )
@@ -560,6 +564,9 @@ private fun StoreItemCard(
     owned: Boolean,
     equipped: Boolean,
     inCart: Boolean,
+    // The user's balance in THIS item's currency (gold or diamonds), so the
+    // card can show a "can't afford" state instead of a Buy that fails on tap.
+    balance: Int,
     onPreviewOrBuy: () -> Unit,
     onAddToCart: () -> Unit,
     onEquip: () -> Unit
@@ -567,6 +574,8 @@ private fun StoreItemCard(
     val cur = storeItemCurrency(item)
     val price = storeItemPrice(item)
     val meta = STORE_TYPE_META[item.type]
+    // Only meaningful for a priced item the user doesn't already own.
+    val affordable = price <= balance
 
     // LEFT-aligned card to match the mobile mockup (Mobile.dc.html store grid:
     // flex-direction:column with NO align-items:center → name, sub, Preview, price
@@ -674,12 +683,22 @@ private fun StoreItemCard(
                     modifier = Modifier.fillMaxWidth(),
                     verticalArrangement = Arrangement.spacedBy(9.dp)
                 ) {
+                    val priceColor = if (cur == "DIAMONDS") Color(0xFFFF9AA8) else Color(0xFFF2D493)
                     CurrencyAmount(
                         kind = if (cur == "DIAMONDS") CurrencyIconKind.GEM else CurrencyIconKind.COIN,
                         text = price.toString(),
-                        color = if (cur == "DIAMONDS") Color(0xFFFF9AA8) else Color(0xFFF2D493),
+                        // Dim the price when it's more than the user can afford.
+                        color = if (affordable) priceColor else priceColor.copy(alpha = 0.4f),
                         style = MaterialTheme.typography.titleSmall
                     )
+                    // "Can't afford" hint (tester: unaffordable items had no cue).
+                    if (!affordable) {
+                        Text(
+                            if (cur == "DIAMONDS") "Not enough gems" else "Not enough gold",
+                            color = Color(0xFFFF8F9C),
+                            style = MaterialTheme.typography.labelSmall
+                        )
+                    }
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -688,11 +707,14 @@ private fun StoreItemCard(
                         // Add-to-cart (mockup line 3780-3784): + when not yet
                         // queued, flips to a no-op ✓ once in the cart. Removal
                         // only happens on the Checkout screen, matching the
-                        // mockup's addToCart-is-idempotent-by-name behavior.
+                        // mockup's addToCart-is-idempotent-by-name behavior. Kept
+                        // enabled even when unaffordable — you can queue it now and
+                        // earn the gold before checkout.
                         AddToCartButton(inCart = inCart, onAdd = onAddToCart)
                         // Buy fills the rest of the row so it's a comfortable,
-                        // full-width primary tap target under the price.
-                        BuyButton(onClick = onPreviewOrBuy, modifier = Modifier.weight(1f))
+                        // full-width primary tap target under the price. Disabled +
+                        // dimmed when unaffordable so it can't open a doomed purchase.
+                        BuyButton(onClick = onPreviewOrBuy, modifier = Modifier.weight(1f), enabled = affordable)
                     }
                 }
             }
@@ -708,18 +730,21 @@ private fun StoreItemCard(
  * keep the label on one line regardless.
  */
 @Composable
-private fun BuyButton(label: String = "Buy", modifier: Modifier = Modifier, onClick: () -> Unit) {
+private fun BuyButton(label: String = "Buy", modifier: Modifier = Modifier, enabled: Boolean = true, onClick: () -> Unit) {
+    // When not affordable, the button is dimmed and un-tappable so the user
+    // can't open a purchase they can't complete (tester: unaffordable items
+    // gave no visual cue and only failed after tapping).
     Box(
         modifier = modifier
             .defaultMinSize(minWidth = 52.dp)
-            .clickable(onClick = onClick)
-            .background(Gold.copy(alpha = 0.85f), RoundedCornerShape(8.dp))
+            .clickable(enabled = enabled, onClick = onClick)
+            .background(Gold.copy(alpha = if (enabled) 0.85f else 0.22f), RoundedCornerShape(8.dp))
             .padding(horizontal = 14.dp, vertical = 10.dp),
         contentAlignment = Alignment.Center
     ) {
         Text(
             label,
-            color = Color(0xFF2A1607),
+            color = if (enabled) Color(0xFF2A1607) else Color(0xFF2A1607).copy(alpha = 0.5f),
             style = MaterialTheme.typography.labelMedium,
             maxLines = 1,
             softWrap = false
@@ -788,9 +813,10 @@ private fun Badge(text: String, color: Color, background: Color) {
 }
 
 @Composable
-private fun DealRow(item: StoreItemDto, owned: Boolean, inCart: Boolean, onBuy: () -> Unit, onAddToCart: () -> Unit) {
+private fun DealRow(item: StoreItemDto, owned: Boolean, inCart: Boolean, balance: Int, onBuy: () -> Unit, onAddToCart: () -> Unit) {
     val cur = storeItemCurrency(item)
     val price = storeItemPrice(item)
+    val affordable = price <= balance
     Row(
         modifier = Modifier.fillMaxWidth().background(Panel, RoundedCornerShape(14.dp)).padding(14.dp),
         horizontalArrangement = Arrangement.spacedBy(12.dp),
@@ -800,13 +826,21 @@ private fun DealRow(item: StoreItemDto, owned: Boolean, inCart: Boolean, onBuy: 
         Column(modifier = Modifier.weight(1f)) {
             Text(item.name, color = androidx.compose.ui.graphics.Color.White, style = MaterialTheme.typography.titleSmall)
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                val dealPriceColor = if (cur == "DIAMONDS") Color(0xFFFF9AA8) else Color(0xFFF2D493)
                 CurrencyAmount(
                     kind = if (cur == "DIAMONDS") CurrencyIconKind.GEM else CurrencyIconKind.COIN,
                     text = price.toString(),
-                    color = if (cur == "DIAMONDS") Color(0xFFFF9AA8) else Color(0xFFF2D493),
+                    color = if (affordable) dealPriceColor else dealPriceColor.copy(alpha = 0.4f),
                     style = MaterialTheme.typography.labelMedium
                 )
                 Text("-${storeItemDiscountPct(item)}%", color = Color(0xFFA83744), style = MaterialTheme.typography.labelSmall)
+                if (!affordable) {
+                    Text(
+                        if (cur == "DIAMONDS") "Not enough gems" else "Not enough gold",
+                        color = Color(0xFFFF8F9C),
+                        style = MaterialTheme.typography.labelSmall
+                    )
+                }
             }
         }
         if (owned) {
@@ -814,7 +848,7 @@ private fun DealRow(item: StoreItemDto, owned: Boolean, inCart: Boolean, onBuy: 
         } else {
             Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
                 AddToCartButton(inCart = inCart, onAdd = onAddToCart)
-                BuyButton(onClick = onBuy)
+                BuyButton(onClick = onBuy, enabled = affordable)
             }
         }
     }
