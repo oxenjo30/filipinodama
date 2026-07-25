@@ -30,6 +30,7 @@ import com.filipinodama.app.ui.components.MockupBackButton
 import com.filipinodama.app.ui.components.PullRefreshContainer
 import com.filipinodama.app.ui.components.screenInsets
 import com.filipinodama.app.ui.theme.GoldLt
+import com.filipinodama.app.ui.theme.Ink2
 
 /**
  * Achievements — full screen, mobile-screen-inventory.md SCREEN 30
@@ -164,7 +165,10 @@ private fun AchievementRow(def: AchievementDef, unlocked: Boolean, progress: Flo
             }
             Text(
                 def.desc,
-                color = Color(0xFF9A8BBF),
+                // Was #9A8BBF (~4.0:1, below WCAG-AA); routed to the AA-corrected
+                // Ink2 token (~5:1) — tester flagged achievement subtext as hard
+                // to read on the dark theme.
+                color = Ink2,
                 style = MaterialTheme.typography.labelSmall,
                 modifier = Modifier.padding(top = 4.dp)
             )

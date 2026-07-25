@@ -97,7 +97,7 @@ fun ModeSelectScreen(
         )
         Text(
             "Pick how you want to play. Ranked affects your trophies — everything else is just for fun.",
-            color = Color(0xFF9A8BBF),
+            color = Ink2, // was #9A8BBF (sub-AA); AA-corrected token
             style = MaterialTheme.typography.bodyMedium,
             textAlign = androidx.compose.ui.text.style.TextAlign.Center
         )
@@ -221,8 +221,9 @@ private fun ModeCardRow(
                     }
                 }
             }
-            Text(desc, color = Color(0xFFA999C8), style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(top = 2.dp))
-            Text(meta, color = Color(0xFF7C6DA3), style = MaterialTheme.typography.labelSmall, modifier = Modifier.padding(top = 4.dp))
+            Text(desc, color = Ink2, style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(top = 2.dp))
+            // was #7C6DA3 (dimmest, well below AA) — routed to the AA-corrected Ink2.
+            Text(meta, color = Ink2, style = MaterialTheme.typography.labelSmall, modifier = Modifier.padding(top = 4.dp))
         }
         Text("›", color = accent, style = MaterialTheme.typography.headlineSmall)
     }

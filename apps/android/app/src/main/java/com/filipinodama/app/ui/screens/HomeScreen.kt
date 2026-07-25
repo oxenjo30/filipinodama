@@ -608,7 +608,7 @@ private fun DailyRewardStrip(daily: DailyLoginStatusResponse?, onClick: () -> Un
                     }
                 }
             }
-            Text(label, color = Color(0xFF9A8BBF), style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(top = 2.dp))
+            Text(label, color = Ink2, style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(top = 2.dp))
         }
         Text("›", color = Color(0xFFF0CF72), style = MaterialTheme.typography.headlineSmall)
     }
@@ -652,7 +652,7 @@ private fun TournamentsStrip(tournaments: List<TournamentListItemDto>, onClick: 
                     }
                 }
             }
-            Text(label, color = Color(0xFF9A8BBF), style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(top = 2.dp))
+            Text(label, color = Ink2, style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(top = 2.dp))
         }
         Text("›", color = Color(0xFFC9A4FF), style = MaterialTheme.typography.headlineSmall)
     }
@@ -664,7 +664,8 @@ private fun TournamentsStrip(tournaments: List<TournamentListItemDto>, onClick: 
 private fun SectionLabel(text: String, topPadding: androidx.compose.ui.unit.Dp = 24.dp) {
     Text(
         text.uppercase(),
-        color = Color(0xFF8B7CAE),
+        // was #8B7CAE (below AA); AA-corrected Ink2 token for the dense main screen.
+        color = Ink2,
         style = MaterialTheme.typography.labelMedium,
         modifier = Modifier.padding(top = topPadding, bottom = 12.dp)
     )
@@ -744,7 +745,7 @@ private fun DailyQuestsCard(quests: List<QuestDto>, onClick: () -> Unit) {
                 Column(modifier = Modifier.weight(1f).padding(start = 12.dp)) {
                     Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                         Text(q.title, color = Color(0xFFE6DCF5), style = MaterialTheme.typography.labelLarge)
-                        Text("${q.value}/${q.goal}", color = Color(0xFF8B7CAE), style = MaterialTheme.typography.labelSmall)
+                        Text("${q.value}/${q.goal}", color = Ink2, style = MaterialTheme.typography.labelSmall)
                     }
                     Box(
                         modifier = Modifier
