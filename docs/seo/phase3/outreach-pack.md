@@ -8,7 +8,7 @@
 
 ## Read this before sending anything
 
-1. **The classroom PDF is NOT live yet.** `https://filipinodama.com/downloads/dama-rules-classroom-guide.pdf` returned **HTTP 404** when checked on 2026-07-19. Do not send any teacher-community pitch — or the Magna Kultura pitch (Target 6), whose email promises this printable classroom PDF — until the PDF is published at that exact URL. Also note: the live `/learn` page itself links this same PDF (dead download link), and every pitch below points editors to `/learn`. Publish the PDF (or temporarily remove the `/learn` download link) **before ANY send**, so an editor who clicks through does not hit a 404.
+1. **The classroom PDF is live.** The earlier 2026-07-19 draft warning is resolved: `https://filipinodama.com/downloads/dama-rules-classroom-guide.pdf` returned **HTTP 200** on 2026-07-22. Teacher-community outreach and the Magna Kultura pitch are unblocked.
 2. **The site is in BETA.** Never claim player counts, popularity, or rankings in any pitch. All drafts below avoid this — keep it that way if you edit them.
 3. **Disclose who you are.** Every email says you own the site. Editors respond better to honest indie-founder pitches than to "SEO outreach."
 4. **One follow-up maximum,** 7–10 days after the first email. Then stop.
@@ -227,11 +227,11 @@ For FB group posts, adapt the body into a short post (drop the greeting/sign-off
 | 8List.ph | editorial email / contact form | 2026-07-19 | | | |
 | Scout Magazine | scoutmag.ph contact / socials | 2026-07-19 | | | |
 | Inquirer Lifestyle | lifestyle desk email | 2026-07-19 | | | |
-| Magna Kultura Foundation | foundation contact | | | | |
-| TeacherPH | contribution/contact page | | | | |
-| Teach Pinas | contact page | | | | |
-| DepEd Tambayan | contact page | | | | |
-| MAPEH TEACHERS FB group | group post (after joining) | | | | |
+| Magna Kultura Foundation | `kulturapilipinas@gmail.com` via `support@filipinodama.com` | 2026-07-22 | | | |
+| TeacherPH | READY TO SEND — official contact form `https://www.teacherph.com/contact/`; requires John sender fields (name/mobile/email/consent). | | | | |
+| Teach Pinas | READY TO SEND — contact page `https://www.teachpinas.com/contact/`; open manually for mailbox/guest-post path because scraper obfuscates the email. | | | | |
+| DepEd Tambayan | `depedtambayan@gmail.com` via `support@filipinodama.com`; WhatsApp fallback `https://wa.me/639068810513`. | 2026-07-22 | | | |
+| MAPEH TEACHERS FB group | BLOCKED — group post after John joins/uses Facebook and checks self-promo/resource rules. | | | | |
 
 ---
 

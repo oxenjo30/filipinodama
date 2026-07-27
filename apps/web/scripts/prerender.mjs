@@ -103,7 +103,11 @@ async function main() {
     // least one of those URLs. 301 them to the current /blog/<slug> so the earned
     // equity transfers instead of dying on a 404 (a slug with no current article
     // 301s onto our 404 page, which is no worse than before).
-    redirects: [{ source: "blog/posts/:slug", destination: "/blog/:slug", type: 301 }],
+    redirects: [
+      { source: "blog/posts/:slug.html", destination: "/blog/:slug", type: 301 },
+      { source: "blog/posts/:slug", destination: "/blog/:slug", type: 301 },
+      { source: "blog/:slug.html", destination: "/blog/:slug", type: 301 },
+    ],
     rewrites: [
       ...SPA_SEGMENTS.flatMap((seg) => [
         { source: seg, destination: "/index.html" },

@@ -26,8 +26,98 @@ export interface Article {
   body: string;
 }
 
+const SEO_REFRESH = {
+  "2026-06-20-dama-vs-checkers-what-is-the-difference": {
+    title: "Dama vs Checkers: Rules, Kings, Captures, and Key Differences",
+    description:
+      "Dama and checkers look similar, but Filipino Dama changes the game with maximum captures, backward-capturing men, and a flying king. See the key differences.",
+  },
+  "2026-07-09-how-many-pieces-are-in-dama": {
+    title: "How Many Pieces Are in Dama? 12 Per Player, 24 Total",
+    description:
+      "How many pieces are in Dama? Filipino Dama starts with 12 pieces per player, 24 total, placed on the dark squares of an 8x8 board.",
+  },
+  "2026-07-02-can-you-move-backwards-in-dama": {
+    title: "Can You Move Backwards in Dama? Pawn and King Rules",
+    description:
+      "Can you move backwards in Dama? Men move forward but can capture backward, while kings can move and capture backward across open diagonals.",
+  },
+  "2026-07-06-dama-notation-how-to-read-and-record-moves": {
+    title: "Dama Notation and Board Numbering: Read and Record Moves",
+    description:
+      "Learn Dama notation and board numbering: number the 32 dark squares, write simple moves, record captures, and review Filipino Dama games.",
+  },
+} satisfies Record<string, Pick<Article, "title" | "description">>;
+
+function refreshArticleBody(article: Article): string {
+  let body = article.body;
+
+  switch (article.slug) {
+    case "2026-06-20-dama-vs-checkers-what-is-the-difference":
+      return body
+        .replace(
+          `<li>Pieces move diagonally and capture by jumping over an adjacent enemy into the empty square beyond.</li>`,
+          `<li>Pieces move diagonally and capture by jumping over an enemy into an empty landing square beyond.</li>`,
+        )
+        .replace(
+          `<p>Dama and checkers both use an 8×8 board and 12 pieces per side, but Filipino Dama requires you to take the capture path that removes the most pieces, while American checkers lets you take any available jump. Dama also promotes a pawn to a long-range flying king, whereas a checkers king moves only one square at a time.</p>`,
+          `<p>Dama and checkers both use an 8x8 board and 12 pieces per side, but Filipino Dama requires the capture path that removes the most pieces, lets men capture backward, and promotes a pawn to a long-range flying king. American checkers uses a short king and does not force the longest capture line.</p>`,
+        );
+
+    case "2026-07-09-how-many-pieces-are-in-dama":
+      return body;
+
+    case "2026-07-02-can-you-move-backwards-in-dama":
+      body = body
+        .replace(
+          `<div>\n    <strong>Quick answer:</strong> A regular Dama pawn <strong>cannot move backward</strong> and <strong>cannot capture backward</strong>. Only a promoted king can move backward, and it can fly any distance along an open diagonal in either direction.\n  </div>`,
+          `<div>\n    <strong>Quick answer:</strong> A regular Dama man <strong>cannot move backward without capturing</strong>, but it <strong>can capture backward</strong>. A promoted king can move and capture backward freely, flying any distance along an open diagonal.\n  </div>`,
+        )
+        .replace(
+          `<p>It's one of the most common questions from players who are just picking up Filipino Dama: <em>can you move backwards in dama?</em> The short answer is "it depends on which piece you're moving." Pawns and kings follow completely different rules in this regard, and understanding the distinction is fundamental to playing the game correctly. Here is the full picture.</p>`,
+          `<p>It's one of the most common questions from players who are just picking up Filipino Dama: <em>can you move backwards in dama?</em> The short answer is: <strong>men cannot move backward without capturing, but they can capture backward; kings can move and capture backward freely.</strong> Understanding that distinction is fundamental to playing the game correctly. Here is the full picture.</p>`,
+        )
+        .replace(
+          `<p>A regular pawn in Filipino Dama can only move <strong>diagonally forward</strong>—one step at a time, toward your opponent's side of the board. It cannot move sideways, and it absolutely cannot step backward under normal movement. This is identical to how pieces work in international draughts or standard checkers.</p>`,
+          `<p>A regular man in Filipino Dama can only make a quiet move <strong>diagonally forward</strong> — one step at a time, toward your opponent's side of the board. It cannot move sideways, and it cannot step backward when no capture is involved. Captures are the important exception.</p>`,
+        )
+        .replace(
+          `<p>This is where Filipino Dama diverges from some regional variants. In Filipino Dama, <strong>pawns cannot capture backwards</strong>. A pawn's capture must also be forward—jumping over an adjacent enemy piece diagonally into the empty square beyond, and that square must be in the forward direction. If an enemy piece is sitting behind your pawn, you cannot jump it no matter how tempting it looks.</p>\n\n  <p>This rule is often confused because some house rules or regional variants do allow backward captures for pawns. If you have played another version before, be aware that the standard Filipino Dama rule is forward-only movement and capture for pawns, full stop.</p>`,
+          `<p>Yes. This is the rule that trips up many checkers players: in Filipino Dama, <strong>men may capture backward</strong>. If an enemy piece sits on any adjacent diagonal and the landing square beyond it is empty, that jump can be legal whether it points forward or backward.</p>\n\n  <p>Because captures are mandatory, a backward capture is not optional when it is the required or longest available capture line. Before every move, scan all four diagonals for jumps, not only the two forward diagonals.</p>`,
+        )
+        .replace(
+          `<li><strong>Pawn moving:</strong> Diagonally forward only, one square.</li>\n    <li><strong>Pawn capturing:</strong> Diagonally forward only, jumping one enemy piece into an empty square beyond.</li>`,
+          `<li><strong>Man moving:</strong> Diagonally forward only, one square.</li>\n    <li><strong>Man capturing:</strong> Diagonally forward or backward, jumping one adjacent enemy piece into an empty square beyond.</li>`,
+        )
+        .replace(
+          `<p>It depends on the piece. A regular pawn can only move diagonally forward, one square at a time, and cannot step or capture backward. A king, or flying king, can move and capture diagonally in any direction—including backwards—across any number of empty squares.</p>`,
+          `<p>It depends on the action. A regular man can only move one square diagonally forward when no capture is involved, but it can capture backward. A king, or flying king, can move and capture diagonally in any direction, including backwards, across any number of empty squares.</p>`,
+        )
+        .replace(
+          `<p>No. In standard Filipino Dama a pawn's capture must be forward only. Some regional or house variants allow backward captures, but the standard rule is forward-only movement and capture for pawns.</p>`,
+          `<p>Yes. In Filipino Dama, a man can capture backward if the enemy piece is on an adjacent diagonal and the landing square beyond it is empty. Since captures are mandatory, that backward jump must be taken when it is the required capture line.</p>`,
+        );
+      return body;
+
+    case "2026-07-06-dama-notation-how-to-read-and-record-moves":
+      return body.replace(
+        `<p>It is worth sketching this grid on paper the first time you use it — after a few games the square numbers become instinctive and you will not need to look them up.</p>`,
+        `<p><strong>Dama board numbering quick map:</strong> the playable dark squares run 1-4 on the top row, 5-8 on the second row, 9-12 on the third row, and continue down to 29-32 on the bottom row. Memorize those eight rows and every move becomes easier to read.</p>\n\n  <p>It is worth sketching this grid on paper the first time you use it — after a few games the square numbers become instinctive and you will not need to look them up.</p>`,
+      );
+
+    default:
+      return body;
+  }
+}
+
+function refreshArticle(article: Article): Article {
+  const seo = SEO_REFRESH[article.slug as keyof typeof SEO_REFRESH];
+  if (!seo) return article;
+  return { ...article, ...seo, body: refreshArticleBody(article) };
+}
+
 /** Every authored article, newest-first (published + not-yet-published). */
-export const allArticles = articlesJson as Article[];
+export const allArticles = (articlesJson as Article[]).map(refreshArticle);
 
 /**
  * Is this article live yet? The 145 articles are a scheduled DRIP: each has a
