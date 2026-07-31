@@ -1,5 +1,6 @@
 import { SITE } from "../../lib/seo";
 import type { Article, BlogCategory } from "./blog";
+import { ARTICLE_IMAGE_SLUGS } from "./blogArticleImages";
 
 export type BlogImage = {
   src: string;
@@ -124,6 +125,20 @@ const CATEGORY_FALLBACK: Record<BlogCategory, ImageKey> = {
 export const blogImageSources = Object.values(IMAGES).map((image) => image.src);
 
 export function articleImageFor(article: Article): BlogImage {
+  // Prefer a dedicated, unique per-article image when one has been generated
+  // (see blogArticleImages.ts). This gives each post its own hero + social
+  // card instead of the handful of shared keyword-matched images. Articles
+  // without a dedicated image (e.g. not-yet-generated future drip posts) fall
+  // back to the keyword matcher below, so nothing ever renders imageless.
+  if (ARTICLE_IMAGE_SLUGS.has(article.slug)) {
+    const src = `/assets/blog/${article.slug}.webp`;
+    return {
+      src,
+      url: absoluteAssetUrl(src),
+      alt: `${article.title} — Filipino Dama`,
+    };
+  }
+
   const text = `${article.slug} ${article.title} ${article.description}`.toLowerCase();
   const matched = MATCHERS.find((rule) => rule.pattern.test(text));
   const image = IMAGES[matched?.image ?? CATEGORY_FALLBACK[article.category]];
