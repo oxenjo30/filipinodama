@@ -107,6 +107,13 @@ async function main() {
       { source: "blog/posts/:slug.html", destination: "/blog/:slug", type: 301 },
       { source: "blog/posts/:slug", destination: "/blog/:slug", type: 301 },
       { source: "blog/:slug.html", destination: "/blog/:slug", type: 301 },
+      // /rules 301s to the canonical rules pillar at /learn. The "dama rules"
+      // content lives at /learn (title "Dama Rules — How to Play…", already
+      // indexed + in the sitemap + llms.txt); /rules itself was never a route,
+      // so it 404'd. Redirecting (not adding a competing /rules page) sends any
+      // inbound link/typed URL to the real page and avoids duplicate-content
+      // cannibalization with /learn.
+      { source: "rules", destination: "/learn", type: 301 },
     ],
     rewrites: [
       ...SPA_SEGMENTS.flatMap((seg) => [
