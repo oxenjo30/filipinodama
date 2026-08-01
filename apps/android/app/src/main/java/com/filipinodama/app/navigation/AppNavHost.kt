@@ -63,9 +63,9 @@ import com.filipinodama.app.ui.screens.StoreScreen
 import com.filipinodama.app.ui.screens.auth.CreateAccountScreen
 import com.filipinodama.app.ui.screens.auth.ForgotPasswordScreen
 import com.filipinodama.app.ui.screens.auth.LoginScreen
+import com.filipinodama.app.ui.screens.game.BattleScreen
 import com.filipinodama.app.ui.screens.game.AiDifficultyScreen
 import com.filipinodama.app.ui.screens.game.MatchmakingScreen
-import com.filipinodama.app.ui.screens.game.ModeSelectScreen
 import com.filipinodama.app.ui.screens.game.OfflineGameScreen
 import com.filipinodama.app.ui.screens.game.OnlineMatchScreen
 import com.filipinodama.app.ui.components.LoadingContext
@@ -724,13 +724,25 @@ fun AppNavHost() {
             // ---- Phase 3: gameplay core (Play tab) ----
             // Play tab -> Mode Select directly (go('mode') in the prototype).
             composable(AppDestinations.MODE_SELECT) {
-                ModeSelectScreen(
-                    onBack = { navController.popBackStack() },
-                    onPlayAi = { navController.navigate(AppDestinations.AI_DIFFICULTY) },
+                // Owner-approved redesign: the Play tab is now the Battle
+                // screen. Game Modes lives in a drawer behind the trophy
+                // button and ARMS this button, so BATTLE dispatches straight to
+                // the armed mode instead of pushing a mode-select screen.
+                // AI goes directly to the game at the remembered difficulty —
+                // AiDifficultyScreen is no longer on the Play path (its route
+                // stays registered; nothing routes to it today).
+                BattleScreen(
                     onPlayCasual = { playOnlineOrLogin("CASUAL") },
                     onPlayRanked = { playRankedOrLogin() },
+                    onPlayAi = { difficulty -> navController.navigate(AppDestinations.aiGame(difficulty)) },
                     onPrivateRoom = { navController.navigate(AppDestinations.privateRoom()) },
+                    onTournaments = { navController.navigate(AppDestinations.TOURNAMENTS) },
+                    onQuests = { navController.navigate(AppDestinations.QUESTS) },
+                    onDailyReward = { navController.navigate(AppDestinations.DAILY_REWARD) },
                     onWatchLive = { navController.navigate(AppDestinations.LIVE_MATCH_BROWSER) },
+                    // Board themes + piece skins are equipped from Inventory
+                    // today; an in-drawer picker is a later phase.
+                    onOpenLoadout = { navController.navigate(AppDestinations.INVENTORY) },
                     onRankedGuestBlocked = {
                         // Owner policy: Ranked requires a real account. A guest or
                         // an anonymous user tapping Ranked is sent to Login to sign

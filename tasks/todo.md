@@ -1,3 +1,82 @@
+# Play page -> Battle screen + Game Modes drawer (Model C)
+
+Branch: `feat/android-play-battle-screen` - worktree `D:/AI Projects/fd-battle`
+
+Owner-approved design (this session): the Play tab becomes a Clash-Royale-style
+Battle screen. Game Modes moves into a drawer behind the trophy button, and
+picking a mode there arms the BATTLE button. AI difficulty uses **Model C** -
+the AI ticket arms immediately, and an Easy / Normal / Hard strip appears above
+the dock while AI is armed.
+
+This is a deliberate, owner-directed deviation from the approved handoff
+(`handoffv3` ModeSelect spec). Flagged and accepted.
+
+## Phase 1 - the screen (this PR)
+
+- [x] `PlayLoadoutStore` - persist armed mode + AI difficulty via `KeyValueStore`
+      (same pattern as `SettingsStore`). Fixes the existing defect where
+      `AiDifficultyScreen.kt:58` uses plain `remember`, so difficulty resets to
+      Normal on every visit and on rotation.
+- [x] `ModeTicket.kt` - the ticket composable: main panel + stub, bleed art,
+      per-mode accent, optional stat / progress / timer / pill.
+- [x] `GameModesSheet.kt` - drawer overlay: scrim, handle, sectioned ticket list.
+- [x] `BattleScreen.kt` - Play tab root: throne backdrop tinted by tier, tier
+      crest + name, trophy road to next tier, dock (loadout slot / BATTLE /
+      trophy slot with caret), Model C difficulty strip.
+- [x] Wire `AppDestinations.MODE_SELECT` to `BattleScreen`; keep every existing
+      gate - Ranked guest gate, `watchLiveEnabled` server flag, private room.
+- [x] Re-export `diff_easy/normal/hard` with alpha (they ship opaque on
+      `#101010`, so `AiDifficultyScreen.kt:129` renders them as black squares).
+- [x] Loadout slot -> existing `INVENTORY` route (board/piece skins live there).
+      A dedicated in-drawer picker is Phase 3.
+- [x] Verify: `:app:compileDebugKotlin` + `:app:testDebugUnitTest` green.
+
+### Owner change mid-build
+Tournaments was pulled OUT of the Game Modes drawer: it is its own page,
+reached from the Battle screen side rail, not a mode BATTLE can be armed with.
+`ArmedMode` no longer contains it and the ticket was removed.
+
+### Verified on device (emulator-5554, 1080x2424)
+compileDebugKotlin green; 301 unit tests, 2 pre-existing failures confirmed
+identical on base commit 2c14f70 (AuthRepositoryLogicTest, AvatarAssetsTest -
+both untouched by this change). Battle screen, drawer, mode arming, and the
+Model C difficulty strip all exercised by hand: arming Private Room switched
+BATTLE to CREATE ROOM, arming AI revealed the Easy/Normal/Hard strip, and
+tapping Hard updated BATTLE to "VS AI - HARD".
+
+### Known follow-ups from this build
+- `ModeSelectScreen.kt` is now dead code (referenced only in comments). NOT
+  deleted - deletions need owner approval.
+- The loadout slot renders a flat gold placeholder, not the equipped board
+  pattern. Reading `equippedBoard` is Phase 3.
+- Rail buttons have no badges yet (unread quests / claimable reward) - that
+  state is not fetched by this screen.
+
+## Deferred - stated, not silently dropped
+
+- **Phase 2 - per-mode standings.** Tickets should read "47W / 31L" for Casual
+  and "12W on Hard" for AI. `Match.mode` is already a first-class enum with
+  `@@index([mode, endedAt])`, but `User` only stores global wins/losses, so this
+  needs one new aggregate endpoint. Until then the tickets carry honest static
+  subtitles, not fabricated numbers.
+- **Phase 3 - loadout picker in the drawer** (board themes + piece skins as a
+  third pane) instead of routing out to Inventory.
+- **Phase 4 - Home de-duplication.** Home still renders its own hero + 2x2 mode
+  grid, so two screens now offer the same four modes. Decide after this ships.
+- **Daily-login track** on the Battle screen - needs the daily-login state
+  fetched here; Home owns that call today.
+
+## Notes
+
+- Ranked stays gated behind a real account (`ModeSelectScreen.kt:69`). With the
+  drawer arming the button, a guest never has Ranked armed - the gate fires on
+  the ticket, where it can be explained, not on the primary CTA.
+- Watch Live stays behind `ConfigRepository.watchLiveEnabled` (fail-closed).
+
+---
+
+# Archive - previous task
+
 # Monetization dark-launch (feat/monetization-dark)
 
 ## Discovery (2026-07-12)
