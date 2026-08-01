@@ -17,9 +17,17 @@ const matchQuerySchema = z.object({
   limit: z.coerce.number().int().min(1).max(50).default(20),
 });
 
-// POST /api/matches/local — client-reported finished offline game. mode is fixed
-// to LOCAL and never awards ranked currency, so we don't accept trophy/gold deltas.
+// POST /api/matches/local — client-reported finished offline game. Offline games
+// never award ranked currency, so we don't accept trophy/gold deltas.
+//
+// `mode` accepts only the two offline kinds: LOCAL (pass-and-play) and AI. It is
+// deliberately NOT free-form — a client must never be able to write a CASUAL or
+// RANKED row through this route, which is unauthenticated as to outcome.
+// `aiDifficulty` is required for AI and rejected otherwise, and is persisted into
+// settings so per-difficulty records ("12W on Hard") can be derived.
 const localMatchSchema = z.object({
+  mode: z.enum(["LOCAL", "AI"]).default("LOCAL"),
+  aiDifficulty: z.enum(["easy", "normal", "hard"]).optional(),
   settings: z.object({
     forcedMaxCapture: z.boolean(),
     drawMoveLimit: z.number().int().positive(),
@@ -250,17 +258,99 @@ export async function matchRoutes(app: FastifyInstance) {
     return ok({ match: { ...serializeMatch(m), moves: m.moves } });
   });
 
+  // GET /api/matches/records — the caller's win/loss/draw tally per mode.
+  //
+  // This is what the Play tab's Game Modes tickets show ("47W - 31L" on Quick
+  // Match, "12W on Hard" on Play vs AI): your standing IN that mode, not a
+  // global record. `User` only stores global wins/losses, so it has to come
+  // from Match — which is cheap, because `Match.mode` is a first-class enum and
+  // the table already carries @@index([mode, endedAt]).
+  //
+  // Only FINISHED matches count (endedAt not null): an abandoned or in-flight
+  // game is not a result. Draws are reported separately rather than folded into
+  // losses so the client can render whichever it wants.
+  app.get("/matches/records", { preHandler: requireAuth }, async (req) => {
+    const userId = req.userId!;
+
+    // One grouped pass over the user's finished matches. groupBy on
+    // (mode, winner) plus the red/blue side is not expressible in one Prisma
+    // groupBy, so group by mode+winner for each side and fold them together.
+    const [asRed, asBlue] = await Promise.all([
+      prisma.match.groupBy({
+        by: ["mode", "winner"],
+        where: { redId: userId, endedAt: { not: null } },
+        _count: { _all: true },
+      }),
+      prisma.match.groupBy({
+        by: ["mode", "winner"],
+        where: { blueId: userId, endedAt: { not: null } },
+        _count: { _all: true },
+      }),
+    ]);
+
+    const byMode = new Map<string, { wins: number; losses: number; draws: number }>();
+    const bump = (mode: string, key: "wins" | "losses" | "draws", n: number) => {
+      const row = byMode.get(mode) ?? { wins: 0, losses: 0, draws: 0 };
+      row[key] += n;
+      byMode.set(mode, row);
+    };
+    for (const g of asRed) {
+      const n = g._count._all;
+      if (g.winner === "red") bump(g.mode, "wins", n);
+      else if (g.winner === "blue") bump(g.mode, "losses", n);
+      else if (g.winner === "draw") bump(g.mode, "draws", n);
+    }
+    for (const g of asBlue) {
+      const n = g._count._all;
+      if (g.winner === "blue") bump(g.mode, "wins", n);
+      else if (g.winner === "red") bump(g.mode, "losses", n);
+      else if (g.winner === "draw") bump(g.mode, "draws", n);
+    }
+
+    // AI difficulty lives in settings JSON, which cannot be grouped on in
+    // Postgres via Prisma, so tally those rows in memory. AI is offline and
+    // client-reported, so the volume here is a player's own history, not a scan.
+    const aiRows = await prisma.match.findMany({
+      where: { redId: userId, mode: "AI", endedAt: { not: null } },
+      select: { winner: true, settings: true },
+    });
+    const ai: Record<string, { wins: number; losses: number; draws: number }> = {};
+    for (const row of aiRows) {
+      const raw = (row.settings as { aiDifficulty?: unknown } | null)?.aiDifficulty;
+      const difficulty = raw === "easy" || raw === "normal" || raw === "hard" ? raw : "normal";
+      const bucket = (ai[difficulty] ??= { wins: 0, losses: 0, draws: 0 });
+      // The reporting client always owns the red side on an offline match.
+      if (row.winner === "red") bucket.wins += 1;
+      else if (row.winner === "blue") bucket.losses += 1;
+      else if (row.winner === "draw") bucket.draws += 1;
+    }
+
+    return ok({
+      modes: Object.fromEntries(byMode),
+      ai,
+    });
+  });
+
   // POST /api/matches/local — persist a finished LOCAL/offline game.
   // mode is forced to LOCAL; NO trophy/gold is ever awarded here.
   app.post("/matches/local", { preHandler: requireAuth }, async (req) => {
     const input = localMatchSchema.parse(req.body);
     const userId = req.userId!;
+    if (input.mode === "AI" && !input.aiDifficulty) {
+      throw err.badRequest("AI_DIFFICULTY_REQUIRED", "aiDifficulty is required for AI matches");
+    }
+    if (input.mode !== "AI" && input.aiDifficulty) {
+      throw err.badRequest("AI_DIFFICULTY_NOT_ALLOWED", "aiDifficulty only applies to AI matches");
+    }
     const match = await prisma.match.create({
       data: {
-        mode: "LOCAL",
+        mode: input.mode,
         redId: userId, // the local player owns the record; opponent is offline
         blueId: null,
-        settings: input.settings as unknown as Prisma.InputJsonValue,
+        settings: {
+          ...input.settings,
+          ...(input.aiDifficulty ? { aiDifficulty: input.aiDifficulty } : {}),
+        } as unknown as Prisma.InputJsonValue,
         moves: input.moves as unknown as Prisma.InputJsonValue,
         winner: input.winner ?? null,
         reason: input.reason ?? null,

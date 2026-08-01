@@ -55,7 +55,6 @@ object AppDestinations {
     // Profile quick-links per mobile-screen-inventory.md §2 SCREENs 11, 13,
     // 23, 24, 33. All are non-tab screens with an explicit back target
     // (Home), matching the "explicit back target per screen" convention.
-    const val INVENTORY = "economy/inventory"
     const val ORDERS = "economy/orders"
     const val DAILY_REWARD = "economy/daily-reward"
     const val QUESTS = "economy/quests"

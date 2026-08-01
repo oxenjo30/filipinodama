@@ -63,9 +63,10 @@ import com.filipinodama.app.ui.screens.StoreScreen
 import com.filipinodama.app.ui.screens.auth.CreateAccountScreen
 import com.filipinodama.app.ui.screens.auth.ForgotPasswordScreen
 import com.filipinodama.app.ui.screens.auth.LoginScreen
+import com.filipinodama.app.data.play.PlayScreenRequests
+import com.filipinodama.app.ui.screens.game.BattleScreen
 import com.filipinodama.app.ui.screens.game.AiDifficultyScreen
 import com.filipinodama.app.ui.screens.game.MatchmakingScreen
-import com.filipinodama.app.ui.screens.game.ModeSelectScreen
 import com.filipinodama.app.ui.screens.game.OfflineGameScreen
 import com.filipinodama.app.ui.screens.game.OnlineMatchScreen
 import com.filipinodama.app.ui.components.LoadingContext
@@ -77,7 +78,6 @@ import com.filipinodama.app.ui.components.openPlayStoreListing
 import com.filipinodama.app.ui.screens.rooms.LiveMatchBrowserScreen
 import com.filipinodama.app.ui.screens.rooms.PrivateRoomScreen
 import com.filipinodama.app.ui.screens.economy.DailyRewardsScreen
-import com.filipinodama.app.ui.screens.economy.InventoryScreen
 import com.filipinodama.app.ui.screens.economy.OrdersScreen
 import com.filipinodama.app.ui.screens.economy.QuestsScreen
 import com.filipinodama.app.ui.screens.economy.SeasonScreen
@@ -232,6 +232,16 @@ fun AppNavHost() {
 
     /** Ranked-specific shorthand (kept for existing call sites). */
     fun playRankedOrLogin() = playOnlineOrLogin("RANKED")
+
+    /**
+     * Send the player to the Play tab with the Loadout drawer pending. This is
+     * where board/piece-skin equipping lives now that the Inventory screen is
+     * gone; the Battle screen opens the drawer on arrival and clears the flag.
+     */
+    fun goToLoadout() {
+        PlayScreenRequests.requestLoadout()
+        navController.navigate(AppDestinations.MODE_SELECT) { launchSingleTop = true }
+    }
 
     // ── System states (Phase 7): maintenance gate + offline banner ──
     //
@@ -507,7 +517,7 @@ fun AppNavHost() {
             }
             composable(AppDestinations.STORE) {
                 StoreScreen(
-                    onOpenInventory = { navController.navigate(AppDestinations.INVENTORY) },
+                    onOpenLoadout = { goToLoadout() },
                     onRequireSignIn = { navController.navigate(AppDestinations.LOGIN) }
                 )
             }
@@ -534,7 +544,6 @@ fun AppNavHost() {
                     onOpenGuild = { navController.navigate(AppDestinations.GUILD) },
                     onOpenDiscoverGuilds = { navController.navigate(AppDestinations.DISCOVER_GUILDS) },
                     onOpenOrders = { navController.navigate(AppDestinations.ORDERS) },
-                    onOpenInventory = { navController.navigate(AppDestinations.INVENTORY) },
                     // Owner round-3 fix: Profile's Settings TAB now renders
                     // inline (see ProfileScreen.kt kdoc) instead of navigating
                     // to AppDestinations.SETTINGS — onOpenLegal wires the
@@ -562,8 +571,8 @@ fun AppNavHost() {
             composable(AppDestinations.SETTINGS) {
                 SettingsScreen(
                     onBack = { navController.popBackStack() },
+                    onOpenLoadout = { goToLoadout() },
                     onSignedOut = { goClearingStack(AppDestinations.LOGIN) },
-                    onOpenInventory = { navController.navigate(AppDestinations.INVENTORY) },
                     onOpenLegal = { doc -> navController.navigate(AppDestinations.legal(doc)) },
                     onOpenTickets = { navController.navigate(AppDestinations.MY_TICKETS) }
                 )
@@ -668,14 +677,6 @@ fun AppNavHost() {
             }
 
             // ---- Phase 5: economy surfaces ----
-            composable(AppDestinations.INVENTORY) {
-                InventoryScreen(
-                    onBrowseStore = {
-                        navController.navigate(AppDestinations.STORE) { popUpTo(AppDestinations.HOME) }
-                    },
-                    onBack = { navController.popBackStack() }
-                )
-            }
             composable(AppDestinations.ORDERS) {
                 OrdersScreen(
                     onBrowseStore = {
@@ -723,14 +724,28 @@ fun AppNavHost() {
 
             // ---- Phase 3: gameplay core (Play tab) ----
             // Play tab -> Mode Select directly (go('mode') in the prototype).
+            // Screens that used to deep-link to the Inventory route now hand
+            // off into the Play tab's Loadout drawer.
             composable(AppDestinations.MODE_SELECT) {
-                ModeSelectScreen(
-                    onBack = { navController.popBackStack() },
-                    onPlayAi = { navController.navigate(AppDestinations.AI_DIFFICULTY) },
+                // Owner-approved redesign: the Play tab is now the Battle
+                // screen. Game Modes lives in a drawer behind the trophy
+                // button and ARMS this button, so BATTLE dispatches straight to
+                // the armed mode instead of pushing a mode-select screen.
+                // AI goes directly to the game at the remembered difficulty —
+                // AiDifficultyScreen is no longer on the Play path (its route
+                // stays registered; nothing routes to it today).
+                BattleScreen(
                     onPlayCasual = { playOnlineOrLogin("CASUAL") },
                     onPlayRanked = { playRankedOrLogin() },
+                    onPlayAi = { difficulty -> navController.navigate(AppDestinations.aiGame(difficulty)) },
                     onPrivateRoom = { navController.navigate(AppDestinations.privateRoom()) },
+                    onTournaments = { navController.navigate(AppDestinations.TOURNAMENTS) },
+                    onQuests = { navController.navigate(AppDestinations.QUESTS) },
+                    onDailyReward = { navController.navigate(AppDestinations.DAILY_REWARD) },
                     onWatchLive = { navController.navigate(AppDestinations.LIVE_MATCH_BROWSER) },
+                    // Board themes + piece skins are equipped from Inventory
+                    // today; an in-drawer picker is a later phase.
+                    onBrowseStore = { navController.navigate(AppDestinations.STORE) },
                     onRankedGuestBlocked = {
                         // Owner policy: Ranked requires a real account. A guest or
                         // an anonymous user tapping Ranked is sent to Login to sign

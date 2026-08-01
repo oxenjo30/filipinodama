@@ -1,3 +1,115 @@
+# Play page -> Battle screen + Game Modes drawer (Model C)
+
+Branch: `feat/android-play-battle-screen` - worktree `D:/AI Projects/fd-battle`
+
+Owner-approved design (this session): the Play tab becomes a Clash-Royale-style
+Battle screen. Game Modes moves into a drawer behind the trophy button, and
+picking a mode there arms the BATTLE button. AI difficulty uses **Model C** -
+the AI ticket arms immediately, and an Easy / Normal / Hard strip appears above
+the dock while AI is armed.
+
+This is a deliberate, owner-directed deviation from the approved handoff
+(`handoffv3` ModeSelect spec). Flagged and accepted.
+
+## Phase 1 - the screen (this PR)
+
+- [x] `PlayLoadoutStore` - persist armed mode + AI difficulty via `KeyValueStore`
+      (same pattern as `SettingsStore`). Fixes the existing defect where
+      `AiDifficultyScreen.kt:58` uses plain `remember`, so difficulty resets to
+      Normal on every visit and on rotation.
+- [x] `ModeTicket.kt` - the ticket composable: main panel + stub, bleed art,
+      per-mode accent, optional stat / progress / timer / pill.
+- [x] `GameModesSheet.kt` - drawer overlay: scrim, handle, sectioned ticket list.
+- [x] `BattleScreen.kt` - Play tab root: throne backdrop tinted by tier, tier
+      crest + name, trophy road to next tier, dock (loadout slot / BATTLE /
+      trophy slot with caret), Model C difficulty strip.
+- [x] Wire `AppDestinations.MODE_SELECT` to `BattleScreen`; keep every existing
+      gate - Ranked guest gate, `watchLiveEnabled` server flag, private room.
+- [x] Re-export `diff_easy/normal/hard` with alpha (they ship opaque on
+      `#101010`, so `AiDifficultyScreen.kt:129` renders them as black squares).
+- [x] Loadout slot -> existing `INVENTORY` route (board/piece skins live there).
+      A dedicated in-drawer picker is Phase 3.
+- [x] Verify: `:app:compileDebugKotlin` + `:app:testDebugUnitTest` green.
+
+### Owner change mid-build
+Tournaments was pulled OUT of the Game Modes drawer: it is its own page,
+reached from the Battle screen side rail, not a mode BATTLE can be armed with.
+`ArmedMode` no longer contains it and the ticket was removed.
+
+### Verified on device (emulator-5554, 1080x2424)
+compileDebugKotlin green; 301 unit tests, 2 pre-existing failures confirmed
+identical on base commit 2c14f70 (AuthRepositoryLogicTest, AvatarAssetsTest -
+both untouched by this change). Battle screen, drawer, mode arming, and the
+Model C difficulty strip all exercised by hand: arming Private Room switched
+BATTLE to CREATE ROOM, arming AI revealed the Easy/Normal/Hard strip, and
+tapping Hard updated BATTLE to "VS AI - HARD".
+
+### Known follow-ups from this build
+- `ModeSelectScreen.kt` is now dead code (referenced only in comments). NOT
+  deleted - deletions need owner approval.
+- The loadout slot renders a flat gold placeholder, not the equipped board
+  pattern. Reading `equippedBoard` is Phase 3.
+- Rail buttons have no badges yet (unread quests / claimable reward) - that
+  state is not fetched by this screen.
+
+## Deferred - stated, not silently dropped
+
+### Per-mode records - DONE
+`GET /api/matches/records` returns the caller's W/L/D per mode, plus a
+per-difficulty breakdown for AI. Derived from Match (which is indexed on
+mode+endedAt) because `User` only stores GLOBAL wins/losses. Only finished
+matches count; draws are reported separately rather than folded into losses.
+
+AI records needed a source: AI is played offline and was NEVER recorded, so
+there were zero AI rows to aggregate. `POST /api/matches/local` now accepts
+mode LOCAL or AI (and only those - a client cannot forge a CASUAL/RANKED row
+through it) with a required `aiDifficulty` for AI, persisted into settings.
+OfflineGameScreen reports the finished game from the UI layer, NOT from
+GameRepository, which is deliberately network-free so offline play keeps
+working with no connection. Real moves are sent, so AI games still have a
+working replay in history. Guests are skipped - the record belongs to an
+account - and a failed report is swallowed so it can never interrupt the
+result screen.
+
+Tickets show `null` rather than a fabricated "0W - 0L" when a mode has no
+finished games, which is why Quick Match has no stat line on a fresh account.
+### Loadout drawer - DONE, verified against a real database
+Built as its own drawer on the dock's left slot (owner: it should pull out like
+Game Modes, not navigate away). Covers BOARD + SKIN; avatars and frames stay in
+the profile's AvatarPickerDialog, which already has a real frame grid. With that
+in place the Inventory screen, its route and all three of its entry points were
+removed; OrdersScreen (same file) is untouched.
+
+Verified end to end on emulator-5554 against local Postgres + Redis + the API on
+:4000, signed in as player2@test.dama:
+- drawer lists exactly the owned items (8 boards, 2 skins as granted in the DB)
+- equipped state derives correctly (green ring + check on the equipped tile)
+- tapping "Imperial Ebony Board" issued PATCH /api/users/me/equip, Postgres
+  went from "Marble & Gold" to "Imperial Ebony Board", and the ring moved live
+- a skin equip persisted the same way ("Crimson Legion Pieces")
+
+Known, NOT an app bug: board thumbnails render blank in this local setup. The
+art is served from WEB_ORIGIN (the Vite dev server), which binds ::1 only, while
+the emulator's 10.0.2.2 maps to IPv4 loopback - so Coil cannot reach it. The API
+on 0.0.0.0:4000 is reachable, which is why data loads but images do not. Same
+code path the old Inventory screen used; in release WEB_ORIGIN is the real
+https origin. To see thumbnails locally, start Vite bound to 0.0.0.0.
+- **Phase 4 - Home de-duplication.** Home still renders its own hero + 2x2 mode
+  grid, so two screens now offer the same four modes. Decide after this ships.
+- **Daily-login track** on the Battle screen - needs the daily-login state
+  fetched here; Home owns that call today.
+
+## Notes
+
+- Ranked stays gated behind a real account (`ModeSelectScreen.kt:69`). With the
+  drawer arming the button, a guest never has Ranked armed - the gate fires on
+  the ticket, where it can be explained, not on the primary CTA.
+- Watch Live stays behind `ConfigRepository.watchLiveEnabled` (fail-closed).
+
+---
+
+# Archive - previous task
+
 # Monetization dark-launch (feat/monetization-dark)
 
 ## Discovery (2026-07-12)

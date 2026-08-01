@@ -110,7 +110,6 @@ fun ProfileScreen(
     onOpenGuild: () -> Unit = {},
     onOpenDiscoverGuilds: () -> Unit = {},
     onOpenOrders: () -> Unit = {},
-    onOpenInventory: () -> Unit = {},
     onOpenLegal: (String) -> Unit = {},
     onOpenAchievements: () -> Unit = {},
     onOpenMessages: () -> Unit = {}
@@ -405,15 +404,6 @@ fun ProfileScreen(
             modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp),
             horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            ProfileQuickLink(
-                label = "🎒 Inventory",
-                textColor = Color(0xFFF4D886),
-                bg = Color(0x1AE8B84B),
-                border = Color(0x59E8B84B),
-                badgeCount = 0,
-                onClick = onOpenInventory,
-                modifier = Modifier.weight(1f)
-            )
             ProfileQuickLink(
                 label = "👥 Friends",
                 textColor = Color(0xFFE7D6FF),

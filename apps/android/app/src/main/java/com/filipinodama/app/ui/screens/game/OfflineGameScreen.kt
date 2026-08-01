@@ -22,6 +22,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -69,6 +70,34 @@ fun OfflineGameScreen(difficulty: String, onChangeDifficulty: () -> Unit, onHome
 
     val gs = ui.gameState
     val myTurn = gs.result == null && gs.turn == PieceColors.RED && ui.status == OfflineStatus.PLAYING
+
+    // Record the finished game so it counts toward the player's per-difficulty
+    // AI record ("12W on Hard") on the Play tab's Game Modes ticket.
+    //
+    // Reported from here rather than from GameRepository, which is deliberately
+    // network-free (see its kdoc) — offline play must keep working with no
+    // connection. Keyed on the result so it fires exactly once per game and
+    // again after a rematch; guests are skipped because the record belongs to
+    // an account. A failure is swallowed on purpose: a missing record must
+    // never interrupt the result screen.
+    val reportedResult = gs.result
+    LaunchedEffect(reportedResult, me?.id) {
+        val result = reportedResult ?: return@LaunchedEffect
+        val user = me ?: return@LaunchedEffect
+        if (user.isGuest) return@LaunchedEffect
+        runCatching {
+            com.filipinodama.app.data.profile.ProfileRepository.reportAiMatch(
+                difficulty = ui.difficulty,
+                winner = result.winner,
+                reason = result.reason,
+                moves = gs.history,
+                settings = com.filipinodama.app.data.profile.OfflineMatchSettingsDto(
+                    forcedMaxCapture = gs.settings.forcedMaxCapture,
+                    drawMoveLimit = gs.settings.drawMoveLimit
+                )
+            )
+        }
+    }
 
     // Board sound effects (move / capture / king / win / lose), diffed from the
     // live state — the human plays RED in offline practice.

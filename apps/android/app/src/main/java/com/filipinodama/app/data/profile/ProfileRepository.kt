@@ -27,6 +27,34 @@ object ProfileRepository {
         result: String? = null
     ): ProfileResult<MatchHistoryResponse> = call { api.matches(userId = userId, mode = mode, result = result) }
 
+    /**
+     * Persist a finished offline AI game so it counts toward the player's
+     * "12W on Hard" record. Fire-and-forget from the caller's point of view:
+     * a failure here must never block or interrupt the result screen, so the
+     * result is returned but callers are free to ignore it.
+     */
+    suspend fun reportAiMatch(
+        difficulty: String,
+        winner: String?,
+        reason: String?,
+        moves: List<com.filipinodama.app.data.engine.Move>,
+        settings: OfflineMatchSettingsDto
+    ): ProfileResult<kotlinx.serialization.json.JsonElement> = call {
+        api.reportOfflineMatch(
+            OfflineMatchRequest(
+                mode = "AI",
+                aiDifficulty = difficulty,
+                settings = settings,
+                moves = moves,
+                winner = winner,
+                reason = reason
+            )
+        )
+    }
+
+    /** The caller's win/loss/draw tally per mode, for the Game Modes tickets. */
+    suspend fun matchRecords(): ProfileResult<MatchRecordsResponse> = call { api.matchRecords() }
+
     suspend fun matchDetail(matchId: String): ProfileResult<MatchDetailResponse> =
         call { api.matchDetail(matchId) }
 

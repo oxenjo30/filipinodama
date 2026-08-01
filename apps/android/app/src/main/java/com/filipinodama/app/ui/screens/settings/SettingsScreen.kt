@@ -115,7 +115,7 @@ import kotlinx.coroutines.launch
 fun SettingsScreen(
     onBack: () -> Unit,
     onSignedOut: () -> Unit,
-    onOpenInventory: () -> Unit,
+    onOpenLoadout: () -> Unit,
     onOpenLegal: (String) -> Unit,
     onOpenTickets: () -> Unit = {}
 ) {
@@ -266,7 +266,7 @@ fun SettingsScreen(
             SectionCard(title = "Account") {
                 SettingsInfoRow(label = "Email", value = me.email ?: if (me.isGuest) "Guest account" else "—")
                 SettingsInfoRow(label = "Player Tag", value = "${me.username}${me.tag}")
-                NavRow(label = "Board & Piece Skin", sub = "Equip cosmetics from your Inventory", onClick = onOpenInventory)
+                NavRow(label = "Board & Piece Skin", sub = "Equip what you bring to the board", onClick = onOpenLoadout)
                 NavRow(label = "Blocked Players", sub = "Manage players you've blocked", onClick = { blockedOpen = true })
                 NavRow(label = "Privacy Policy", onClick = { onOpenLegal("privacy") })
                 NavRow(label = "Community Guidelines", onClick = { onOpenLegal("community") })
