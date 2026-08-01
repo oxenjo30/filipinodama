@@ -122,11 +122,18 @@ async function authenticate(socket: Socket): Promise<string | null> {
  * a safe no-op (the poller claims the due job but skips it when no handler is
  * registered).
  */
+import { handleAnticheatJob } from "../lib/anticheat-service.js";
+
 export function rtJobHandlers(io: IOServer): Partial<Record<RtJobType, RtJobHandler>> {
   return {
     "abandon-forfeit": (payload) => handleAbandonForfeit(io, payload),
     "bot-move": (payload) => handleBotMove(io, payload),
     "bot-fill": (payload) => handleBotFill(io, payload),
+    // Anti-cheat replay is CPU-heavy (~10-12s per match), so it runs here on
+    // the job poller rather than in an admin request. At-most-once delivery is
+    // acceptable: a dropped analysis simply leaves the match un-analysed, and a
+    // moderator can re-queue it from the match drawer.
+    "anticheat-analyse": (payload) => handleAnticheatJob(payload),
   };
 }
 

@@ -32,6 +32,8 @@ model User {
   adminDisabledAt DateTime?
   // moderation state
   bannedUntil     DateTime?
+  matchAnalyses          MatchAnalysis[] @relation("matchAnalyses")
+  matchAnalysesReviewed  MatchAnalysis[] @relation("matchAnalysesReviewed")
   mutedUntil      DateTime?
   verifyToken     String?   @unique // email-verification token (nullable)
   verifyExpires   DateTime?
@@ -267,10 +269,66 @@ model Match {
   endedAt         DateTime?
 
   tournamentMatch TournamentMatch?
+  analyses        MatchAnalysis[]
 
   @@index([redId])
   @@index([blueId])
   @@index([mode, endedAt])
+}
+
+/// Anti-cheat: one row per (match, player) holding the ENGINE AGREEMENT result
+/// for that player in that match, plus its review state.
+///
+/// Stored rather than computed on read because the analysis replays the whole
+/// game against the engine — far too expensive to redo every time a moderator
+/// opens the queue.
+///
+/// `decisionCount` is the sample size that matters, NOT `moveCount`: Dama forces
+/// captures, so plies with a single legal move carry no information and are
+/// excluded from both the numerator and the denominator (see lib/anticheat.ts).
+///
+/// Nothing here bans anyone. A FLAGGED row is a case for a human to judge;
+/// CONFIRMED/DISMISSED record what that human decided.
+model MatchAnalysis {
+  id               String         @id @default(cuid())
+  matchId          String
+  match            Match          @relation(fields: [matchId], references: [id], onDelete: Cascade)
+  userId           String
+  user             User           @relation("matchAnalyses", fields: [userId], references: [id], onDelete: Cascade)
+  side             String         // "red" | "blue"
+
+  moveCount        Int
+  decisionCount    Int
+  engineMatchCount Int
+  /// engineMatchCount / decisionCount. Null when the player had no free choice.
+  engineMatchRate  Float?
+  /// 0-100. Null when the sample was below the significance floor.
+  suspicion        Int?
+  /// Why this scored the way it did, shown verbatim to the moderator.
+  reasons          String[]
+
+  status           AnalysisStatus @default(CLEAR)
+  reviewedById     String?
+  reviewedBy       User?          @relation("matchAnalysesReviewed", fields: [reviewedById], references: [id], onDelete: SetNull)
+  reviewedAt       DateTime?
+  reviewNote       String?        @db.Text
+
+  computedAt       DateTime       @default(now())
+
+  @@unique([matchId, userId])
+  @@index([status, suspicion])
+  @@index([userId, status])
+}
+
+enum AnalysisStatus {
+  /// Analysed, nothing to answer for.
+  CLEAR
+  /// Above threshold — waiting on a moderator.
+  FLAGGED
+  /// A moderator judged this to be cheating.
+  CONFIRMED
+  /// A moderator judged this to be legitimate.
+  DISMISSED
 }
 
 /// Math Dama (Damath) match record. Unranked, no economy at launch: scores +
