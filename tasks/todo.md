@@ -54,11 +54,25 @@ tapping Hard updated BATTLE to "VS AI - HARD".
 
 ## Deferred - stated, not silently dropped
 
-- **Phase 2 - per-mode standings.** Tickets should read "47W / 31L" for Casual
-  and "12W on Hard" for AI. `Match.mode` is already a first-class enum with
-  `@@index([mode, endedAt])`, but `User` only stores global wins/losses, so this
-  needs one new aggregate endpoint. Until then the tickets carry honest static
-  subtitles, not fabricated numbers.
+### Per-mode records - DONE
+`GET /api/matches/records` returns the caller's W/L/D per mode, plus a
+per-difficulty breakdown for AI. Derived from Match (which is indexed on
+mode+endedAt) because `User` only stores GLOBAL wins/losses. Only finished
+matches count; draws are reported separately rather than folded into losses.
+
+AI records needed a source: AI is played offline and was NEVER recorded, so
+there were zero AI rows to aggregate. `POST /api/matches/local` now accepts
+mode LOCAL or AI (and only those - a client cannot forge a CASUAL/RANKED row
+through it) with a required `aiDifficulty` for AI, persisted into settings.
+OfflineGameScreen reports the finished game from the UI layer, NOT from
+GameRepository, which is deliberately network-free so offline play keeps
+working with no connection. Real moves are sent, so AI games still have a
+working replay in history. Guests are skipped - the record belongs to an
+account - and a failed report is swallowed so it can never interrupt the
+result screen.
+
+Tickets show `null` rather than a fabricated "0W - 0L" when a mode has no
+finished games, which is why Quick Match has no stat line on a fresh account.
 ### Loadout drawer - DONE, verified against a real database
 Built as its own drawer on the dock's left slot (owner: it should pull out like
 Game Modes, not navigate away). Covers BOARD + SKIN; avatars and frames stay in

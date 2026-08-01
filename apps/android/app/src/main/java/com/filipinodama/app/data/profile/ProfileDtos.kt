@@ -194,3 +194,46 @@ data class UpdateProfileRequest(
 data class UpdateProfileResponse(
     val user: PublicUserProfileDto
 )
+
+// ── Per-mode records (GET /api/matches/records) ──
+// What the Play tab's Game Modes tickets show: your standing IN a mode, not a
+// global record. `User` only carries global wins/losses, so the server derives
+// these from Match, which is indexed on (mode, endedAt).
+
+@Serializable
+data class ModeRecordDto(
+    val wins: Int = 0,
+    val losses: Int = 0,
+    val draws: Int = 0
+)
+
+@Serializable
+data class MatchRecordsResponse(
+    /** Keyed by MatchMode name: "CASUAL", "RANKED", "PRIVATE", "AI", "LOCAL". */
+    val modes: Map<String, ModeRecordDto> = emptyMap(),
+    /** Keyed by AI difficulty: "easy", "normal", "hard". */
+    val ai: Map<String, ModeRecordDto> = emptyMap()
+)
+
+// ── Reporting a finished offline game (POST /api/matches/local) ──
+// The server only accepts LOCAL and AI here and never awards trophies or gold,
+// so a client cannot forge a ranked result through this route. Real moves are
+// sent (not an empty list) so an AI game still has a working replay in match
+// history, exactly like an online one.
+
+@Serializable
+data class OfflineMatchSettingsDto(
+    val forcedMaxCapture: Boolean,
+    val drawMoveLimit: Int,
+    val moveTimerSec: Int? = null
+)
+
+@Serializable
+data class OfflineMatchRequest(
+    val mode: String,
+    val aiDifficulty: String? = null,
+    val settings: OfflineMatchSettingsDto,
+    val moves: List<com.filipinodama.app.data.engine.Move>,
+    val winner: String? = null,
+    val reason: String? = null
+)

@@ -55,6 +55,10 @@ import com.filipinodama.app.data.engine.RankTiers
 import com.filipinodama.app.data.play.ArmedMode
 import com.filipinodama.app.data.play.PlayLoadoutStore
 import com.filipinodama.app.data.play.PlayScreenRequests
+import com.filipinodama.app.data.profile.MatchRecordsResponse
+import com.filipinodama.app.data.profile.ModeRecordDto
+import com.filipinodama.app.data.profile.ProfileRepository
+import com.filipinodama.app.data.profile.ProfileResult
 import com.filipinodama.app.ui.screens.profile.AvatarView
 import com.filipinodama.app.ui.theme.Ink2
 
@@ -100,6 +104,15 @@ fun BattleScreen(
     val aiDifficulty by loadout.aiDifficulty.collectAsState()
 
     var sheetOpen by remember { mutableStateOf(false) }
+
+    // Per-mode standings for the Game Modes tickets. Null until loaded (and on
+    // failure) so a ticket shows no stat line rather than a fabricated 0W - 0L.
+    var records by remember { mutableStateOf<MatchRecordsResponse?>(null) }
+    LaunchedEffect(me?.id, sheetOpen) {
+        if (me == null) { records = null; return@LaunchedEffect }
+        val result = ProfileRepository.matchRecords()
+        if (result is ProfileResult.Success) records = result.data
+    }
     var loadoutOpen by remember { mutableStateOf(false) }
 
     // Settings / post-purchase hand off into the loadout by navigating here
@@ -387,6 +400,8 @@ fun BattleScreen(
                 accent = Color(0xFFE8B84B),
                 bgTint = Color(0xFF3A331C),
                 pill = "CASUAL",
+                stat = records?.modes?.get("CASUAL")?.let { winLoss(it) },
+                statIconRes = R.drawable.ic_trophy,
                 sub = "Casual online · no trophy risk",
                 selected = armedMode == ArmedMode.CASUAL,
                 onClick = {
@@ -403,6 +418,10 @@ fun BattleScreen(
                 stubRes = R.drawable.diff_normal,
                 accent = Color(0xFF3FBF6F),
                 bgTint = Color(0xFF1C3A2C),
+                stat = records?.ai?.get(aiDifficulty)?.let {
+                    "${it.wins}W on ${difficultyLabel(aiDifficulty)}"
+                },
+                statIconRes = R.drawable.ic_trophy,
                 sub = "Practice offline · ${difficultyLabel(aiDifficulty)}",
                 selected = armedMode == ArmedMode.AI,
                 onClick = {
@@ -417,6 +436,8 @@ fun BattleScreen(
                 stubRes = R.drawable.sb_players,
                 accent = Color(0xFFC9A4FF),
                 bgTint = Color(0xFF33234A),
+                stat = records?.modes?.get("PRIVATE")?.let { winLoss(it) },
+                statIconRes = R.drawable.ic_trophy,
                 sub = "Host a room or join with a code",
                 selected = armedMode == ArmedMode.PRIVATE,
                 onClick = {
@@ -464,6 +485,10 @@ private val DIFFICULTIES = listOf(
     DifficultyOption(AiDifficulties.NORMAL, "Normal", 2, Color(0xFFE8B84B)),
     DifficultyOption(AiDifficulties.HARD, "Hard", 3, Color(0xFFD63B52))
 )
+
+/** "47W - 31L", or with draws when there are any. */
+private fun winLoss(r: ModeRecordDto): String =
+    if (r.draws > 0) "${r.wins}W · ${r.losses}L · ${r.draws}D" else "${r.wins}W · ${r.losses}L"
 
 private fun difficultyLabel(key: String): String =
     DIFFICULTIES.firstOrNull { it.key == key }?.label ?: "Normal"

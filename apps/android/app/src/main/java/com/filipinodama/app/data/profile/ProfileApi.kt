@@ -23,6 +23,12 @@ interface ProfileApi {
         @Query("limit") limit: Int? = null
     ): ApiEnvelope<MatchHistoryResponse>
 
+    @retrofit2.http.POST("api/matches/local")
+    suspend fun reportOfflineMatch(@Body body: OfflineMatchRequest): ApiEnvelope<kotlinx.serialization.json.JsonElement>
+
+    @GET("api/matches/records")
+    suspend fun matchRecords(): ApiEnvelope<MatchRecordsResponse>
+
     @GET("api/matches/{id}")
     suspend fun matchDetail(@Path("id") id: String): ApiEnvelope<MatchDetailResponse>
 
