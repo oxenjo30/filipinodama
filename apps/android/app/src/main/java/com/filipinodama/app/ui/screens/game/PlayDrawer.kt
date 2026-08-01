@@ -37,7 +37,9 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 
 /**
- * The Game Modes drawer — an overlay over the Battle screen, not a route push.
+ * The Battle screen's bottom drawer — an overlay, not a route push. Shared
+ * shell for both sheets the dock opens: Game Modes (right slot) and Loadout
+ * (left slot).
  *
  * Deliberate deviation from the reference: the drawer stops above the bottom
  * tab bar instead of covering it. Clash Royale covers its nav strip, but the
@@ -47,7 +49,7 @@ import androidx.compose.ui.unit.dp
  * out of, which is exactly what this replaces.
  */
 @Composable
-fun BoxScope.GameModesSheet(
+fun BoxScope.PlayDrawer(
     visible: Boolean,
     onDismiss: () -> Unit,
     content: @Composable ColumnScope.() -> Unit
@@ -127,13 +129,13 @@ fun ModeSectionHeader(label: String, modifier: Modifier = Modifier) {
 
 /** Drawer title banner. */
 @Composable
-fun GameModesBanner(modifier: Modifier = Modifier) {
+fun DrawerTitle(text: String, modifier: Modifier = Modifier) {
     Column(
         modifier = modifier.fillMaxWidth(),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
         Text(
-            "Game Modes",
+            text,
             color = Color(0xFFF6E7BC),
             style = MaterialTheme.typography.headlineSmall
         )

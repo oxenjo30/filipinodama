@@ -118,7 +118,7 @@ private const val DEFAULT_FRAME_ID = "laurel"
  */
 @Composable
 fun StoreScreen(
-    onOpenInventory: () -> Unit = {},
+    onOpenLoadout: () -> Unit = {},
     // Universal rule (owner directive 2026-07-15): a gated action an anonymous
     // user attempts must show the guided SignInRequiredDialog, never a generic
     // "not authenticated" error. This routes the modal's OK to Login/Signup.
@@ -316,9 +316,9 @@ fun StoreScreen(
                 }
                 // Cart button (mockup line 795) — REPLACES the former
                 // Inventory/backpack affordance in the Store top bar.
-                // Inventory remains reachable via Profile -> Inventory
-                // (onOpenInventory param kept for that caller); it is simply
-                // no longer surfaced here, matching the mockup exactly.
+                // Equipping now lives in the Play tab's Loadout drawer; the
+                // Inventory screen was removed. The post-purchase overlay's
+                // "go equip it" action routes there via onOpenLoadout.
                 Box(
                     modifier = Modifier
                         .clickable(onClick = { showCheckout = true })
@@ -471,7 +471,7 @@ fun StoreScreen(
         is BuyFlowState.Success -> PurchaseSuccessOverlay(
             item = state.item,
             onDismiss = { buyFlow = BuyFlow.dismiss() },
-            onGoToInventory = { buyFlow = BuyFlow.dismiss(); onOpenInventory() }
+            onGoToInventory = { buyFlow = BuyFlow.dismiss(); onOpenLoadout() }
         )
         is BuyFlowState.Error -> PurchaseErrorOverlay(message = state.message, onDismiss = { buyFlow = BuyFlow.dismiss() })
         BuyFlowState.Idle -> {}

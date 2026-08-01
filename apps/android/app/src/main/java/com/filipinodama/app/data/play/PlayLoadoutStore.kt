@@ -69,6 +69,25 @@ class PlayLoadoutStore(private val store: KeyValueStore) {
 }
 
 /**
+ * A one-shot request to open the Battle screen's Loadout drawer on arrival.
+ *
+ * The drawer lives inside the Battle screen, so screens that used to send
+ * players to the Inventory route (Settings' "Board & Piece Skin" row, the
+ * post-purchase "Go to loadout" overlay) navigate to the Play tab and set this;
+ * the Battle screen opens the drawer and clears it. A nav argument would have
+ * meant changing MODE_SELECT's route pattern, which the bottom tab bar matches
+ * on — not worth the risk for a transient UI intent.
+ */
+object PlayScreenRequests {
+    private val _openLoadout = MutableStateFlow(false)
+    val openLoadout: StateFlow<Boolean> = _openLoadout.asStateFlow()
+
+    fun requestLoadout() { _openLoadout.value = true }
+
+    fun consumeLoadout() { _openLoadout.value = false }
+}
+
+/**
  * What the BATTLE button can be armed with. Deliberately a small closed set —
  * every value here must have a route in the Battle screen's `onBattle`
  * dispatch, which is why [PlayLoadoutStore] validates against [ALL] on read

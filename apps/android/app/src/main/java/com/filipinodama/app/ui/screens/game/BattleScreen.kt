@@ -32,6 +32,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -53,6 +54,7 @@ import com.filipinodama.app.data.engine.AiDifficulties
 import com.filipinodama.app.data.engine.RankTiers
 import com.filipinodama.app.data.play.ArmedMode
 import com.filipinodama.app.data.play.PlayLoadoutStore
+import com.filipinodama.app.data.play.PlayScreenRequests
 import com.filipinodama.app.ui.screens.profile.AvatarView
 import com.filipinodama.app.ui.theme.Ink2
 
@@ -85,7 +87,7 @@ fun BattleScreen(
     onQuests: () -> Unit,
     onDailyReward: () -> Unit,
     onWatchLive: () -> Unit,
-    onOpenLoadout: () -> Unit,
+    onBrowseStore: () -> Unit,
     onRankedGuestBlocked: () -> Unit
 ) {
     val authState by AuthRepository.state.collectAsState()
@@ -98,6 +100,17 @@ fun BattleScreen(
     val aiDifficulty by loadout.aiDifficulty.collectAsState()
 
     var sheetOpen by remember { mutableStateOf(false) }
+    var loadoutOpen by remember { mutableStateOf(false) }
+
+    // Settings / post-purchase hand off into the loadout by navigating here
+    // with a pending request; open it once and clear it.
+    val loadoutRequested by PlayScreenRequests.openLoadout.collectAsState()
+    LaunchedEffect(loadoutRequested) {
+        if (loadoutRequested) {
+            loadoutOpen = true
+            PlayScreenRequests.consumeLoadout()
+        }
+    }
 
     val trophies = me?.trophies ?: 0
     val tier = RankTiers.forTrophies(trophies)
@@ -288,9 +301,10 @@ fun BattleScreen(
                     .border(1.dp, Color(0x42E8B84B), RoundedCornerShape(22.dp))
                     .padding(9.dp)
             ) {
-                // Left slot: your loadout (board + piece skin). NOT a second way
-                // into Game Modes — two buttons doing one job is a dead control.
-                DockSlot(onClick = onOpenLoadout) {
+                // Left slot: your loadout (board + piece skin) as its own
+                // drawer — the counterpart to Game Modes on the right. Two
+                // buttons, two drawers, neither duplicating the other.
+                DockSlot(onClick = { loadoutOpen = true }) {
                     Box(
                         modifier = Modifier
                             .size(42.dp)
@@ -345,8 +359,8 @@ fun BattleScreen(
         }
 
         // ── the drawer ──
-        GameModesSheet(visible = sheetOpen, onDismiss = { sheetOpen = false }) {
-            GameModesBanner()
+        PlayDrawer(visible = sheetOpen, onDismiss = { sheetOpen = false }) {
+            DrawerTitle("Game Modes")
 
             ModeTicket(
                 title = "Ranked",
@@ -428,6 +442,14 @@ fun BattleScreen(
                     }
                 )
             }
+        }
+
+        // ── the loadout drawer ──
+        PlayDrawer(visible = loadoutOpen, onDismiss = { loadoutOpen = false }) {
+            LoadoutContent(onBrowseStore = {
+                loadoutOpen = false
+                onBrowseStore()
+            })
         }
     }
 }
