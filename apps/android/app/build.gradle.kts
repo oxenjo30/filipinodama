@@ -257,8 +257,30 @@ android {
         // and Buy is dimmed + disabled (+ add-to-cart stays enabled). Applied to
         // the store grid card and the Daily Deals row. Owned/Equipped green
         // states were already present and unchanged.
-        versionCode = 50
-        versionName = "0.1.50"
+        // 51 = PLAY TAB REBUILT AS A BATTLE SCREEN (owner-approved redesign,
+        // a deliberate deviation from the handoffv3 ModeSelect spec). The Play
+        // tab no longer lists five equal-weight mode cards: it opens a Battle
+        // screen whose identity is your rank tier, with Game Modes moved into a
+        // drawer behind the trophy button. Picking a mode there ARMS the BATTLE
+        // button, so the primary CTA never has to guess what it does — and the
+        // Ranked account gate fires on the ticket, where it can be explained,
+        // instead of on the biggest button on screen. AI difficulty uses the
+        // owner's chosen "dock loadout" model: an Easy/Normal/Hard strip appears
+        // above the dock only while AI is armed, and the choice now PERSISTS
+        // (AiDifficultyScreen used a plain `remember`, so it reset to Normal on
+        // every visit and on rotation). Tournaments is NOT a mode ticket — it is
+        // its own page on the new side rail, alongside Quests and Daily Reward.
+        // The dock's left slot opens a Loadout drawer (board theme + piece skin)
+        // which REPLACES the Inventory screen; Inventory's route and all three
+        // entry points are gone, with Settings and the post-purchase overlay
+        // handing off into the drawer, and avatars/frames still equipped from
+        // the profile's picker. Tickets now show your real per-mode record via
+        // the new GET /api/matches/records, and offline AI games are recorded
+        // (POST /api/matches/local accepts mode AI + difficulty) so "wins on
+        // Hard" is real rather than invented. Also fixes diff_easy/normal/hard,
+        // which shipped as opaque RGB on #101010 and rendered as black squares.
+        versionCode = 51
+        versionName = "0.1.51"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
