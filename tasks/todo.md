@@ -59,8 +59,27 @@ tapping Hard updated BATTLE to "VS AI - HARD".
   `@@index([mode, endedAt])`, but `User` only stores global wins/losses, so this
   needs one new aggregate endpoint. Until then the tickets carry honest static
   subtitles, not fabricated numbers.
-- **Phase 3 - loadout picker in the drawer** (board themes + piece skins as a
-  third pane) instead of routing out to Inventory.
+### Loadout drawer - DONE, verified against a real database
+Built as its own drawer on the dock's left slot (owner: it should pull out like
+Game Modes, not navigate away). Covers BOARD + SKIN; avatars and frames stay in
+the profile's AvatarPickerDialog, which already has a real frame grid. With that
+in place the Inventory screen, its route and all three of its entry points were
+removed; OrdersScreen (same file) is untouched.
+
+Verified end to end on emulator-5554 against local Postgres + Redis + the API on
+:4000, signed in as player2@test.dama:
+- drawer lists exactly the owned items (8 boards, 2 skins as granted in the DB)
+- equipped state derives correctly (green ring + check on the equipped tile)
+- tapping "Imperial Ebony Board" issued PATCH /api/users/me/equip, Postgres
+  went from "Marble & Gold" to "Imperial Ebony Board", and the ring moved live
+- a skin equip persisted the same way ("Crimson Legion Pieces")
+
+Known, NOT an app bug: board thumbnails render blank in this local setup. The
+art is served from WEB_ORIGIN (the Vite dev server), which binds ::1 only, while
+the emulator's 10.0.2.2 maps to IPv4 loopback - so Coil cannot reach it. The API
+on 0.0.0.0:4000 is reachable, which is why data loads but images do not. Same
+code path the old Inventory screen used; in release WEB_ORIGIN is the real
+https origin. To see thumbnails locally, start Vite bound to 0.0.0.0.
 - **Phase 4 - Home de-duplication.** Home still renders its own hero + 2x2 mode
   grid, so two screens now offer the same four modes. Decide after this ships.
 - **Daily-login track** on the Battle screen - needs the daily-login state
