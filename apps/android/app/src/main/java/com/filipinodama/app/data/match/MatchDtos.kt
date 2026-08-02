@@ -108,7 +108,13 @@ data class MatchChatDto(
     val color: PieceColor,
     val body: String? = null,
     val emote: String? = null,
-    val at: Long = 0
+    val at: Long = 0,
+    /**
+     * The sender's client-generated id, echoed back by the server so the sender
+     * can reconcile the message they already rendered optimistically instead of
+     * rendering it twice. Null on messages from anyone else.
+     */
+    val nonce: String? = null
 )
 
 /** EV.spectateCount payload. */

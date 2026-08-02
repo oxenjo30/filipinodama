@@ -1,6 +1,7 @@
 package com.filipinodama.app.data.social
 
 import com.filipinodama.app.data.ApiClient
+import com.filipinodama.app.data.AuthRepository
 import com.filipinodama.app.data.SocketClient
 import io.socket.client.Socket
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -17,8 +18,12 @@ import kotlinx.serialization.json.Json
  * socket room (`guild:chat:join`), and subscribe to live `guild:chat:message`
  * broadcasts. [close] leaves the room and drops our listener (never
  * `socket.off()` with no event name — the socket is shared with online play).
- * Sending POSTs (server persists + broadcasts), matching GuildChatPanel.tsx's
- * "server echo de-dupes, no optimistic append" behavior.
+ *
+ * Sending POSTs (the server persists + broadcasts), but is rendered
+ * OPTIMISTICALLY — see [send]. This is a deliberate DIVERGENCE from
+ * GuildChatPanel.tsx's "server echo de-dupes, no optimistic append": on mobile
+ * that meant waiting a full round trip to see your own message, which reads as
+ * the chat box being broken on a slow connection.
  */
 object GuildChatRepository {
 
@@ -89,22 +94,72 @@ object GuildChatRepository {
         }
     }
 
+    /**
+     * Send a guild message, rendering it IMMEDIATELY.
+     *
+     * The old flow awaited the POST and only then appended the server's row, so
+     * your own message did not appear until a full round trip completed. This
+     * file's kdoc described that as matching the web's "server echo de-dupes, no
+     * optimistic append" — faithful, but also exactly why chat felt seconds slow.
+     * We now append a PENDING copy first and swap in the authoritative row when
+     * the POST returns (adopting the server's body, which matters because it
+     * masks profanity), or drop it and surface the error.
+     *
+     * The optimistic row carries a local `pending-…` id, so the live
+     * `guild:chat:message` broadcast still de-dupes on the REAL id as before.
+     */
     suspend fun send(guildId: String, body: String) {
         val trimmed = body.trim()
         if (trimmed.isEmpty() || _state.value.sending) return
-        _state.update { it.copy(sending = true, error = null) }
+
+        val me = AuthRepository.state.value.user
+        val localId = "pending-${java.util.UUID.randomUUID()}"
+        val optimistic = me?.let {
+            GuildChatMessageDto(
+                id = localId,
+                guildId = guildId,
+                body = trimmed,
+                createdAt = java.time.Instant.now().toString(),
+                author = GuildChatAuthorDto(
+                    id = it.id,
+                    displayName = it.displayName,
+                    avatarUrl = it.avatarUrl,
+                    frameId = it.frameId,
+                ),
+            )
+        }
+
+        _state.update { s ->
+            s.copy(
+                sending = true,
+                error = null,
+                messages = if (optimistic != null && s.guildId == guildId) s.messages + optimistic else s.messages,
+            )
+        }
         try {
             val envelope = api.sendChat(guildId, GuildChatSendBody(trimmed))
             if (envelope.ok && envelope.data != null) {
                 val msg = envelope.data.message
                 _state.update { s ->
-                    if (s.messages.any { it.id == msg.id }) s else s.copy(messages = s.messages + msg)
+                    val idx = s.messages.indexOfFirst { it.id == localId }
+                    when {
+                        // Swap the pending row IN PLACE so it keeps its position
+                        // instead of jumping to the bottom when the POST lands.
+                        idx >= 0 -> s.copy(messages = s.messages.toMutableList().apply { this[idx] = msg })
+                        // The socket broadcast beat the POST response here.
+                        s.messages.any { it.id == msg.id } -> s
+                        else -> s.copy(messages = s.messages + msg)
+                    }
                 }
             } else {
-                _state.update { it.copy(error = "Message failed to send.") }
+                _state.update { s ->
+                    s.copy(messages = s.messages.filterNot { it.id == localId }, error = "Message failed to send.")
+                }
             }
         } catch (_: Exception) {
-            _state.update { it.copy(error = "Message failed to send.") }
+            _state.update { s ->
+                s.copy(messages = s.messages.filterNot { it.id == localId }, error = "Message failed to send.")
+            }
         } finally {
             _state.update { it.copy(sending = false) }
         }

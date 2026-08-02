@@ -7,6 +7,7 @@ import {
   type GameSettings,
   type Move,
   type PieceColor,
+  maskProfanity,
 } from "@dama/shared";
 import { createInitialState, isLegal, applyMove, bestMove } from "@dama/game-engine";
 import type { MatchMode as PrismaMatchMode } from "@prisma/client";
@@ -944,28 +945,41 @@ export function registerMatch(io: IOServer, socket: Socket) {
 
   // ── In-match quick chat / emote — relay to the match room (persisted lightly
   // via the match room; no separate channel needed for ephemeral match chat). ──
-  socket.on(EV.matchChat, async (payload: { matchId?: unknown; body?: unknown; emote?: unknown } = {}) => {
-    if (!allow(socket, "match:chat", 8, 4000)) return; // anti-flood
-    const matchId = typeof payload?.matchId === "string" ? payload.matchId : null;
-    if (!matchId) return;
-    const lm = await getMatch(matchId);
-    // Only the two players may chat, and only in a live match.
-    if (!lm || !colorOf(lm, userId)) return;
-    const emote = typeof payload?.emote === "string" ? payload.emote.slice(0, 8) : null;
-    let body = typeof payload?.body === "string" ? payload.body.trim().slice(0, 200) : "";
-    if (!emote && !body) return;
-    // Muted players can still send emotes, but not text.
-    if (body && (await isMuted(userId))) body = "";
-    if (!emote && !body) return;
-    io.to(matchId).emit(EV.matchChat, {
-      matchId,
-      from: userId,
-      color: colorOf(lm, userId),
-      body: body || null,
-      emote,
-      at: Date.now(),
-    });
-  });
+  socket.on(
+    EV.matchChat,
+    async (payload: { matchId?: unknown; body?: unknown; emote?: unknown; nonce?: unknown } = {}) => {
+      if (!allow(socket, "match:chat", 8, 4000)) return; // anti-flood
+      const matchId = typeof payload?.matchId === "string" ? payload.matchId : null;
+      if (!matchId) return;
+      const lm = await getMatch(matchId);
+      // Only the two players may chat, and only in a live match.
+      if (!lm || !colorOf(lm, userId)) return;
+      const emote = typeof payload?.emote === "string" ? payload.emote.slice(0, 8) : null;
+      let body = typeof payload?.body === "string" ? payload.body.trim().slice(0, 200) : "";
+      if (!emote && !body) return;
+      // Muted players can still send emotes, but not text.
+      if (body && (await isMuted(userId))) body = "";
+      if (!emote && !body) return;
+      // Same filter DMs and guild chat already run (dm.ts:111,
+      // guild-chat-service.ts:116). In-match chat was one of the two
+      // stranger-facing surfaces with NO filter at all — a UGC-moderation gap in
+      // a game that will attract minors.
+      if (body) body = maskProfanity(body);
+      // Echo the sender's nonce so their client can reconcile the message it
+      // already rendered optimistically, instead of waiting a full round trip to
+      // see its own text (and instead of double-rendering it). Opaque to us.
+      const nonce = typeof payload?.nonce === "string" ? payload.nonce.slice(0, 64) : null;
+      io.to(matchId).emit(EV.matchChat, {
+        matchId,
+        from: userId,
+        color: colorOf(lm, userId),
+        body: body || null,
+        emote,
+        at: Date.now(),
+        nonce,
+      });
+    },
+  );
 
   // ── Rematch: either finished-match player offers; both offers → new match. ──
   socket.on(EV.matchRematchOffer, async (payload: { matchId?: unknown } = {}) => {
