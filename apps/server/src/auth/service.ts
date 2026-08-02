@@ -131,6 +131,17 @@ export async function grantDefaults(prisma: PrismaClient, userId: string) {
 
 export async function register(prisma: PrismaClient, input: { email: string; password: string; username: string }) {
   const email = input.email.toLowerCase();
+  // NOTE on soft-deleted accounts: this lookup is deliberately NOT scoped to
+  // `deletedAt: null`. User.email carries a DB unique constraint, so filtering
+  // here would only move the failure from a clean 409 to a constraint violation.
+  //
+  // The address is therefore unavailable while the deleted account is still in
+  // its grace period, and frees up when account-purge.ts hard-deletes the row.
+  // Before that job existed this was a PERMANENT lockout — delete your account
+  // and you could never sign up with that address again. It is now bounded by
+  // PURGE_AFTER_DAYS. Releasing it sooner would mean scrubbing the email at
+  // soft-delete time, which throws away the record the grace period exists to
+  // hold.
   if (await prisma.user.findUnique({ where: { email } })) throw err.conflict("EMAIL_TAKEN", "Email already registered");
   if (await prisma.user.findUnique({ where: { username: input.username } }))
     throw err.conflict("USERNAME_TAKEN", "Username already taken");
@@ -185,6 +196,18 @@ export async function verifyEmail(prisma: PrismaClient, token: string) {
 export async function login(prisma: PrismaClient, input: { email: string; password: string }) {
   const user = await prisma.user.findUnique({ where: { email: input.email.toLowerCase() } });
   if (!user || !user.passwordHash) throw err.unauthorized("BAD_CREDENTIALS", "Wrong email or password");
+  // A soft-deleted account is gone as far as sign-in is concerned. The SAME
+  // generic error as a wrong password is deliberate — a distinct "account
+  // deleted" response would confirm the address was registered — and it is
+  // checked BEFORE the password so a deleted account can't act as a
+  // credential-verification oracle either.
+  //
+  // requireAuth, the socket guard and rotateSession already reject on deletedAt,
+  // so this was never an authorization bypass; without it, login simply issued
+  // fresh cookies for an account every other layer would immediately deny,
+  // leaving the client "signed in" and instantly signed out with no way to
+  // recover.
+  if (user.deletedAt) throw err.unauthorized("BAD_CREDENTIALS", "Wrong email or password");
   // Verify the password FIRST so a wrong password on a banned account returns the
   // SAME generic BAD_CREDENTIALS as any other wrong password — never an oracle
   // that reveals "this email exists and is banned" before authentication.

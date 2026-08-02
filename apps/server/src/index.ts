@@ -53,6 +53,7 @@ import { sweepAbandonedMatches } from "./realtime/match.js";
 import { runDueCampaigns } from "./modules/campaign-scheduler.js";
 import { runWarResetTick } from "./lib/guild-wars.js";
 import { startPlayVersionSync } from "./modules/play-version-sync.js";
+import { runAccountPurge } from "./modules/account-purge.js";
 
 export { prisma };
 
@@ -279,6 +280,17 @@ async function main() {
   // production track so the update nudge is never a manual admin step. No-op
   // unless PLAY_SERVICE_ACCOUNT_JSON is configured. Runs once at boot + every 6h.
   startPlayVersionSync();
+
+  // Account purge — hard-deletes accounts whose 30-day grace period has elapsed
+  // (account-purge.ts). This is the half of "delete my account" that was missing:
+  // DELETE /api/users/me only set deletedAt, while the app told the user their
+  // data was permanently erased within 30 days. Same setInterval-on-boot pattern
+  // as the sweepers above, but HOURLY — the granularity is days, and the query
+  // scans users. A cheap no-op whenever nothing is due.
+  runAccountPurge().catch((e) => app.log.error({ err: e }, "account-purge init tick failed"));
+  setInterval(() => {
+    runAccountPurge().catch((e) => app.log.error({ err: e }, "account-purge tick failed"));
+  }, 60 * 60_000);
 
   app.log.info(`FilipinoDama server listening on :${env.PORT}`);
 }

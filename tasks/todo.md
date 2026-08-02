@@ -1,3 +1,95 @@
+# Account purge - 30-day hard delete
+
+Branch: `feat/account-purge-job` - worktree `D:/AI Projects/fd-purge`
+
+Server-side. Makes `DELETE /api/users/me` mean what the app has been telling
+users it means. Audit finding, 2026-08-02.
+
+## The problem
+
+`DELETE /api/users/me` set `deletedAt` and killed sessions. That was ALL it ever
+did - a search of the whole server for a purge/anonymise job returned zero hits.
+Meanwhile the app promises, in three places (Android DeleteAccountDialog:68,73,
+LegalContent:387, web LegalLayout:656), that deletion "permanently erases" the
+account and "completes within 30 days".
+
+A naive `prisma.user.delete()` could not have worked anyway: FIVE relations to
+User carried no `onDelete`, so Prisma defaulted them to Restrict and the delete
+would have thrown.
+
+## Owner decisions (2026-08-02)
+
+Hard delete, permanent wipe, scoped to "wipe all but money and safety".
+
+## What survives, and why
+
+- **Payment** - RETAINED, `userId` nulled. The only real-money record in the
+  schema; financial records carry statutory retention that outlives an erasure
+  request. The row survives for accounting with no link to a person.
+- **Report** - RETAINED, identity scrubbed, so a repeat abuser cannot launder
+  their history by deleting and re-registering. NOTE THE ASYMMETRY: as ACCUSED,
+  the cited `excerpt` is their content and is destroyed; as REPORTER, the excerpt
+  is somebody ELSE's message and live evidence against a still-active user, so it
+  is KEPT and only the reporter's name is scrubbed. Getting this backwards would
+  let anyone destroy evidence against another player by deleting their own
+  account.
+- **Match** - RETAINED with the player slot nulled (already the schema's
+  behaviour). The OPPONENT's history is not the deleted user's data to erase.
+
+Everything else is destroyed: profile, email, password, OAuth links, bio, avatar,
+sessions, inventory, friendships, blocks, guild membership, quest/season
+progress, notifications, chat messages, orders, gold ledger, tournament entries.
+
+## Checklist
+
+- [x] Migration `20260802100000_account_purge_cascades` - LedgerEntry/Order/
+      Message -> Cascade; Payment/Tournament.createdBy -> SetNull (both made
+      nullable). DELETES NO DATA: FK swaps + two DROP NOT NULL only.
+- [x] `account-purge.ts` - `runAccountPurge` (batched poller tick) +
+      `purgeAccount` (single account, one transaction).
+- [x] Explicit deletion of `ChannelMember` and `GuildJoinRequest`. Both reference
+      the user by a plain String column with NO foreign key (34 id columns vs 32
+      declared relations), so the database cannot cascade them. Without this a
+      purged account silently stays a member of every DM/guild channel it joined.
+- [x] Hourly poller wired in `index.ts` on the boot path only (not `buildApp`),
+      matching the campaign / guild-war / abandon-sweep convention.
+- [x] `deletedAt` guards on `login()` and the OAuth link path. Never an
+      authorization bypass (requireAuth / socket guard / rotateSession already
+      rejected), but login issued cookies for an account every other layer denies
+      - "signed in" then instantly signed out, unrecoverable - and it acted as a
+      credential-verification oracle.
+- [x] Second-order fallout fixed: `Payment.userId` going nullable broke
+      `admin-financials.ts` (buyer-less rows in the revenue dashboard) and
+      `payments.ts` (crediting/debiting a purged buyer). A purged buyer now
+      cannot be refunded in-app - explicit `BUYER_PURGED` 400 pointing the admin
+      at the payment provider, rather than a crash.
+- [x] `Payment` added to the test helper's TRUNCATE list - it never needed to be
+      there while Restrict meant a payment couldn't outlive its user.
+
+## Verification
+
+- `npx tsc --noEmit` - clean (after building @dama/shared + @dama/game-engine).
+- `npx vitest run` - **53 files, 564 passed, 4 skipped, 0 failed**.
+- 17 new tests: 14 purge (scope, cascades, retention, the reporter/accused
+  asymmetry, batching) + 3 deleted-account login.
+
+Migration applied to the LOCAL TEST DB (`dama_test`) only. NOT applied to
+production - that is a deploy step and needs owner approval.
+
+### Environment note (not a code issue)
+A native Windows Redis service (`C:\Program Files\Redis`, a 3.x build with no
+`UNLINK`) is bound to 6379 alongside Docker's redis:7. Whichever wins the bind
+decides whether `truncateAll`'s `flushRealtimeKeys` works, so the suite can fail
+with `ERR unknown command 'unlink'` for reasons unrelated to any change. Ran
+against a throwaway container on 6399 instead; the Windows service was left
+running. Worth disabling that service to avoid future confusion.
+
+## Not in this PR
+
+Play purchase-token account binding (deferred - owner is not enabling real
+purchases yet) - `maskProfanity` in match/room socket chat - per-message
+reporting - the Android Tier-2 items.
+
 # Android socket identity & session lifecycle (Phase 1)
 
 Branch: `fix/android-socket-lifecycle` - worktree `D:/AI Projects/fd-socket-lifecycle`

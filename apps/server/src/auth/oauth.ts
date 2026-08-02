@@ -237,10 +237,19 @@ export async function findOrCreateOAuthUser(p: OAuthProvider, profile: Profile):
     where: { provider_providerId: { provider: p, providerId: profile.providerId } },
     include: { user: true },
   });
+  // A soft-deleted account must not be resurrected by signing in with Google.
+  // Mirrors the deletedAt check in service.login: every downstream layer
+  // (requireAuth, the socket guard, rotateSession) already rejects on deletedAt,
+  // so without this the caller is handed a session that is instantly denied —
+  // "signed in" and immediately signed out, with no way to recover.
+  if (existing?.user.deletedAt) throw err.unauthorized("ACCOUNT_DELETED", "This account has been deleted.");
   if (existing) return existing.user;
 
   if (profile.email) {
     const byEmail = await prisma.user.findUnique({ where: { email: profile.email.toLowerCase() } });
+    // Do NOT link a fresh OAuth identity onto a soft-deleted account — that
+    // would silently revive it. The address frees up when the purge job runs.
+    if (byEmail?.deletedAt) throw err.unauthorized("ACCOUNT_DELETED", "This account has been deleted.");
     if (byEmail) {
       await prisma.oAuthAccount.create({ data: { provider: p, providerId: profile.providerId, userId: byEmail.id } });
       return byEmail;
