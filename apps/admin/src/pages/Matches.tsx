@@ -17,6 +17,7 @@ type MatchRow = {
   startedAt: string;
   endedAt: string | null;
   durationSec: number | null;
+  analyses?: ListAnalysis[];
 };
 
 type MatchDetail = MatchRow & {
@@ -25,10 +26,71 @@ type MatchDetail = MatchRow & {
   moves: unknown;
 };
 
+/** One player's engine-agreement result for one match. */
+type Analysis = {
+  id: string;
+  userId: string;
+  side: "red" | "blue";
+  moveCount: number;
+  decisionCount: number;
+  engineMatchCount: number;
+  engineMatchRate: number | null;
+  suspicion: number | null;
+  reasons: string[];
+  status: "CLEAR" | "FLAGGED" | "CONFIRMED" | "DISMISSED";
+  reviewNote: string | null;
+  reviewedAt: string | null;
+  reviewedBy: { username: string; tag: string } | null;
+  computedAt: string;
+};
+
+/** The slice the match LIST carries, so the table can show real flag state. */
+type ListAnalysis = Pick<Analysis, "id" | "userId" | "side" | "suspicion" | "engineMatchRate" | "status">;
+
+type AnalysisResponse = {
+  matchId: string;
+  analyses: Analysis[];
+  analysed: boolean;
+  finished: boolean;
+  moveCount: number;
+  avgSecPerMove: number | null;
+};
+
+type Priors = { confirmed: number; flagged: number; dismissed: number; cheatReports: number };
+
 const MODES = ["AI", "CASUAL", "RANKED", "PRIVATE", "LOCAL"] as const;
 
-/** A note shown on every disabled Phase-2 control — never silently disabled. */
-const PHASE2_NOTE = "Anti-cheat detection is a Phase 2 subsystem — not yet built. No detection data exists to act on.";
+/**
+ * Analysis is a background job, not a request: the reference engine costs
+ * hundreds of milliseconds per decision, so a match takes seconds to replay.
+ * Queuing returns immediately and the row appears once the poller finishes.
+ */
+const QUEUE_NOTE = "Analysis runs as a background job — the result appears once the poller picks it up.";
+
+/** Colour + label per verdict. */
+const STATUS_META: Record<Analysis["status"], { label: string; color: string }> = {
+  CLEAR: { label: "Clear", color: "var(--dim)" },
+  FLAGGED: { label: "Flagged", color: "var(--amber, #d98a3a)" },
+  CONFIRMED: { label: "Confirmed", color: "var(--red-lt)" },
+  DISMISSED: { label: "Dismissed", color: "var(--green-lt)" },
+};
+
+function pct(v: number | null): string {
+  return v === null ? "—" : `${Math.round(v * 100)}%`;
+}
+
+function fmtSecs(v: number | null): string {
+  return v === null ? "—" : `${v.toFixed(1)}s`;
+}
+
+/** The worst (highest-suspicion) verdict on a match, for the list row. */
+function worstOf(list: ListAnalysis[] | undefined): ListAnalysis | null {
+  if (!list || list.length === 0) return null;
+  const rank: Record<Analysis["status"], number> = { CONFIRMED: 3, FLAGGED: 2, DISMISSED: 1, CLEAR: 0 };
+  return [...list].sort(
+    (a, b) => rank[b.status] - rank[a.status] || (b.suspicion ?? -1) - (a.suspicion ?? -1)
+  )[0]!;
+}
 
 /** Colour a winner cell: red side / blue side / draw / unfinished. */
 function winnerColor(winner: string | null): string {
@@ -63,27 +125,126 @@ function outcomeLabel(winner: string | null): string {
 }
 
 /**
- * Match review queue — matches the approved anti-cheat review-queue mockup's
- * structure (flag banner, 6-column queue table, per-row decision buttons,
- * detail drawer with detection tiles/timeline/signals/decision bar). We have
- * NO anti-cheat detection subsystem, so this stays an honest read-only
- * inspector over the real Match model: the queue shows real matches (id,
- * players, mode, outcome — outcome folded into the Match cell since there is
- * no real case-review Status yet), the Flag reason/Confidence/Status columns
- * the mockup calls for are rendered as "—" (no fabricated scores), and every
- * decision button (Review is real; Replay / Clear flag / Void / Ban are
- * Phase-2) is disabled with a tooltip explaining why, per the no-fabrication
- * rule. The drawer's 4 mockup detection tiles (Avg accuracy/Move time/Moves/
- * Priors) are honest "—"; real match data (winner/duration/trophy/gold) is a
- * separate clearly-labelled block. Settings + raw moves are real API data.
+ * Anti-cheat review queue, backed by the real detection subsystem.
+ *
+ * Two views: the FLAGGED queue (cases waiting on a moderator, highest
+ * suspicion first) and the full match browser. Flag reason, confidence and
+ * status are real values from MatchAnalysis — a match that has not been
+ * analysed shows "not analysed" and offers a button to queue it, rather than a
+ * fabricated score.
+ *
+ * Everything here measures ENGINE AGREEMENT over positions where the player had
+ * a real choice; forced captures are excluded because everyone "agrees with the
+ * engine" there. Detection never bans on its own: confirming a case is an
+ * explicit moderator action with a mandatory note, and the ban it can trigger
+ * goes through the same sanction path the reports queue uses.
  */
 export function MatchesPage() {
+  const [tab, setTab] = useState<"queue" | "all">("queue");
+  return (
+    <>
+      <div className="row" style={{ marginBottom: 14, gap: 8 }}>
+        <button className={`chip${tab === "queue" ? " on" : ""}`} onClick={() => setTab("queue")}>Review queue</button>
+        <button className={`chip${tab === "all" ? " on" : ""}`} onClick={() => setTab("all")}>All matches</button>
+      </div>
+      {tab === "queue" ? <ReviewQueue /> : <MatchBrowser />}
+    </>
+  );
+}
+
+// -- Flagged cases waiting on a moderator -------------------------------------
+function ReviewQueue() {
+  const [status, setStatus] = useState<Analysis["status"]>("FLAGGED");
+  const [items, setItems] = useState<Array<Analysis & { user: { id: string; username: string; tag: string }; match: { id: string; mode: string; winner: string | null; startedAt: string } }>>([]);
+  const [loading, setLoading] = useState(true);
+  const [selId, setSelId] = useState<string | null>(null);
+
+  const load = () => {
+    setLoading(true);
+    api
+      .get<{ items: typeof items }>(`/api/admin/anticheat/queue?status=${status}`)
+      .then((d) => setItems(d.items))
+      .catch(() => setItems([]))
+      .finally(() => setLoading(false));
+  };
+  useEffect(load, [status]);
+
+  return (
+    <>
+      <div className="row" style={{ marginBottom: 14, gap: 6 }}>
+        {(["FLAGGED", "CONFIRMED", "DISMISSED", "CLEAR"] as const).map((st) => (
+          <button key={st} className={`chip${status === st ? " on" : ""}`} onClick={() => setStatus(st)}>
+            {STATUS_META[st].label}
+          </button>
+        ))}
+        <div style={{ marginLeft: "auto" }} className="dim">{items.length} case{items.length === 1 ? "" : "s"}</div>
+      </div>
+
+      <div className="panel" style={{ overflow: "hidden" }}>
+        <div style={{ overflowX: "auto" }}>
+          <table className="tbl" style={{ minWidth: 900 }}>
+            <thead>
+              <tr className="thead-raised">
+                <th>Player</th>
+                <th>Match</th>
+                <th>Engine agreement</th>
+                <th className="num">Suspicion</th>
+                <th style={{ textAlign: "center" }}>Status</th>
+                <th style={{ textAlign: "center" }}>Action</th>
+              </tr>
+            </thead>
+            <tbody>
+              {loading ? (
+                <tr><td colSpan={6} className="dim" style={{ textAlign: "center", padding: 24 }}>Loading…</td></tr>
+              ) : items.length === 0 ? (
+                <tr><td colSpan={6} className="dim" style={{ textAlign: "center", padding: 24 }}>
+                  No {STATUS_META[status].label.toLowerCase()} cases. Matches are analysed on request from the All matches tab.
+                </td></tr>
+              ) : (
+                items.map((a) => (
+                  <tr key={a.id} className="arow">
+                    <td>
+                      <div style={{ fontWeight: 700, color: "var(--ink-2)" }}>{a.user.username} {a.user.tag}</div>
+                      <div className="dim mono" style={{ fontSize: 10.5 }}>played {a.side}</div>
+                    </td>
+                    <td>
+                      <div className="mono" style={{ fontSize: 11, color: "var(--ink-3)" }}>{a.match.mode}</div>
+                      <div className="dim mono" style={{ fontSize: 10.5 }}>{new Date(a.match.startedAt).toLocaleString()}</div>
+                    </td>
+                    <td className="mono" style={{ color: "var(--ink-2)" }}>
+                      {pct(a.engineMatchRate)}
+                      <span className="dim"> of {a.decisionCount} free choice{a.decisionCount === 1 ? "" : "s"}</span>
+                    </td>
+                    <td className="num mono" style={{ color: (a.suspicion ?? 0) >= 70 ? "var(--red-lt)" : "var(--ink-3)" }}>
+                      {a.suspicion ?? "—"}
+                    </td>
+                    <td style={{ textAlign: "center" }}>
+                      <span className="mono" style={{ fontSize: 11, color: STATUS_META[a.status].color }}>{STATUS_META[a.status].label}</span>
+                    </td>
+                    <td style={{ textAlign: "center" }}>
+                      <button className="abtn btn-ghost btn-ghost-sm" onClick={() => setSelId(a.match.id)}>Review</button>
+                    </td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {selId && <MatchDrawer id={selId} onClose={() => { setSelId(null); load(); }} />}
+    </>
+  );
+}
+
+// -- Full match browser -------------------------------------------------------
+function MatchBrowser() {
   const [rows, setRows] = useState<MatchRow[]>([]);
   const [mode, setMode] = useState("");
   const [playerId, setPlayerId] = useState("");
   const [loading, setLoading] = useState(true);
   const [selId, setSelId] = useState<string | null>(null);
-  // Client-side pagination of the (already fully fetched) match list.
+  const [queued, setQueued] = useState<Record<string, boolean>>({});
   const pg = usePagination(rows, 10);
 
   const load = () => {
@@ -99,13 +260,13 @@ export function MatchesPage() {
   };
   useEffect(load, [mode]);
 
+  const analyse = (id: string) => {
+    setQueued((q) => ({ ...q, [id]: true }));
+    api.post(`/api/admin/matches/${id}/analysis`).catch(() => setQueued((q) => ({ ...q, [id]: false })));
+  };
+
   return (
     <>
-      <div className="flag-banner" style={{ marginBottom: 14 }}>
-        <span className="dot" />
-        <span>Anti-cheat detection is a Phase 2 subsystem — this is a read-only match review view. No flags, confidence scores, or decisions below are real.</span>
-      </div>
-
       <div className="row" style={{ marginBottom: 14 }}>
         <input
           className="input" style={{ maxWidth: 300 }}
@@ -131,8 +292,8 @@ export function MatchesPage() {
               <tr className="thead-raised">
                 <th>Match</th>
                 <th>Mode</th>
-                <th>Flag reason</th>
-                <th className="num">Confidence</th>
+                <th>Engine agreement</th>
+                <th className="num">Suspicion</th>
                 <th style={{ textAlign: "center" }}>Status</th>
                 <th style={{ textAlign: "center" }}>Action</th>
               </tr>
@@ -143,27 +304,45 @@ export function MatchesPage() {
               ) : rows.length === 0 ? (
                 <tr><td colSpan={6} className="dim" style={{ textAlign: "center", padding: 24 }}>No matches found.</td></tr>
               ) : (
-                pg.pageItems.map((m) => (
-                  <tr key={m.id} className="arow">
-                    <td>
-                      <div style={{ fontWeight: 700, color: "var(--ink-2)" }}>{playerLabel(m.red)} <span className="dim" style={{ fontWeight: 500 }}>vs</span> {playerLabel(m.blue)}</div>
-                      <div className="dim mono" style={{ fontSize: 10.5 }}>
-                        {m.id} · {new Date(m.startedAt).toLocaleString()} · <span style={{ color: winnerColor(m.winner) }}>{outcomeLabel(m.winner)}</span>
-                      </div>
-                    </td>
-                    <td className="mono" style={{ color: "var(--ink-3)" }}>{m.mode}</td>
-                    <td className="dim" title={PHASE2_NOTE}>—</td>
-                    <td className="num dim" title={PHASE2_NOTE}>—</td>
-                    <td style={{ textAlign: "center" }} className="dim" title={PHASE2_NOTE}>—</td>
-                    <td>
-                      <div className="row" style={{ gap: 6, justifyContent: "center" }}>
-                        <button className="abtn btn-ghost btn-ghost-sm" onClick={() => setSelId(m.id)}>Review</button>
-                        <button className="abtn btn-ghost btn-ghost-sm" disabled title={PHASE2_NOTE}>Replay</button>
-                        <button className="abtn btn-danger btn-danger-sm" disabled title={PHASE2_NOTE}>Void</button>
-                      </div>
-                    </td>
-                  </tr>
-                ))
+                pg.pageItems.map((m) => {
+                  const worst = worstOf(m.analyses);
+                  const done = m.endedAt !== null;
+                  return (
+                    <tr key={m.id} className="arow">
+                      <td>
+                        <div style={{ fontWeight: 700, color: "var(--ink-2)" }}>{playerLabel(m.red)} <span className="dim" style={{ fontWeight: 500 }}>vs</span> {playerLabel(m.blue)}</div>
+                        <div className="dim mono" style={{ fontSize: 10.5 }}>
+                          {m.id} · {new Date(m.startedAt).toLocaleString()} · <span style={{ color: winnerColor(m.winner) }}>{outcomeLabel(m.winner)}</span>
+                        </div>
+                      </td>
+                      <td className="mono" style={{ color: "var(--ink-3)" }}>{m.mode}</td>
+                      <td className="mono" style={{ color: worst ? "var(--ink-2)" : undefined }}>
+                        {worst ? pct(worst.engineMatchRate) : <span className="dim">not analysed</span>}
+                      </td>
+                      <td className="num mono" style={{ color: (worst?.suspicion ?? 0) >= 70 ? "var(--red-lt)" : "var(--ink-3)" }}>
+                        {worst?.suspicion ?? <span className="dim">—</span>}
+                      </td>
+                      <td style={{ textAlign: "center" }}>
+                        {worst
+                          ? <span className="mono" style={{ fontSize: 11, color: STATUS_META[worst.status].color }}>{STATUS_META[worst.status].label}</span>
+                          : <span className="dim">—</span>}
+                      </td>
+                      <td>
+                        <div className="row" style={{ gap: 6, justifyContent: "center" }}>
+                          <button className="abtn btn-ghost btn-ghost-sm" onClick={() => setSelId(m.id)}>Review</button>
+                          <button
+                            className="abtn btn-ghost btn-ghost-sm"
+                            onClick={() => analyse(m.id)}
+                            disabled={!done || queued[m.id]}
+                            title={done ? QUEUE_NOTE : "Only finished matches can be analysed."}
+                          >
+                            {queued[m.id] ? "Queued" : worst ? "Re-analyse" : "Analyse"}
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })
               )}
             </tbody>
           </table>
@@ -171,7 +350,7 @@ export function MatchesPage() {
         {!loading && <Pagination {...pg} noun="matches" />}
       </div>
 
-      {selId && <MatchDrawer id={selId} onClose={() => setSelId(null)} />}
+      {selId && <MatchDrawer id={selId} onClose={() => { setSelId(null); load(); }} />}
     </>
   );
 }
@@ -180,10 +359,18 @@ export function MatchesPage() {
 function MatchDrawer({ id, onClose }: { id: string; onClose: () => void }) {
   const [d, setD] = useState<MatchDetail | null>(null);
   const [err, setErr] = useState(false);
+  const [an, setAn] = useState<AnalysisResponse | null>(null);
+  const [queued, setQueued] = useState(false);
+
+  const loadAnalysis = () => {
+    api.get<AnalysisResponse>(`/api/admin/matches/${id}/analysis`).then(setAn).catch(() => setAn(null));
+  };
 
   useEffect(() => {
     setErr(false);
+    setQueued(false);
     api.get<MatchDetail>(`/api/admin/matches/${id}`).then(setD).catch(() => setErr(true));
+    loadAnalysis();
   }, [id]);
 
   return (
@@ -207,50 +394,45 @@ function MatchDrawer({ id, onClose }: { id: string; onClose: () => void }) {
               <button className="btn" onClick={onClose}>Close</button>
             </div>
 
-            {/* Phase-2 notice — replaces the mockup's flagged-case banner (no real flag exists) */}
-            <div className="flag-banner" style={{ alignItems: "flex-start" }}>
-              <span className="dot" style={{ marginTop: 3 }} />
-              <div style={{ flex: 1 }}>
-                <div style={{ fontWeight: 700 }}>No anti-cheat signal available</div>
-                <div className="dim" style={{ fontSize: 11, marginTop: 2 }}>
-                  Detection subsystem not yet built (Phase 2). This match was not flagged — it is shown because it matched your filters.
+            {/* Anti-cheat analysis - real values from MatchAnalysis, or an
+               honest "not analysed" with a way to queue it. */}
+            <div>
+              <div className="row" style={{ justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+                <div style={{ fontWeight: 700, fontSize: 12, letterSpacing: .5, color: "var(--ink-2)" }}>ANTI-CHEAT ANALYSIS</div>
+                <button
+                  className="abtn btn-ghost btn-ghost-sm"
+                  disabled={!d.endedAt || queued}
+                  title={d.endedAt ? QUEUE_NOTE : "Only finished matches can be analysed."}
+                  onClick={() => {
+                    setQueued(true);
+                    api.post(`/api/admin/matches/${id}/analysis`)
+                      .then(() => setTimeout(loadAnalysis, 2500))
+                      .catch(() => setQueued(false));
+                  }}
+                >
+                  {queued ? "Queued…" : an?.analysed ? "Re-analyse" : "Analyse this match"}
+                </button>
+              </div>
+
+              {!an?.analysed ? (
+                <div className="panel panel-pad dim" style={{ fontSize: 12 }}>
+                  {d.endedAt
+                    ? "This match has not been analysed yet. Queue it above — analysis runs as a background job because replaying a game against the engine takes seconds, not milliseconds."
+                    : "Match is still in progress. Only finished matches can be analysed."}
                 </div>
-              </div>
-            </div>
-
-            {/* Detection stat tiles — mockup's 4 (Avg accuracy / Move time / Moves / Priors). Honest
-               "—": the anti-cheat detection subsystem does not exist yet, so there is no real data
-               to fill these with. */}
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 10 }}>
-              <div className="fd-kpi pad-sm" title={PHASE2_NOTE}>
-                <div className="l">Avg accuracy</div>
-                <div className="v mono dim" style={{ fontSize: 15 }}>—</div>
-              </div>
-              <div className="fd-kpi pad-sm" title={PHASE2_NOTE}>
-                <div className="l">Move time</div>
-                <div className="v mono dim" style={{ fontSize: 15 }}>—</div>
-              </div>
-              <div className="fd-kpi pad-sm" title={PHASE2_NOTE}>
-                <div className="l">Moves</div>
-                <div className="v mono dim" style={{ fontSize: 15 }}>—</div>
-              </div>
-              <div className="fd-kpi pad-sm" title={PHASE2_NOTE}>
-                <div className="l">Priors</div>
-                <div className="v mono dim" style={{ fontSize: 15 }}>—</div>
-              </div>
-            </div>
-
-            {/* Move-accuracy timeline — mockup block, honest empty-state (no per-ply accuracy data
-               exists without the detection subsystem). */}
-            <div className="panel panel-pad">
-              <div style={{ fontWeight: 700, fontSize: 11, letterSpacing: .5, color: "var(--ink-2)", marginBottom: 12 }}>MOVE-ACCURACY TIMELINE</div>
-              <div className="dim" style={{ fontSize: 12, textAlign: "center", padding: "18px 0" }}>Detection subsystem not built — no per-move accuracy data available.</div>
-            </div>
-
-            {/* Detection signals — mockup block, honest empty-state. */}
-            <div className="panel panel-pad">
-              <div style={{ fontWeight: 700, fontSize: 11, letterSpacing: .5, color: "var(--ink-2)", marginBottom: 12 }}>DETECTION SIGNALS</div>
-              <div className="dim" style={{ fontSize: 12, textAlign: "center", padding: "18px 0" }}>Detection subsystem not built — no signals available.</div>
+              ) : (
+                <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+                  {an.analyses.map((a) => (
+                    <AnalysisCard
+                      key={a.id}
+                      a={a}
+                      avgSecPerMove={an.avgSecPerMove}
+                      player={a.side === "red" ? d.red : d.blue}
+                      onReviewed={loadAnalysis}
+                    />
+                  ))}
+                </div>
+              )}
             </div>
 
             {/* Real match data — separate labelled block, distinct from the detection tiles above. */}
@@ -303,16 +485,158 @@ function MatchDrawer({ id, onClose }: { id: string; onClose: () => void }) {
               </div>
             </div>
 
-            {/* Decision bar — approved 3-tier hierarchy, all disabled: no detection subsystem to act on */}
-            <div className="row" style={{ gap: 9, flexWrap: "wrap", marginTop: 2 }}>
-              <button className="abtn btn-ghost" style={{ flex: 1, minWidth: 130 }} disabled title={PHASE2_NOTE}>Watch replay</button>
-              <button className="abtn btn-ghost" style={{ flex: 1, minWidth: 130, borderColor: "rgba(75,214,160,.35)", color: "var(--green-lt)" }} disabled title={PHASE2_NOTE}>Clear flag</button>
-              <button className="abtn btn-amber" style={{ flex: 1, minWidth: 130 }} disabled title={PHASE2_NOTE}>Void match</button>
-              <button className="abtn btn-danger" style={{ flex: 1, minWidth: 130 }} disabled title={PHASE2_NOTE}>Ban &amp; void</button>
-            </div>
+            {/* Decisions live on each player's analysis card above: a verdict is
+               about a PLAYER in this match, not about the match as a whole. */}
           </>
         )}
       </div>
+    </div>
+  );
+}
+
+// -- One player's verdict for one match ---------------------------------------
+//
+// A case is about a PLAYER in a match, not about the match, so the decision
+// controls live here rather than on a match-wide bar. Confirming requires a
+// note and is irreversible from the UI; the optional ban goes through the same
+// sanction path the reports queue uses.
+function AnalysisCard({
+  a,
+  avgSecPerMove,
+  player,
+  onReviewed,
+}: {
+  a: Analysis;
+  avgSecPerMove: number | null;
+  player: Player;
+  onReviewed: () => void;
+}) {
+  const [priors, setPriors] = useState<Priors | null>(null);
+  const [note, setNote] = useState("");
+  const [ban, setBan] = useState(false);
+  const [banHours, setBanHours] = useState(24 * 7);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    api.get<Priors>(`/api/admin/anticheat/priors/${a.userId}`).then(setPriors).catch(() => setPriors(null));
+  }, [a.userId]);
+
+  const decided = a.status === "CONFIRMED" || a.status === "DISMISSED";
+  const meta = STATUS_META[a.status];
+
+  const submit = (decision: "CONFIRMED" | "DISMISSED") => {
+    if (note.trim().length === 0) {
+      setError("A note is required — it is the record of why this decision was made.");
+      return;
+    }
+    setBusy(true);
+    setError(null);
+    api
+      .post(`/api/admin/anticheat/${a.id}/review`, {
+        decision,
+        note: note.trim(),
+        ...(decision === "CONFIRMED" && ban ? { banDurationHours: banHours } : {}),
+      })
+      .then(() => onReviewed())
+      .catch((e: unknown) => setError(e instanceof Error ? e.message : "Review failed."))
+      .finally(() => setBusy(false));
+  };
+
+  return (
+    <div className="panel panel-pad" style={{ borderColor: a.status === "FLAGGED" ? "rgba(217,138,58,.45)" : undefined }}>
+      <div className="row" style={{ justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+        <div>
+          <div style={{ fontWeight: 700, color: "var(--ink)" }}>
+            {player ? `${player.username} ${player.tag}` : "Unknown player"}{" "}
+            <span className="dim mono" style={{ fontSize: 11, fontWeight: 500 }}>played {a.side}</span>
+          </div>
+          <div className="dim" style={{ fontSize: 11 }}>analysed {new Date(a.computedAt).toLocaleString()}</div>
+        </div>
+        <span className="mono" style={{ fontSize: 12, color: meta.color, fontWeight: 700 }}>{meta.label}</span>
+      </div>
+
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 10 }}>
+        <div className="fd-kpi pad-sm" title="Share of positions WITH A CHOICE where this player picked the engine's move. Forced captures are excluded.">
+          <div className="l">Engine agreement</div>
+          <div className="v mono" style={{ fontSize: 15 }}>{pct(a.engineMatchRate)}</div>
+        </div>
+        <div className="fd-kpi pad-sm" title="Whole-match seconds per ply. Shared by both players — context only, never scored.">
+          <div className="l">Move time (match)</div>
+          <div className="v mono dim" style={{ fontSize: 15 }}>{fmtSecs(avgSecPerMove)}</div>
+        </div>
+        <div className="fd-kpi pad-sm" title="Total plies, and how many of those were real choices.">
+          <div className="l">Moves</div>
+          <div className="v mono" style={{ fontSize: 15 }}>
+            {a.moveCount}<span className="dim" style={{ fontSize: 11 }}> / {a.decisionCount} free</span>
+          </div>
+        </div>
+        <div className="fd-kpi pad-sm" title="Prior signal on this account: confirmed cases, open flags, and player-submitted cheating reports.">
+          <div className="l">Priors</div>
+          <div className="v mono" style={{ fontSize: 15 }}>
+            {priors ? `${priors.confirmed}C / ${priors.flagged}F` : "—"}
+            {priors && priors.cheatReports > 0 && (
+              <span className="dim" style={{ fontSize: 11 }}> · {priors.cheatReports} report{priors.cheatReports === 1 ? "" : "s"}</span>
+            )}
+          </div>
+        </div>
+      </div>
+
+      <div style={{ marginTop: 10 }}>
+        <div className="dim" style={{ fontSize: 11, letterSpacing: .5, marginBottom: 4 }}>
+          WHY {a.suspicion !== null && <span className="mono">· suspicion {a.suspicion}/100</span>}
+        </div>
+        <ul style={{ margin: 0, paddingLeft: 18 }}>
+          {a.reasons.map((r, i) => (
+            <li key={i} className="dim" style={{ fontSize: 12, marginBottom: 2 }}>{r}</li>
+          ))}
+        </ul>
+      </div>
+
+      {decided ? (
+        <div className="dim" style={{ fontSize: 12, marginTop: 12, borderTop: "1px solid var(--line)", paddingTop: 10 }}>
+          {meta.label} by {a.reviewedBy ? `${a.reviewedBy.username} ${a.reviewedBy.tag}` : "a moderator"}
+          {a.reviewedAt ? ` on ${new Date(a.reviewedAt).toLocaleString()}` : ""}
+          {a.reviewNote ? ` — “${a.reviewNote}”` : ""}
+        </div>
+      ) : (
+        <div style={{ marginTop: 12, borderTop: "1px solid var(--line)", paddingTop: 10 }}>
+          <input
+            className="input"
+            style={{ width: "100%", marginBottom: 8 }}
+            placeholder="Decision note (required — this is the permanent record)"
+            value={note}
+            onChange={(e) => setNote(e.target.value)}
+            maxLength={500}
+          />
+          <label className="row dim" style={{ gap: 8, fontSize: 12, marginBottom: 8, alignItems: "center" }}>
+            <input type="checkbox" checked={ban} onChange={(e) => setBan(e.target.checked)} />
+            Ban this player when confirming
+            {ban && (
+              <select className="input" style={{ maxWidth: 150 }} value={banHours} onChange={(e) => setBanHours(Number(e.target.value))}>
+                <option value={24}>24 hours</option>
+                <option value={24 * 7}>7 days</option>
+                <option value={24 * 30}>30 days</option>
+                <option value={0}>Permanent</option>
+              </select>
+            )}
+          </label>
+          {error && <div style={{ color: "var(--red-lt)", fontSize: 12, marginBottom: 8 }}>{error}</div>}
+          <div className="row" style={{ gap: 9 }}>
+            <button
+              className="abtn btn-ghost"
+              style={{ flex: 1, borderColor: "rgba(75,214,160,.35)", color: "var(--green-lt)" }}
+              disabled={busy}
+              onClick={() => submit("DISMISSED")}
+            >
+              Dismiss — legitimate
+            </button>
+            <button className="abtn btn-danger" style={{ flex: 1 }} disabled={busy} onClick={() => submit("CONFIRMED")}>
+              {ban ? "Confirm & ban" : "Confirm cheating"}
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
