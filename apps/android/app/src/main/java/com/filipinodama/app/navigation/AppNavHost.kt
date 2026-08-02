@@ -718,7 +718,22 @@ fun AppNavHost() {
                     tournamentId = id,
                     onBack = { navController.popBackStack() },
                     onRequireSignIn = { navController.navigate(AppDestinations.LOGIN) },
-                    onWatchReplay = { matchId -> navController.navigate(AppDestinations.replay(matchId)) }
+                    onWatchReplay = { matchId -> navController.navigate(AppDestinations.replay(matchId)) },
+                    onEnterMatch = { matchMode ->
+                        // Both competitors readied and the SERVER started the
+                        // match; TournamentLiveRepository already handed it to
+                        // MatchRepository (same handoff PrivateRoomScreen's
+                        // onEnterMatch relies on), so this only navigates.
+                        //
+                        // Pass the CUP'S OWN mode (Tournament.matchMode) rather
+                        // than a "TOURNAMENT" literal: OnlineMatchScreen keys its
+                        // ranked chrome and the end card's trophy pill off this
+                        // string, so a RANKED Cup — which really does move
+                        // trophies server-side — must not render as casual.
+                        navController.navigate(AppDestinations.onlineMatch(matchMode)) {
+                            popUpTo(AppDestinations.MODE_SELECT)
+                        }
+                    }
                 )
             }
 

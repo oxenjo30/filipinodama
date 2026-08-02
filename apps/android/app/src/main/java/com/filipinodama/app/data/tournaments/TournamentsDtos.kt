@@ -51,9 +51,18 @@ data class TournamentDetailDto(
     val registeredCount: Int = 0,
     val startsAt: String? = null,
     val minTrophies: Int = 0,
+    /** The MatchMode this Cup's games actually run as (admin-set; CASUAL default).
+     *  Carried through to the online-match screen so a RANKED Cup shows the ranked
+     *  chrome and its trophy delta on the end card — otherwise every tournament
+     *  game would read "CASUAL MATCH" regardless of what is really at stake. */
+    val matchMode: String = "CASUAL",
     val entries: List<TournamentEntryDto> = emptyList(),
     val bracket: Map<String, List<TournamentMatchDto>> = emptyMap(),
-    val myEntry: TournamentMyEntryDto? = null
+    val myEntry: TournamentMyEntryDto? = null,
+    /** The signed-in player's current playable slot, or null (see
+     *  [TournamentMyMatchDto]). Served here as well as pushed over
+     *  "tournament:matchState" so the screen is right on a cold load. */
+    val myMatch: TournamentMyMatchDto? = null
 )
 
 @Serializable
@@ -107,6 +116,60 @@ data class TournamentMatchDto(
     val winnerEntryId: String? = null,
     val status: String = "pending" // pending | ready | done
 )
+
+/**
+ * The signed-in player's ONE unresolved slot in a running Cup — the payload
+ * behind the "Your Match" card (apps/server/src/realtime/tournament-live.ts,
+ * type TournamentMyMatch). Identical shape on GET /api/tournaments/:id and on
+ * the "tournament:matchState" push, so one renderer handles both.
+ *
+ * [deadlineAt] is non-null once EITHER player has readied: it is the no-show
+ * clock, and there is deliberately NO un-ready (see TournamentLiveRepository).
+ * [matchId] is non-null once the match is live — the player belongs on the
+ * board, not on this card.
+ */
+@Serializable
+data class TournamentMyMatchDto(
+    val tournamentId: String,
+    val tmId: String,
+    val round: Int = 0,
+    val bracket: String = "W",
+    val roundLabel: String = "",
+    val opponent: TournamentOpponentDto? = null,
+    val iAmReady: Boolean = false,
+    val opponentReady: Boolean = false,
+    val deadlineAt: String? = null, // ISO-8601
+    val matchId: String? = null,
+    val yourColor: String = "red" // red | blue
+)
+
+@Serializable
+data class TournamentOpponentDto(
+    val userId: String,
+    val username: String,
+    val tag: String = "",
+    val avatarUrl: String? = null,
+    val frameId: String? = null
+)
+
+/** "tournament:ready" — client → server. There is no matching un-ready event. */
+@Serializable
+data class TournamentReadyRequest(
+    val tmId: String
+)
+
+/** "tournament:start" — the server created and seeded the match; go play. */
+@Serializable
+data class TournamentStartDto(
+    val tournamentId: String = "",
+    val tmId: String = "",
+    val matchId: String,
+    val yourColor: String = "red"
+)
+
+/** The `{error:{code,message}}` variant of a "tournament:matchState" push —
+ *  same envelope shape as the REST errors, so message mapping is shared. */
+data class TournamentReadyError(val code: String, val message: String)
 
 @Serializable
 data class TournamentJoinResponse(

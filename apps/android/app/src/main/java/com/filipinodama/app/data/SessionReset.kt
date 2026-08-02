@@ -8,6 +8,7 @@ import com.filipinodama.app.data.social.DmRepository
 import com.filipinodama.app.data.social.GuildChatRepository
 import com.filipinodama.app.data.social.NotificationsRepository
 import com.filipinodama.app.data.social.PresenceRepository
+import com.filipinodama.app.data.tournaments.TournamentLiveRepository
 
 /**
  * Session teardown — the ONE place a sign-out is performed.
@@ -64,5 +65,6 @@ fun resetSessionState() {
     PresenceRepository.hardReset()
     GuildChatRepository.hardReset()
     BlockRepository.hardReset()
+    TournamentLiveRepository.hardReset()
     ActiveMatchStore.clear()
 }
