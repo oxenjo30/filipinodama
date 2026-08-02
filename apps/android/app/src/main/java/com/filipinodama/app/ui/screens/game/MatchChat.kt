@@ -1,8 +1,10 @@
 package com.filipinodama.app.ui.screens.game
 
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -50,7 +52,13 @@ data class MatchChatUiMsg(
     val id: String,
     val mine: Boolean,
     val emote: String?,
-    val body: String?
+    val body: String?,
+    /**
+     * The server's id for this message — what a report cites. Null for emotes
+     * (a fixed set, nothing to quote) and while a message is still in flight,
+     * so the report affordance only appears once there is something to cite.
+     */
+    val serverId: String? = null,
 )
 
 /** Free-tier fallback emote set (mirrors MatchChat.tsx's FALLBACK_EMOTES — the
@@ -80,7 +88,14 @@ val MATCH_PHRASES = listOf(
 fun MatchChat(
     messages: List<MatchChatUiMsg>,
     onSend: (emote: String?, body: String?) -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    /**
+     * Long-press an OPPONENT's message to report it. Null disables reporting
+     * (e.g. no opponent id yet). Match chat is stranger-facing — you are matched
+     * with someone you have never met — so this is the surface that most needs a
+     * report path, and it had none.
+     */
+    onReportMessage: ((messageId: String, quoted: String) -> Unit)? = null,
 ) {
     var draft by remember { mutableStateOf("") }
     var pickerOpen by remember { mutableStateOf(false) }
@@ -118,7 +133,7 @@ fun MatchChat(
                 )
             } else {
                 LazyColumn(state = listState, verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    items(messages, key = { it.id }) { m -> ChatBubble(m) }
+                    items(messages, key = { it.id }) { m -> ChatBubble(m, onReportMessage) }
                 }
             }
         }
@@ -188,8 +203,16 @@ fun MatchChat(
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun ChatBubble(m: MatchChatUiMsg) {
+private fun ChatBubble(
+    m: MatchChatUiMsg,
+    onReportMessage: ((messageId: String, quoted: String) -> Unit)? = null,
+) {
+    // Only an OPPONENT's real, delivered text message can be reported: reporting
+    // yourself is meaningless, an emote is a fixed set with nothing to quote, and
+    // a message still in flight has no server record to cite yet.
+    val reportable = !m.mine && m.emote == null && m.serverId != null && !m.body.isNullOrBlank()
     Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = if (m.mine) Arrangement.End else Arrangement.Start) {
         if (m.emote != null) {
             Text(text = m.emote, fontSize = 24.sp, modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp))
@@ -199,6 +222,15 @@ private fun ChatBubble(m: MatchChatUiMsg) {
                     .background(
                         if (m.mine) Gold.copy(alpha = 0.16f) else Color.White.copy(alpha = 0.06f),
                         RoundedCornerShape(10.dp)
+                    )
+                    .then(
+                        if (reportable && onReportMessage != null) {
+                            Modifier.combinedClickable(
+                                onClick = {},
+                                onLongClick = { onReportMessage(m.serverId!!, m.body!!) },
+                                onLongClickLabel = "Report this message",
+                            )
+                        } else Modifier
                     )
                     .padding(horizontal = 10.dp, vertical = 6.dp)
             ) {

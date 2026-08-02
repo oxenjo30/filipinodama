@@ -52,9 +52,18 @@ data class RoomStartDto(
 /** Raw "room:chat" relay payload (literal string event, not in EV — verified in rooms.ts). */
 @Serializable
 data class RoomChatDto(
+    /**
+     * Server-assigned id for this relayed message, used to REPORT it. Room chat
+     * is ephemeral (no Message row), so the server keeps a short-lived record
+     * keyed on this id and snapshots the excerpt itself at report time — the
+     * accuser never supplies the evidence. Null if the record couldn't be written.
+     */
+    val id: String? = null,
     val from: RoomMemberDto,
     val body: String,
-    val at: Long = 0
+    val at: Long = 0,
+    /** Echoed back so the sender can reconcile their optimistic render. */
+    val nonce: String? = null
 )
 
 // ---- client -> server emit payloads ----

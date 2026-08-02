@@ -2,7 +2,9 @@ package com.filipinodama.app.ui.screens.rooms
 
 import android.content.Intent
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -53,6 +55,7 @@ import androidx.compose.runtime.collectAsState
 import com.filipinodama.app.BuildConfig
 import com.filipinodama.app.R
 import com.filipinodama.app.data.AuthRepository
+import com.filipinodama.app.ui.screens.social.ReportPlayerDialog
 import com.filipinodama.app.data.engine.GameSettings
 import com.filipinodama.app.data.rooms.RoomError
 import com.filipinodama.app.data.rooms.RoomMemberDto
@@ -479,6 +482,9 @@ private fun HostOrGuestLobby(
     onSpectateSelf: () -> Unit
 ) {
     val isHost = ui.isHostUser(myUserId)
+    // (accusedId, messageId, quotedText) of a long-pressed room-chat message
+    // awaiting a report, or null.
+    var reportMessage by remember { mutableStateOf<Triple<String, String, String>?>(null) }
     val clipboard = LocalClipboardManager.current
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -586,7 +592,14 @@ private fun HostOrGuestLobby(
         }
 
         item {
-            RoomChatCard(chat = ui.chat, onSend = onSendChat)
+            RoomChatCard(
+                chat = ui.chat,
+                onSend = onSendChat,
+                myUserId = myUserId,
+                onReportMessage = { accusedId, messageId, quoted ->
+                    reportMessage = Triple(accusedId, messageId, quoted)
+                },
+            )
         }
 
         item {
@@ -613,6 +626,19 @@ private fun HostOrGuestLobby(
                 }
             }
         }
+    }
+
+    // Reporting ONE room-chat message. The server snapshots the excerpt from its
+    // own record of what it broadcast, so a moderator reviews verified text
+    // rather than something the accuser typed.
+    reportMessage?.let { (accusedId, messageId, quoted) ->
+        ReportPlayerDialog(
+            accusedId = accusedId,
+            context = "room",
+            messageId = messageId,
+            quotedText = quoted,
+            onClose = { reportMessage = null }
+        )
     }
 }
 
@@ -1225,8 +1251,17 @@ private fun InviteFriendsCard(roomUrl: String) {
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun RoomChatCard(chat: List<com.filipinodama.app.data.rooms.RoomChatMsg>, onSend: (String) -> Unit) {
+private fun RoomChatCard(
+    chat: List<com.filipinodama.app.data.rooms.RoomChatMsg>,
+    onSend: (String) -> Unit,
+    myUserId: String?,
+    /** Long-press someone ELSE's message to report it. Room chat is
+     *  stranger-facing — anyone holding the code can join — so it needs a report
+     *  path as much as match chat does. */
+    onReportMessage: ((accusedId: String, messageId: String, quoted: String) -> Unit)? = null,
+) {
     var draft by remember { mutableStateOf("") }
     GameFrameCard {
         Column {
@@ -1243,10 +1278,21 @@ private fun RoomChatCard(chat: List<com.filipinodama.app.data.rooms.RoomChatMsg>
                     Text("No messages yet", color = Ink2, style = MaterialTheme.typography.bodySmall)
                 } else {
                     chat.takeLast(20).forEach { m ->
+                        // Only someone else's recorded message can be reported.
+                        val reportable = onReportMessage != null &&
+                            m.serverId != null &&
+                            m.from.userId != myUserId
                         Text(
                             text = "${m.from.name}: ${m.body}",
                             color = Ink,
-                            style = MaterialTheme.typography.bodySmall
+                            style = MaterialTheme.typography.bodySmall,
+                            modifier = if (reportable) {
+                                Modifier.combinedClickable(
+                                    onClick = {},
+                                    onLongClick = { onReportMessage!!(m.from.userId, m.serverId!!, m.body) },
+                                    onLongClickLabel = "Report this message",
+                                )
+                            } else Modifier
                         )
                     }
                 }

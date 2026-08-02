@@ -109,10 +109,11 @@ object RoomRepository {
             _state.update { st ->
                 st.copy(
                     chat = st.chat + RoomChatMsg(
-                        id = "${payload.at}-${payload.from.userId}-${st.chat.size}",
+                        id = payload.id ?: "${payload.at}-${payload.from.userId}-${st.chat.size}",
                         from = payload.from,
                         body = payload.body,
-                        at = payload.at
+                        at = payload.at,
+                        serverId = payload.id
                     )
                 )
             }
@@ -259,7 +260,10 @@ data class RoomChatMsg(
     val id: String,
     val from: RoomMemberDto,
     val body: String,
-    val at: Long
+    val at: Long,
+    /** The server's id for this message — what a report cites. Null when the
+     *  server could not record it, in which case reporting stays hidden. */
+    val serverId: String? = null
 )
 
 data class RoomUiState(
