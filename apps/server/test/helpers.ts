@@ -70,8 +70,15 @@ export async function seedUser(
  *  TRUNCATE gives them DB isolation — at one convention point. Scoped to the rt:
  *  prefix (never flushall/flushdb) so a dev Redis's non-realtime keys are safe;
  *  .env.test points at a dedicated test Redis regardless. */
+// "Payment" joined this list with the account-purge migration. Before it,
+// Payment.userId was a required relation defaulting to Restrict, so a payment
+// could never outlive its user — the prefix-scoped user delete below took it
+// along (or failed loudly). Payments are now SetNull, deliberately, so a
+// financial record survives its buyer's erasure. The consequence for tests is
+// that orphaned Payment rows persist across files and silently inflate the admin
+// revenue dashboard's totals, so the table must be truncated explicitly.
 const TRUNCATE_TABLES =
-  `"Report", "AuditLog", "Message", "ChannelMember", "Channel", "Ticket", "Tournament", "TournamentEntry", "TournamentMatch", "Match", "LedgerEntry", "LiveEvent", "Order"`;
+  `"Report", "AuditLog", "Message", "ChannelMember", "Channel", "Ticket", "Tournament", "TournamentEntry", "TournamentMatch", "Match", "LedgerEntry", "LiveEvent", "Order", "Payment"`;
 
 export async function truncateAll() {
   // The TRUNCATE is a point-in-time clear. A test can trigger an ASYNC write

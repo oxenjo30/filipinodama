@@ -464,3 +464,46 @@
 
 - Mistake: called mcp__replicate__create_predictions with `Prefer: wait=60` to animate an avatar. Kling v2.1 takes ~125s to render, so the 60s wait TIMED OUT on the tool side. The failed-looking call was auto-retried 2-3×, and EACH retry actually reached Replicate and started a NEW paid prediction — 3 identical Amihan videos (~$0.75 instead of ~$0.25).
 - Rule: for any long-running paid Replicate model (video/image gen), DO NOT use a long `Prefer: wait=N`. Use `Prefer: wait=1` (or omit wait) so the call returns IMMEDIATELY with the prediction id in `starting` state, then poll with `mcp__replicate__get_predictions`. A blocking wait that exceeds the tool timeout can be retried into duplicate billable runs. Before creating a new prediction, `list_predictions` filtered by model to check one isn't already running for the same input.
+
+## 2026-08-02 - A missing onDelete makes a "soft delete" permanently soft
+
+- Mistake: DELETE /api/users/me only set deletedAt, and nothing ever hardened it,
+  while the app told users their data was permanently erased within 30 days. Five
+  relations to User (LedgerEntry, Order, Payment, Message, Tournament.createdBy)
+  had no onDelete policy, so Prisma defaulted them to Restrict and any real
+  delete would have thrown.
+- Cause: Prisma's IMPLICIT default for a required relation is Restrict. Nothing
+  in the schema said "Restrict" — the policy was invisible, so nobody noticed the
+  hard delete was impossible until someone tried to write it.
+- Rule: state onDelete EXPLICITLY on every relation, even when the default is
+  what you want. An implicit policy is a decision nobody reviewed. And when a
+  product promise implies a background job, write the job in the same change as
+  the promise — a disclosure with nothing behind it is worse than no disclosure.
+
+## 2026-08-02 - Not every id column has a foreign key
+
+- Mistake: the purge was nearly written as `prisma.user.delete()` plus cascades.
+  ChannelMember.userId and GuildJoinRequest.userId are plain String columns with
+  NO foreign key, so the database cannot cascade them — a purged account would
+  have silently stayed a member of every DM and guild channel it ever joined.
+- Cause: the FK map read from `@relation` lines is not the same as the set of
+  columns that reference a user. Counting caught it: 34 id-ish columns vs 32
+  declared User relations.
+- Rule: before relying on cascades, count the id COLUMNS against the declared
+  RELATIONS. Anything unaccounted for has to be deleted explicitly, and belongs
+  in a test that names why it exists.
+
+## 2026-08-02 - Relaxing a constraint breaks the code that assumed it
+
+- Mistake: making Payment.userId nullable (so a financial record outlives its
+  buyer) broke admin-financials.ts and payments.ts, which every consumer had
+  written assuming a payment always has a user — and it broke the TEST HELPER,
+  because Restrict had been silently doing the job of clearing Payment rows
+  between tests. That surfaced as three unrelated-looking assertion failures in
+  the admin revenue dashboard.
+- Cause: a NOT NULL constraint is load-bearing far outside the model that
+  declares it, including in test fixtures that never mention it.
+- Rule: after relaxing any constraint, run the FULL typecheck and the FULL suite,
+  not just the new tests. Then ask what the old constraint was implicitly
+  guaranteeing — here, "a payment can never outlive its user" was cleaning up
+  test data for free.

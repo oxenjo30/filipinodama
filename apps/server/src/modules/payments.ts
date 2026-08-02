@@ -296,6 +296,10 @@ export async function paymentRoutes(app: FastifyInstance) {
                 data: { status: "settled", settledAt: new Date() },
               });
               if (flip.count === 0) return; // already settled by another delivery
+              // A purged buyer has no balance to credit. The Payment row is
+              // retained for accounting, so the money is still auditable; there
+              // is simply no account left to receive the diamonds.
+              if (!payment.userId) return;
               await applyLedgerTx(tx, {
                 userId: payment.userId,
                 currency: "DIAMONDS",
@@ -341,7 +345,9 @@ export async function paymentRoutes(app: FastifyInstance) {
         // PayMongo API version, the refund cannot be matched to a Payment here;
         // reconcile such refunds out-of-band (e.g. a periodic PayMongo refund sync).
 
-        if (payment && payment.status === "settled") {
+        if (payment && payment.status === "settled" && payment.userId) {
+          // Same purged-buyer rule as the settle path above: flip the status for
+          // the audit trail, but there is no balance to debit.
           await prisma.payment.update({ where: { id: payment.id }, data: { status: "refunded" } });
           await applyLedger(prisma, {
             userId: payment.userId,
