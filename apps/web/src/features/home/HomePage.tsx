@@ -503,11 +503,10 @@ export function HomePage() {
 
       {/* RIGHT RAIL */}
       <div style={{ display: "flex", flexDirection: "column", gap: 18 }}>
-        {/* Google Play download panel — live on the main site. The badge reads
-            "Coming soon to Google Play" (honest: the Android app is in testing,
-            not yet public), so it's safe to show publicly. When the app is
-            published, update GetTheAppCard: make the badge a link to the real
-            Play listing and change the label from "Coming soon" to "Get it on". */}
+        {/* Google Play download panel. The Android app went LIVE on production
+            2026-08-03, so the badge is now a real link to the listing ("Get it
+            on Google Play") rather than the "Coming soon" placeholder it carried
+            while the app was in closed testing. */}
         <GetTheAppCard />
 
         <DailyChallengeCard
@@ -622,6 +621,13 @@ export function HomePage() {
  * Google's official badge image — swap for the official clickable badge at
  * launch if desired (no external asset needed for the "coming soon" state).
  */
+/**
+ * The published Play listing. Package id matches the Android app's
+ * `applicationId` (apps/android/app/build.gradle.kts) — if that ever changes,
+ * this link 404s, so they must move together.
+ */
+const PLAY_LISTING_URL = "https://play.google.com/store/apps/details?id=com.filipinodama.app";
+
 function GetTheAppCard() {
   return (
     <div className="frame" style={{ padding: 20, textAlign: "center" }}>
@@ -629,12 +635,14 @@ function GetTheAppCard() {
       <div style={{ font: "600 13px Inter", color: "var(--ink)", margin: "10px 0 14px" }}>
         Play FilipinoDama on your Android phone — take your rank on the go.
       </div>
-      {/* Non-clickable "Coming soon" badge — styled like Google Play's dark
-          pill (triangle mark + "GET IT ON / Google Play"), but not a link
-          since the app isn't published yet. */}
-      <div
-        role="img"
-        aria-label="Coming soon to Google Play"
+      {/* LIVE on Google Play (2026-08-03). This was a non-clickable "Coming
+          soon" badge while the Android app was in closed testing; now that the
+          listing is public it is a real link. */}
+      <a
+        href={PLAY_LISTING_URL}
+        target="_blank"
+        rel="noopener noreferrer"
+        aria-label="Get FilipinoDama on Google Play"
         style={{
           display: "inline-flex",
           alignItems: "center",
@@ -643,7 +651,7 @@ function GetTheAppCard() {
           borderRadius: 10,
           border: "1px solid rgba(255,255,255,.18)",
           background: "linear-gradient(180deg,#1a1330,#120c26)",
-          cursor: "default",
+          textDecoration: "none",
           userSelect: "none",
         }}
       >
@@ -656,13 +664,13 @@ function GetTheAppCard() {
         </svg>
         <div style={{ textAlign: "left", lineHeight: 1.1 }}>
           <div style={{ font: "600 8px Inter", letterSpacing: "1.2px", textTransform: "uppercase", color: "rgba(255,255,255,.72)" }}>
-            Coming soon to
+            Get it on
           </div>
           <div style={{ font: "700 16px Inter", color: "#fff", marginTop: 2 }}>Google Play</div>
         </div>
-      </div>
+      </a>
       <div style={{ font: "500 11px Inter", color: "var(--ink2)", marginTop: 12 }}>
-        Android app in testing — launching soon.
+        Free on Android — your rank and progress carry across web and mobile.
       </div>
     </div>
   );
