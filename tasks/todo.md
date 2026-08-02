@@ -45,6 +45,42 @@ socket carried **zero listeners** for the rest of the process.
 - [x] Regression tests: 9 cross-match/null-state + 5 session teardown.
 - [x] Fixed the 2 stale tests that were red on `main` (see below).
 
+## Added after owner report: offline banner slow to clear
+
+Owner, 2026-08-02: "the 'You're offline... reconnecting' notification takes so
+long to reconnect - if the game is reconnected already it should disappear
+immediately."
+
+Confirmed, and it is the MIRROR IMAGE of the v48 fix. ConnectivityObserver
+reports online ONLY when Android sets NET_CAPABILITY_VALIDATED - correct for
+deciding we are offline (it is what catches a captive portal), but on a
+RECONNECT the OS runs that probe on its own schedule and lags the real recovery
+by seconds. The banner sat there for that whole gap while play had already
+resumed. The debounce was NOT at fault - debounceOffline emits online instantly
+and is correct. v48 fixed its direction by DELAYING the offline edge; that
+cannot help here, because this delay is in the OS's signal, not in ours.
+
+- [x] `NetworkLiveness.kt` - "we just reached our server" signal. A response
+      from our own https origin, or a Socket.IO CONNECT, is STRONGER and far
+      more timely evidence than the OS probe. A captive portal cannot forge it
+      (it cannot terminate our TLS), so the captive-portal correctness that
+      NET_CAPABILITY_VALIDATED exists to provide is preserved.
+- [x] `ApiClient` - NETWORK-level interceptor (not application-level, so cache
+      hits never count) emits proof on every completed round trip. Any status
+      counts: a 4xx/5xx still means the server answered.
+- [x] `SocketClient` - emits proof on `EVENT_CONNECT`, which socket.io re-emits
+      on every automatic reconnect - exactly the edge the banner needs.
+- [x] `Flow.withLivenessProof` - Context-free operator merging proof into the
+      connectivity stream, so the timing is unit-testable with virtual time.
+- [x] 5 tests (LivenessProofTest). Proven meaningful: ignoring the proof fails
+      exactly the two proof-dependent tests while the three guard tests - real
+      outage still surfaces, no redundant emissions, banner can return - keep
+      passing.
+
+Android suite: **321 tests, 0 failed**.
+
+NOT verified on a device: reproducing needs a real airplane-mode cycle.
+
 ## The two stale tests
 
 Both were red on `main` before this branch, and the previous task's notes

@@ -1,6 +1,7 @@
 package com.filipinodama.app.data
 
 import com.filipinodama.app.BuildConfig
+import com.filipinodama.app.data.system.NetworkLiveness
 import io.socket.client.IO
 import io.socket.client.Socket
 import java.net.URISyntaxException
@@ -106,6 +107,15 @@ object SocketClient {
         } catch (e: URISyntaxException) {
             return null
         }
+        // Proof of life for the "You're offline — reconnecting…" banner. A
+        // completed Socket.IO handshake is direct evidence we reached the server,
+        // and it arrives well before Android finishes the NET_CAPABILITY_VALIDATED
+        // probe that ConnectivityObserver otherwise has to wait on. Registered
+        // once per instance, before connect(), so the very first CONNECT counts.
+        // socket.io re-emits EVENT_CONNECT on every automatic reconnect, which is
+        // exactly the edge the banner needs. See data/system/NetworkLiveness.kt.
+        newSocket.on(Socket.EVENT_CONNECT) { NetworkLiveness.reachedServer() }
+
         socket = newSocket
         newSocket.connect()
         return newSocket
