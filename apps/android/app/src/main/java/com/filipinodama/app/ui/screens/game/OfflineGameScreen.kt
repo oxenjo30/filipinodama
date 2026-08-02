@@ -27,6 +27,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -63,8 +64,23 @@ fun OfflineGameScreen(difficulty: String, onChangeDifficulty: () -> Unit, onHome
     val me = AuthRepository.state.collectAsState().value.user
     var showResignConfirm by remember { mutableStateOf(false) }
 
+    // Start a game only when we ACTUALLY need one.
+    //
+    // This was an unconditional `newGame(difficulty)`. MainActivity declares no
+    // `configChanges`, so ANY configuration change — rotation, unfolding a
+    // foldable, entering split screen, a theme switch — recreates the Activity
+    // and re-ran this, wiping a game in progress and dropping the player back to
+    // move 1.
+    //
+    // `rememberSaveable` survives that recreation, so rotating mid-game is now a
+    // no-op. A genuinely new entry, or a difficulty change (it is part of the
+    // key), still starts a fresh game.
+    var startedFor by rememberSaveable { mutableStateOf<String?>(null) }
     DisposableEffect(difficulty) {
-        GameRepository.newGame(difficulty)
+        if (startedFor != difficulty) {
+            GameRepository.newGame(difficulty)
+            startedFor = difficulty
+        }
         onDispose { }
     }
 
@@ -80,11 +96,23 @@ fun OfflineGameScreen(difficulty: String, onChangeDifficulty: () -> Unit, onHome
     // again after a rematch; guests are skipped because the record belongs to
     // an account. A failure is swallowed on purpose: a missing record must
     // never interrupt the result screen.
+    //
+    // The `reportedFor` guard is what stops a DOUBLE record. On a configuration
+    // change the composition is rebuilt and this effect re-runs with the same
+    // result, which POSTed the finished game a second time — one game, two rows,
+    // inflating the per-difficulty tally. `/api/matches/local` creates a row
+    // unconditionally (no idempotency key), so the client has to not ask twice.
+    // Saveable so it survives the very recreation that caused the duplicate.
     val reportedResult = gs.result
+    var reportedFor by rememberSaveable { mutableStateOf<String?>(null) }
     LaunchedEffect(reportedResult, me?.id) {
         val result = reportedResult ?: return@LaunchedEffect
         val user = me ?: return@LaunchedEffect
         if (user.isGuest) return@LaunchedEffect
+        // Identify THIS finished game: same result + same move count.
+        val stamp = "${result.winner}-${result.reason}-${gs.history.size}"
+        if (reportedFor == stamp) return@LaunchedEffect
+        reportedFor = stamp
         runCatching {
             com.filipinodama.app.data.profile.ProfileRepository.reportAiMatch(
                 difficulty = ui.difficulty,

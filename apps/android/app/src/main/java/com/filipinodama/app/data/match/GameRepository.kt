@@ -14,6 +14,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -87,10 +88,35 @@ object GameRepository {
         _state.update { s -> if (canSelect) s.copy(selected = square).withHighlights() else s.copy(selected = null).withHighlights() }
     }
 
+    /**
+     * Run the AI's reply.
+     *
+     * CANCELLATION IS COOPERATIVE — this is the subtle part. After [delay] there
+     * is no further suspension point: [Ai.bestMove] is a pure CPU search and
+     * `MutableStateFlow.update` does not suspend. So `aiJob?.cancel()` could NOT
+     * stop this block; the search ran to completion and wrote a move computed
+     * from the OLD board into whatever state existed by then.
+     *
+     * The visible bug: resign while "AI is thinking…" on Hard, and the resigned
+     * game came back to life. resign() set result=RESIGN and status=OVER, the
+     * screen POSTed the loss, then the stale search overwrote gameState with a
+     * board whose result was null — flipping status back to PLAYING. When the
+     * game later ended for real it POSTed a SECOND record, so one game produced
+     * two rows in the AI win/loss record.
+     *
+     * Three guards, because each covers a hole the others don't:
+     *   - `ensureActive()` throws if THIS job was cancelled (the common case);
+     *   - the token check covers the race where a NEW job has already been
+     *     scheduled (newGame/rematch), so `isActive` is true for that one while
+     *     this stale job is still unwinding;
+     *   - the result re-check inside `update` refuses to resurrect a finished
+     *     game even if a future edit drops one of the guards above.
+     */
     private fun scheduleAiMove() {
         aiJob?.cancel()
         _state.update { it.copy(status = OfflineStatus.THINKING) }
-        aiJob = scope.launch {
+        lateinit var token: Job
+        token = scope.launch {
             delay(AI_THINK_MS)
             val cur = _state.value
             if (cur.gameState.result != null || cur.gameState.turn != PieceColors.BLUE) {
@@ -99,14 +125,20 @@ object GameRepository {
             }
             val mv = Ai.bestMove(cur.gameState, cur.difficulty)
             val next = Rules.applyMove(cur.gameState, mv)
-            _state.update {
-                it.copy(
+            // Re-check RIGHT BEFORE the commit: the search above can take
+            // seconds, and resign/undo/newGame/reset may have landed meanwhile.
+            ensureActive()
+            if (aiJob !== token) return@launch
+            _state.update { st ->
+                if (st.gameState.result != null) st
+                else st.copy(
                     gameState = next,
                     selected = null,
                     status = if (next.result != null) OfflineStatus.OVER else OfflineStatus.PLAYING
                 ).withHighlights()
             }
         }
+        aiJob = token
     }
 
     fun canUndo(): Boolean {
