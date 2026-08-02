@@ -307,6 +307,12 @@ real esports bracket instead of the current flat round columns.
    **No score column.** The reference shows best-of-N series scores; our slots are a
    single game (replayed only on a draw), so a score would be fabricated data. The winner
    row gets a check marker instead.
+
+   **BYE vs TBD.** A bye is a slot that RESOLVED with one competitor — the server seeds
+   those already `status:"done"` with a `winnerEntryId`. An empty side on a slot that is
+   still `pending`/`ready` is *not* a bye; it is waiting on the match that feeds it and
+   must read `TBD`. Test for the event (`done && one side null`), never for the shape
+   (`one side null`), which is true of both.
 3. **Connector lines** — each match elbows out to its parent: horizontal stub, vertical
    run to the parent's centre line, horizontal into the parent.
 4. **Sections** — `DOUBLE_ELIM` renders Upper, Lower and Grand Final as separate labeled
