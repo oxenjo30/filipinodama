@@ -42,6 +42,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.filipinodama.app.BuildConfig
 import com.filipinodama.app.data.AuthRepository
+import com.filipinodama.app.data.signOutAndResetSession
 import com.filipinodama.app.data.push.PushNotifications
 import com.filipinodama.app.data.settings.SettingsRepository
 import com.filipinodama.app.data.settings.SettingsResult
@@ -239,7 +240,7 @@ fun SettingsScreen(
                     .fillMaxWidth()
                     .clickable {
                         scope.launch {
-                            AuthRepository.logout()
+                            signOutAndResetSession()
                             onSignedOut()
                         }
                     }

@@ -40,7 +40,13 @@ object NotificationsRepository {
     val actionsTick: StateFlow<Int> = _actionsTick.asStateFlow()
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
-    private var subscribed = false
+
+    /**
+     * The socket our notif listener is attached to — identity, not a boolean.
+     * A sticky `subscribed` flag suppressed re-subscription when [SocketClient]
+     * handed back a different instance, so the realtime bell badge went dead.
+     */
+    private var wiredSocket: Socket? = null
     private var socket: Socket? = null
 
     private object EV {
@@ -55,14 +61,11 @@ object NotificationsRepository {
      * Call once the user is signed in (idempotent). Mirrors DmRepository.
      */
     fun ensureLive() {
-        if (subscribed) return
-        subscribed = true
         try {
-            val s = SocketClient.connect(ApiClient.okHttpClient) ?: run {
-                subscribed = false
-                return
-            }
+            val s = SocketClient.connect(ApiClient.okHttpClient) ?: return
+            if (wiredSocket === s) return
             socket = s
+            wiredSocket = s
             s.off(EV.notifNew)
             s.on(EV.notifNew) {
                 // Re-load the full feed (updates the bell's unreadCount) and nudge
@@ -71,7 +74,7 @@ object NotificationsRepository {
                 _actionsTick.update { it + 1 }
             }
         } catch (_: Exception) {
-            subscribed = false
+            wiredSocket = null
         }
     }
 
@@ -152,8 +155,10 @@ object NotificationsRepository {
         }
     }
 
-    /** Test/teardown hook. */
+    /** Drop wiring and the cached feed (logout / account deletion / tests). */
     fun hardReset() {
+        wiredSocket = null
+        socket = null
         _state.value = NotificationsUiState()
     }
 }

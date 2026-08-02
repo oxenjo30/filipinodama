@@ -1,6 +1,7 @@
 package com.filipinodama.app.data.profile
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -40,10 +41,38 @@ class AvatarAssetsTest {
         assertEquals(1, Regex("/assets/avatars/champion\\.png").findAll(url).count())
     }
 
+    /**
+     * SECURITY CONTRACT — do NOT "fix" this test by making resolveAvatarUrl pass
+     * absolute URLs through again.
+     *
+     * This test previously asserted `a full http URL passes straight through
+     * unmodified`. That contract was deliberately REMOVED when the host
+     * allowlist landed (AvatarAssets.ALLOWED_ASSET_HOSTS): `avatarUrl` is a
+     * server-stored, OTHER-USER-controlled field, so an unrestricted passthrough
+     * meant any player could set it to `https://attacker/x.png` and make every
+     * device that renders their profile or match card fetch that host — a
+     * tracking beacon and IP-harvesting vector aimed at anyone who views them.
+     *
+     * The test was left asserting the old behaviour and so failed on main. It is
+     * rewritten here to pin the allowlist instead, because a red test that
+     * describes a superseded security contract invites exactly the wrong fix.
+     */
     @Test
-    fun `a full http URL passes straight through unmodified`() {
-        val url = "https://cdn.example.com/u/1234.png"
-        assertEquals(url, resolveAvatarUrl(url))
+    fun `an absolute URL on an untrusted host falls back to champion, never passed through`() {
+        val hostile = "https://cdn.example.com/u/1234.png"
+        val resolved = resolveAvatarUrl(hostile)
+
+        assertNotEquals("an untrusted host must not be fetched", hostile, resolved)
+        assertTrue(resolved.endsWith("/assets/avatars/champion.png"))
+    }
+
+    @Test
+    fun `an absolute URL on a trusted OAuth provider host is preserved`() {
+        // Google/Facebook profile pictures are stored as avatarUrl on OAuth
+        // signup (server oauth.ts `avatar: info.picture`), so these MUST survive
+        // the allowlist or every OAuth user renders as the champion fallback.
+        val google = "https://lh3.googleusercontent.com/a/ACg8ocK-abc123=s96-c"
+        assertEquals(google, resolveAvatarUrl(google))
     }
 
     @Test

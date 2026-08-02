@@ -107,7 +107,7 @@ class MatchDtoSerializationTest {
         assertEquals(25, dto.redTrophyDelta)
         assertEquals(-18, dto.blueTrophyDelta)
         assertEquals(50, dto.goldReward)
-        assertEquals("red", dto.state.result?.winner)
+        assertEquals("red", dto.state?.result?.winner)
     }
 
     @Test

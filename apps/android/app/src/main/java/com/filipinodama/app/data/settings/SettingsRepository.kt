@@ -5,6 +5,7 @@ import com.filipinodama.app.data.apiErrorFrom
 import com.filipinodama.app.data.ApiClient
 import com.filipinodama.app.data.ApiEnvelope
 import com.filipinodama.app.data.AuthRepository
+import com.filipinodama.app.data.signOutAndResetSession
 import kotlinx.serialization.json.JsonElement
 
 /**
@@ -17,9 +18,9 @@ import kotlinx.serialization.json.JsonElement
  * with body `{ confirm: "DELETE" }` (users.ts `deleteAccountSchema`) — the
  * server soft-deletes (sets deletedAt) and kills every refresh session
  * server-side, so the client's job after a successful delete is simply to
- * wipe local session state (same as [AuthRepository.logout]) and navigate
- * away; there is no separate "confirm deletion" round trip beyond this one
- * call, matching SettingsPage.tsx's confirmDelete().
+ * wipe local session state (via [signOutAndResetSession]) and navigate away;
+ * there is no separate "confirm deletion" round trip beyond this one call,
+ * matching SettingsPage.tsx's confirmDelete().
  */
 object SettingsRepository {
 
@@ -28,15 +29,17 @@ object SettingsRepository {
     suspend fun exportData(): SettingsResult<JsonElement> = call { api.exportData() }
 
     /**
-     * Deletes the account. On success, wipes local session state (cookies,
-     * secure-store session flags, in-memory AuthRepository state) exactly
-     * like a normal sign-out — the server has already killed every session
-     * row, so a stale local session is the only thing left to clear.
+     * Deletes the account. On success, performs a FULL sign-out — cookies,
+     * secure-store session flags, in-memory auth state, the authenticated
+     * realtime socket, and every cached repository (DM threads, notifications,
+     * match state). The server has already killed every session row, so what
+     * remains is purely local — but leaving the socket up would keep this
+     * device driving a deleted account's realtime identity.
      */
     suspend fun deleteAccount(): SettingsResult<DeleteAccountResponse> {
         val result = call { api.deleteAccount(DeleteAccountRequest(confirm = "DELETE")) }
         if (result is SettingsResult.Success) {
-            AuthRepository.logout()
+            signOutAndResetSession()
         }
         return result
     }

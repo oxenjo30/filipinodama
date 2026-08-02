@@ -43,6 +43,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
 import com.filipinodama.app.data.AuthRepository
+import com.filipinodama.app.data.signOutAndResetSession
 import com.filipinodama.app.data.engine.RankTiers
 import com.filipinodama.app.data.profile.LedgerRowDto
 import com.filipinodama.app.data.profile.MatchRowDto
@@ -587,7 +588,7 @@ fun ProfileScreen(
                             .padding(top = 6.dp)
                             .clickable {
                                 scope.launch {
-                                    AuthRepository.logout()
+                                    signOutAndResetSession()
                                     onSignedOut()
                                 }
                             }
@@ -715,7 +716,7 @@ private fun ProfileSettingsTab(
                 .padding(top = 22.dp)
                 .clickable {
                     scope.launch {
-                        AuthRepository.logout()
+                        signOutAndResetSession()
                         onSignedOut()
                     }
                 }
