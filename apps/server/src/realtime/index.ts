@@ -10,6 +10,7 @@ import { registerDamathRooms } from "./damath-rooms.js";
 import { registerGuildChat } from "./guild-chat.js";
 import { registerPresence } from "./presence.js";
 import { registerRooms } from "./rooms.js";
+import { registerTournamentLive, registerTournamentMatchEndHook, handleTournamentNoShow } from "./tournament-live.js";
 import { setIO } from "./io.js";
 
 /**
@@ -134,12 +135,20 @@ export function rtJobHandlers(io: IOServer): Partial<Record<RtJobType, RtJobHand
     // acceptable: a dropped analysis simply leaves the match un-analysed, and a
     // moderator can re-queue it from the match drawer.
     "anticheat-analyse": (payload) => handleAnticheatJob(payload),
+    // Tournament ready-check deadline. At-most-once is fine here for the same
+    // reason it is for abandon-forfeit: sweepTournamentReadyChecks re-derives
+    // any dropped deadline from the DB and applies it.
+    "tournament-noshow": (payload) => handleTournamentNoShow(io, payload),
   };
 }
 
 export function registerRealtime(io: IOServer) {
   // Expose the io instance so REST handlers (e.g. guild chat POST) can broadcast.
   setIO(io);
+
+  // Tournament auto-advance: resolve a bracket slot when its match settles.
+  // Registered here (not at module load) because the hook closes over `io`.
+  registerTournamentMatchEndHook(io);
 
   // Reject unauthenticated / banned / deleted handshakes before any event
   // handler is wired.
@@ -205,6 +214,7 @@ export function registerRealtime(io: IOServer) {
     registerDamathRooms(io, socket);
     registerGuildChat(io, socket);
     registerRooms(io, socket);
+    registerTournamentLive(io, socket);
 
     // matchmaking cleans its queue on disconnect; presence.ts owns the
     // online/offline transition on disconnect; live matches keep their in-memory

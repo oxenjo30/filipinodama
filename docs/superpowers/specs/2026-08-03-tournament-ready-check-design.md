@@ -37,7 +37,7 @@ The existing admin Report control stays, unchanged, as the manual override.
 | --- | --- |
 | One player readies, the other never shows | **Ready deadline → auto-forfeit.** The first Ready arms a per-tournament countdown; when it expires the absent player forfeits and the waiting player advances. |
 | A tournament match ends in a draw | **Auto-replay.** The draw settles normally, the slot returns to `ready`, both players ready up again. |
-| Stakes on a tournament match | **Reuse `PRIVATE` mode.** No ranked trophies; the winner banks the normal 25 gold on top of any prize. No schema migration, and tournament games inherit anti-cheat analysis. |
+| Stakes on a tournament match | **No ladder impact; normal per-win gold.** No schema migration, and tournament games inherit anti-cheat analysis. **Implementation note:** `Tournament.matchMode` (`MatchMode`, default `CASUAL`, admin-settable `CASUAL`/`RANKED`) already exists from the original tournaments migration and is read by nothing today — it was reserved for exactly this. Auto-start uses it. `CASUAL` delivers the chosen stakes exactly (no trophies, 25 gold/win, anti-cheat covered by `settleMatch`'s `RANKED\|CASUAL\|PRIVATE` filter); an admin who selects `RANKED` opts that Cup into trophy movement knowingly. |
 
 ---
 
@@ -169,13 +169,13 @@ Then, in one transaction:
 **Auto-start ordering (race-safe).** `matchId` is a FK, so the row must exist before it
 can be claimed. Therefore:
 
-1. `prisma.match.create({ mode: "PRIVATE", redId, blueId, settings: DEFAULT_SETTINGS, moves: [] })`
+1. `prisma.match.create({ mode: tournament.matchMode, redId, blueId, settings: DEFAULT_SETTINGS, moves: [] })`
 2. `prisma.tournamentMatch.updateMany({ where: { id: tmId, matchId: null }, data: { matchId } })`
 3. If `count === 0` we lost the race — **delete the Match row we just created** and return.
    The winner's match is the real one. Match rows are cheap and this race requires two
    simultaneous second-readies on the same slot.
 4. `cancelJob("tournament-noshow", tmId)` and clear `readyDeadlineAt`.
-5. `createLiveMatch(matchId, redUserId, blueUserId, "PRIVATE", settings)` — **awaited**,
+5. `createLiveMatch(matchId, redUserId, blueUserId, tournament.matchMode, settings)` — **awaited**,
    for the same reason `rooms.ts:609` awaits it: not awaiting races the first
    `match:move` ahead of the Redis write and yields `no-such-match`.
 6. Join both players' sockets to the match room via their `presence:<userId>` rooms, then
@@ -285,6 +285,57 @@ check.
 - **`TournamentsRepository`** gains the socket listeners; on `tournament:start` it calls
   the same `MatchRepository` entry path `RoomRepository` uses for `EV.roomStart`, and
   `AppNavHost` navigates to `AppDestinations.onlineMatch("PRIVATE")`.
+
+### Bracket rendering redesign (web + Android)
+
+Owner request 2026-08-03, with a Liquipedia-style reference: the bracket should read like a
+real esports bracket instead of the current flat round columns.
+
+**Required elements**
+
+1. **Named round headers** — a labeled bar above each column, not a bare "Round 3".
+   Derived from bracket + position, never hardcoded per tournament:
+   - Single-elim / winners: last round `Final`, last−1 `Semifinals`, last−2 `Quarterfinals`,
+     earlier `Round N`. In `DOUBLE_ELIM` these are prefixed `Upper Bracket …` (and
+     `UB Quarterfinals` where the short form reads better).
+   - Losers: `Lower Bracket Round 1`, `… Quarterfinal`, `… Semifinal`, `Lower Bracket Final`
+     by distance from the end of the L structure.
+   - Grand final: `Grand Final`, and `Grand Final (reset)` for round 202.
+2. **Two-row match cards** — one row per competitor: avatar, username, and a right-hand
+   result marker. The winner's row is emphasized (brighter text, subtle win tint); the
+   loser's row is dimmed. `TBD` for an unfilled feeder side, `BYE` for a bye.
+   **No score column.** The reference shows best-of-N series scores; our slots are a
+   single game (replayed only on a draw), so a score would be fabricated data. The winner
+   row gets a check marker instead.
+3. **Connector lines** — each match elbows out to its parent: horizontal stub, vertical
+   run to the parent's centre line, horizontal into the parent.
+4. **Sections** — `DOUBLE_ELIM` renders Upper, Lower and Grand Final as separate labeled
+   bands (as the reference does), reusing the same column renderer.
+5. **Your own slot is highlighted** — a gold ring on the match card the signed-in player
+   is in, tying the bracket to the "Your Match" card above it.
+
+**Layout algorithm** (shared by both clients, so they agree visually)
+
+Positions are computed, not left to CSS flow, because the losers bracket's round sizes do
+not simply halve:
+
+```
+y(round 1, i)  = i * (CARD_H + GAP)
+y(round r, i)  = midpoint of the y-centres of the matches in round r-1 that feed it, where
+                 feeders are determined by the count ratio:
+                   prevCount == 2 * thisCount  ->  feeders are 2i and 2i+1   (elimination halving)
+                   prevCount == thisCount      ->  feeder is i               (L-bracket drop/consolidation)
+```
+
+That rule covers every structure `losersBracketStructure` can produce (counts either halve
+or stay equal between adjacent rounds) as well as every winners bracket, so one function
+serves all three sections.
+
+- **Web:** absolutely-positioned cards inside a relatively-positioned section, with the
+  connectors drawn as an SVG polyline layer underneath. Each section scrolls horizontally
+  on narrow viewports; the page body never scrolls sideways.
+- **Android:** the same computed positions in a horizontally scrollable Compose layout,
+  connectors drawn with `Canvas`. Card sizing follows the existing screen's spacing tokens.
 
 ### Admin (`apps/admin`)
 

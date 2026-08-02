@@ -467,9 +467,14 @@ export function swissPairNextRound(
 // `bracket` column ("W"/"L"/"GF") is redundant with this but is stored
 // anyway for cheap querying/grouping (admin + web bracket views group by it
 // directly instead of re-deriving from the round number).
-export const L_ROUND_OFFSET = 100;
-export const GF_ROUND = 201;
-export const GF_RESET_ROUND = 202;
+//
+// The three constants are DEFINED in @dama/shared (packages/shared/src/bracket.ts)
+// because the clients need them to label rounds, and re-exported here so every
+// existing importer of this module is unchanged. One definition, no drift: a
+// second copy could disagree with the clients' idea of which rounds are losers
+// rounds without failing a single test on this side.
+export { L_ROUND_OFFSET, GF_ROUND, GF_RESET_ROUND } from "@dama/shared";
+import { L_ROUND_OFFSET, GF_ROUND, GF_RESET_ROUND } from "@dama/shared";
 
 /**
  * The losers-bracket ROUND SIZES (match counts) for a winners-bracket of size

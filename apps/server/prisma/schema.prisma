@@ -782,6 +782,12 @@ model Tournament {
   minTrophies     Int              @default(0)    // trophy gate to join (0 = open to all)
   matchMode       MatchMode        @default(CASUAL) // the MatchMode tournament games run as (see below)
 
+  /// READY CHECK (V1.5): seconds a player has to press Ready once their OPPONENT
+  /// has readied, before losing the slot by no-show forfeit. Armed per slot by
+  /// the FIRST Ready — see TournamentMatch.readyDeadlineAt. Editable while DRAFT
+  /// like every other tournament setting.
+  readyWindowSec  Int              @default(600)
+
   // SWISS ONLY: the configured number of Swiss rounds. Admin-settable at
   // create (optional); if left null, Start computes+persists
   // defaultSwissRounds(n) = ceil(log2(n)) the first time the tournament
@@ -866,21 +872,40 @@ model TournamentMatch {
   blueEntryId  String?
   blueEntry    TournamentEntry? @relation("tmBlue", fields: [blueEntryId], references: [id], onDelete: SetNull)
 
-  // The real Match this slot was played as, if any. V1: players play through the
-  // EXISTING normal match flow (unrelated to the bracket) and the admin reports the
-  // result via /report — matchId is set by the admin's report call as an optional
-  // reference/audit link, NOT created by a lazy "Play your match" socket handoff
-  // (that mechanism is deferred to V1.5 — see "Deferred to V1.5: lazy match
-  // creation + live handoff" below). null for byes or if the admin didn't link one.
+  // The real Match this slot is/was played as, if any. As of V1.5 the SERVER
+  // creates it: when both competitors have pressed Ready, the ready-check
+  // auto-starts the match and CLAIMS it here via a conditional update
+  // (`where: { id, matchId: null }`) — that claim is the race guard that makes
+  // exactly one live match per slot (realtime/tournament-live.ts). An admin
+  // reporting a result manually may still pass a matchId as a reference link.
+  // null for byes, for a slot nobody has readied yet, or after a DRAW resets the
+  // slot for a replay (the drawn Match row stays in history; this must be
+  // cleared because the column is @unique and a replay needs a fresh match).
   matchId      String?    @unique
   match        Match?     @relation(fields: [matchId], references: [id], onDelete: SetNull)
 
-  winnerEntryId String?   // set when the slot resolves (from admin report/bye)
+  /// READY CHECK (V1.5). Set when that side's player presses Ready. When BOTH
+  /// are non-null the server auto-starts the match. Cleared together with
+  /// matchId when a draw resets the slot for a replay. There is deliberately no
+  /// "un-ready": disarming the deadline would let a player stall the bracket
+  /// forever, and leaving it armed with nobody ready has no fair resolution.
+  redReadyAt      DateTime?
+  blueReadyAt     DateTime?
+
+  /// Armed by the FIRST Ready on this slot (now + Tournament.readyWindowSec) and
+  /// cleared only when the match actually starts (or a draw resets the slot). At
+  /// expiry the side that DID ready wins by no-show forfeit — fired promptly by
+  /// the `tournament-noshow` job and, because that queue is at-most-once,
+  /// guaranteed by sweepTournamentReadyChecks. Indexed for that sweep's scan.
+  readyDeadlineAt DateTime?
+
+  winnerEntryId String?   // set when the slot resolves (from admin report/bye/auto-advance)
   status        String     @default("pending") // "pending" | "ready" | "done"
   resolvedAt    DateTime?
 
   @@unique([tournamentId, round, slot])
   @@index([tournamentId, round])
+  @@index([readyDeadlineAt])
 }
 
 // ─────────────── Live ops: Scheduled Events ───────────────

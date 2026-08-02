@@ -50,6 +50,7 @@ import { registerRealtime, rtJobHandlers } from "./realtime/index.js";
 import { makeRedisClient } from "./realtime/store.js";
 import { startJobPoller } from "./realtime/jobs.js";
 import { sweepAbandonedMatches } from "./realtime/match.js";
+import { sweepTournamentReadyChecks } from "./realtime/tournament-live.js";
 import { runDueCampaigns } from "./modules/campaign-scheduler.js";
 import { runWarResetTick } from "./lib/guild-wars.js";
 import { startPlayVersionSync } from "./modules/play-version-sync.js";
@@ -274,6 +275,16 @@ async function main() {
   // when nothing is stranded. Every 60s is ample given the 5-min stranded window.
   setInterval(() => {
     sweepAbandonedMatches(io).catch((e) => app.log.error({ err: e }, "abandon-sweep tick failed"));
+  }, 60_000);
+
+  // Tournament ready-check sweeper — the backstop for the two automatic bracket
+  // transitions that can be lost: a no-show deadline whose at-most-once job was
+  // dropped, and a settled match whose onMatchEnd advance never landed. Both are
+  // re-derived from the DB here, so a lost signal delays a slot by one tick
+  // instead of stranding a Cup. Same setInterval-on-boot pattern as the sweepers
+  // above; index-backed queries that normally return nothing.
+  setInterval(() => {
+    sweepTournamentReadyChecks(io).catch((e) => app.log.error({ err: e }, "tournament-ready-sweep tick failed"));
   }, 60_000);
 
   // Play version sync — keeps ANDROID_LATEST_VERSION in step with the live Play
