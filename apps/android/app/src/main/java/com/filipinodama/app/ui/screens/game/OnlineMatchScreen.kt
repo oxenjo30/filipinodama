@@ -98,6 +98,10 @@ fun OnlineMatchScreen(
     val authState by AuthRepository.state.collectAsState()
     val me = authState.user
     var showResignConfirm by remember { mutableStateOf(false) }
+    // (messageId, quotedText) of a long-pressed opponent chat message awaiting a
+    // report, or null. Plain remember: the dialog is trivially re-openable, and
+    // a Pair would need a custom Saver.
+    var reportMessage by remember { mutableStateOf<Pair<String, String>?>(null) }
     var showLeaveConfirm by remember { mutableStateOf(false) }
     var chatOpen by remember { mutableStateOf(false) }
     var lastSeenChatCount by remember { mutableStateOf(0) }
@@ -402,10 +406,13 @@ fun OnlineMatchScreen(
                 if (chatOpen) {
                     MatchChat(
                         messages = ui.chat.map { m ->
-                            MatchChatUiMsg(id = m.id, mine = m.mine, emote = m.emote, body = m.body)
+                            MatchChatUiMsg(id = m.id, mine = m.mine, emote = m.emote, body = m.body, serverId = m.serverId)
                         },
                         onSend = { emote, body ->
                             if (emote != null) MatchRepository.sendEmote(emote) else if (body != null) MatchRepository.sendChat(body)
+                        },
+                        onReportMessage = { messageId, quoted ->
+                            reportMessage = messageId to quoted
                         },
                         modifier = Modifier.padding(top = 10.dp)
                     )
@@ -441,6 +448,24 @@ fun OnlineMatchScreen(
                 onExit()
             }
         )
+    }
+
+    // Reporting ONE chat message (long-press an opponent's bubble). The server
+    // snapshots the excerpt from its OWN record of what it broadcast — the
+    // accuser never supplies the evidence — so a moderator sees verified text.
+    reportMessage?.let { (messageId, quoted) ->
+        val accused = ui.opponent
+        if (accused == null) {
+            reportMessage = null
+        } else {
+            ReportPlayerDialog(
+                accusedId = accused.id,
+                context = "match",
+                messageId = messageId,
+                quotedText = quoted,
+                onClose = { reportMessage = null }
+            )
+        }
     }
 }
 
@@ -832,6 +857,7 @@ private fun MatchEndCard(
             )
         }
     }
+
 }
 
 private enum class EndButtonStyle { GOLD, PURPLE, DARK, RED }

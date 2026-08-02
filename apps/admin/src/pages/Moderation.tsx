@@ -6,11 +6,25 @@ import { Pagination, usePagination } from "../components/Pagination";
 type PersonRef = { id: string | null; username: string; tag: string; avatarUrl: string | null };
 type ProfileSnapshot = { displayName: string; username: string; tag: string; avatarUrl: string | null; bio: string | null };
 
+/** Human label per report context, shown in the report header. */
+const CONTEXT_LABEL: Record<string, string> = {
+  dm: "DM",
+  profile: "profile",
+  guild: "guild chat",
+  match: "match chat",
+  room: "private room chat",
+};
+
 type Report = {
   id: string;
   reason: string;
   note: string | null;
-  context: "dm" | "profile";
+  // "guild" was MISSING here (and in the rendering below): a guild report was
+  // labelled "profile" and its captured excerpt never displayed, so a moderator
+  // saw an accusation with no evidence and no way to act on it.
+  // "match"/"room" are the ephemeral socket surfaces, whose excerpt the server
+  // snapshots from its own broadcast record (realtime/chat-log.ts).
+  context: "dm" | "profile" | "guild" | "match" | "room";
   channelId: string | null;
   messageId: string | null;
   excerpt: string | null;
@@ -177,10 +191,13 @@ function ReportCard({ r, onDone }: { r: Report; onDone: () => void }) {
             <span className="dim" style={{ fontSize: 11, fontWeight: 600 }}>{timeAgo(r.createdAt)}</span>
           </div>
           <div style={{ fontWeight: 700, marginTop: 10, fontSize: 13, color: "var(--ink-3)" }}>
-            <span className="dim" style={{ fontWeight: 500 }}>Reported:</span> <span style={{ color: "var(--ink-2)" }}>{accusedLabel}</span> <span className="dim" style={{ fontWeight: 500 }}>· by {reporterLabel} · in {r.context === "dm" ? "DM" : "profile"}</span>
+            <span className="dim" style={{ fontWeight: 500 }}>Reported:</span> <span style={{ color: "var(--ink-2)" }}>{accusedLabel}</span> <span className="dim" style={{ fontWeight: 500 }}>· by {reporterLabel} · in {CONTEXT_LABEL[r.context] ?? r.context}</span>
           </div>
 
-          {r.context === "dm" && r.excerpt && (
+          {/* Render the flagged text for ANY context that captured one — was
+              gated to "dm", which silently hid the evidence on every guild
+              report and would have hidden match/room reports too. */}
+          {r.excerpt && (
             <div className="quote-flagged">“{r.excerpt}”</div>
           )}
 

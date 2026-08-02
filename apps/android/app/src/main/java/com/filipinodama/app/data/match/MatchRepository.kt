@@ -536,13 +536,14 @@ fun applyMatchChat(current: MatchUiState, p: MatchChatDto): MatchUiState {
 
     val pendingIdx = p.nonce?.let { n -> current.chat.indexOfFirst { it.nonce == n && it.pending } } ?: -1
     val msg = ChatMsg(
-        id = "${p.at}-${p.from}-${current.chat.size}",
+        id = p.id ?: "${p.at}-${p.from}-${current.chat.size}",
         mine = current.myColor != null && p.color == current.myColor,
         color = p.color,
         body = p.body,
         emote = p.emote,
         at = p.at,
         nonce = p.nonce,
+        serverId = p.id,
         pending = false,
     )
     if (pendingIdx < 0) return current.copy(chat = current.chat + msg)
@@ -631,6 +632,14 @@ data class ChatMsg(
      * for anything that arrived unprompted (i.e. the opponent's messages).
      */
     val nonce: String? = null,
+    /**
+     * The server's id for this message, when it has one — what a REPORT cites.
+     * Distinct from [id], which is only a stable LazyColumn key (and is the
+     * nonce while a message is still in flight). Null for emotes and for a
+     * message still in flight, so the report affordance stays hidden until the
+     * server has actually recorded something to cite.
+     */
+    val serverId: String? = null,
     /**
      * True while our own message is still in flight.
      *

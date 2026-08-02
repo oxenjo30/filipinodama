@@ -5,6 +5,7 @@ import { prisma } from "../db/client.js";
 import { isMuted } from "../lib/mute.js";
 import { createLiveMatch, onMatchEnd, addSpectatorSocket, removeSpectatorSocket, spectatorCount } from "./match.js";
 import { allow } from "./rate-limit.js";
+import { recordChatMessage } from "./chat-log.js";
 import {
   redis,
   RT_TTL,
@@ -650,11 +651,30 @@ export function registerRooms(io: IOServer, socket: Socket) {
     // already rendered optimistically, rather than waiting a full round trip to
     // see its own text. Opaque to us.
     const nonce = typeof payload?.nonce === "string" ? payload.nonce.slice(0, 64) : null;
+    // Record it so an individual message can be reported with a server-verified
+    // excerpt (see chat-log.ts). Participants are captured NOW — the room is
+    // ephemeral and may be gone by the time anyone reports, but we still need to
+    // know who was entitled to see this.
+    const at = Date.now();
+    const participants = [
+      room.host.userId,
+      ...(room.guest ? [room.guest.userId] : []),
+      ...Object.keys(room.spectators),
+    ];
+    const id = await recordChatMessage({
+      scope: "room",
+      scopeId: code!,
+      from: userId,
+      body,
+      at,
+      participants,
+    });
     const from = memberIn(room, userId);
     io.to(ROOM_PREFIX(code!)).emit("room:chat", {
+      id,
       from: from ? publicMember(from) : { userId, name: "Player", avatarUrl: null, tag: "" },
       body,
-      at: Date.now(),
+      at,
       nonce,
     });
   });

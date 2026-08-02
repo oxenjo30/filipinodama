@@ -5,14 +5,16 @@ import { prisma } from "../db/client.js";
 import { ok, err } from "../lib/errors.js";
 import { requireAuth } from "../auth/guards.js";
 import { dmRefId } from "./chat-service.js";
+import { getChatMessage } from "../realtime/chat-log.js";
 
 const bodySchema = z.object({
   accusedId: z.string().min(1),
   reason: z.enum(["HARASSMENT", "HATE_SPEECH", "CHEATING", "INAPPROPRIATE", "SPAM", "OTHER"]),
   note: z.string().trim().max(500).optional(),
-  context: z.enum(["dm", "profile", "guild"]),
+  // "match" and "room" are the two EPHEMERAL surfaces — see the branch below.
+  context: z.enum(["dm", "profile", "guild", "match", "room"]),
   messageId: z.string().optional(),
-}).refine((b) => (b.context !== "dm" && b.context !== "guild") || !!b.messageId, { message: "messageId required for a DM/guild report", path: ["messageId"] })
+}).refine((b) => b.context === "profile" || !!b.messageId, { message: "messageId required for a message report", path: ["messageId"] })
   .refine((b) => b.context !== "profile" || (b.note && b.note.length > 0), { message: "note required for a profile report", path: ["note"] });
 
 const RATE = 5;
@@ -46,6 +48,28 @@ export async function reportRoutes(app: FastifyInstance) {
       const membership = await prisma.guildMember.findFirst({ where: { guildId: msg.channel.refId ?? "", userId: reporterId }, select: { userId: true } });
       if (!membership) throw err.forbidden("NOT_GUILD_MEMBER", "You must be in this guild to report a message here");
       excerpt = msg.body; channelId = msg.channelId;
+    } else if (b.context === "match" || b.context === "room") {
+      // In-match and private-room chat are EPHEMERAL — relayed, never persisted,
+      // so there is no Message row to read. The excerpt therefore comes from the
+      // server's own short-lived record of what it actually broadcast
+      // (realtime/chat-log.ts), NOT from the reporter: otherwise the "evidence"
+      // would be a string the accuser typed, and anyone could fabricate a quote
+      // to get someone banned.
+      const rec = await getChatMessage(b.messageId!);
+      if (!rec) {
+        throw err.badRequest(
+          "MESSAGE_EXPIRED",
+          "That message is too old to report. Match and room chat can be reported for 48 hours.",
+        );
+      }
+      if (rec.scope !== b.context) throw err.badRequest("WRONG_CONTEXT", "That message isn't from this kind of chat");
+      if (rec.from !== b.accusedId)
+        throw err.badRequest("NOT_ACCUSED_MESSAGE", "You can only cite the reported player's own message");
+      // Captured at SEND time: the match may have settled and the room may be
+      // gone by now, but only someone who could SEE the message may report it.
+      if (!rec.participants.includes(reporterId))
+        throw err.forbidden("NOT_PARTICIPANT", "You can only report messages from a chat you were in");
+      excerpt = rec.body;
     } else {
       profileSnapshot = { displayName: accused.displayName, username: accused.username, tag: accused.tag, avatarUrl: accused.avatarUrl, bio: accused.bio };
     }

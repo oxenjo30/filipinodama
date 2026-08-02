@@ -104,6 +104,14 @@ data class MatchEndedDto(
 @Serializable
 data class MatchChatDto(
     val matchId: String,
+    /**
+     * Server-assigned id for this relayed message, used to REPORT it. Match chat
+     * is ephemeral (no Message row), so the server keeps a short-lived record
+     * keyed on this id and snapshots the excerpt itself at report time — the
+     * accuser never supplies the evidence. Null for emotes (a fixed set: nothing
+     * to quote) and when the record could not be written.
+     */
+    val id: String? = null,
     val from: String,
     val color: PieceColor,
     val body: String? = null,

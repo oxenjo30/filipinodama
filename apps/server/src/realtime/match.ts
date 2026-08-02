@@ -36,6 +36,7 @@ import {
   spectatorMatchesForSocket,
 } from "./store.js";
 import { scheduleJob, cancelJob } from "./jobs.js";
+import { recordChatMessage } from "./chat-log.js";
 import { queueMatchAnalysis } from "../lib/anticheat-service.js";
 
 /**
@@ -969,13 +970,29 @@ export function registerMatch(io: IOServer, socket: Socket) {
       // already rendered optimistically, instead of waiting a full round trip to
       // see its own text (and instead of double-rendering it). Opaque to us.
       const nonce = typeof payload?.nonce === "string" ? payload.nonce.slice(0, 64) : null;
+      // Record TEXT messages so an individual one can be reported with a
+      // server-verified excerpt (chat-log.ts explains why the excerpt must not
+      // come from the accuser). Emotes are a fixed set, so there is nothing to
+      // quote and nothing to fabricate. Both players can report, hence both ids.
+      const at = Date.now();
+      const id = body
+        ? await recordChatMessage({
+            scope: "match",
+            scopeId: matchId,
+            from: userId,
+            body,
+            at,
+            participants: [lm.redId, lm.blueId].filter((x): x is string => !!x),
+          })
+        : null;
       io.to(matchId).emit(EV.matchChat, {
         matchId,
+        id,
         from: userId,
         color: colorOf(lm, userId),
         body: body || null,
         emote,
-        at: Date.now(),
+        at,
         nonce,
       });
     },
