@@ -64,6 +64,11 @@ export async function adminMatchesRoutes(app: FastifyInstance) {
         redTrophyDelta: true, blueTrophyDelta: true, goldReward: true,
         startedAt: true, endedAt: true,
         red: playerSelect, blue: playerSelect,
+        // Anti-cheat verdicts, so the queue table shows real flag state rather
+        // than a placeholder. Cheap: at most two rows per match, indexed.
+        analyses: {
+          select: { id: true, userId: true, side: true, suspicion: true, engineMatchRate: true, status: true },
+        },
       },
     });
     const hasMore = rows.length > q.limit;
@@ -133,7 +138,7 @@ export async function adminMatchesRoutes(app: FastifyInstance) {
     async (req) => {
       const match = await prisma.match.findUnique({
         where: { id: req.params.id },
-        select: { id: true, startedAt: true, endedAt: true },
+        select: { id: true, startedAt: true, endedAt: true, moves: true },
       });
       if (!match) throw err.notFound("MATCH_NOT_FOUND", "Match not found");
 
@@ -142,14 +147,21 @@ export async function adminMatchesRoutes(app: FastifyInstance) {
         include: { reviewedBy: { select: { username: true, tag: true } } },
       });
 
+      // Whole-match seconds per ply. Reported as CONTEXT and never scored: both
+      // players share one clock, so it cannot be attributed to either of them.
+      // Per-move think time — the signal that would actually catch an engine
+      // user — is unrecoverable because stored moves carry no timestamps.
+      const dur = durationSec(match.startedAt, match.endedAt);
+      const plies = moveCount(match.moves);
+      const avgSecPerMove = dur !== null && plies > 0 ? dur / plies : null;
+
       return ok({
         matchId: match.id,
         analyses,
         analysed: analyses.length > 0,
         finished: match.endedAt !== null,
-        // Whole-match seconds per ply. Context the UI shows but never scores:
-        // it is shared by both players, so it is not attributable to either.
-        avgSecPerMove: null as number | null,
+        moveCount: plies,
+        avgSecPerMove,
       });
     }
   );

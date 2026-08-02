@@ -1,7 +1,7 @@
 # Anti-cheat detection — state at hand-off (2026-08-01)
 
 Branch `feat/anticheat-detection`, worktree `D:/AI Projects/fd-anticheat`.
-**NOT merged. Backend is done and verified; the admin UI is not wired yet.**
+**NOT merged. Backend AND admin UI are done and verified end to end.**
 
 ## What the admin page looked like before
 
@@ -90,16 +90,62 @@ Persistence verified against real matches: `analyseAndStore` wrote 4
 
 Server typecheck clean.
 
+## Admin UI — DONE
+
+`apps/admin/src/pages/Matches.tsx` no longer contains a single Phase-2 stub
+(`grep PHASE2_NOTE` → 0). Two tabs:
+
+- **Review queue** — cases from `GET /admin/anticheat/queue`, filterable by
+  Flagged / Confirmed / Dismissed / Clear, highest suspicion first.
+- **All matches** — the match browser, now showing each match's real engine
+  agreement, suspicion and status, with an **Analyse / Re-analyse** button that
+  queues the background job. Un-analysed matches say "not analysed" rather than
+  showing a fabricated score.
+
+The drawer renders one `AnalysisCard` per human player, because a case is about
+a PLAYER in a match, not the match — which is why the old match-wide decision
+bar was removed. Each card carries the four tiles (Engine agreement / Move time
+/ Moves / Priors), the verbatim `reasons`, and — while undecided — a mandatory
+note, an optional ban with duration, and Dismiss / Confirm.
+
+"Move time" is shown as the whole-match average and explicitly labelled context
+only, with a panel explaining that per-move think time is unrecoverable. That is
+the honest treatment of the one signal we cannot produce.
+
+### Verified in the browser (headless Chrome over CDP, isolated profile)
+Signed in as a MODERATOR, the page renders "MATCHES & ANTI-CHEAT" with the queue
+tabs and a real row: `testplayer1 #5410 · played blue · PRIVATE · 0% of 1 free`
+under **Confirmed**, 1 case.
+
+### Verified through the API
+- `POST /admin/matches/:id/analysis` → `{queued:true}`; the job poller then wrote
+  both rows (red 50% over 2 decisions, blue 0% over 1), and `GET` returned them
+  with `avgSecPerMove` computed.
+- Guards: ban-while-dismissing → 400; empty note → 400; re-reviewing a decided
+  case → 409.
+- `POST /admin/anticheat/:id/review` with `CONFIRMED` + 168h → user banned until
+  2026-08-09, verdict + note stored, `reviewedAt` stamped, and an audit row
+  written (`anticheat.confirmed / matchAnalysis`).
+- Re-queuing after a verdict refreshed the measurements (decisionCount 24 → 1)
+  but **kept `CONFIRMED` and the review note** — measurements update, verdicts
+  do not.
+- The `(matchId, userId)` unique constraint rejected a duplicate insert.
+
+Admin app typecheck and production build both clean.
+
+## Local dev gotcha found while verifying
+
+The admin console runs on `:5174`, but `CORS_ORIGIN` in `apps/server/.env`
+defaults to `http://localhost:5173` only. Every mutating admin request is then
+rejected with `CSRF_ORIGIN: Cross-site request blocked` — the origin guard
+working correctly, but it makes the console unusable locally. Set
+`CORS_ORIGIN=http://localhost:5173,http://localhost:5174` (done on this machine;
+`.env` is gitignored, so it is not in the commit). The server reads env at
+startup, so it needs a full restart, not a tsx-watch reload.
+
 ## NOT done
 
-1. **The admin UI is untouched.** `Matches.tsx` still shows "—" tiles and the
-   Phase-2 banner. It needs: the four tiles fed from `GET .../analysis`
-   (Avg accuracy = `engineMatchRate`, Moves = `moveCount`, Priors = the priors
-   endpoint), a real flag banner, an "Analyse this match" button hitting the
-   POST, and confirm/dismiss controls calling the review endpoint. **Until this
-   lands the feature is invisible to a moderator** — the backend works but
-   nothing surfaces it.
-2. **Nothing queues analysis automatically.** Matches are only analysed when a
+1. **Nothing queues analysis automatically.** Matches are only analysed when a
    moderator asks. Enqueue on match settle (`realtime/match.ts`) to build the
    queue on its own.
 3. **"Move time" cannot be filled honestly.** Stored moves are
@@ -113,6 +159,8 @@ Server typecheck clean.
    letting this drive any automatic action.
 5. No unit tests for `analyseMatch` yet — it is pure and DB-free specifically so
    it can have them.
+6. The queue has no pagination control yet (the endpoint supports a cursor).
+7. Nothing surfaces a per-PLAYER case history; `priors` gives counts only.
 
 ## Local environment
 
