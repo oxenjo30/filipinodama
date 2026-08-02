@@ -4,6 +4,8 @@ import android.content.Context
 import com.filipinodama.app.BuildConfig
 import kotlinx.serialization.json.Json
 import okhttp3.MediaType.Companion.toMediaType
+import com.filipinodama.app.data.system.NetworkLiveness
+import okhttp3.Interceptor
 import okhttp3.OkHttpClient
 import okhttp3.logging.HttpLoggingInterceptor
 import retrofit2.Retrofit
@@ -77,9 +79,24 @@ object ApiClient {
                 }
             }
 
+            // Proof of life for the "You're offline — reconnecting…" banner. A
+            // response that actually came back over the NETWORK proves we reached
+            // our own https origin — stronger and far more timely evidence than
+            // Android's NET_CAPABILITY_VALIDATED probe, which lags a real
+            // reconnect by seconds and left the banner up long after play had
+            // resumed. See data/system/NetworkLiveness.kt.
+            //
+            // Registered as a NETWORK interceptor (not application) so it only
+            // fires on real round trips, never a cache hit. Any status counts: a
+            // 4xx/5xx still means the server answered us.
+            val livenessInterceptor = Interceptor { chain ->
+                chain.proceed(chain.request()).also { NetworkLiveness.reachedServer() }
+            }
+
             val okHttpClient = OkHttpClient.Builder()
                 .cookieJar(cookieJar)
                 .authenticator(RefreshAuthenticator(BuildConfig.BASE_URL, cookieJar))
+                .addNetworkInterceptor(livenessInterceptor)
                 .addInterceptor(loggingInterceptor)
                 .connectTimeout(TIMEOUT_SECONDS, TimeUnit.SECONDS)
                 .readTimeout(TIMEOUT_SECONDS, TimeUnit.SECONDS)

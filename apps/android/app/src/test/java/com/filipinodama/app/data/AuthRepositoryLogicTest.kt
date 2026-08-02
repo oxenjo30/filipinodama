@@ -111,10 +111,17 @@ class AuthRepositoryLogicTest {
     }
 
     @Test
-    fun `throwableToAuthFailure falls back to a generic message for non-API exceptions`() {
+    fun `throwableToAuthFailure gives a network-specific message for a transport failure`() {
+        // Was asserting the older generic "Something went wrong. Please try
+        // again." copy, which AuthRepository deliberately replaced: a DNS/socket
+        // failure is actionable ("check your connection") in a way a generic
+        // apology is not. The test simply wasn't updated, so it failed on main.
         val failure = throwableToAuthFailure(java.io.IOException("Unable to resolve host"))
 
-        assertEquals("Something went wrong. Please try again.", failure.message)
+        assertEquals(
+            "Couldn't reach the server. Check your connection and try again.",
+            failure.message
+        )
     }
 
     private fun sampleUser() = AuthUser(

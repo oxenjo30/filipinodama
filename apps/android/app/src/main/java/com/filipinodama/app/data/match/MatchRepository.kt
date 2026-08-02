@@ -41,7 +41,13 @@ object MatchRepository {
     private val _state = MutableStateFlow(MatchUiState())
     val state: StateFlow<MatchUiState> = _state.asStateFlow()
 
-    private var wired = false
+    /**
+     * The socket instance our listeners are currently attached to — NOT a
+     * boolean. A plain `wired` flag was a defect: [SocketClient] could hand back
+     * a different Socket, and the flag then suppressed wiring on it, leaving the
+     * new instance with no listeners for the rest of the process.
+     */
+    private var wiredSocket: Socket? = null
     private var socket: Socket? = null
 
     /** Injectable delay hook so tests can run the mmFound -> resync timer
@@ -82,10 +88,28 @@ object MatchRepository {
         return s
     }
 
-    /** Attach every event listener exactly once per socket instance. */
+    /**
+     * Attach every event listener exactly once PER SOCKET INSTANCE.
+     *
+     * Keyed on identity, not a boolean: if [SocketClient] ever hands back a new
+     * Socket (only after an explicit disconnect, but be defensive), we must
+     * re-attach rather than assume the old wiring carried over.
+     *
+     * The per-event [Socket.off] calls make re-wiring idempotent. They name
+     * their event deliberately — the socket is SHARED with rooms, DM, presence,
+     * notifications and guild chat, so a bare `s.off()` here would silently
+     * deafen all of them.
+     */
     private fun wire(s: Socket) {
-        if (wired) return
-        wired = true
+        if (wiredSocket === s) return
+        wiredSocket = s
+
+        listOf(
+            EV.mmSearching, EV.mmFound, EV.mmCancelled, EV.matchState,
+            EV.matchMoved, EV.matchIllegal, EV.matchEnded, EV.matchChat,
+            EV.spectateCount, EV.matchRematchOffer, EV.matchRematchReady,
+            EV.matchRematchDecline
+        ).forEach { s.off(it) }
 
         s.on(EV.mmSearching) {
             _state.update { it.copy(status = MatchStatus.SEARCHING, error = null) }
@@ -122,21 +146,7 @@ object MatchRepository {
 
         s.on(EV.matchState) { args ->
             val payload = decode<MatchStateDto>(args) ?: return@on
-            _state.update { st ->
-                val myColor = payload.yourColor ?: st.myColor
-                st.copy(
-                    status = MatchStatus.PLAYING,
-                    matchId = payload.matchId,
-                    gameState = payload.state,
-                    myColor = myColor,
-                    selected = null,
-                    // A full resync is authoritative — discard any in-flight
-                    // optimistic move so a reconnect can't strand the pending flag.
-                    pendingBaseState = null,
-                    pendingMove = false,
-                    connectionLost = false
-                ).withHighlights()
-            }
+            _state.update { st -> applyMatchState(st, payload) }
         }
 
         s.on(Socket.EVENT_DISCONNECT) {
@@ -156,18 +166,7 @@ object MatchRepository {
 
         s.on(EV.matchMoved) { args ->
             val payload = decode<MatchMovedDto>(args) ?: return@on
-            // Authoritative state from the server ALWAYS wins — this reconciles
-            // our optimistic apply (they'll be identical for our own move; for
-            // the opponent's move this is the only update). Clear the pending
-            // markers: the move (ours or theirs) is now confirmed.
-            _state.update { st ->
-                st.copy(
-                    gameState = payload.state,
-                    selected = null,
-                    pendingBaseState = null,
-                    pendingMove = false
-                ).withHighlights()
-            }
+            _state.update { st -> applyMatchMoved(st, payload) }
         }
 
         s.on(EV.matchIllegal) { args ->
@@ -209,23 +208,7 @@ object MatchRepository {
 
         s.on(EV.matchEnded) { args ->
             val payload = decode<MatchEndedDto>(args) ?: return@on
-            _state.update {
-                it.copy(
-                    status = MatchStatus.ENDED,
-                    gameState = payload.state,
-                    end = MatchEndInfo(
-                        result = payload.result,
-                        winnerId = payload.winnerId,
-                        redTrophyDelta = payload.redTrophyDelta,
-                        blueTrophyDelta = payload.blueTrophyDelta,
-                        goldReward = payload.goldReward,
-                        interrupted = false
-                    ),
-                    selected = null,
-                    moveTargets = emptyList(),
-                    captureTargets = emptyList()
-                )
-            }
+            _state.update { st -> applyMatchEnded(st, payload) }
         }
 
         s.on(EV.matchChat) { args ->
@@ -453,9 +436,14 @@ object MatchRepository {
         _state.update { it.copy(offeredByMe = false, offeredByOpponent = false) }
     }
 
-    /** Test/teardown hook: drop all wiring and reset in-memory state. */
+    /**
+     * Drop all wiring and reset in-memory state. Called on LOGOUT / account
+     * deletion (via [com.filipinodama.app.data.resetSessionState]) as well as
+     * from tests — without it, the next user on a shared device inherits the
+     * previous user's cached match state and socket wiring.
+     */
     fun hardReset() {
-        wired = false
+        wiredSocket = null
         socket = null
         _state.value = MatchUiState()
     }
@@ -477,6 +465,81 @@ object MatchRepository {
             null
         }
     }
+}
+
+// ---------------------------------------------------------------------------
+// Inbound-event reducers — pure (MatchUiState, payload) -> MatchUiState.
+//
+// Extracted to file scope, exactly like RoomRepository's applyRoomStatePayload,
+// so the cross-match guards below are unit-testable without standing up a real
+// Socket.IO connection. The socket handlers are thin wrappers over these.
+//
+// THE CROSS-MATCH GUARD, stated once for all three:
+//   Leaving a match SCREEN does not leave the server-side match ROOM — the
+//   server's spectate:leave deliberately refuses to evict a real player, and
+//   the client never emits an explicit leave. Because the socket is a
+//   process-wide singleton, a previous match's broadcasts keep arriving. Any
+//   handler that mutates the board must therefore verify the payload is for
+//   the match we are actually in.
+//
+//   The `current.matchId != null` prefix is what keeps matchState usable as the
+//   match-ENTRY path: when we hold no match yet, any payload is accepted.
+// ---------------------------------------------------------------------------
+
+/** EV.matchState — authoritative full resync (also the match-entry path). */
+fun applyMatchState(current: MatchUiState, p: MatchStateDto): MatchUiState {
+    if (current.matchId != null && p.matchId != current.matchId) return current
+    return current.copy(
+        status = MatchStatus.PLAYING,
+        matchId = p.matchId,
+        gameState = p.state,
+        myColor = p.yourColor ?: current.myColor,
+        selected = null,
+        // A full resync is authoritative — discard any in-flight optimistic move
+        // so a reconnect can't strand the pending flag.
+        pendingBaseState = null,
+        pendingMove = false,
+        connectionLost = false
+    ).withHighlights()
+}
+
+/**
+ * EV.matchMoved — the server's authoritative echo. Reconciles our optimistic
+ * apply (identical for our own move; the only update for the opponent's) and
+ * clears the pending markers now the move is confirmed.
+ */
+fun applyMatchMoved(current: MatchUiState, p: MatchMovedDto): MatchUiState {
+    if (current.matchId != null && p.matchId != current.matchId) return current
+    return current.copy(
+        gameState = p.state,
+        selected = null,
+        pendingBaseState = null,
+        pendingMove = false
+    ).withHighlights()
+}
+
+/**
+ * EV.matchEnded — final result. Tolerates a null `state`: the server's
+ * stranded-match sweeper emits one when the Redis state is already gone, and
+ * blanking the board there would leave the result card with nothing behind it.
+ */
+fun applyMatchEnded(current: MatchUiState, p: MatchEndedDto): MatchUiState {
+    if (current.matchId != null && p.matchId != current.matchId) return current
+    return current.copy(
+        status = MatchStatus.ENDED,
+        gameState = p.state ?: current.gameState,
+        end = MatchEndInfo(
+            result = p.result,
+            winnerId = p.winnerId,
+            redTrophyDelta = p.redTrophyDelta,
+            blueTrophyDelta = p.blueTrophyDelta,
+            goldReward = p.goldReward,
+            interrupted = false
+        ),
+        selected = null,
+        moveTargets = emptyList(),
+        captureTargets = emptyList()
+    )
 }
 
 enum class MatchStatus { IDLE, SEARCHING, FOUND, PLAYING, ENDED }
