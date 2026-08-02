@@ -1,7 +1,21 @@
 # Anti-cheat detection — state at hand-off (2026-08-01)
 
 Branch `feat/anticheat-detection`, worktree `D:/AI Projects/fd-anticheat`.
-**NOT merged. Backend AND admin UI are done and verified end to end.**
+**Merged to main. Detection, admin console and auto-enqueue are done and
+verified end to end.**
+
+## Deploying
+
+No manual migration step. `railway.server.json`'s `deploy.preDeployCommand`
+already runs `prisma migrate deploy` (and `prisma db seed`) before the new
+container starts, so `20260801120000_anticheat_match_analysis` applies itself on
+the next deploy. If the migration fails, the pre-deploy fails and the previous
+version keeps serving — the safe direction.
+
+(An earlier draft of this doc claimed the migration had to be run by hand. That
+was wrong: it was checked by grepping only the BUILD command, which runs
+`prisma generate` but not `migrate deploy`. The pre-deploy command is where
+migrations live.)
 
 ## What the admin page looked like before
 
