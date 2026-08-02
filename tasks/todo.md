@@ -90,6 +90,128 @@ Play purchase-token account binding (deferred - owner is not enabling real
 purchases yet) - `maskProfanity` in match/room socket chat - per-message
 reporting - the Android Tier-2 items.
 
+# Android socket identity & session lifecycle (Phase 1)
+
+Branch: `fix/android-socket-lifecycle` - worktree `D:/AI Projects/fd-socket-lifecycle`
+
+Closes the two CRITICAL findings and the cross-account session bleed from the
+2026-08-02 security & bug audit. Android-only; no server changes in this PR.
+
+## Root cause
+
+Process-wide singleton sockets, consumed by repositories that guarded listener
+registration with a **sticky boolean** and had no reset path.
+
+`SocketClient.connect()` returned a NEW `Socket` whenever the cached one was not
+`connected()` - but socket.io reconnects itself, so "not connected" means
+"mid-backoff", not "dead". The replacement was assigned to each repo's field
+while its `wired`/`subscribed`/`started` flag suppressed re-wiring, so the new
+socket carried **zero listeners** for the rest of the process.
+
+## Checklist
+
+- [x] `SocketClient.connect()` returns any existing instance; only `disconnect()`
+      replaces it. Marked `@Synchronized` (also closes the cold-start race that
+      opened two authenticated sockets per user).
+- [x] `SocketClient.disconnect()` documented as the ONE place a bare `off()` is
+      legal, with the pairing requirement stated.
+- [x] Identity-keyed wiring (`wiredSocket === s`) replacing the boolean latch in
+      MatchRepository, RoomRepository, DmRepository, NotificationsRepository,
+      PresenceRepository. GuildChatRepository already re-armed correctly and was
+      the pattern the rest were brought in line with.
+- [x] Every repo re-arms with a **targeted** `off(event)` - never a bare `off()`,
+      which would deafen the other five on the shared socket.
+- [x] `matchId` guards on `match:moved`, `match:ended`, `match:state`
+      (`match:chat` already had one). The `current.matchId != null` prefix keeps
+      `match:state` usable as the match-ENTRY path.
+- [x] Inbound-event reducers extracted to file scope (`applyMatchState`,
+      `applyMatchMoved`, `applyMatchEnded`) mirroring RoomRepository's existing
+      `applyRoomStatePayload`, so the guards are unit-testable without a socket.
+- [x] `MatchEndedDto.state` made nullable - the stranded-match sweeper emits an
+      explicit `state: null`, which a Kotlin default does NOT cover, so the whole
+      payload failed to decode and froze the board with no result card.
+- [x] `SessionReset.kt`: `signOutAndResetSession()` + `resetSessionState()`.
+      Dependency inverted (teardown wraps logout) because EconomyRepository
+      already imports AuthRepository - the reverse would close an import cycle.
+- [x] All 4 sign-out call sites switched to `signOutAndResetSession()`.
+- [x] Regression tests: 9 cross-match/null-state + 5 session teardown.
+- [x] Fixed the 2 stale tests that were red on `main` (see below).
+
+## Added after owner report: offline banner slow to clear
+
+Owner, 2026-08-02: "the 'You're offline... reconnecting' notification takes so
+long to reconnect - if the game is reconnected already it should disappear
+immediately."
+
+Confirmed, and it is the MIRROR IMAGE of the v48 fix. ConnectivityObserver
+reports online ONLY when Android sets NET_CAPABILITY_VALIDATED - correct for
+deciding we are offline (it is what catches a captive portal), but on a
+RECONNECT the OS runs that probe on its own schedule and lags the real recovery
+by seconds. The banner sat there for that whole gap while play had already
+resumed. The debounce was NOT at fault - debounceOffline emits online instantly
+and is correct. v48 fixed its direction by DELAYING the offline edge; that
+cannot help here, because this delay is in the OS's signal, not in ours.
+
+- [x] `NetworkLiveness.kt` - "we just reached our server" signal. A response
+      from our own https origin, or a Socket.IO CONNECT, is STRONGER and far
+      more timely evidence than the OS probe. A captive portal cannot forge it
+      (it cannot terminate our TLS), so the captive-portal correctness that
+      NET_CAPABILITY_VALIDATED exists to provide is preserved.
+- [x] `ApiClient` - NETWORK-level interceptor (not application-level, so cache
+      hits never count) emits proof on every completed round trip. Any status
+      counts: a 4xx/5xx still means the server answered.
+- [x] `SocketClient` - emits proof on `EVENT_CONNECT`, which socket.io re-emits
+      on every automatic reconnect - exactly the edge the banner needs.
+- [x] `Flow.withLivenessProof` - Context-free operator merging proof into the
+      connectivity stream, so the timing is unit-testable with virtual time.
+- [x] 5 tests (LivenessProofTest). Proven meaningful: ignoring the proof fails
+      exactly the two proof-dependent tests while the three guard tests - real
+      outage still surfaces, no redundant emissions, banner can return - keep
+      passing.
+
+Android suite: **321 tests, 0 failed**.
+
+NOT verified on a device: reproducing needs a real airplane-mode cycle.
+
+## The two stale tests
+
+Both were red on `main` before this branch, and the previous task's notes
+confirmed them as pre-existing. Neither was a product bug.
+
+1. `AvatarAssetsTest` asserted `a full http URL passes straight through
+   unmodified`. That contract was **deliberately removed** when the host
+   allowlist landed: `avatarUrl` is server-stored and other-user-controlled, so
+   unrestricted passthrough let any player point every viewer's device at an
+   arbitrary host. Rewritten to pin the allowlist (untrusted host -> champion
+   fallback; Google/Facebook CDN preserved), with a comment saying not to "fix"
+   it by reverting the code - a red test describing a superseded security
+   contract invites exactly the wrong repair.
+2. `AuthRepositoryLogicTest` expected superseded generic error copy; the code now
+   returns a network-specific message. Updated to the current contract.
+
+## Verification
+
+```
+./gradlew testDebugUnitTest --rerun-tasks
+```
+**316 tests, 0 failures** (was 301 with 2 failing).
+
+Guards proven meaningful, not vacuous: temporarily disabling the three
+`matchId` guards fails exactly the three cross-match tests
+(`CrossMatchGuardTest.kt:68/109/143`); restoring them passes.
+
+NOT verified on a device - the reconnect-then-Quick-Match path needs a real
+network blip to exercise end to end. Unit tests cover the reducer guards and the
+teardown fan-out; the socket-identity change itself rests on inspection plus the
+existing suite staying green.
+
+## Not in this PR (audit Phase 2+)
+
+Play purchase-token account binding - 30-day deletion purge job + `deletedAt`
+guards on login/register - `maskProfanity` in match/room socket chat -
+per-message reporting - `pendingMove` watchdog - offline-AI stale-move commit -
+AI search cost - splash timeout.
+
 ---
 
 # Archive - previous task

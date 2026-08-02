@@ -465,6 +465,46 @@
 - Mistake: called mcp__replicate__create_predictions with `Prefer: wait=60` to animate an avatar. Kling v2.1 takes ~125s to render, so the 60s wait TIMED OUT on the tool side. The failed-looking call was auto-retried 2-3×, and EACH retry actually reached Replicate and started a NEW paid prediction — 3 identical Amihan videos (~$0.75 instead of ~$0.25).
 - Rule: for any long-running paid Replicate model (video/image gen), DO NOT use a long `Prefer: wait=N`. Use `Prefer: wait=1` (or omit wait) so the call returns IMMEDIATELY with the prediction id in `starting` state, then poll with `mcp__replicate__get_predictions`. A blocking wait that exceeds the tool timeout can be retried into duplicate billable runs. Before creating a new prediction, `list_predictions` filtered by model to check one isn't already running for the same input.
 
+## 2026-08-02 - A sticky boolean is the wrong guard for a shared, replaceable resource
+
+- Mistake: five repositories guarded socket listener registration with a
+  process-lifetime `wired` / `subscribed` / `started` boolean, while
+  `SocketClient.connect()` could hand back a NEW `Socket` instance. The flag then
+  suppressed wiring on the replacement, so it carried zero listeners for the rest
+  of the process - matchmaking hung forever and the player took a ranked forfeit.
+- Cause: the flag answered "have we ever wired?" when the real question was
+  "have we wired THIS instance?". The two are the same only while the resource is
+  guaranteed stable, and nothing enforced that guarantee.
+- Rule: when guarding setup against a resource that can be replaced, key the
+  guard on the resource's IDENTITY (`if (wiredSocket === s) return`), not on a
+  boolean. If a singleton hands out instances, state its identity contract in the
+  kdoc and make only one method allowed to replace it.
+
+## 2026-08-02 - A red test can encode a security contract you already removed
+
+- Mistake: `AvatarAssetsTest` sat red on main asserting "a full http URL passes
+  straight through unmodified" - a contract deliberately deleted when the avatar
+  host allowlist landed. The obvious "fix the failing test" move is to restore
+  the passthrough, which would reopen the hole.
+- Cause: the security fix updated the code and left the test asserting the old
+  behaviour, so the test became an argument FOR the vulnerability.
+- Rule: when removing a behaviour for security reasons, update its test in the
+  same change and rewrite the test NAME to describe the new contract. If a test
+  must stay red, say why in the test body. Never leave a red test whose name
+  advocates the insecure behaviour.
+
+## 2026-08-02 - Clearing cookies does not end a realtime session
+
+- Mistake: `logout()` cleared the cookie jar and in-memory auth state but never
+  disconnected the socket or reset the feature repositories, so on a shared
+  device the next user drove the previous user's still-authenticated connection.
+- Cause: socket.io authenticates ONCE at handshake. Cookie state and connection
+  state are independent lifetimes; the code treated clearing one as clearing both.
+- Rule: sign-out must tear down every lifetime the session created - credentials,
+  the realtime connection, and every singleton holding user-scoped state. Keep
+  that fan-out in ONE named function so a new repository is added in one place,
+  and remember a missed entry is a cross-account data leak, not a cosmetic bug.
+
 ## 2026-08-02 - A missing onDelete makes a "soft delete" permanently soft
 
 - Mistake: DELETE /api/users/me only set deletedAt, and nothing ever hardened it,

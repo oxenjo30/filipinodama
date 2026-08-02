@@ -11,6 +11,8 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.merge
 import kotlinx.coroutines.flow.transformLatest
 
 /**
@@ -76,9 +78,20 @@ object ConnectivityObserver {
      * value's block, so an `online` arriving during an offline grace-delay
      * cancels the pending `emit(false)` before it ever fires — no banner flash.
      * (Plain Flow.debounce can't express this — it would delay BOTH edges.)
+     *
+     * NOTE the SECOND signal. [observe] alone cannot clear the banner promptly:
+     * it reports online only once Android sets NET_CAPABILITY_VALIDATED, and on
+     * a RECONNECT that captive-portal probe lags the real recovery by seconds
+     * (much longer on a weak signal). The banner therefore sat on screen long
+     * after play had resumed — the mirror image of the v48 on-open false
+     * offline, and NOT something a debounce can fix, because here the delay is
+     * in the OS's signal rather than in ours.
+     *
+     * [NetworkLiveness.proof] supplies the missing edge: our own server actually
+     * answering. See that file for why a captive portal cannot forge it.
      */
     fun observeOnline(context: Context, graceMs: Long = OFFLINE_GRACE_MS): Flow<Boolean> =
-        observe(context).debounceOffline(graceMs)
+        observe(context).withLivenessProof(NetworkLiveness.proof, graceMs)
 
     private fun hasValidatedNetwork(cm: ConnectivityManager): Boolean {
         val network = cm.activeNetwork ?: return false
@@ -112,3 +125,26 @@ fun Flow<Boolean>.debounceOffline(graceMs: Long): Flow<Boolean> =
             emit(false)
         }
     }.distinctUntilChanged()
+
+/**
+ * Connectivity, corrected by app-level proof of life, then offline-debounced.
+ *
+ * [proof] emits whenever the app demonstrably reached the server (see
+ * [NetworkLiveness]). Merging it in as an `online` edge is what lets the
+ * "reconnecting…" banner clear the moment traffic actually flows, instead of
+ * waiting on Android's NET_CAPABILITY_VALIDATED probe — which is the correct
+ * authority for going OFFLINE (captive portals) but lags badly coming back.
+ *
+ * Because [debounceOffline] is built on `transformLatest`, a proof arriving
+ * during an offline grace-delay CANCELS the pending `emit(false)`, so a blip
+ * that the app rides out never shows a banner at all.
+ *
+ * Once online is emitted, the upstream connectivity flow is
+ * `distinctUntilChanged`, so a stale `false` cannot re-fire on its own — the
+ * banner can only return if connectivity genuinely changes again.
+ *
+ * Context-free so the timing is unit-testable with virtual time, matching this
+ * project's "extract the pure decision" convention.
+ */
+fun Flow<Boolean>.withLivenessProof(proof: Flow<Unit>, graceMs: Long): Flow<Boolean> =
+    merge(this, proof.map { true }).debounceOffline(graceMs)

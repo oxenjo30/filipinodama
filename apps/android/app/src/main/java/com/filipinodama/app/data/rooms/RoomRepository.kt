@@ -43,7 +43,8 @@ object RoomRepository {
     private val _state = MutableStateFlow(RoomUiState())
     val state: StateFlow<RoomUiState> = _state.asStateFlow()
 
-    private var wired = false
+    /** The socket instance our listeners are attached to — see MatchRepository. */
+    private var wiredSocket: Socket? = null
     private var socket: Socket? = null
 
     private object EV {
@@ -69,9 +70,17 @@ object RoomRepository {
         return s
     }
 
+    /**
+     * Attach listeners once PER SOCKET INSTANCE (identity-keyed, not a boolean —
+     * see MatchRepository.wire for the defect that motivated this). The per-event
+     * off() calls name their event: this socket is shared with online play, DM,
+     * presence and notifications, so a bare s.off() would deafen all of them.
+     */
     private fun wire(s: Socket) {
-        if (wired) return
-        wired = true
+        if (wiredSocket === s) return
+        wiredSocket = s
+
+        listOf(EV.roomState, EV.roomStart, EV.roomChat).forEach { s.off(it) }
 
         s.on(EV.roomState) { args ->
             val raw = args.firstOrNull()?.toString() ?: return@on
@@ -194,9 +203,9 @@ object RoomRepository {
         _state.value = RoomUiState()
     }
 
-    /** Test/teardown hook: drop all wiring and reset in-memory state. */
+    /** Drop all wiring and reset in-memory state (logout / account deletion / tests). */
     fun hardReset() {
-        wired = false
+        wiredSocket = null
         socket = null
         _state.value = RoomUiState()
     }

@@ -36,22 +36,24 @@ object DmRepository {
     private val _state = MutableStateFlow(DmUiState())
     val state: StateFlow<DmUiState> = _state.asStateFlow()
 
-    private var subscribed = false
+    /**
+     * The socket our chat listener is attached to — identity, not a boolean.
+     * A sticky `subscribed` flag suppressed re-subscription when [SocketClient]
+     * handed back a different instance, silently killing live DM delivery.
+     */
+    private var wiredSocket: Socket? = null
     private var socket: Socket? = null
 
     private fun ensureSubscribed() {
-        if (subscribed) return
-        subscribed = true
         try {
-            val s = SocketClient.connect(ApiClient.okHttpClient) ?: run {
-                subscribed = false
-                return
-            }
+            val s = SocketClient.connect(ApiClient.okHttpClient) ?: return
+            if (wiredSocket === s) return
             socket = s
+            wiredSocket = s
             s.off(EV.chatMessage)
             s.on(EV.chatMessage) { args -> onChatMessage(args) }
         } catch (_: Exception) {
-            subscribed = false
+            wiredSocket = null
         }
     }
 
@@ -179,9 +181,13 @@ object DmRepository {
         _state.update { it.copy(error = null) }
     }
 
-    /** Test/teardown hook. */
+    /**
+     * Drop wiring and every cached conversation/message (logout / account
+     * deletion / tests). Critical on a shared device: DM bodies live in this
+     * singleton's StateFlow and were previously visible to the next user.
+     */
     fun hardReset() {
-        subscribed = false
+        wiredSocket = null
         socket = null
         _state.value = DmUiState()
     }

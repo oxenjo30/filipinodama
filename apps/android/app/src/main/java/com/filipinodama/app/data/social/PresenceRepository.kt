@@ -36,33 +36,39 @@ object PresenceRepository {
     private val _online = MutableStateFlow<Set<String>>(emptySet())
     val online: StateFlow<Set<String>> = _online.asStateFlow()
 
-    private var started = false
+    /**
+     * The socket our presence listener is attached to — identity, not a boolean.
+     * A sticky `started` flag suppressed re-subscription when [SocketClient]
+     * handed back a different instance, leaving presence permanently dead.
+     */
+    private var wiredSocket: Socket? = null
     private var socket: Socket? = null
 
     fun isOnline(userId: String): Boolean = _online.value.contains(userId)
 
     fun start() {
-        if (started) return
-        started = true
         try {
-            val s = SocketClient.connect(ApiClient.okHttpClient) ?: run {
-                started = false
+            val s = SocketClient.connect(ApiClient.okHttpClient) ?: return
+            if (wiredSocket === s) {
+                // Already subscribed on this instance — just re-request a snapshot.
+                s.emit(EV.presencePing)
                 return
             }
             socket = s
+            wiredSocket = s
             s.off(EV.presenceUpdate)
             s.on(EV.presenceUpdate) { args -> onUpdate(args) }
             s.emit(EV.presencePing)
         } catch (_: Exception) {
             // Live presence unavailable — everyone shows offline (honest), no crash.
-            started = false
+            wiredSocket = null
         }
     }
 
     fun stop() {
         socket?.off(EV.presenceUpdate)
         _online.value = emptySet()
-        started = false
+        wiredSocket = null
     }
 
     /** Re-request a snapshot (e.g. after reconnect or entering the Friends screen). */
@@ -100,9 +106,9 @@ object PresenceRepository {
         }
     }
 
-    /** Test/teardown hook. */
+    /** Drop wiring and cached presence (logout / account deletion / tests). */
     fun hardReset() {
-        started = false
+        wiredSocket = null
         socket = null
         _online.value = emptySet()
     }

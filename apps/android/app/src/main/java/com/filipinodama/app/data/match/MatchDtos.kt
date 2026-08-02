@@ -87,7 +87,17 @@ data class MatchEndedDto(
     val redTrophyDelta: Int = 0,
     val blueTrophyDelta: Int = 0,
     val goldReward: Int = 0,
-    val state: GameState
+    /**
+     * NULLABLE on purpose. The server's stranded-match sweeper emits an explicit
+     * `state: null` when closing a match whose Redis state is already gone
+     * (apps/server/src/realtime/match.ts). A Kotlin default only covers a
+     * MISSING key — not an explicit null — so a non-null type made the entire
+     * payload fail to deserialize. The event was then swallowed by decode()'s
+     * catch and the board froze on "Opponent's move..." with no result card and
+     * no timeout (the 8s loader escape only applies when gameState is null).
+     * The web client already tolerates this; Android did not.
+     */
+    val state: GameState? = null
 )
 
 /** EV.matchChat payload (server relay, broadcast to room). */
