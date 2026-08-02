@@ -49,6 +49,7 @@ import com.filipinodama.app.ui.theme.GoldLt
 import com.filipinodama.app.ui.theme.Ink
 import kotlinx.coroutines.async
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.withTimeoutOrNull
 
 /**
  * Splash / loading screen — replaces the Phase 1 tap-to-enter placeholder
@@ -74,6 +75,15 @@ import kotlinx.coroutines.delay
  * flashing and cutting away mid-fill on a fast probe / warm cache).
  */
 private const val MIN_VISIBLE_MS = 1400L
+
+/**
+ * Hard ceiling on the boot session probe. refreshMe() can chain three HTTP calls
+ * at ApiClient's 30s connect + 30s read budget, so an unbounded probe could hold
+ * the splash for ~90 SECONDS on a connection that blackholes rather than refuses
+ * (captive portal, stalled mobile handover). 8s is well past a healthy round
+ * trip and well short of "the app is frozen".
+ */
+private const val SESSION_PROBE_TIMEOUT_MS = 8_000L
 
 @Composable
 fun SplashScreen(onResolved: (SplashDestination) -> Unit) {
@@ -107,7 +117,21 @@ fun SplashScreen(onResolved: (SplashDestination) -> Unit) {
         // (coroutineScope makes `this` a scope so async can run alongside the
         // fill loop below and be awaited once the floor time is also met.)
         kotlinx.coroutines.coroutineScope {
-        val probe = async { runCatching { AuthRepository.refreshMe() != null }.getOrDefault(false) }
+        // BOUNDED. refreshMe() can chain me() -> refresh() -> me(), and ApiClient
+        // allows 30s connect + 30s read per call, so the worst case was ~90
+        // SECONDS of splash on a connection that blackholes rather than refuses
+        // — a captive portal, or a stalled mobile handover. Users read that as a
+        // frozen app and force-quit it.
+        //
+        // Timing out only means "treat this launch as signed-out for now": the
+        // session is still on disk and the app re-probes on the next resume, so
+        // being wrong costs one sign-in prompt rather than a minute and a half
+        // of staring at a loading bar.
+        val probe = async {
+            withTimeoutOrNull(SESSION_PROBE_TIMEOUT_MS) {
+                runCatching { AuthRepository.refreshMe() != null }.getOrDefault(false)
+            } ?: false
+        }
 
         val t0 = System.currentTimeMillis()
         // While loading, creep toward the 90% ceiling over ~MIN_VISIBLE_MS so

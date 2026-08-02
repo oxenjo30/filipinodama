@@ -355,7 +355,21 @@ object MatchRepository {
                 // still in flight (wait for the echo first).
                 if (st.pendingMove) return
                 val optimistic = runCatching { Rules.applyMove(gs, chosen) }.getOrNull()
-                emitPayload(EV.matchMove, MatchMoveRequest(st.matchId, chosen))
+                // Emit FIRST and only fake success if it actually left. Applying
+                // the optimistic move after a silently-dropped emit was the worst
+                // version of this bug: the board advanced, "Sending move…" stuck
+                // forever, and the move clock forfeited the player for a move the
+                // server never saw.
+                if (!emitPayload(EV.matchMove, MatchMoveRequest(st.matchId, chosen))) {
+                    _state.update {
+                        it.copy(
+                            selected = null,
+                            error = "Couldn't reach the server. Tap the square again.",
+                        ).withHighlights()
+                    }
+                    return
+                }
+                st.matchId?.let { armPendingMoveWatchdog(it) }
                 _state.update {
                     if (optimistic != null) {
                         it.copy(
@@ -383,7 +397,13 @@ object MatchRepository {
 
     fun resign() {
         val id = _state.value.matchId ?: return
-        emitPayload(EV.matchResign, MatchIdRequest(id))
+        // Make sure we HAVE a socket before emitting — resign used to fail
+        // silently when the field was stale, so the dialog closed, nothing was
+        // sent, and the player lost on the move clock believing they'd resigned.
+        runCatching { ensureConnected() }
+        if (!emitPayload(EV.matchResign, MatchIdRequest(id))) {
+            _state.update { it.copy(error = "Couldn't reach the server. You're still in the match.") }
+        }
     }
 
     fun reset() {
@@ -451,6 +471,41 @@ object MatchRepository {
 
     private fun newNonce(): String = java.util.UUID.randomUUID().toString()
 
+    /**
+     * How long to wait for the server's echo of our move before assuming it was
+     * lost. Comfortably past a normal round trip (moves usually echo in well
+     * under a second) but short enough that a stuck board recovers on its own
+     * rather than needing the user to back out of the match.
+     */
+    private const val PENDING_MOVE_TIMEOUT_MS = 7_000L
+
+    /**
+     * Recover from a move whose echo never arrives.
+     *
+     * `pendingMove` was cleared ONLY by matchMoved / matchIllegal / matchState.
+     * If none of those ever came, the client was permanently wedged: the
+     * optimistic apply had already flipped the turn, so `myTurn` was false, the
+     * board was non-interactive, and the pill read "Sending move…" indefinitely.
+     * `connectionLost` did not help either — it is set on an explicit socket
+     * DISCONNECT, and the nastier case is a socket that is up but whose room
+     * membership was lost (a server instance restart mid-match), which produces
+     * no disconnect event at all. `resync()` existed but was unreachable from
+     * the match UI.
+     *
+     * On expiry we ask the server for authoritative state rather than guessing.
+     * matchState then clears `pendingMove` and reconciles the board, so a move
+     * that DID land is confirmed and one that didn't is rolled back.
+     */
+    private fun armPendingMoveWatchdog(matchId: String) {
+        scheduler(PENDING_MOVE_TIMEOUT_MS) {
+            val st = _state.value
+            // Only act if we're still stuck on the SAME match's move.
+            if (!st.pendingMove || st.matchId != matchId) return@scheduler
+            runCatching { ensureConnected() }
+            emitPayload(EV.matchResync, MatchIdRequest(matchId))
+        }
+    }
+
     fun offerRematch() {
         val id = _state.value.matchId ?: return
         try {
@@ -483,10 +538,28 @@ object MatchRepository {
 
     // ---- internals ----
 
-    private inline fun <reified T> emitPayload(event: String, payload: T) {
-        val s = socket ?: return
-        val jsonString = json.encodeToString(payload)
-        s.emit(event, org.json.JSONObject(jsonString))
+    /**
+     * Emit, reporting whether it actually left the device.
+     *
+     * This used to be `val s = socket ?: return` — a SILENT no-op. Every caller
+     * assumed the emit had happened: `onSquareClick` applied its optimistic move
+     * and set `pendingMove` regardless, so the board advanced locally, the pill
+     * read "Sending move…" forever, and the server eventually forfeited the
+     * player on the move clock. `resign()` closed the confirm dialog and did
+     * nothing at all, so the user believed they had resigned and then lost on
+     * disconnect anyway.
+     *
+     * Returning a Boolean makes the failure visible to callers, which can then
+     * decline to fake success.
+     */
+    private inline fun <reified T> emitPayload(event: String, payload: T): Boolean {
+        val s = socket ?: return false
+        return try {
+            s.emit(event, org.json.JSONObject(json.encodeToString(payload)))
+            true
+        } catch (_: Exception) {
+            false
+        }
     }
 
     private inline fun <reified T> decode(args: Array<Any>): T? {
