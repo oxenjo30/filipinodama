@@ -3,9 +3,12 @@ import { useNavigate, useParams } from "react-router-dom";
 import { api, ApiError } from "../../lib/api";
 import { useAppStore } from "../../stores/appStore";
 import { useAuthStore } from "../../stores/authStore";
+import { useTournamentStore } from "../../stores/tournamentStore";
 import { Avatar, CurrencyPill } from "../../components";
 import { ICONS } from "../../lib/assets";
-import { FORMAT_LABEL, STATUS_META, formatStartsAt, isStandingsFormat, isDoubleElim, BRACKET_LABEL, type TournamentDetail, type TournamentEntry } from "./types";
+import { BracketView } from "./BracketView";
+import { YourMatchCard } from "./YourMatchCard";
+import { FORMAT_LABEL, STATUS_META, formatStartsAt, isStandingsFormat, type TournamentDetail, type TournamentEntry } from "./types";
 
 /**
  * TournamentDetailPage (/tournaments/:id) — one Cup's entry list + bracket.
@@ -112,51 +115,6 @@ function StandingsTable({ rows, myEntryId }: { rows: StandingsRow[]; myEntryId: 
   );
 }
 
-function MatchSlot({
-  label,
-  entry,
-  isWinner,
-  bye,
-}: {
-  label: string;
-  entry: TournamentEntry | null;
-  isWinner: boolean;
-  bye: boolean;
-}) {
-  return (
-    <div
-      style={{
-        display: "flex",
-        alignItems: "center",
-        gap: 8,
-        padding: "6px 10px",
-        borderRadius: 7,
-        background: isWinner ? "rgba(47,143,91,.16)" : "rgba(0,0,0,.25)",
-        border: `1px solid ${isWinner ? "rgba(63,191,111,.4)" : "rgba(232,184,75,.1)"}`,
-      }}
-    >
-      {entry ? (
-        <>
-          <Avatar src={entry.user.avatarUrl ?? "champion"} size={22} ring={false} />
-          <span
-            style={{
-              font: "700 12px Inter",
-              color: isWinner ? "#7ee6a4" : "#f2e9d2",
-              whiteSpace: "nowrap",
-              overflow: "hidden",
-              textOverflow: "ellipsis",
-            }}
-          >
-            {entry.user.username}
-          </span>
-        </>
-      ) : (
-        <span style={{ font: "600 12px Inter", color: "var(--ink2)", fontStyle: "italic" }}>{bye ? "BYE" : label}</span>
-      )}
-    </div>
-  );
-}
-
 export function TournamentDetailPage() {
   const { id } = useParams<{ id: string }>();
   const me = useAuthStore((s) => s.me);
@@ -168,52 +126,64 @@ export function TournamentDetailPage() {
   const [loadError, setLoadError] = useState(false);
   const [busy, setBusy] = useState(false);
 
+  // Live half of the page: readiness echoes + the auto-start handoff. The REST
+  // payload below seeds it, so everything renders correctly even before (or
+  // without) a socket.
+  const bindLive = useTournamentStore((s) => s.bind);
+  const hydrateLive = useTournamentStore((s) => s.hydrate);
+  const liveMyMatch = useTournamentStore((s) => s.myMatch);
+  const readyPending = useTournamentStore((s) => s.pending);
+  const readyError = useTournamentStore((s) => s.error);
+  const consumeReadyError = useTournamentStore((s) => s.consumeError);
+  const startedMatchId = useTournamentStore((s) => s.startedMatchId);
+  const consumeStart = useTournamentStore((s) => s.consumeStart);
+  const sendReady = useTournamentStore((s) => s.ready);
+  const resetLive = useTournamentStore((s) => s.reset);
+
   const load = useCallback(async () => {
     if (!id) return;
     setLoadError(false);
     try {
       const t = await api.get<TournamentDetail>(`/api/tournaments/${id}`);
       setData(t);
+      hydrateLive(t.myMatch ?? null);
     } catch (e) {
       setLoadError(true);
       if (!(e instanceof ApiError && e.status === 404)) {
         showToast("Couldn't load this Cup.");
       }
     }
-  }, [id, showToast]);
+  }, [id, showToast, hydrateLive]);
 
   useEffect(() => {
     void load();
   }, [load]);
 
-  const entryById = useMemo(() => {
-    const m = new Map<string, TournamentEntry>();
-    for (const e of data?.entries ?? []) m.set(e.id, e);
-    return m;
-  }, [data]);
+  useEffect(() => {
+    if (!isGuest) void bindLive();
+    return () => resetLive();
+  }, [isGuest, bindLive, resetLive]);
 
-  const rounds = useMemo(() => {
-    if (!data) return [];
-    return Object.keys(data.bracket)
-      .map(Number)
-      .sort((a, b) => a - b);
-  }, [data]);
+  // The server started our match — it has already seeded the board and put our
+  // socket in the match room, so all that's left is to go there.
+  useEffect(() => {
+    if (!startedMatchId) return;
+    consumeStart();
+    navigate("/play/online");
+  }, [startedMatchId, consumeStart, navigate]);
 
-  // DOUBLE_ELIM: group the flat round->matches map by each match's own
-  // `bracket` field ("W"/"L"/"GF") so the page can render three separate
-  // labeled sections instead of one flat, interleaved round list — the
-  // round-offset scheme (W rounds 1..k, L rounds 101+, GF 201+) guarantees
-  // round numbers never collide across sub-brackets, so this grouping is
-  // purely presentational (same derivation as the admin client's drawer).
-  const bracketGroups = useMemo(() => {
-    if (!data || !isDoubleElim(data.format)) return [];
-    return (["W", "L", "GF"] as const)
-      .map((key) => {
-        const roundsInBracket = rounds.filter((r) => (data.bracket[String(r)] ?? []).some((m) => m.bracket === key));
-        return { key, label: BRACKET_LABEL[key]!, rounds: roundsInBracket };
-      })
-      .filter((g) => g.rounds.length > 0);
-  }, [data, rounds]);
+  useEffect(() => {
+    if (!readyError) return;
+    showToast(readyError.message);
+    consumeReadyError();
+    // A rejected ready usually means our view is stale (the slot already
+    // started, or an admin resolved it) — refetch rather than leave it wrong.
+    void load();
+  }, [readyError, showToast, consumeReadyError, load]);
+
+  // The bracket arrives grouped by round number; BracketView wants a flat list
+  // (it re-groups by sub-bracket and round itself, and owns all the geometry).
+  const allMatches = useMemo(() => Object.values(data?.bracket ?? {}).flat(), [data]);
 
   // Standings for no-elimination formats (ROUND_ROBIN this stage) — a live
   // win/loss tally from reported matches, ranked by final placement (once
@@ -298,6 +268,9 @@ export function TournamentDetailPage() {
   }
 
   const status = STATUS_META[data.status];
+  // Prefer the socket's view (it reflects a ready that landed since page load);
+  // fall back to the REST payload so the card is right without a socket at all.
+  const myMatch = liveMyMatch ?? data.myMatch;
   const full = data.registeredCount >= data.maxPlayers;
   const joined = !!data.myEntry;
   const canJoin = data.status === "OPEN" && !joined && !full;
@@ -408,6 +381,17 @@ export function TournamentDetailPage() {
         </div>
       </div>
 
+      {/* YOUR MATCH — the player's own slot: ready up, then the server drops
+          both of you onto the board by itself. Only while the Cup is running. */}
+      {data.status === "RUNNING" && myMatch && (
+        <YourMatchCard
+          myMatch={myMatch}
+          pending={readyPending}
+          onReady={() => sendReady(myMatch.tmId)}
+          onRejoin={() => navigate("/play/online")}
+        />
+      )}
+
       {/* ENTRIES */}
       <div className="frame fd-card-m" style={{ padding: "20px 22px" }}>
         <div className="ptitle">Entries ({data.entries.length})</div>
@@ -432,65 +416,22 @@ export function TournamentDetailPage() {
         </div>
       )}
 
-      {/* BRACKET (single-elim-shaped formats: SINGLE_ELIM, and DOUBLE_ELIM's
-          three sub-brackets rendered as separate labeled sections below) */}
-      {!isStandingsFormat(data.format) && !isDoubleElim(data.format) && rounds.length > 0 && (
+      {/* BRACKET — round-named columns, per-competitor rows and elbow connectors.
+          BracketView handles SINGLE_ELIM and DOUBLE_ELIM's three sub-brackets
+          alike; standings formats (round robin / Swiss) have no tree to draw. */}
+      {!isStandingsFormat(data.format) && allMatches.length > 0 && (
         <div className="frame fd-card-m" style={{ padding: "20px 22px" }}>
           <div className="ptitle">Bracket</div>
-          <div style={{ display: "flex", gap: 18, overflowX: "auto", paddingBottom: 8, marginTop: 6 }}>
-            {rounds.map((round) => (
-              <div key={round} style={{ flex: "none", minWidth: 220, display: "flex", flexDirection: "column", gap: 10 }}>
-                <div style={{ font: "700 12px Inter", letterSpacing: ".5px", color: "var(--gold)", textAlign: "center" }}>
-                  {round === rounds[rounds.length - 1] ? "Final" : `Round ${round}`}
-                </div>
-                {data.bracket[String(round)].map((m) => {
-                  const red = m.redEntryId ? (entryById.get(m.redEntryId) ?? null) : null;
-                  const blue = m.blueEntryId ? (entryById.get(m.blueEntryId) ?? null) : null;
-                  const bye = (!!m.redEntryId && !m.blueEntryId) || (!m.redEntryId && !!m.blueEntryId);
-                  return (
-                    <div key={m.id} style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-                      <MatchSlot label="TBD" entry={red} isWinner={!!red && m.winnerEntryId === red.id} bye={bye && !red} />
-                      <MatchSlot label="TBD" entry={blue} isWinner={!!blue && m.winnerEntryId === blue.id} bye={bye && !blue} />
-                    </div>
-                  );
-                })}
-              </div>
-            ))}
+          <div style={{ marginTop: 10 }}>
+            <BracketView
+              matches={allMatches}
+              entries={data.entries}
+              format={data.format}
+              myEntryId={data.myEntry?.id}
+            />
           </div>
         </div>
       )}
-
-      {/* DOUBLE_ELIM: winners / losers / grand-final sections, each with its
-          own round-by-round columns — same round-column rendering as the
-          single-elim bracket above, repeated per sub-bracket. */}
-      {isDoubleElim(data.format) &&
-        bracketGroups.map((group) => (
-          <div key={group.key} className="frame fd-card-m" style={{ padding: "20px 22px" }}>
-            <div className="ptitle">{group.label}</div>
-            <div style={{ display: "flex", gap: 18, overflowX: "auto", paddingBottom: 8, marginTop: 6 }}>
-              {group.rounds.map((round) => (
-                <div key={round} style={{ flex: "none", minWidth: 220, display: "flex", flexDirection: "column", gap: 10 }}>
-                  <div style={{ font: "700 12px Inter", letterSpacing: ".5px", color: "var(--gold)", textAlign: "center" }}>
-                    {group.key === "GF" ? (round === 202 ? "Bracket reset (game 2)" : "Game 1") : round === group.rounds[group.rounds.length - 1] ? "Final" : `Round ${round}`}
-                  </div>
-                  {data.bracket[String(round)]
-                    .filter((m) => m.bracket === group.key)
-                    .map((m) => {
-                      const red = m.redEntryId ? (entryById.get(m.redEntryId) ?? null) : null;
-                      const blue = m.blueEntryId ? (entryById.get(m.blueEntryId) ?? null) : null;
-                      const bye = (!!m.redEntryId && !m.blueEntryId) || (!m.redEntryId && !!m.blueEntryId);
-                      return (
-                        <div key={m.id} style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-                          <MatchSlot label="TBD" entry={red} isWinner={!!red && m.winnerEntryId === red.id} bye={bye && !red} />
-                          <MatchSlot label="TBD" entry={blue} isWinner={!!blue && m.winnerEntryId === blue.id} bye={bye && !blue} />
-                        </div>
-                      );
-                    })}
-                </div>
-              ))}
-            </div>
-          </div>
-        ))}
     </div>
   );
 }
