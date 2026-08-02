@@ -1,5 +1,5 @@
 import type { FastifyInstance } from "fastify";
-import { createHmac, timingSafeEqual } from "node:crypto";
+import { createHash, createHmac, timingSafeEqual } from "node:crypto";
 import { z } from "zod";
 import { checkoutSchema } from "@dama/shared";
 import { prisma } from "../db/client.js";
@@ -52,6 +52,22 @@ export const DIAMOND_PACKS = [
 ] as const;
 
 const PACK = (id: string) => DIAMOND_PACKS.find((p) => p.id === id);
+
+/**
+ * The account token bound to a Google Play purchase — SHA-256 of the user id,
+ * hex. MUST stay byte-for-byte identical to the Android side
+ * (BillingRepository.playAccountToken), or every purchase will be rejected as
+ * "not yours".
+ *
+ * Hashed rather than sending the raw id because Google's guidance is that
+ * obfuscatedAccountId must not contain anything that identifies a user, and it
+ * is capped at 64 characters — sha256 hex is exactly 64 and one-way. Being
+ * deterministic is what lets both sides derive it independently, with no extra
+ * round trip and nothing to store.
+ */
+export function playAccountToken(userId: string): string {
+  return createHash("sha256").update(userId).digest("hex");
+}
 // PayMongo credentials resolve "admin overrides env": an admin-entered key
 // (encrypted at rest) wins; otherwise fall back to the PAYMONGO_* env var.
 const basicAuth = async () =>
@@ -148,12 +164,43 @@ export async function paymentRoutes(app: FastifyInstance) {
       throw err.badRequest("PLAY_PURCHASE_NOT_COMPLETE", "Purchase is not in a completed state.");
     }
 
+    // ── ACCOUNT BINDING — FAIL-CLOSED ────────────────────────────────────────
+    // A purchase token on its own is a BEARER credential. Without this check,
+    // anyone who obtains another player's token (shared device, a modified
+    // client, a log) redeems it into their own account first. The real buyer's
+    // client then receives `alreadyProcessed: true` alongside the pack size,
+    // reads that as SUCCESS, CONSUMES the purchase — destroying the entitlement
+    // and Play's 3-day auto-refund window — and displays "+N diamonds credited"
+    // to someone who received nothing. Real money, silently lost, behind a false
+    // success UI.
+    //
+    // Deliberately FAIL-CLOSED: an UNBOUND purchase is rejected, not credited.
+    // Diamond top-up is dark today, so nothing legitimate reaches this path; if
+    // the flag is ever flipped before a client ships the binding, top-ups fail
+    // loudly with a fixable error instead of quietly misattributing money. That
+    // is the point — this is a tripwire, not merely a check.
+    if (!result.obfuscatedExternalAccountId) {
+      throw err.badRequest(
+        "PLAY_PURCHASE_UNBOUND",
+        "This purchase is not bound to an account. The app must call setObfuscatedAccountId on the billing flow before launching it.",
+      );
+    }
+    if (result.obfuscatedExternalAccountId !== playAccountToken(userId)) {
+      throw err.forbidden("PLAY_PURCHASE_NOT_YOURS", "This purchase belongs to a different account.");
+    }
+
     // Idempotent credit: providerRef = the purchase token (globally unique). A
     // retry (same token) hits the unique constraint and credits nothing extra.
     const providerRef = `play_${body.purchaseToken}`;
     let credited = false;
     await prisma.$transaction(async (tx) => {
       const existing = await tx.payment.findUnique({ where: { providerRef } });
+      // Belt-and-braces behind the binding check above: if a row for this token
+      // somehow belongs to someone else, refuse rather than reporting success to
+      // a caller who is not the buyer.
+      if (existing && existing.userId && existing.userId !== userId) {
+        throw err.forbidden("PLAY_PURCHASE_NOT_YOURS", "This purchase belongs to a different account.");
+      }
       if (existing) return; // already recorded/credited by an earlier call
       await tx.payment.create({
         data: {

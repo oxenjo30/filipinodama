@@ -92,6 +92,21 @@ export type PlayPurchaseResult =
       acknowledgementState: number;
       /** Google order id (e.g. GPA.xxxx) — stable, used for audit. */
       orderId: string | null;
+      /**
+       * The account token the CLIENT bound to this purchase via
+       * `BillingFlowParams.setObfuscatedAccountId`, echoed back by Google.
+       *
+       * This is what ties a purchase to the account that made it. Without it a
+       * purchase token is effectively a bearer credential: whoever redeems it
+       * first gets the diamonds, and the real buyer's client is then told
+       * `alreadyProcessed` — which it reads as SUCCESS, so it consumes the
+       * purchase (destroying the entitlement and Play's 3-day refund window) and
+       * shows "+N diamonds credited" to someone who received nothing.
+       *
+       * `null` when the purchasing client never set one — see the fail-closed
+       * check in payments.ts.
+       */
+      obfuscatedExternalAccountId: string | null;
     }
   | { ok: false; error: string; retriable: boolean };
 
@@ -131,6 +146,7 @@ export async function verifyPlayPurchase(
     consumptionState?: number;
     acknowledgementState?: number;
     orderId?: string;
+    obfuscatedExternalAccountId?: string;
   };
   return {
     ok: true,
@@ -138,5 +154,6 @@ export async function verifyPlayPurchase(
     consumptionState: json.consumptionState ?? 0,
     acknowledgementState: json.acknowledgementState ?? 0,
     orderId: json.orderId ?? null,
+    obfuscatedExternalAccountId: json.obfuscatedExternalAccountId ?? null,
   };
 }

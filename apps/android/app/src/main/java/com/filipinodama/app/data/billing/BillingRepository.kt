@@ -193,8 +193,28 @@ object BillingRepository {
                 .setProductDetails(productDetails)
                 .build()
         )
+        // ACCOUNT BINDING — required. The server FAILS CLOSED without it.
+        //
+        // Without an obfuscated account id, a Play purchase token is a BEARER
+        // credential: whoever redeems it first gets the diamonds, and the real
+        // buyer's client is then told `alreadyProcessed`, reads that as success,
+        // CONSUMES the purchase (destroying the entitlement and Play's 3-day
+        // refund window) and shows "+N diamonds credited" to someone who
+        // received nothing.
+        //
+        // Google echoes this value back on the purchase, and the server rejects
+        // any purchase whose token doesn't match the CALLER's own — so a token
+        // lifted from another account is worthless. Must stay byte-for-byte
+        // identical to the server's playAccountToken() (payments.ts).
+        val accountToken = playAccountToken(AuthRepository.state.value.user?.id)
+        if (accountToken == null) {
+            _purchaseState.value = PurchaseUiState.Error("Sign in to buy diamonds.")
+            return
+        }
+
         val flowParams = BillingFlowParams.newBuilder()
             .setProductDetailsParamsList(productDetailsParamsList)
+            .setObfuscatedAccountId(accountToken)
             .build()
 
         _purchaseState.value = PurchaseUiState.Purchasing
@@ -291,6 +311,30 @@ object BillingRepository {
         data class Success(val data: PlayVerifyResponse) : VerifyOutcome()
         data class Failure(val message: String) : VerifyOutcome()
     }
+}
+
+/**
+ * The account token bound to a Google Play purchase — SHA-256 of the user id,
+ * hex, or null when signed out.
+ *
+ * MUST stay byte-for-byte identical to the server's `playAccountToken`
+ * (apps/server/src/modules/payments.ts) or every purchase is rejected as "not
+ * yours" — the server compares the value Google echoes back against its own
+ * derivation.
+ *
+ * Hashed rather than sending the raw id: Google's guidance is that
+ * obfuscatedAccountId must not contain anything identifying a user, and it is
+ * capped at 64 characters — sha256 hex is exactly 64 and one-way. Deterministic,
+ * so both sides derive it independently with no extra round trip and nothing to
+ * store.
+ *
+ * Top-level + internal so it is unit-testable against a known vector.
+ */
+internal fun playAccountToken(userId: String?): String? {
+    if (userId.isNullOrBlank()) return null
+    return java.security.MessageDigest.getInstance("SHA-256")
+        .digest(userId.toByteArray(Charsets.UTF_8))
+        .joinToString("") { "%02x".format(it) }
 }
 
 /** UI-facing purchase state — the WalletScreen buy-diamonds section observes this. */
