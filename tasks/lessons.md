@@ -464,3 +464,12 @@
 
 - Mistake: called mcp__replicate__create_predictions with `Prefer: wait=60` to animate an avatar. Kling v2.1 takes ~125s to render, so the 60s wait TIMED OUT on the tool side. The failed-looking call was auto-retried 2-3×, and EACH retry actually reached Replicate and started a NEW paid prediction — 3 identical Amihan videos (~$0.75 instead of ~$0.25).
 - Rule: for any long-running paid Replicate model (video/image gen), DO NOT use a long `Prefer: wait=N`. Use `Prefer: wait=1` (or omit wait) so the call returns IMMEDIATELY with the prediction id in `starting` state, then poll with `mcp__replicate__get_predictions`. A blocking wait that exceeds the tool timeout can be retried into duplicate billable runs. Before creating a new prediction, `list_predictions` filtered by model to check one isn't already running for the same input.
+
+## 2026-08-02 - Meshy icon prompts: "tilted" wording, and white canvases that defeat cutout
+
+- Mistake: generating the Play-page loadout icon, two of three variants came back with the coin rendered in perspective. The owner rejected them. The cause was my own prompt wording — I had written "tilted" and "slight three-quarter perspective" as framing variety, not realising the coin's flatness was a fidelity requirement (the source cosmetic art is dead-flat face-on).
+- Mistake 2: one variant came back on a WHITE canvas instead of chroma green. Cutting it with rembg deleted the dark walnut board half along with the background — rembg treats a dark region touching a white field as background. A border flood-fill saved the medallion but left white trapped in the filigree's openwork gaps, because those pockets aren't connected to the outer edge; the owner saw it as "why is there a white background".
+- Rule:
+  1. For cosmetic/icon generation, state the projection explicitly and negatively: "perfectly flat top-down, face-on, no tilt, no perspective, no three-quarter angle". Never use "tilted"/"three-quarter" as a variation axis unless the owner asked for depth.
+  2. Always demand "flat pure chroma green background, never white" in the prompt. Chroma-keying removes background by COLOUR, so it also clears background trapped inside openwork/filigree gaps. Flood-fill can't reach those pockets and rembg destroys foreground to remove them.
+  3. Verify icons by compositing the SHIPPED asset at its real dp size on the real surface colour, next to its sibling icon — full-res art hides everything that mushes at 40dp.

@@ -318,11 +318,10 @@ fun BattleScreen(
                 // drawer — the counterpart to Game Modes on the right. Two
                 // buttons, two drawers, neither duplicating the other.
                 DockSlot(onClick = { loadoutOpen = true }) {
-                    Box(
-                        modifier = Modifier
-                            .size(42.dp)
-                            .clip(RoundedCornerShape(9.dp))
-                            .background(boardSwatchBrush())
+                    Image(
+                        painter = painterResource(id = R.drawable.ic_loadout),
+                        contentDescription = "Your Loadout",
+                        modifier = Modifier.size(40.dp)
                     )
                 }
 
@@ -669,14 +668,6 @@ private fun DifficultyChip(
         }
     }
 }
-
-/**
- * The equipped board theme, drawn as a checker swatch. Phase 1 shows the
- * default; reading the player's real `equippedBoard` and rendering its palette
- * is Phase 3, alongside the in-drawer picker.
- */
-private fun boardSwatchBrush(): Brush =
-    Brush.linearGradient(listOf(Color(0xFFC9A46A), Color(0xFF6B4A2A)))
 
 /** "1,040" — thousands separated, locale-independent so tests are stable. */
 internal fun formatThousands(n: Int): String {
