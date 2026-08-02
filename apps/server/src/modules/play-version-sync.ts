@@ -60,37 +60,65 @@ async function getAccessToken(sa: ServiceAccount): Promise<string | null> {
 }
 
 /**
- * Read the highest versionCode released on the PRODUCTION track. Uses the
- * edits API: create an edit, read the "production" track's releases, take the
- * max versionCode among releases with status "completed", then abandon the edit
- * (read-only — we never commit). Returns null on any failure.
+ * Distinguishes the ways this lookup can fail.
+ *
+ * Every failure used to collapse into `null`, which the caller reported as
+ * "no completed production release found" — a message that sends you to check
+ * your RELEASE when the actual cause is usually PERMISSIONS, and which made a
+ * misconfigured sync indistinguishable from a correctly-configured one that
+ * simply has nothing to sync yet. That ambiguity is why a sync configured long
+ * ago could sit broken without anyone being able to tell.
  */
-async function fetchLiveProductionVersionCode(token: string, pkg: string): Promise<number | null> {
+type TrackLookup =
+  | { ok: true; versionCode: number }
+  | { ok: false; reason: "no-completed-release"; staged: number[] }
+  | { ok: false; reason: "edit-denied"; status: number }
+  | { ok: false; reason: "track-read-failed"; status: number };
+
+/**
+ * Read the highest versionCode released on the PRODUCTION track. Uses the edits
+ * API: create an edit, read the "production" track's releases, take the max
+ * versionCode among releases with status "completed", then abandon the edit (we
+ * never commit).
+ *
+ * PERMISSIONS: creating an edit is a WRITE-scoped call. A service account with
+ * only "View app information and download bulk reports (read-only)" is refused
+ * at that first step, before any track is read — so read-only is NOT sufficient
+ * for this, despite the lookup itself being read-only in spirit. The account
+ * needs release access on the app.
+ */
+async function fetchLiveProductionVersionCode(token: string, pkg: string): Promise<TrackLookup> {
   const base = `https://androidpublisher.googleapis.com/androidpublisher/v3/applications/${encodeURIComponent(pkg)}/edits`;
   const auth = { Authorization: `Bearer ${token}` };
 
   const editRes = await fetch(base, { method: "POST", headers: auth });
-  if (!editRes.ok) return null;
+  if (!editRes.ok) return { ok: false, reason: "edit-denied", status: editRes.status };
   const edit = (await editRes.json()) as { id?: string };
-  if (!edit.id) return null;
+  if (!edit.id) return { ok: false, reason: "edit-denied", status: editRes.status };
 
   try {
     const trackRes = await fetch(`${base}/${edit.id}/tracks/production`, { headers: auth });
-    if (!trackRes.ok) return null;
+    if (!trackRes.ok) return { ok: false, reason: "track-read-failed", status: trackRes.status };
     const track = (await trackRes.json()) as {
       releases?: { status?: string; versionCodes?: string[] }[];
     };
     let max = 0;
+    // Track what we SAW but skipped, so a staged rollout can be reported as such
+    // instead of looking identical to "nothing is published at all".
+    const staged: number[] = [];
     for (const rel of track.releases ?? []) {
-      if (rel.status !== "completed") continue; // only fully-rolled-out releases
-      for (const vc of rel.versionCodes ?? []) {
-        const n = Number.parseInt(vc, 10);
-        if (Number.isFinite(n) && n > max) max = n;
+      const codes = (rel.versionCodes ?? [])
+        .map((vc) => Number.parseInt(vc, 10))
+        .filter((n) => Number.isFinite(n));
+      if (rel.status !== "completed") {
+        staged.push(...codes); // e.g. status "inProgress" — a staged rollout
+        continue; // only fully-rolled-out releases count
       }
+      for (const n of codes) if (n > max) max = n;
     }
-    return max > 0 ? max : null;
+    return max > 0 ? { ok: true, versionCode: max } : { ok: false, reason: "no-completed-release", staged };
   } finally {
-    // Abandon the read-only edit (best-effort; edits expire on their own anyway).
+    // Abandon the edit (best-effort; edits expire on their own anyway).
     await fetch(`${base}/${edit.id}`, { method: "DELETE", headers: auth }).catch(() => {});
   }
 }
@@ -111,11 +139,31 @@ export async function syncPlayVersionOnce(): Promise<void> {
       console.warn("[play-version-sync] could not obtain access token");
       return;
     }
-    const latest = await fetchLiveProductionVersionCode(token, env.PLAY_PACKAGE_NAME);
-    if (latest == null) {
-      console.warn("[play-version-sync] no completed production release found");
+    const lookup = await fetchLiveProductionVersionCode(token, env.PLAY_PACKAGE_NAME);
+    if (!lookup.ok) {
+      // Say WHICH step failed. The old single message ("no completed production
+      // release found") was emitted for permission errors too, which is why a
+      // sync that never worked looked exactly like one with nothing to do.
+      if (lookup.reason === "edit-denied") {
+        console.warn(
+          `[play-version-sync] Play refused to open an edit (HTTP ${lookup.status}) for ${env.PLAY_PACKAGE_NAME}. ` +
+            "Creating an edit is write-scoped: a read-only service account cannot do it. " +
+            "Grant the service account release access to this app in Play Console → Users and permissions.",
+        );
+      } else if (lookup.reason === "track-read-failed") {
+        console.warn(`[play-version-sync] could not read the production track (HTTP ${lookup.status})`);
+      } else if (lookup.staged.length > 0) {
+        console.warn(
+          `[play-version-sync] production has no COMPLETED release yet; ` +
+            `versionCode(s) ${lookup.staged.join(", ")} are still rolling out. ` +
+            "Bump the staged rollout to 100% and this will pick them up.",
+        );
+      } else {
+        console.warn("[play-version-sync] no completed production release found");
+      }
       return;
     }
+    const latest = lookup.versionCode;
     const current = await prisma.config.findUnique({ where: { key: CONFIG_KEY }, select: { value: true } });
     if (current?.value === String(latest)) return; // already up to date
 

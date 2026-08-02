@@ -27,10 +27,29 @@ You do steps 1–3 (console work); the server code is already in place.
 2. **Invite new users** → paste the service account's email
    (`play-version-reader@<project>.iam.gserviceaccount.com`, it's in the JSON as
    `client_email`).
-3. Give it access to the **FilipinoDama** app with at least **"View app
-   information and download bulk reports (read-only)"** on the app. (Read-only is
-   enough — the server never writes to Play.)
+3. Give it access to the **FilipinoDama** app. It needs **release** access, not
+   just view access — see the warning below.
 4. Send/confirm the invite.
+
+> **⚠️ Read-only is NOT enough — this is corrected guidance.**
+>
+> An earlier version of this doc said **"View app information and download bulk
+> reports (read-only)"** was sufficient, reasoning that the server only ever
+> *reads* the track. That is wrong in practice.
+>
+> Reading a track through the Play Developer API requires opening an **edit**
+> first (`POST .../edits`), and creating an edit is a **write-scoped** call. A
+> read-only service account is refused at that very first step — **before any
+> track is read** — so the sync 403s and never reaches your releases.
+>
+> Grant the service account permission to **view and manage releases** on the
+> app (Play Console's release-management permission group). The server still
+> never commits an edit: it opens one, reads, and abandons it.
+>
+> Symptom of getting this wrong: `ANDROID_LATEST_VERSION` silently never
+> updates. Before the diagnostics fix below, the log line for this case wrongly
+> read *"no completed production release found"* — which sent you to check your
+> release instead of your permissions.
 
 ### 3. Add the key to Railway (server env)
 1. Open the JSON key file and copy its **entire contents**.
@@ -54,9 +73,23 @@ You can still override the value manually in the admin console; the next sync
 will bring it back in line with Play.
 
 ## Verifying it works
-After configuring, check the server logs for one of:
-- `[play-version-sync] ANDROID_LATEST_VERSION <old> -> <new>` (it updated), or
-- `[play-version-sync] no completed production release found` (nothing live yet —
-  fine before your first production release), or
-- `[play-version-sync] could not obtain access token` (the key or Play-Console
-  access isn't right — re-check steps 1–2).
+After configuring, check the server logs. Each failure now names the step that
+failed, so you can tell them apart:
+
+- `ANDROID_LATEST_VERSION <old> -> <new>` — it worked.
+- `Play refused to open an edit (HTTP 403) …` — **permissions**. The service
+  account cannot create an edit; grant it release access (see the warning in
+  step 2). This is the case that used to masquerade as "no completed production
+  release found".
+- `production has no COMPLETED release yet; versionCode(s) N are still rolling
+  out` — a **staged rollout**. Bump it to 100% and the next tick picks it up.
+  Deliberate: we never nudge players toward a build they cannot download.
+- `could not read the production track (HTTP …)` — the edit opened but the track
+  read failed.
+- `no completed production release found` — genuinely nothing published to
+  production yet.
+- `could not obtain access token` — the key itself is wrong; re-check step 1.
+- **No `[play-version-sync]` lines at all** — `PLAY_SERVICE_ACCOUNT_JSON` is not
+  set, so the sync never started.
+
+Remember it runs on boot and every 6 hours, so allow for lag after publishing.
