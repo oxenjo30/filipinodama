@@ -24,7 +24,6 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -34,6 +33,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.filipinodama.app.data.profile.ProfileExtrasResponse
 import com.filipinodama.app.data.profile.ProfileRepository
 import com.filipinodama.app.data.profile.ProfileResult
@@ -44,6 +44,7 @@ import com.filipinodama.app.data.social.FriendsRepository
 import com.filipinodama.app.data.social.PresenceRepository
 import com.filipinodama.app.data.social.SocialResult
 import com.filipinodama.app.ui.components.LocalSnackbar
+import com.filipinodama.app.ui.components.PresenceSubscription
 import com.filipinodama.app.ui.components.isAuthError
 import com.filipinodama.app.ui.components.screenInsets
 import com.filipinodama.app.ui.screens.social.ReportPlayerDialog
@@ -97,7 +98,7 @@ fun PublicProfileScreen(
     var requestId by remember { mutableStateOf<String?>(null) }
     var friendBusy by remember { mutableStateOf(false) }
     var reportOpen by remember { mutableStateOf(false) }
-    val blockedIds by BlockRepository.blockedIds.collectAsState()
+    val blockedIds by BlockRepository.blockedIds.collectAsStateWithLifecycle()
     val blocked = blockedIds.contains(userId)
     var blockBusy by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
@@ -105,7 +106,9 @@ fun PublicProfileScreen(
     // Phase 7 retry affordance: bump to re-run both load effects below.
     var retryTick by remember { mutableStateOf(0) }
 
-    LaunchedEffect(Unit) { PresenceRepository.start() }
+    // Live friend presence, scoped to this screen instead of started-and-never-
+    // stopped (see PresenceSubscription for why the teardown is ref-counted).
+    PresenceSubscription()
     LaunchedEffect(Unit) { if (signedIn) BlockRepository.list() }
 
     LaunchedEffect(userId, retryTick) {
@@ -193,7 +196,7 @@ fun PublicProfileScreen(
                         Text(u.tier.label, color = Color(0xFFC9A4FF), style = MaterialTheme.typography.labelMedium)
                     }
                     if (relationship == "friends") {
-                        val online = PresenceRepository.online.collectAsState().value.contains(userId)
+                        val online = PresenceRepository.online.collectAsStateWithLifecycle().value.contains(userId)
                         val statusColor = if (online) Color(0xFF3FBF6F) else Color(0xFF8B7CAE)
                         Box(
                             modifier = Modifier

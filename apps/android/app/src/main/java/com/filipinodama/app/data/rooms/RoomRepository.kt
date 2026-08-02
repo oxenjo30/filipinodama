@@ -108,13 +108,13 @@ object RoomRepository {
             val payload = decode<RoomChatDto>(args) ?: return@on
             _state.update { st ->
                 st.copy(
-                    chat = st.chat + RoomChatMsg(
+                    chat = (st.chat + RoomChatMsg(
                         id = payload.id ?: "${payload.at}-${payload.from.userId}-${st.chat.size}",
                         from = payload.from,
                         body = payload.body,
                         at = payload.at,
                         serverId = payload.id
-                    )
+                    )).takeLast(CHAT_HISTORY_LIMIT)
                 )
             }
         }
@@ -254,6 +254,18 @@ sealed class RoomError {
      *  no server event will ever arrive, so the screen must not stay in JOINING. */
     object ConnectFailed : RoomError()
 }
+
+/**
+ * How many relayed room-chat lines we keep in memory.
+ *
+ * A room lobby is the pathological case for the old unbounded `chat + msg`
+ * append: unlike a match it has no end, so a host sitting in a private room
+ * waiting for friends accumulated every line relayed for the whole session,
+ * each append re-copying the entire list. 200 lines is well past anything a
+ * lobby scrollback is read for, and the oldest are the ones nobody scrolls
+ * back to.
+ */
+private const val CHAT_HISTORY_LIMIT = 200
 
 /** A single relayed room chat line (ephemeral; server does not persist these). */
 data class RoomChatMsg(

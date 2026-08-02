@@ -22,6 +22,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -62,8 +63,13 @@ fun ReportPlayerDialog(
 ) {
     val scope = rememberCoroutineScope()
     // Default to the mockup's first/default reason (Cheating / bot).
-    var reason by remember { mutableStateOf(REPORT_REASONS.first().first) }
-    var note by remember { mutableStateOf("") }
+    // Saveable: a configuration change (rotation, fold, split screen, font-size
+    // change) destroys the Activity, and a plain `remember` would silently wipe
+    // the reason + the up-to-500-char description the reporter just wrote.
+    // `busy` stays a plain remember — restoring "busy = true" would leave the
+    // dialog wedged on "Submitting…" with no in-flight request to finish it.
+    var reason by rememberSaveable { mutableStateOf(REPORT_REASONS.first().first) }
+    var note by rememberSaveable { mutableStateOf("") }
     var busy by remember { mutableStateOf(false) }
     var toast by remember { mutableStateOf<String?>(null) }
 

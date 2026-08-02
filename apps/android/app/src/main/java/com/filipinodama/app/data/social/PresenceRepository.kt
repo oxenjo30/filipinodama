@@ -11,7 +11,7 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
-import kotlinx.serialization.json.jsonPrimitive
+import kotlinx.serialization.json.JsonPrimitive
 
 /**
  * PresenceRepository — live online/offline state for the signed-in user's
@@ -76,33 +76,59 @@ object PresenceRepository {
         socket?.emit(EV.presencePing)
     }
 
+    /**
+     * socket.io dispatches this on the Engine.IO thread, NOT the main thread.
+     * Anything thrown here is an uncaught exception on a background thread,
+     * which takes the whole process down — so the ENTIRE decode, not just the
+     * parse step, has to sit inside the catch. It used to end at
+     * `parseToJsonElement`, leaving [applyUpdate] outside it: a server-side
+     * reshape of the presence:update payload (say `snapshot: [{id,status}]`
+     * instead of `snapshot: ["id"]`) would have crashed every installed client
+     * the moment it shipped, with no client release needed to trigger it.
+     *
+     * Presence is a decoration. An unreadable payload must degrade to "no
+     * update" (friends keep their last known state), never to a crash — the
+     * same non-fatal-decode guarantee [com.filipinodama.app.data.engine.PieceColor]
+     * being a String typealias buys us elsewhere.
+     */
     private fun onUpdate(args: Array<Any>) {
-        val raw = args.firstOrNull()?.toString() ?: return
-        val obj = try {
-            json.parseToJsonElement(raw) as? JsonObject ?: return
+        try {
+            val raw = args.firstOrNull()?.toString() ?: return
+            val obj = json.parseToJsonElement(raw) as? JsonObject ?: return
+            applyUpdate(obj)
         } catch (_: Exception) {
-            return
+            // Unreadable payload — dropped, last known presence retained.
         }
-        applyUpdate(obj)
     }
 
-    /** Pulled out as a pure function so it's unit-testable without a live socket. */
+    /**
+     * Pulled out as a pure function so it's unit-testable without a live socket.
+     *
+     * Every field is read through a safe cast (the pattern NotificationsRepository
+     * already uses in notifRequestId/notifStatus) rather than `jsonPrimitive`,
+     * which THROWS IllegalArgumentException when the element is an object or an
+     * array. Fields we can't read are skipped; a snapshot we can't read collapses
+     * to "nobody online", which is the honest fallback rather than a wrong one.
+     *
+     * Note JsonNull is itself a JsonPrimitive whose `content` is the string
+     * "null", so the explicit JsonNull checks below are load-bearing — without
+     * them a null id would be tracked as a user literally named "null".
+     */
     fun applyUpdate(p: JsonObject) {
         val snapshot = p["snapshot"] as? JsonArray
         if (snapshot != null) {
             _online.value = snapshot.mapNotNull { el ->
-                if (el is JsonNull) null else el.jsonPrimitive.content
+                if (el is JsonNull) null else (el as? JsonPrimitive)?.content
             }.toSet()
             return
         }
         val userIdEl = p["userId"]
         val statusEl = p["status"]
-        if (userIdEl != null && userIdEl !is JsonNull && statusEl != null && statusEl !is JsonNull) {
-            val userId = userIdEl.jsonPrimitive.content
-            val status = statusEl.jsonPrimitive.content
-            _online.update { current ->
-                if (status == "online") current + userId else current - userId
-            }
+        if (userIdEl == null || userIdEl is JsonNull || statusEl == null || statusEl is JsonNull) return
+        val userId = (userIdEl as? JsonPrimitive)?.content ?: return
+        val status = (statusEl as? JsonPrimitive)?.content ?: return
+        _online.update { current ->
+            if (status == "online") current + userId else current - userId
         }
     }
 

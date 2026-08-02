@@ -28,7 +28,6 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -40,6 +39,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.filipinodama.app.BuildConfig
 import com.filipinodama.app.data.AuthRepository
 import com.filipinodama.app.data.signOutAndResetSession
@@ -122,20 +122,20 @@ fun SettingsScreen(
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
-    val authState by AuthRepository.state.collectAsState()
+    val authState by AuthRepository.state.collectAsStateWithLifecycle()
     val me = authState.user
 
     val store = SettingsStore.instance
-    val sound by store.sound.collectAsState()
-    val music by store.music.collectAsState()
-    val hints by store.hints.collectAsState()
-    val confirmMoves by store.confirmMoves.collectAsState()
-    val autoPromote by store.autoPromote.collectAsState()
-    val forceCapture by store.forceCapture.collectAsState()
-    val haptics by store.haptics.collectAsState()
-    val pushMatch by store.pushMatch.collectAsState()
-    val pushGuild by store.pushGuild.collectAsState()
-    val pushEvent by store.pushEvent.collectAsState()
+    val sound by store.sound.collectAsStateWithLifecycle()
+    val music by store.music.collectAsStateWithLifecycle()
+    val hints by store.hints.collectAsStateWithLifecycle()
+    val confirmMoves by store.confirmMoves.collectAsStateWithLifecycle()
+    val autoPromote by store.autoPromote.collectAsStateWithLifecycle()
+    val forceCapture by store.forceCapture.collectAsStateWithLifecycle()
+    val haptics by store.haptics.collectAsStateWithLifecycle()
+    val pushMatch by store.pushMatch.collectAsStateWithLifecycle()
+    val pushGuild by store.pushGuild.collectAsStateWithLifecycle()
+    val pushEvent by store.pushEvent.collectAsStateWithLifecycle()
 
     var notifEnabled by remember {
         mutableStateOf(

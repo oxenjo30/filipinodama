@@ -9,7 +9,19 @@
          declare even though no notification is posted yet in this phase. -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
+    <!--
+      taskAffinity="" opts every activity out of the shared, package-named task.
+
+      With the DEFAULT affinity ("com.filipinodama.app"), a malicious app on an
+      unpatched API 26-30 device — in range, since minSdk is 26 — can declare the
+      SAME taskAffinity with allowTaskReparenting and insert a phishing screen
+      into our task stack: the user backs out of a match and lands on an
+      attacker-drawn login prompt that looks like ours. Android 11/12 task-reuse
+      restrictions mitigate this on newer/patched devices; this closes the tail.
+      No behavioural change for a single-activity app.
+    -->
     <application
+        android:taskAffinity=""
         android:allowBackup="true"
         android:fullBackupContent="@xml/backup_rules"
         android:dataExtractionRules="@xml/data_extraction_rules"

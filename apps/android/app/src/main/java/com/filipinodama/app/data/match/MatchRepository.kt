@@ -432,10 +432,10 @@ object MatchRepository {
         if (text.isEmpty() || id == null) return
         val nonce = newNonce()
         _state.update { st ->
-            st.copy(chat = st.chat + ChatMsg(
+            st.copy(chat = st.chat.appendCapped(ChatMsg(
                 id = nonce, mine = true, color = st.myColor ?: "", body = text,
                 emote = null, at = System.currentTimeMillis(), nonce = nonce, pending = true,
-            ))
+            )))
         }
         val sent = runCatching {
             emitPayload(EV.matchChat, MatchChatRequest(matchId = id, body = text, nonce = nonce))
@@ -448,10 +448,10 @@ object MatchRepository {
         if (emote.isEmpty() || id == null) return
         val nonce = newNonce()
         _state.update { st ->
-            st.copy(chat = st.chat + ChatMsg(
+            st.copy(chat = st.chat.appendCapped(ChatMsg(
                 id = nonce, mine = true, color = st.myColor ?: "", body = null,
                 emote = emote, at = System.currentTimeMillis(), nonce = nonce, pending = true,
-            ))
+            )))
         }
         val sent = runCatching {
             emitPayload(EV.matchChat, MatchChatRequest(matchId = id, emote = emote, nonce = nonce))
@@ -593,6 +593,31 @@ object MatchRepository {
 // ---------------------------------------------------------------------------
 
 /**
+ * How many in-match chat lines we keep in memory.
+ *
+ * Every append rebuilds the whole list (`chat + msg`), and nothing ever evicted,
+ * so a long spectated/ongoing match grew the transcript — and the per-append
+ * copy cost — without bound. 200 is far more than a single match's chat ever
+ * reaches (matches run minutes, and the server rate-limits chat), so in practice
+ * nothing is ever dropped; it exists purely as a ceiling.
+ *
+ * Keeping it comfortably above real usage also protects OnlineMatchScreen's
+ * unread badge, which derives from `chat.size` growing — that reading only
+ * degrades once the cap actually bites.
+ */
+private const val CHAT_HISTORY_LIMIT = 200
+
+/**
+ * Append and evict the oldest beyond the cap.
+ *
+ * `takeLast` is deliberate: it only ever drops from the FRONT, and optimistic
+ * messages are appended at the END, so a still-pending message can never be
+ * trimmed away before its echo arrives to reconcile it.
+ */
+private fun List<ChatMsg>.appendCapped(msg: ChatMsg): List<ChatMsg> =
+    (this + msg).takeLast(CHAT_HISTORY_LIMIT)
+
+/**
  * EV.matchChat — reconcile an inbound chat message against our optimistic copy.
  *
  * The server echoes back the `nonce` the sender attached. If it matches a
@@ -619,9 +644,11 @@ fun applyMatchChat(current: MatchUiState, p: MatchChatDto): MatchUiState {
         serverId = p.id,
         pending = false,
     )
-    if (pendingIdx < 0) return current.copy(chat = current.chat + msg)
+    if (pendingIdx < 0) return current.copy(chat = current.chat.appendCapped(msg))
     // Replace in place so the message keeps its position in the transcript
-    // rather than jumping to the bottom when the echo lands.
+    // rather than jumping to the bottom when the echo lands. No cap applied on
+    // this path: it swaps an entry, it does not grow the list, and trimming here
+    // would shift the index we just resolved.
     return current.copy(chat = current.chat.toMutableList().apply { this[pendingIdx] = msg })
 }
 

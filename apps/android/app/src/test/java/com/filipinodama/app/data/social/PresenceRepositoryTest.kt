@@ -69,4 +69,63 @@ class PresenceRepositoryTest {
 
         assertEquals(setOf("u1"), PresenceRepository.online.value)
     }
+
+    // ── malformed payloads must be DROPPED, never fatal ──────────────────────
+    //
+    // presence:update is handled on socket.io's Engine.IO thread, so a throw out
+    // of applyUpdate is an uncaught exception on a background thread — i.e. a
+    // process crash, on every installed client, the moment the server reshapes
+    // the payload. These fixtures are the shapes a server-side change would
+    // plausibly produce; the assertion that matters in all of them is simply
+    // that the call returns.
+
+    @Test
+    fun `a snapshot of objects instead of ids is dropped instead of crashing`() {
+        // e.g. the server starts sending snapshot: [{id, status}] — the exact
+        // change that used to throw IllegalArgumentException via jsonPrimitive.
+        PresenceRepository.applyUpdate(parse("""{"snapshot":[{"id":"u1","status":"online"}],"at":1}"""))
+
+        assertTrue("unreadable snapshot degrades to nobody online", PresenceRepository.online.value.isEmpty())
+    }
+
+    @Test
+    fun `a snapshot mixing ids with junk keeps only the readable ids`() {
+        PresenceRepository.applyUpdate(parse("""{"snapshot":["u1",{"id":"u2"},["u3"],null],"at":1}"""))
+
+        assertEquals(setOf("u1"), PresenceRepository.online.value)
+    }
+
+    @Test
+    fun `an object-shaped userId is ignored and leaves presence untouched`() {
+        PresenceRepository.applyUpdate(parse("""{"snapshot":["u1"],"at":1}"""))
+        PresenceRepository.applyUpdate(parse("""{"userId":{"id":"u1"},"status":"offline","at":2}"""))
+
+        assertTrue("last known presence is retained", PresenceRepository.isOnline("u1"))
+    }
+
+    @Test
+    fun `an object-shaped status is ignored`() {
+        PresenceRepository.applyUpdate(parse("""{"snapshot":["u1"],"at":1}"""))
+        PresenceRepository.applyUpdate(parse("""{"userId":"u2","status":{"state":"online"},"at":2}"""))
+
+        assertEquals(setOf("u1"), PresenceRepository.online.value)
+    }
+
+    @Test
+    fun `a null userId is not tracked as a user literally named null`() {
+        // JsonNull IS a JsonPrimitive whose content is the string "null", so a
+        // bare safe-cast without the explicit null check would add "null" here.
+        PresenceRepository.applyUpdate(parse("""{"userId":null,"status":"online","at":1}"""))
+
+        assertFalse(PresenceRepository.isOnline("null"))
+        assertTrue(PresenceRepository.online.value.isEmpty())
+    }
+
+    @Test
+    fun `a payload with neither snapshot nor userId is a no-op`() {
+        PresenceRepository.applyUpdate(parse("""{"snapshot":["u1"],"at":1}"""))
+        PresenceRepository.applyUpdate(parse("""{"at":2}"""))
+
+        assertEquals(setOf("u1"), PresenceRepository.online.value)
+    }
 }

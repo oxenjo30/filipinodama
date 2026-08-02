@@ -22,6 +22,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -52,12 +53,23 @@ private const val MIN_MESSAGE_LENGTH = 10
 @Composable
 fun ContactSupportDialog(onClose: () -> Unit) {
     val scope = rememberCoroutineScope()
-    var category by remember { mutableStateOf(CATEGORIES[0]) }
-    var subject by remember { mutableStateOf("") }
-    var message by remember { mutableStateOf("") }
+    // MainActivity declares no android:configChanges, so a rotation / fold /
+    // split-screen / font-size change DESTROYS the Activity and Compose rebuilds
+    // this dialog from scratch — a plain `remember` would hand the user back an
+    // empty form after they typed a multi-paragraph support ticket. The
+    // user-authored fields (and the chosen category) are therefore saveable.
+    // `sending` deliberately is NOT: restoring "sending = true" after recreation
+    // would leave the dialog permanently stuck with a dead "Sending…" button and
+    // no coroutine to clear it.
+    var category by rememberSaveable { mutableStateOf(CATEGORIES[0]) }
+    var subject by rememberSaveable { mutableStateOf("") }
+    var message by rememberSaveable { mutableStateOf("") }
     var sending by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
-    var sentTicketId by remember { mutableStateOf<String?>(null) }
+    // Saveable so a rotation on the success screen doesn't drop the player back
+    // onto a (restored, still-filled) form — which invites them to file the same
+    // ticket twice — and doesn't lose the reference id they were told to keep.
+    var sentTicketId by rememberSaveable { mutableStateOf<String?>(null) }
 
     Dialog(onDismissRequest = { if (!sending) onClose() }) {
         Column(

@@ -26,7 +26,6 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -40,6 +39,7 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil.compose.AsyncImage
 import com.filipinodama.app.data.AuthRepository
 import com.filipinodama.app.data.social.GuildCardDto
@@ -75,7 +75,7 @@ import kotlinx.coroutines.launch
  */
 @Composable
 fun DiscoverGuildsScreen(onBack: () -> Unit, onRequireSignIn: () -> Unit = {}) {
-    val me = AuthRepository.state.collectAsState().value.user
+    val me = AuthRepository.state.collectAsStateWithLifecycle().value.user
     val scope = rememberCoroutineScope()
 
     var query by remember { mutableStateOf("") }

@@ -16,7 +16,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -24,6 +23,7 @@ import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil.compose.AsyncImage
 import com.filipinodama.app.data.AuthRepository
 import com.filipinodama.app.ui.components.MockupBackButton
@@ -54,7 +54,7 @@ import com.filipinodama.app.ui.theme.Ink2
  */
 @Composable
 fun AchievementsScreen(onBack: () -> Unit = {}) {
-    val authState by AuthRepository.state.collectAsState()
+    val authState by AuthRepository.state.collectAsStateWithLifecycle()
     val me = authState.user
 
     Column(modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background).screenInsets().padding(16.dp)) {

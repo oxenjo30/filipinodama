@@ -23,7 +23,6 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -36,6 +35,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.filipinodama.app.data.AuthRepository
 import com.filipinodama.app.data.engine.AiDifficulties
 import com.filipinodama.app.data.engine.PieceColors
@@ -60,8 +60,8 @@ import com.filipinodama.app.ui.theme.Panel
  */
 @Composable
 fun OfflineGameScreen(difficulty: String, onChangeDifficulty: () -> Unit, onHome: () -> Unit) {
-    val ui by GameRepository.state.collectAsState()
-    val me = AuthRepository.state.collectAsState().value.user
+    val ui by GameRepository.state.collectAsStateWithLifecycle()
+    val me = AuthRepository.state.collectAsStateWithLifecycle().value.user
     var showResignConfirm by remember { mutableStateOf(false) }
 
     // Start a game only when we ACTUALLY need one.
@@ -305,7 +305,7 @@ private fun AiTurnBanner(status: OfflineStatus, myTurn: Boolean, mustCapture: Bo
 
 @Composable
 private fun OfflineEndCard(onRematch: () -> Unit, onChangeDifficulty: () -> Unit, onHome: () -> Unit) {
-    val ui by GameRepository.state.collectAsState()
+    val ui by GameRepository.state.collectAsStateWithLifecycle()
     val result = ui.gameState.result ?: return
     val won = result.winner == PieceColors.RED
     val draw = result.winner == "draw"

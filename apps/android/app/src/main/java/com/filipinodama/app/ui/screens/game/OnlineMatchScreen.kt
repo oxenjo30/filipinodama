@@ -25,7 +25,6 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -42,6 +41,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.filipinodama.app.R
 import com.filipinodama.app.data.AuthRepository
 import com.filipinodama.app.data.economy.EconomyRepository
@@ -94,8 +94,8 @@ fun OnlineMatchScreen(
     onWatchReplay: (String) -> Unit = {},
     onOpenSettings: () -> Unit = {}
 ) {
-    val ui by MatchRepository.state.collectAsState()
-    val authState by AuthRepository.state.collectAsState()
+    val ui by MatchRepository.state.collectAsStateWithLifecycle()
+    val authState by AuthRepository.state.collectAsStateWithLifecycle()
     val me = authState.user
     var showResignConfirm by remember { mutableStateOf(false) }
     // (messageId, quotedText) of a long-pressed opponent chat message awaiting a
@@ -582,7 +582,7 @@ private fun MatchEndCard(
     onWatchReplay: (String) -> Unit,
     onHome: () -> Unit
 ) {
-    val ui by MatchRepository.state.collectAsState()
+    val ui by MatchRepository.state.collectAsStateWithLifecycle()
     val end = ui.end ?: return
     val isSpectating = ui.myColor == null
     val won = ui.myColor != null && end.result.winner == ui.myColor

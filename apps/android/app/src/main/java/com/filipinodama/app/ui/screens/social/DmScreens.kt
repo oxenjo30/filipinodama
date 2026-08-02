@@ -27,17 +27,18 @@ import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.filipinodama.app.data.AuthRepository
 import com.filipinodama.app.data.social.BlockRepository
 import com.filipinodama.app.data.social.DmConversationDto
@@ -46,6 +47,7 @@ import com.filipinodama.app.data.social.DmRepository
 import com.filipinodama.app.data.social.PresenceRepository
 import com.filipinodama.app.data.social.SocialResult
 import com.filipinodama.app.ui.screens.profile.AvatarView
+import com.filipinodama.app.ui.components.PresenceSubscription
 import com.filipinodama.app.ui.components.PullRefreshContainer
 import com.filipinodama.app.ui.components.screenContentPadding
 import com.filipinodama.app.ui.components.screenInsetsTopOnly
@@ -66,15 +68,18 @@ import kotlinx.coroutines.launch
  */
 @Composable
 fun DmConversationListScreen(onBack: () -> Unit, onOpenThread: (String) -> Unit) {
-    val me = AuthRepository.state.collectAsState().value.user
-    val dmState by DmRepository.state.collectAsState()
-    val onlineSet by PresenceRepository.online.collectAsState()
-    val blockedIds by BlockRepository.blockedIds.collectAsState()
+    val me = AuthRepository.state.collectAsStateWithLifecycle().value.user
+    val dmState by DmRepository.state.collectAsStateWithLifecycle()
+    val onlineSet by PresenceRepository.online.collectAsStateWithLifecycle()
+    val blockedIds by BlockRepository.blockedIds.collectAsStateWithLifecycle()
     val scope = rememberCoroutineScope()
+
+    // Live friend presence, scoped to this screen instead of started-and-never-
+    // stopped (see PresenceSubscription for why the teardown is ref-counted).
+    PresenceSubscription(enabled = me != null)
 
     LaunchedEffect(me?.id) {
         if (me == null) return@LaunchedEffect
-        PresenceRepository.start()
         DmRepository.loadConversations()
         BlockRepository.list()
     }
@@ -171,17 +176,29 @@ private fun ConversationRow(conversation: DmConversationDto, online: Boolean, on
  */
 @Composable
 fun DmThreadScreen(userId: String, onBack: () -> Unit, onOpenProfile: (String) -> Unit = {}) {
-    val me = AuthRepository.state.collectAsState().value.user
-    val dmState by DmRepository.state.collectAsState()
-    val onlineSet by PresenceRepository.online.collectAsState()
+    val me = AuthRepository.state.collectAsStateWithLifecycle().value.user
+    val dmState by DmRepository.state.collectAsStateWithLifecycle()
+    val onlineSet by PresenceRepository.online.collectAsStateWithLifecycle()
     val scope = rememberCoroutineScope()
-    var draft by remember { mutableStateOf("") }
-    var reportTarget by remember { mutableStateOf<Pair<String, String>?>(null) } // id to body
+    // Saveable: the Activity has no android:configChanges, so a rotation / unfold
+    // / split-screen / font-size change recreates it and a plain `remember` threw
+    // away the message being typed.
+    var draft by rememberSaveable { mutableStateOf("") }
+    // Also saveable so the report sheet (and, with it, the report note the player
+    // is writing inside ReportPlayerDialog) survives that recreation. kotlin.Pair
+    // is Serializable and both halves are Strings, so the default saver handles it.
+    var reportTarget by rememberSaveable { mutableStateOf<Pair<String, String>?>(null) } // id to body
     // Phase 7 retry affordance: bump to re-run the thread-open call below.
     var retryTick by remember { mutableStateOf(0) }
-    val blockedIds by BlockRepository.blockedIds.collectAsState()
+    val blockedIds by BlockRepository.blockedIds.collectAsStateWithLifecycle()
     val blocked = blockedIds.contains(userId)
     var blockBusy by remember { mutableStateOf(false) }
+
+    // This screen READS presence (the header's online dot) but never subscribed —
+    // it only ever worked because whichever screen the user came from had started
+    // presence and nothing ever stopped it. Now that the subscription is scoped, a
+    // consumer that doesn't hold a reference gets torn down under it, so claim one.
+    PresenceSubscription(enabled = me != null)
 
     LaunchedEffect(userId, retryTick) {
         DmRepository.openThread(userId)

@@ -32,11 +32,12 @@ import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -105,18 +106,28 @@ fun PrivateRoomScreen(
     // routed to Login/Signup — instead of the old silent no-launch.
     onRequireSignIn: () -> Unit = {}
 ) {
-    val ui by RoomRepository.state.collectAsState()
-    val authState by AuthRepository.state.collectAsState()
+    val ui by RoomRepository.state.collectAsStateWithLifecycle()
+    val authState by AuthRepository.state.collectAsStateWithLifecycle()
     val myUserId = authState.user?.id
     val signedIn = authState.user != null && authState.user?.isGuest != true
     val scope = rememberCoroutineScope()
-    var joinInput by remember { mutableStateOf("") }
+    // The typed room code is saveable: MainActivity declares no
+    // android:configChanges, so a rotation (or unfold, or split screen, or font-
+    // size change) destroys the Activity and a plain `remember` wiped the code the
+    // player was part-way through entering.
+    var joinInput by rememberSaveable { mutableStateOf("") }
+    // [mode] deliberately stays a plain remember: it is transient screen-flow
+    // state driven by the repository snapshot, and restoring JOINING after a
+    // recreation would drop the player straight back onto a spinner with no join
+    // in flight (the 8s watchdog below would then bounce them out with an error).
+    // The LaunchedEffects re-derive the correct mode from RoomRepository.state.
     var mode by remember { mutableStateOf(RoomScreenMode.CHOOSE) }
     var toast by remember { mutableStateOf<String?>(null) }
     var resumeAttempted by remember { mutableStateOf(false) }
     // When set, the "sign in to host/join a room" confirm dialog is shown; its
-    // label describes the action ("host a room" / "join a room").
-    var signInPromptAction by remember { mutableStateOf<String?>(null) }
+    // label describes the action ("host a room" / "join a room"). Saveable so the
+    // prompt isn't silently dismissed by a rotation mid-decision.
+    var signInPromptAction by rememberSaveable { mutableStateOf<String?>(null) }
 
     // ── Deep link: ?code=X auto-join (or auto-spectate) ──
     LaunchedEffect(deepLinkCode) {
@@ -483,8 +494,11 @@ private fun HostOrGuestLobby(
 ) {
     val isHost = ui.isHostUser(myUserId)
     // (accusedId, messageId, quotedText) of a long-pressed room-chat message
-    // awaiting a report, or null.
-    var reportMessage by remember { mutableStateOf<Triple<String, String, String>?>(null) }
+    // awaiting a report, or null. Saveable so a configuration change doesn't slam
+    // the report sheet shut — and with it the note the reporter was typing inside
+    // ReportPlayerDialog. kotlin.Triple is Serializable and all three slots are
+    // Strings, so the default saver handles it.
+    var reportMessage by rememberSaveable { mutableStateOf<Triple<String, String, String>?>(null) }
     val clipboard = LocalClipboardManager.current
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -502,7 +516,9 @@ private fun HostOrGuestLobby(
     // for it yet (spectating is always technically open via the link), so we
     // keep it honest: this only toggles what the host sees, exactly like the
     // web PrivateRoomPage's local `allowSpec`. Not presented as shared state.
-    var allowSpec by remember { mutableStateOf(true) }
+    // Saveable: it's a deliberate host choice, and silently flipping it back on
+    // when the phone rotates is exactly the kind of state loss this screen had.
+    var allowSpec by rememberSaveable { mutableStateOf(true) }
 
     // navigationBarsPadding() lifts the whole scroll content above the system
     // nav/gesture bar so the last item (Leave / Start Match) clears it instead of
@@ -850,8 +866,10 @@ private fun PlayersCard(
 @Composable
 private fun MatchSettingsBlock(settings: GameSettings, isHost: Boolean, onSettings: (GameSettings) -> Unit) {
     // Local-only cosmetic preferences (no server field yet). Kept honest.
-    var mode by remember { mutableStateOf("Classic") }
-    var time by remember { mutableStateOf("10 min") }
+    // Saveable so the host's picks aren't silently reset to Classic / 10 min by a
+    // rotation — these have no server copy to re-derive them from.
+    var mode by rememberSaveable { mutableStateOf("Classic") }
+    var time by rememberSaveable { mutableStateOf("10 min") }
     // The real, authoritative move-timer value.
     val moveTimerLabel = when (settings.moveTimerSec) {
         10 -> "10s"; 20 -> "20s"; 30 -> "30s"; else -> "Off"
@@ -1201,12 +1219,22 @@ private fun SpectatorsCard(
 @Composable
 private fun InviteFriendsCard(roomUrl: String) {
     val scope = rememberCoroutineScope()
-    val onlineSet by PresenceRepository.online.collectAsState()
+    val onlineSet by PresenceRepository.online.collectAsStateWithLifecycle()
     var friends by remember { mutableStateOf<List<FriendUserDto>?>(null) }
     var sentIds by remember { mutableStateOf(setOf<String>()) }
 
+    // Live friend presence, scoped to this card. This used to be a bare
+    // PresenceRepository.start() inside the LaunchedEffect below with NO matching
+    // stop() anywhere in the app, so opening the room once left the singleton's
+    // `presence:update` listener attached (and its online-set cached) for the rest
+    // of the process. [PresenceSubscription] pairs the start with a ref-counted
+    // teardown — ref-counted rather than a plain onDispose { stop() } because
+    // NavHost cross-fades compose the destination BEFORE disposing the source, and
+    // an unconditional stop() would blank out the presence of the screen the user
+    // just opened. See PresenceSubscription's kdoc.
+    com.filipinodama.app.ui.components.PresenceSubscription()
+
     LaunchedEffect(Unit) {
-        PresenceRepository.start()
         when (val result = FriendsRepository.friends()) {
             is SocialResult.Success -> friends = result.data.friends
             is SocialResult.Failure -> friends = emptyList()
@@ -1262,7 +1290,9 @@ private fun RoomChatCard(
      *  path as much as match chat does. */
     onReportMessage: ((accusedId: String, messageId: String, quoted: String) -> Unit)? = null,
 ) {
-    var draft by remember { mutableStateOf("") }
+    // Saveable: rotating the phone mid-sentence used to throw the typed room-chat
+    // message away (the Activity is recreated on every configuration change).
+    var draft by rememberSaveable { mutableStateOf("") }
     GameFrameCard {
         Column {
             Text("Room Chat", color = Ink2, style = MaterialTheme.typography.labelSmall)

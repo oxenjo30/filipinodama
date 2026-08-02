@@ -27,7 +27,6 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -41,6 +40,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil.compose.AsyncImage
 import com.filipinodama.app.data.AuthRepository
 import com.filipinodama.app.data.signOutAndResetSession
@@ -115,7 +115,7 @@ fun ProfileScreen(
     onOpenAchievements: () -> Unit = {},
     onOpenMessages: () -> Unit = {}
 ) {
-    val authState by AuthRepository.state.collectAsState()
+    val authState by AuthRepository.state.collectAsStateWithLifecycle()
     val me = authState.user
     val scope = rememberCoroutineScope()
 
@@ -151,7 +151,7 @@ fun ProfileScreen(
     // Keyed on NotificationsRepository.actionsTick too: a live `notif:new`
     // (e.g. an incoming friend request) bumps the tick, which re-runs this and
     // refreshes the red "action needed" bubble INSTANTLY — no manual refresh.
-    val actionsTick by com.filipinodama.app.data.social.NotificationsRepository.actionsTick.collectAsState()
+    val actionsTick by com.filipinodama.app.data.social.NotificationsRepository.actionsTick.collectAsStateWithLifecycle()
     LaunchedEffect(me?.id, actionsTick) {
         if (me?.id == null) return@LaunchedEffect
         val r = com.filipinodama.app.data.social.FriendsRepository.requests()
@@ -259,7 +259,7 @@ fun ProfileScreen(
         com.filipinodama.app.ui.screens.settings.ContactSupportDialog(onClose = { contactOpen = false })
     }
 
-    val dmUnread by com.filipinodama.app.data.social.DmRepository.state.collectAsState()
+    val dmUnread by com.filipinodama.app.data.social.DmRepository.state.collectAsStateWithLifecycle()
 
     // Pull down anywhere on the Profile to RE-FETCH real data from the server
     // (reloadProfile() above — guild, friend-request/DM counts, trophy ledger,
@@ -670,16 +670,16 @@ private fun ProfileSettingsTab(
 ) {
     val scope = rememberCoroutineScope()
     val store = SettingsStore.instance
-    val confirmMoves by store.confirmMoves.collectAsState()
-    val autoPromote by store.autoPromote.collectAsState()
-    val hints by store.hints.collectAsState()
-    val forceCapture by store.forceCapture.collectAsState()
-    val sound by store.sound.collectAsState()
-    val music by store.music.collectAsState()
-    val haptics by store.haptics.collectAsState()
-    val pushMatch by store.pushMatch.collectAsState()
-    val pushGuild by store.pushGuild.collectAsState()
-    val pushEvent by store.pushEvent.collectAsState()
+    val confirmMoves by store.confirmMoves.collectAsStateWithLifecycle()
+    val autoPromote by store.autoPromote.collectAsStateWithLifecycle()
+    val hints by store.hints.collectAsStateWithLifecycle()
+    val forceCapture by store.forceCapture.collectAsStateWithLifecycle()
+    val sound by store.sound.collectAsStateWithLifecycle()
+    val music by store.music.collectAsStateWithLifecycle()
+    val haptics by store.haptics.collectAsStateWithLifecycle()
+    val pushMatch by store.pushMatch.collectAsStateWithLifecycle()
+    val pushGuild by store.pushGuild.collectAsStateWithLifecycle()
+    val pushEvent by store.pushEvent.collectAsStateWithLifecycle()
 
     var contactOpen by remember { mutableStateOf(false) }
     if (contactOpen) {

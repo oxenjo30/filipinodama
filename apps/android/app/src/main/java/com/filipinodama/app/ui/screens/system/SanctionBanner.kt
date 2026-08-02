@@ -8,13 +8,13 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.filipinodama.app.data.AuthRepository
 
 /**
@@ -31,7 +31,7 @@ import com.filipinodama.app.data.AuthRepository
  */
 @Composable
 fun SanctionBanner(modifier: Modifier = Modifier) {
-    val authState by AuthRepository.state.collectAsState()
+    val authState by AuthRepository.state.collectAsStateWithLifecycle()
     val s = authState.user?.sanction
     if (s == null || (!s.muted && !s.banned)) return
 
