@@ -1,6 +1,7 @@
 package com.filipinodama.app.data.social
 
 import com.filipinodama.app.data.ApiClient
+import com.filipinodama.app.data.AuthRepository
 import com.filipinodama.app.data.SocketClient
 import io.socket.client.Socket
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -140,27 +141,77 @@ object DmRepository {
         }
     }
 
+    /**
+     * Send a DM, rendering it IMMEDIATELY.
+     *
+     * This used to await the POST and only then append the server's row, so your
+     * own message did not appear until a full round trip completed — the same
+     * "chat feels seconds slow" complaint as in-match chat. We now append a
+     * PENDING copy first and swap in the authoritative row when the POST returns
+     * (adopting the server's body, which matters because it masks profanity), or
+     * drop it and surface the error if the send fails.
+     *
+     * The optimistic row carries a local `pending-…` id, so the socket broadcast
+     * for our own message still de-dupes on the REAL id exactly as before.
+     */
     suspend fun send(userId: String, body: String) {
         val trimmed = body.trim()
         if (trimmed.isEmpty() || _state.value.sending) return
-        _state.update { it.copy(sending = true, error = null) }
+
+        val me = AuthRepository.state.value.user
+        val localId = "pending-${java.util.UUID.randomUUID()}"
+        val optimistic = if (me != null && _state.value.openChannelId != null) {
+            DmMessageDto(
+                id = localId,
+                channelId = _state.value.openChannelId!!,
+                body = trimmed,
+                createdAt = java.time.Instant.now().toString(),
+                author = DmAuthorDto(id = me.id, displayName = me.displayName, avatarUrl = me.avatarUrl),
+            )
+        } else null
+
+        _state.update { s ->
+            s.copy(
+                sending = true,
+                error = null,
+                messages = if (optimistic != null && s.openUserId == userId) s.messages + optimistic else s.messages,
+            )
+        }
         try {
             val envelope = api.send(userId, DmSendBody(trimmed))
             if (envelope.ok && envelope.data != null) {
                 val message = envelope.data.message
-                if (_state.value.openUserId == userId) {
-                    _state.update { s ->
-                        if (s.messages.any { it.id == message.id }) s
-                        else s.copy(messages = s.messages + message)
+                _state.update { s ->
+                    if (s.openUserId != userId) s
+                    else {
+                        val idx = s.messages.indexOfFirst { it.id == localId }
+                        when {
+                            // Swap the pending row for the server's, IN PLACE, so
+                            // the message keeps its position instead of jumping.
+                            idx >= 0 -> s.copy(messages = s.messages.toMutableList().apply { this[idx] = message })
+                            // The socket broadcast beat the POST response here.
+                            s.messages.any { it.id == message.id } -> s
+                            else -> s.copy(messages = s.messages + message)
+                        }
                     }
                 }
                 loadConversations()
             } else {
                 val code = envelope.error?.code
-                _state.update { it.copy(error = if (code == "NOT_FRIENDS") "You can only message friends." else "Message failed to send.") }
+                _state.update { s ->
+                    s.copy(
+                        messages = s.messages.filterNot { it.id == localId },
+                        error = if (code == "NOT_FRIENDS") "You can only message friends." else "Message failed to send.",
+                    )
+                }
             }
         } catch (_: Exception) {
-            _state.update { it.copy(error = "Message failed to send.") }
+            _state.update { s ->
+                s.copy(
+                    messages = s.messages.filterNot { it.id == localId },
+                    error = "Message failed to send.",
+                )
+            }
         } finally {
             _state.update { it.copy(sending = false) }
         }

@@ -213,18 +213,7 @@ object MatchRepository {
 
         s.on(EV.matchChat) { args ->
             val payload = decode<MatchChatDto>(args) ?: return@on
-            _state.update { st ->
-                if (st.matchId != null && payload.matchId != st.matchId) return@update st
-                val msg = ChatMsg(
-                    id = "${payload.at}-${payload.from}-${st.chat.size}",
-                    mine = st.myColor != null && payload.color == st.myColor,
-                    color = payload.color,
-                    body = payload.body,
-                    emote = payload.emote,
-                    at = payload.at
-                )
-                st.copy(chat = st.chat + msg)
-            }
+            _state.update { st -> applyMatchChat(st, payload) }
         }
 
         s.on(EV.spectateCount) { args ->
@@ -405,18 +394,62 @@ object MatchRepository {
         _state.value = MatchUiState()
     }
 
+    /**
+     * Send a chat message, rendering it IMMEDIATELY.
+     *
+     * Previously this only emitted, and the message appeared once the server
+     * echoed match:chat back — a full round trip before you saw your own text.
+     * On a laggy connection that reads as the chat box being broken. Moves got
+     * optimistic application in v51; chat did not.
+     *
+     * We now append locally with a nonce, and [applyMatchChat] reconciles the
+     * echo against it. If the emit fails outright we mark the message failed
+     * rather than leaving a message that looks sent.
+     */
     fun sendChat(body: String) {
         val text = body.trim()
         val id = _state.value.matchId
         if (text.isEmpty() || id == null) return
-        runCatching { emitPayload(EV.matchChat, MatchChatRequest(matchId = id, body = text)) }
+        val nonce = newNonce()
+        _state.update { st ->
+            st.copy(chat = st.chat + ChatMsg(
+                id = nonce, mine = true, color = st.myColor ?: "", body = text,
+                emote = null, at = System.currentTimeMillis(), nonce = nonce, pending = true,
+            ))
+        }
+        val sent = runCatching {
+            emitPayload(EV.matchChat, MatchChatRequest(matchId = id, body = text, nonce = nonce))
+        }.isSuccess
+        if (!sent) markChatFailed(nonce)
     }
 
     fun sendEmote(emote: String) {
         val id = _state.value.matchId
         if (emote.isEmpty() || id == null) return
-        runCatching { emitPayload(EV.matchChat, MatchChatRequest(matchId = id, emote = emote)) }
+        val nonce = newNonce()
+        _state.update { st ->
+            st.copy(chat = st.chat + ChatMsg(
+                id = nonce, mine = true, color = st.myColor ?: "", body = null,
+                emote = emote, at = System.currentTimeMillis(), nonce = nonce, pending = true,
+            ))
+        }
+        val sent = runCatching {
+            emitPayload(EV.matchChat, MatchChatRequest(matchId = id, emote = emote, nonce = nonce))
+        }.isSuccess
+        if (!sent) markChatFailed(nonce)
     }
+
+    /** Drop an optimistic message whose emit never left the device. */
+    private fun markChatFailed(nonce: String) {
+        _state.update { st ->
+            st.copy(
+                chat = st.chat.filterNot { it.nonce == nonce },
+                error = "Message failed to send.",
+            )
+        }
+    }
+
+    private fun newNonce(): String = java.util.UUID.randomUUID().toString()
 
     fun offerRematch() {
         val id = _state.value.matchId ?: return
@@ -485,6 +518,38 @@ object MatchRepository {
 //   The `current.matchId != null` prefix is what keeps matchState usable as the
 //   match-ENTRY path: when we hold no match yet, any payload is accepted.
 // ---------------------------------------------------------------------------
+
+/**
+ * EV.matchChat — reconcile an inbound chat message against our optimistic copy.
+ *
+ * The server echoes back the `nonce` the sender attached. If it matches a
+ * message we already rendered optimistically, we REPLACE that entry (clearing
+ * `pending` and adopting the server's authoritative body — which matters now
+ * that the server masks profanity, so the sender sees exactly what everyone
+ * else does). Otherwise it's the opponent's message and we append.
+ *
+ * Nonce matching is what makes this safe to do twice: without it, sending the
+ * same text twice quickly would be indistinguishable and could mis-reconcile.
+ */
+fun applyMatchChat(current: MatchUiState, p: MatchChatDto): MatchUiState {
+    if (current.matchId != null && p.matchId != current.matchId) return current
+
+    val pendingIdx = p.nonce?.let { n -> current.chat.indexOfFirst { it.nonce == n && it.pending } } ?: -1
+    val msg = ChatMsg(
+        id = "${p.at}-${p.from}-${current.chat.size}",
+        mine = current.myColor != null && p.color == current.myColor,
+        color = p.color,
+        body = p.body,
+        emote = p.emote,
+        at = p.at,
+        nonce = p.nonce,
+        pending = false,
+    )
+    if (pendingIdx < 0) return current.copy(chat = current.chat + msg)
+    // Replace in place so the message keeps its position in the transcript
+    // rather than jumping to the bottom when the echo lands.
+    return current.copy(chat = current.chat.toMutableList().apply { this[pendingIdx] = msg })
+}
 
 /** EV.matchState — authoritative full resync (also the match-entry path). */
 fun applyMatchState(current: MatchUiState, p: MatchStateDto): MatchUiState {
@@ -559,7 +624,23 @@ data class ChatMsg(
     val color: PieceColor,
     val body: String?,
     val emote: String?,
-    val at: Long
+    val at: Long,
+    /**
+     * Client-generated id for a message we rendered OPTIMISTICALLY, echoed back
+     * by the server so we can reconcile it instead of rendering it twice. Null
+     * for anything that arrived unprompted (i.e. the opponent's messages).
+     */
+    val nonce: String? = null,
+    /**
+     * True while our own message is still in flight.
+     *
+     * Sending used to wait a FULL ROUND TRIP before you saw your own text: the
+     * client emitted match:chat and only appended when the server echoed it
+     * back. On a laggy connection that read as a multi-second delay before your
+     * message appeared. We now append immediately and clear this on the echo —
+     * the same optimistic treatment moves already got.
+     */
+    val pending: Boolean = false
 )
 
 data class MatchUiState(

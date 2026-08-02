@@ -20,4 +20,11 @@ data class MatchIdRequest(val matchId: String)
 data class MatchMoveRequest(val matchId: String?, val move: Move)
 
 @Serializable
-data class MatchChatRequest(val matchId: String, val body: String? = null, val emote: String? = null)
+data class MatchChatRequest(
+    val matchId: String,
+    val body: String? = null,
+    val emote: String? = null,
+    /** Client-generated id the server echoes back, so we can reconcile our
+     *  optimistic render rather than showing the message twice. */
+    val nonce: String? = null,
+)

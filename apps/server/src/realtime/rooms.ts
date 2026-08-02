@@ -1,5 +1,5 @@
 import type { Server as IOServer, Socket } from "socket.io";
-import { EV, DEFAULT_SETTINGS, type GameSettings } from "@dama/shared";
+import { EV, DEFAULT_SETTINGS, type GameSettings, maskProfanity } from "@dama/shared";
 import type { MatchMode as PrismaMatchMode } from "@prisma/client";
 import { prisma } from "../db/client.js";
 import { isMuted } from "../lib/mute.js";
@@ -634,19 +634,28 @@ export function registerRooms(io: IOServer, socket: Socket) {
     // invite is handled client-side via the shareable code/link; nothing server-side needed.
   });
 
-  socket.on("room:chat", async (payload: { body?: unknown } = {}) => {
+  socket.on("room:chat", async (payload: { body?: unknown; nonce?: unknown } = {}) => {
     if (!allow(socket, "room:chat", 8, 4000)) return; // anti-flood
     const code = await getUserRoom(RP, userId);
     const room = code ? await loadRoom(code) : null;
     if (!room) return;
-    const body = typeof payload?.body === "string" ? payload.body.trim().slice(0, 300) : "";
-    if (!body) return;
+    const raw = typeof payload?.body === "string" ? payload.body.trim().slice(0, 300) : "";
+    if (!raw) return;
     if (await isMuted(userId)) return; // admin-muted players can't chat in rooms
+    // Same filter DMs and guild chat already run (dm.ts:111,
+    // guild-chat-service.ts:116). Private-room chat was the other stranger-facing
+    // surface with NO filter — anyone holding the room code can join one.
+    const body = maskProfanity(raw);
+    // Echo the sender's nonce so their client can reconcile the message it
+    // already rendered optimistically, rather than waiting a full round trip to
+    // see its own text. Opaque to us.
+    const nonce = typeof payload?.nonce === "string" ? payload.nonce.slice(0, 64) : null;
     const from = memberIn(room, userId);
     io.to(ROOM_PREFIX(code!)).emit("room:chat", {
       from: from ? publicMember(from) : { userId, name: "Player", avatarUrl: null, tag: "" },
       body,
       at: Date.now(),
+      nonce,
     });
   });
 
