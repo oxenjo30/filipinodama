@@ -104,8 +104,11 @@ function MatchCard({
 }) {
   const red = match.redEntryId ? (entryById.get(match.redEntryId) ?? null) : null;
   const blue = match.blueEntryId ? (entryById.get(match.blueEntryId) ?? null) : null;
-  const bye = (!!match.redEntryId && !match.blueEntryId) || (!match.redEntryId && !!match.blueEntryId);
   const decided = match.status === "done" && !!match.winnerEntryId;
+  // A bye is a slot that RESOLVED with only one competitor — the server seeds it
+  // already `done`. A half-filled slot that is still pending is not a bye, it is
+  // simply waiting on the match that feeds its empty side, and must read TBD.
+  const bye = decided && (!match.redEntryId || !match.blueEntryId);
   const live = !!match.matchId && match.status !== "done";
   const mine = !!myEntryId && (match.redEntryId === myEntryId || match.blueEntryId === myEntryId);
 
@@ -248,7 +251,7 @@ function BracketSection({
             aria-hidden="true"
           >
             {paths.map((d, i) => (
-              <path key={i} d={d} fill="none" stroke="rgba(232,184,75,.28)" strokeWidth={1.5} />
+              <path key={i} d={d} fill="none" stroke="rgba(232,184,75,.42)" strokeWidth={1.5} />
             ))}
           </svg>
 
