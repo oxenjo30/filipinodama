@@ -1,3 +1,221 @@
+# Account purge - 30-day hard delete
+
+Branch: `feat/account-purge-job` - worktree `D:/AI Projects/fd-purge`
+
+Server-side. Makes `DELETE /api/users/me` mean what the app has been telling
+users it means. Audit finding, 2026-08-02.
+
+## The problem
+
+`DELETE /api/users/me` set `deletedAt` and killed sessions. That was ALL it ever
+did - a search of the whole server for a purge/anonymise job returned zero hits.
+Meanwhile the app promises, in three places (Android DeleteAccountDialog:68,73,
+LegalContent:387, web LegalLayout:656), that deletion "permanently erases" the
+account and "completes within 30 days".
+
+A naive `prisma.user.delete()` could not have worked anyway: FIVE relations to
+User carried no `onDelete`, so Prisma defaulted them to Restrict and the delete
+would have thrown.
+
+## Owner decisions (2026-08-02)
+
+Hard delete, permanent wipe, scoped to "wipe all but money and safety".
+
+## What survives, and why
+
+- **Payment** - RETAINED, `userId` nulled. The only real-money record in the
+  schema; financial records carry statutory retention that outlives an erasure
+  request. The row survives for accounting with no link to a person.
+- **Report** - RETAINED, identity scrubbed, so a repeat abuser cannot launder
+  their history by deleting and re-registering. NOTE THE ASYMMETRY: as ACCUSED,
+  the cited `excerpt` is their content and is destroyed; as REPORTER, the excerpt
+  is somebody ELSE's message and live evidence against a still-active user, so it
+  is KEPT and only the reporter's name is scrubbed. Getting this backwards would
+  let anyone destroy evidence against another player by deleting their own
+  account.
+- **Match** - RETAINED with the player slot nulled (already the schema's
+  behaviour). The OPPONENT's history is not the deleted user's data to erase.
+
+Everything else is destroyed: profile, email, password, OAuth links, bio, avatar,
+sessions, inventory, friendships, blocks, guild membership, quest/season
+progress, notifications, chat messages, orders, gold ledger, tournament entries.
+
+## Checklist
+
+- [x] Migration `20260802100000_account_purge_cascades` - LedgerEntry/Order/
+      Message -> Cascade; Payment/Tournament.createdBy -> SetNull (both made
+      nullable). DELETES NO DATA: FK swaps + two DROP NOT NULL only.
+- [x] `account-purge.ts` - `runAccountPurge` (batched poller tick) +
+      `purgeAccount` (single account, one transaction).
+- [x] Explicit deletion of `ChannelMember` and `GuildJoinRequest`. Both reference
+      the user by a plain String column with NO foreign key (34 id columns vs 32
+      declared relations), so the database cannot cascade them. Without this a
+      purged account silently stays a member of every DM/guild channel it joined.
+- [x] Hourly poller wired in `index.ts` on the boot path only (not `buildApp`),
+      matching the campaign / guild-war / abandon-sweep convention.
+- [x] `deletedAt` guards on `login()` and the OAuth link path. Never an
+      authorization bypass (requireAuth / socket guard / rotateSession already
+      rejected), but login issued cookies for an account every other layer denies
+      - "signed in" then instantly signed out, unrecoverable - and it acted as a
+      credential-verification oracle.
+- [x] Second-order fallout fixed: `Payment.userId` going nullable broke
+      `admin-financials.ts` (buyer-less rows in the revenue dashboard) and
+      `payments.ts` (crediting/debiting a purged buyer). A purged buyer now
+      cannot be refunded in-app - explicit `BUYER_PURGED` 400 pointing the admin
+      at the payment provider, rather than a crash.
+- [x] `Payment` added to the test helper's TRUNCATE list - it never needed to be
+      there while Restrict meant a payment couldn't outlive its user.
+
+## Verification
+
+- `npx tsc --noEmit` - clean (after building @dama/shared + @dama/game-engine).
+- `npx vitest run` - **53 files, 564 passed, 4 skipped, 0 failed**.
+- 17 new tests: 14 purge (scope, cascades, retention, the reporter/accused
+  asymmetry, batching) + 3 deleted-account login.
+
+Migration applied to the LOCAL TEST DB (`dama_test`) only. NOT applied to
+production - that is a deploy step and needs owner approval.
+
+### Environment note (not a code issue)
+A native Windows Redis service (`C:\Program Files\Redis`, a 3.x build with no
+`UNLINK`) is bound to 6379 alongside Docker's redis:7. Whichever wins the bind
+decides whether `truncateAll`'s `flushRealtimeKeys` works, so the suite can fail
+with `ERR unknown command 'unlink'` for reasons unrelated to any change. Ran
+against a throwaway container on 6399 instead; the Windows service was left
+running. Worth disabling that service to avoid future confusion.
+
+## Not in this PR
+
+Play purchase-token account binding (deferred - owner is not enabling real
+purchases yet) - `maskProfanity` in match/room socket chat - per-message
+reporting - the Android Tier-2 items.
+
+# Android socket identity & session lifecycle (Phase 1)
+
+Branch: `fix/android-socket-lifecycle` - worktree `D:/AI Projects/fd-socket-lifecycle`
+
+Closes the two CRITICAL findings and the cross-account session bleed from the
+2026-08-02 security & bug audit. Android-only; no server changes in this PR.
+
+## Root cause
+
+Process-wide singleton sockets, consumed by repositories that guarded listener
+registration with a **sticky boolean** and had no reset path.
+
+`SocketClient.connect()` returned a NEW `Socket` whenever the cached one was not
+`connected()` - but socket.io reconnects itself, so "not connected" means
+"mid-backoff", not "dead". The replacement was assigned to each repo's field
+while its `wired`/`subscribed`/`started` flag suppressed re-wiring, so the new
+socket carried **zero listeners** for the rest of the process.
+
+## Checklist
+
+- [x] `SocketClient.connect()` returns any existing instance; only `disconnect()`
+      replaces it. Marked `@Synchronized` (also closes the cold-start race that
+      opened two authenticated sockets per user).
+- [x] `SocketClient.disconnect()` documented as the ONE place a bare `off()` is
+      legal, with the pairing requirement stated.
+- [x] Identity-keyed wiring (`wiredSocket === s`) replacing the boolean latch in
+      MatchRepository, RoomRepository, DmRepository, NotificationsRepository,
+      PresenceRepository. GuildChatRepository already re-armed correctly and was
+      the pattern the rest were brought in line with.
+- [x] Every repo re-arms with a **targeted** `off(event)` - never a bare `off()`,
+      which would deafen the other five on the shared socket.
+- [x] `matchId` guards on `match:moved`, `match:ended`, `match:state`
+      (`match:chat` already had one). The `current.matchId != null` prefix keeps
+      `match:state` usable as the match-ENTRY path.
+- [x] Inbound-event reducers extracted to file scope (`applyMatchState`,
+      `applyMatchMoved`, `applyMatchEnded`) mirroring RoomRepository's existing
+      `applyRoomStatePayload`, so the guards are unit-testable without a socket.
+- [x] `MatchEndedDto.state` made nullable - the stranded-match sweeper emits an
+      explicit `state: null`, which a Kotlin default does NOT cover, so the whole
+      payload failed to decode and froze the board with no result card.
+- [x] `SessionReset.kt`: `signOutAndResetSession()` + `resetSessionState()`.
+      Dependency inverted (teardown wraps logout) because EconomyRepository
+      already imports AuthRepository - the reverse would close an import cycle.
+- [x] All 4 sign-out call sites switched to `signOutAndResetSession()`.
+- [x] Regression tests: 9 cross-match/null-state + 5 session teardown.
+- [x] Fixed the 2 stale tests that were red on `main` (see below).
+
+## Added after owner report: offline banner slow to clear
+
+Owner, 2026-08-02: "the 'You're offline... reconnecting' notification takes so
+long to reconnect - if the game is reconnected already it should disappear
+immediately."
+
+Confirmed, and it is the MIRROR IMAGE of the v48 fix. ConnectivityObserver
+reports online ONLY when Android sets NET_CAPABILITY_VALIDATED - correct for
+deciding we are offline (it is what catches a captive portal), but on a
+RECONNECT the OS runs that probe on its own schedule and lags the real recovery
+by seconds. The banner sat there for that whole gap while play had already
+resumed. The debounce was NOT at fault - debounceOffline emits online instantly
+and is correct. v48 fixed its direction by DELAYING the offline edge; that
+cannot help here, because this delay is in the OS's signal, not in ours.
+
+- [x] `NetworkLiveness.kt` - "we just reached our server" signal. A response
+      from our own https origin, or a Socket.IO CONNECT, is STRONGER and far
+      more timely evidence than the OS probe. A captive portal cannot forge it
+      (it cannot terminate our TLS), so the captive-portal correctness that
+      NET_CAPABILITY_VALIDATED exists to provide is preserved.
+- [x] `ApiClient` - NETWORK-level interceptor (not application-level, so cache
+      hits never count) emits proof on every completed round trip. Any status
+      counts: a 4xx/5xx still means the server answered.
+- [x] `SocketClient` - emits proof on `EVENT_CONNECT`, which socket.io re-emits
+      on every automatic reconnect - exactly the edge the banner needs.
+- [x] `Flow.withLivenessProof` - Context-free operator merging proof into the
+      connectivity stream, so the timing is unit-testable with virtual time.
+- [x] 5 tests (LivenessProofTest). Proven meaningful: ignoring the proof fails
+      exactly the two proof-dependent tests while the three guard tests - real
+      outage still surfaces, no redundant emissions, banner can return - keep
+      passing.
+
+Android suite: **321 tests, 0 failed**.
+
+NOT verified on a device: reproducing needs a real airplane-mode cycle.
+
+## The two stale tests
+
+Both were red on `main` before this branch, and the previous task's notes
+confirmed them as pre-existing. Neither was a product bug.
+
+1. `AvatarAssetsTest` asserted `a full http URL passes straight through
+   unmodified`. That contract was **deliberately removed** when the host
+   allowlist landed: `avatarUrl` is server-stored and other-user-controlled, so
+   unrestricted passthrough let any player point every viewer's device at an
+   arbitrary host. Rewritten to pin the allowlist (untrusted host -> champion
+   fallback; Google/Facebook CDN preserved), with a comment saying not to "fix"
+   it by reverting the code - a red test describing a superseded security
+   contract invites exactly the wrong repair.
+2. `AuthRepositoryLogicTest` expected superseded generic error copy; the code now
+   returns a network-specific message. Updated to the current contract.
+
+## Verification
+
+```
+./gradlew testDebugUnitTest --rerun-tasks
+```
+**316 tests, 0 failures** (was 301 with 2 failing).
+
+Guards proven meaningful, not vacuous: temporarily disabling the three
+`matchId` guards fails exactly the three cross-match tests
+(`CrossMatchGuardTest.kt:68/109/143`); restoring them passes.
+
+NOT verified on a device - the reconnect-then-Quick-Match path needs a real
+network blip to exercise end to end. Unit tests cover the reducer guards and the
+teardown fan-out; the socket-identity change itself rests on inspection plus the
+existing suite staying green.
+
+## Not in this PR (audit Phase 2+)
+
+Play purchase-token account binding - 30-day deletion purge job + `deletedAt`
+guards on login/register - `maskProfanity` in match/room socket chat -
+per-message reporting - `pendingMove` watchdog - offline-AI stale-move commit -
+AI search cost - splash timeout.
+
+---
+
+# Archive - previous task
+
 # Play page -> Battle screen + Game Modes drawer (Model C)
 
 Branch: `feat/android-play-battle-screen` - worktree `D:/AI Projects/fd-battle`

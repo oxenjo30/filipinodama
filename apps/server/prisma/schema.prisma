@@ -152,7 +152,10 @@ enum Currency {
 model LedgerEntry {
   id        String   @id @default(cuid())
   userId    String
-  user      User     @relation(fields: [userId], references: [id])
+  // ACCOUNT PURGE: cascade. This is in-game currency history (gold/diamonds) —
+  // the player's own economy record, not a financial document. Real-money rows
+  // live in Payment, which is retained instead; see its relation.
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   currency  Currency
   amount    Int
   balance   Int
@@ -219,7 +222,9 @@ model InventoryItem {
 model Order {
   id        String   @id @default(cuid())
   userId    String
-  user      User     @relation(fields: [userId], references: [id])
+  // ACCOUNT PURGE: cascade. An Order is an in-game store purchase (gold-only
+  // today), not a real-money receipt — the money side is Payment.
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   items     Json
   currency  Currency
   total     Int
@@ -229,8 +234,14 @@ model Order {
 
 model Payment {
   id           String    @id @default(cuid())
-  userId       String
-  user         User      @relation(fields: [userId], references: [id])
+  // ACCOUNT PURGE: RETAINED, link severed (owner decision 2026-08-02).
+  // This is the only real-money record in the schema. Financial records carry
+  // statutory retention obligations that outlive an erasure request, so the
+  // purge nulls userId rather than deleting the row: the transaction survives
+  // for accounting/tax, with no link back to a person. Every other trace of the
+  // account is destroyed. Nullable purely to make SetNull possible.
+  userId       String?
+  user         User?     @relation(fields: [userId], references: [id], onDelete: SetNull)
   provider     String    @default("paymongo")
   providerRef  String    @unique // PayMongo event id (idempotency key for crediting)
   amountCents  Int // PHP centavos (₱100 = 10000)
@@ -423,7 +434,10 @@ model Message {
   channelId String
   channel   Channel  @relation(fields: [channelId], references: [id], onDelete: Cascade)
   authorId  String
-  author    User     @relation(fields: [authorId], references: [id])
+  // ACCOUNT PURGE: cascade. Their messages are their content and go with the
+  // account. This does NOT destroy moderation evidence: Report stores a
+  // denormalised `excerpt` snapshot of the cited message, not a Message FK.
+  author    User     @relation(fields: [authorId], references: [id], onDelete: Cascade)
   body      String   @db.Text
   createdAt DateTime @default(now())
 
@@ -783,8 +797,12 @@ model Tournament {
   // TournamentEntry.placement for display but are NEVER paid in V1.
   prizeSplitGold Json           @default("[]")
 
-  createdById   String
-  createdBy     User             @relation("tournamentsCreated", fields: [createdById], references: [id], onDelete: Restrict)
+  // ACCOUNT PURGE: SetNull. A Tournament is a PLATFORM object with entrants,
+  // matches and a prize pool — it must outlive the admin who created it, and
+  // Restrict would have made an admin's account undeletable. Nullable so the
+  // authorship link can be dropped without destroying the event.
+  createdById   String?
+  createdBy     User?            @relation("tournamentsCreated", fields: [createdById], references: [id], onDelete: SetNull)
 
   createdAt     DateTime         @default(now())
   updatedAt     DateTime         @updatedAt

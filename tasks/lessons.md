@@ -473,3 +473,86 @@
   1. For cosmetic/icon generation, state the projection explicitly and negatively: "perfectly flat top-down, face-on, no tilt, no perspective, no three-quarter angle". Never use "tilted"/"three-quarter" as a variation axis unless the owner asked for depth.
   2. Always demand "flat pure chroma green background, never white" in the prompt. Chroma-keying removes background by COLOUR, so it also clears background trapped inside openwork/filigree gaps. Flood-fill can't reach those pockets and rembg destroys foreground to remove them.
   3. Verify icons by compositing the SHIPPED asset at its real dp size on the real surface colour, next to its sibling icon — full-res art hides everything that mushes at 40dp.
+
+## 2026-08-02 - A sticky boolean is the wrong guard for a shared, replaceable resource
+
+- Mistake: five repositories guarded socket listener registration with a
+  process-lifetime `wired` / `subscribed` / `started` boolean, while
+  `SocketClient.connect()` could hand back a NEW `Socket` instance. The flag then
+  suppressed wiring on the replacement, so it carried zero listeners for the rest
+  of the process - matchmaking hung forever and the player took a ranked forfeit.
+- Cause: the flag answered "have we ever wired?" when the real question was
+  "have we wired THIS instance?". The two are the same only while the resource is
+  guaranteed stable, and nothing enforced that guarantee.
+- Rule: when guarding setup against a resource that can be replaced, key the
+  guard on the resource's IDENTITY (`if (wiredSocket === s) return`), not on a
+  boolean. If a singleton hands out instances, state its identity contract in the
+  kdoc and make only one method allowed to replace it.
+
+## 2026-08-02 - A red test can encode a security contract you already removed
+
+- Mistake: `AvatarAssetsTest` sat red on main asserting "a full http URL passes
+  straight through unmodified" - a contract deliberately deleted when the avatar
+  host allowlist landed. The obvious "fix the failing test" move is to restore
+  the passthrough, which would reopen the hole.
+- Cause: the security fix updated the code and left the test asserting the old
+  behaviour, so the test became an argument FOR the vulnerability.
+- Rule: when removing a behaviour for security reasons, update its test in the
+  same change and rewrite the test NAME to describe the new contract. If a test
+  must stay red, say why in the test body. Never leave a red test whose name
+  advocates the insecure behaviour.
+
+## 2026-08-02 - Clearing cookies does not end a realtime session
+
+- Mistake: `logout()` cleared the cookie jar and in-memory auth state but never
+  disconnected the socket or reset the feature repositories, so on a shared
+  device the next user drove the previous user's still-authenticated connection.
+- Cause: socket.io authenticates ONCE at handshake. Cookie state and connection
+  state are independent lifetimes; the code treated clearing one as clearing both.
+- Rule: sign-out must tear down every lifetime the session created - credentials,
+  the realtime connection, and every singleton holding user-scoped state. Keep
+  that fan-out in ONE named function so a new repository is added in one place,
+  and remember a missed entry is a cross-account data leak, not a cosmetic bug.
+
+## 2026-08-02 - A missing onDelete makes a "soft delete" permanently soft
+
+- Mistake: DELETE /api/users/me only set deletedAt, and nothing ever hardened it,
+  while the app told users their data was permanently erased within 30 days. Five
+  relations to User (LedgerEntry, Order, Payment, Message, Tournament.createdBy)
+  had no onDelete policy, so Prisma defaulted them to Restrict and any real
+  delete would have thrown.
+- Cause: Prisma's IMPLICIT default for a required relation is Restrict. Nothing
+  in the schema said "Restrict" — the policy was invisible, so nobody noticed the
+  hard delete was impossible until someone tried to write it.
+- Rule: state onDelete EXPLICITLY on every relation, even when the default is
+  what you want. An implicit policy is a decision nobody reviewed. And when a
+  product promise implies a background job, write the job in the same change as
+  the promise — a disclosure with nothing behind it is worse than no disclosure.
+
+## 2026-08-02 - Not every id column has a foreign key
+
+- Mistake: the purge was nearly written as `prisma.user.delete()` plus cascades.
+  ChannelMember.userId and GuildJoinRequest.userId are plain String columns with
+  NO foreign key, so the database cannot cascade them — a purged account would
+  have silently stayed a member of every DM and guild channel it ever joined.
+- Cause: the FK map read from `@relation` lines is not the same as the set of
+  columns that reference a user. Counting caught it: 34 id-ish columns vs 32
+  declared User relations.
+- Rule: before relying on cascades, count the id COLUMNS against the declared
+  RELATIONS. Anything unaccounted for has to be deleted explicitly, and belongs
+  in a test that names why it exists.
+
+## 2026-08-02 - Relaxing a constraint breaks the code that assumed it
+
+- Mistake: making Payment.userId nullable (so a financial record outlives its
+  buyer) broke admin-financials.ts and payments.ts, which every consumer had
+  written assuming a payment always has a user — and it broke the TEST HELPER,
+  because Restrict had been silently doing the job of clearing Payment rows
+  between tests. That surfaced as three unrelated-looking assertion failures in
+  the admin revenue dashboard.
+- Cause: a NOT NULL constraint is load-bearing far outside the model that
+  declares it, including in test fixtures that never mention it.
+- Rule: after relaxing any constraint, run the FULL typecheck and the FULL suite,
+  not just the new tests. Then ask what the old constraint was implicitly
+  guaranteeing — here, "a payment can never outlive its user" was cleaning up
+  test data for free.

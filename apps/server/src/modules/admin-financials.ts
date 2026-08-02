@@ -51,24 +51,37 @@ function tierBucket(trophies: number): string {
 
 const DOW = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
+/**
+ * `userId`/`user` are NULLABLE because a Payment OUTLIVES its buyer. The 30-day
+ * account purge (modules/account-purge.ts) retains the financial row for
+ * accounting and severs the link, so revenue totals stay correct after an
+ * erasure request while the row carries nothing identifying. Every consumer
+ * below therefore has to tolerate a buyer-less payment: the MONEY is still real
+ * and must keep counting, only the person is gone.
+ */
 type PaymentRow = {
   id: string;
-  userId: string;
+  userId: string | null;
   provider: string;
   amountCents: number;
   diamonds: number;
   status: string;
   createdAt: Date;
   settledAt: Date | null;
-  user: { id: string; username: string; displayName: string; tag: string; email: string | null; trophies: number; countryCode: string | null };
+  user: { id: string; username: string; displayName: string; tag: string; email: string | null; trophies: number; countryCode: string | null } | null;
 };
+
+/** Shown in place of a buyer whose account has been purged. */
+const PURGED_BUYER = "[deleted user]";
 
 /** Shared shape mapper for one settled/refunded top-up row → the admin list row. */
 function toRow(p: PaymentRow) {
   return {
     id: p.id,
     orderId: p.id,
-    player: { id: p.user.id, name: p.user.displayName, tag: p.user.tag, username: p.user.username },
+    player: p.user
+      ? { id: p.user.id, name: p.user.displayName, tag: p.user.tag, username: p.user.username }
+      : { id: "", name: PURGED_BUYER, tag: "", username: PURGED_BUYER },
     amountCents: p.amountCents,
     diamonds: p.diamonds,
     provider: p.provider,
@@ -142,7 +155,9 @@ export async function adminFinancialsRoutes(app: FastifyInstance) {
     }
 
     const byPackSize = bucketSum(live.map((r) => [packSizeBucket(r.diamonds), r.amountCents]));
-    const byPlayerTier = bucketSum(live.map((r) => [tierBucket(r.user.trophies), r.amountCents]));
+    // A purged buyer has no trophies to bucket by — the revenue still counts, it
+    // just lands in its own honest bucket rather than being dropped or invented.
+    const byPlayerTier = bucketSum(live.map((r) => [r.user ? tierBucket(r.user.trophies) : PURGED_BUYER, r.amountCents]));
 
     // By region: NO deterministic-hash fabrication. The schema has no
     // Philippine-region field (Luzon/Visayas/Mindanao/Metro Manila/Overseas
@@ -150,8 +165,8 @@ export async function adminFinancialsRoutes(app: FastifyInstance) {
     // user-set country code. We bucket by that REAL field when present and
     // fall back to a single honest "Unknown" bucket when absent, rather than
     // inventing PH-region buckets we have no data for.
-    const regionSource = live.some((r) => r.user.countryCode) ? ("countryCode" as const) : ("none" as const);
-    const byRegion = bucketSum(live.map((r) => [r.user.countryCode?.trim() || "Unknown", r.amountCents]));
+    const regionSource = live.some((r) => r.user?.countryCode) ? ("countryCode" as const) : ("none" as const);
+    const byRegion = bucketSum(live.map((r) => [r.user?.countryCode?.trim() || "Unknown", r.amountCents]));
 
     const byDayOfWeek = bucketSum(live.map((r) => [DOW[(r.settledAt ?? r.createdAt).getDay()]!, r.amountCents]));
     // Fixed Sun..Sat order (bucketSum sorts by amount desc, which loses day order).
@@ -161,6 +176,10 @@ export async function adminFinancialsRoutes(app: FastifyInstance) {
     // settled/refunded top-up (by real timestamp); "Returning" otherwise.
     const firstPurchaseByUser = new Map<string, number>();
     for (const r of rows) {
+      // A purged buyer cannot be attributed to a first-purchase cohort at all —
+      // the identity that defined "new vs returning" is gone. Skip rather than
+      // bucket them under a shared null key, which would merge unrelated buyers.
+      if (!r.userId) continue;
       const t = (r.settledAt ?? r.createdAt).getTime();
       const cur = firstPurchaseByUser.get(r.userId);
       if (cur === undefined || t < cur) firstPurchaseByUser.set(r.userId, t);
@@ -168,7 +187,9 @@ export async function adminFinancialsRoutes(app: FastifyInstance) {
     const newVsReturning = bucketSum(
       live.map((r) => {
         const t = (r.settledAt ?? r.createdAt).getTime();
-        const isFirst = firstPurchaseByUser.get(r.userId) === t;
+        // A purged buyer has no cohort — counted as Returning rather than
+        // inflating "New buyer", which would overstate acquisition.
+        const isFirst = r.userId != null && firstPurchaseByUser.get(r.userId) === t;
         return [isFirst ? "New buyer" : "Returning", r.amountCents];
       }),
     );
@@ -193,14 +214,16 @@ export async function adminFinancialsRoutes(app: FastifyInstance) {
     return ok({
       id: p.id,
       orderId: p.id,
-      player: { id: p.user.id, name: p.user.displayName, tag: p.user.tag, username: p.user.username },
+      player: p.user
+        ? { id: p.user.id, name: p.user.displayName, tag: p.user.tag, username: p.user.username }
+        : { id: "", name: PURGED_BUYER, tag: "", username: PURGED_BUYER },
       diamonds: p.diamonds,
       amountCents: p.amountCents,
       currencyCode: p.currencyCode,
       provider: p.provider,
       status: p.status,
       refunded: p.status === "refunded",
-      email: p.user.email,
+      email: p.user?.email ?? null,
       createdAt: p.settledAt ?? p.createdAt,
     });
   });
@@ -214,7 +237,15 @@ export async function adminFinancialsRoutes(app: FastifyInstance) {
     if (payment.status === "refunded") throw err.badRequest("ALREADY_REFUNDED", "Already refunded.");
     if (payment.status !== "settled") throw err.badRequest("NOT_SETTLED", "Only settled top-ups can be refunded.");
 
-    const player = await prisma.user.findUnique({ where: { id: payment.userId }, select: { id: true, displayName: true, username: true, tag: true } });
+    // A purged buyer cannot be refunded IN-APP: the diamonds were destroyed with
+    // the account, so there is no balance to debit and no one to notify. The
+    // Payment row is retained for accounting, so the money is still auditable —
+    // any refund at this point has to happen through the payment provider.
+    if (!payment.userId)
+      throw err.badRequest("BUYER_PURGED", "This buyer's account was deleted. Refund via the payment provider instead.");
+    // Captured so the non-null narrowing survives into the transaction closure.
+    const buyerId = payment.userId;
+    const player = await prisma.user.findUnique({ where: { id: buyerId }, select: { id: true, displayName: true, username: true, tag: true } });
     if (!player) throw err.notFound("NO_USER", "Player not found");
 
     // Reverse the credited diamonds via the SAME ledger call the PayMongo
@@ -230,7 +261,7 @@ export async function adminFinancialsRoutes(app: FastifyInstance) {
         const flip = await tx.payment.updateMany({ where: { id: payment.id, status: "settled" }, data: { status: "refunded" } });
         if (flip.count === 0) throw new Error("ALREADY_REFUNDED");
         await applyLedgerTx(tx, {
-          userId: payment.userId,
+          userId: buyerId,
           currency: "DIAMONDS",
           amount: -payment.diamonds,
           reason: "refund",

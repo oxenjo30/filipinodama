@@ -1,6 +1,7 @@
 package com.filipinodama.app.data
 
 import com.filipinodama.app.BuildConfig
+import com.filipinodama.app.data.system.NetworkLiveness
 import io.socket.client.IO
 import io.socket.client.Socket
 import java.net.URISyntaxException
@@ -45,15 +46,36 @@ object SocketClient {
     fun connect(token: String? = null): Socket? = connect(ApiClient.okHttpClient, token)
 
     /**
-     * Connects (or returns the existing live connection) using an explicit
+     * Connects (or returns the existing connection) using an explicit
      * [okHttpClient] — exposed for tests that need to inject a fake client.
      * [token] is an optional `auth.token` courtesy fallback for a future flow
      * where an explicit token becomes available; the server tries the cookie
      * first regardless.
+     *
+     * IDENTITY CONTRACT: the returned socket is stable for the whole session.
+     * Only [disconnect] ever replaces it. Consumers may therefore cache the
+     * instance and key their listener registration on it (see the repositories'
+     * `wiredSocket` pattern).
      */
+    @Synchronized
     fun connect(okHttpClient: OkHttpClient, token: String? = null): Socket? {
-        val existing = socket
-        if (existing != null && existing.connected()) return existing
+        // Return ANY existing instance — connected or not. socket.io-client
+        // reconnects itself (unlimited attempts, exponential backoff), so a
+        // socket reporting !connected() is mid-backoff, NOT dead.
+        //
+        // Handing back a NEW socket in that window was a real defect: consumers
+        // cache the instance and guard listener registration, so the replacement
+        // arrived with NO listeners and every inbound event (mm:found,
+        // match:moved, notif:new, ...) was dropped for the rest of the process.
+        // Tapping Quick Match after a brief network blip therefore hung on
+        // "Finding opponent..." forever while the server paired the player into
+        // a match they never entered — a disconnect-forfeit, losing trophies in
+        // RANKED.
+        //
+        // @Synchronized additionally closes the cold-start race where two
+        // sibling LaunchedEffects (Notifications + Presence on Home) both saw an
+        // unconnected socket and opened TWO authenticated connections per user.
+        socket?.let { return it }
 
         // SocketOptionBuilder only exposes the primitive fields declared directly
         // on IO.Options/Manager.Options; callFactory/webSocketFactory/extraHeaders
@@ -85,6 +107,15 @@ object SocketClient {
         } catch (e: URISyntaxException) {
             return null
         }
+        // Proof of life for the "You're offline — reconnecting…" banner. A
+        // completed Socket.IO handshake is direct evidence we reached the server,
+        // and it arrives well before Android finishes the NET_CAPABILITY_VALIDATED
+        // probe that ConnectivityObserver otherwise has to wait on. Registered
+        // once per instance, before connect(), so the very first CONNECT counts.
+        // socket.io re-emits EVENT_CONNECT on every automatic reconnect, which is
+        // exactly the edge the banner needs. See data/system/NetworkLiveness.kt.
+        newSocket.on(Socket.EVENT_CONNECT) { NetworkLiveness.reachedServer() }
+
         socket = newSocket
         newSocket.connect()
         return newSocket
@@ -93,6 +124,22 @@ object SocketClient {
     /** The current socket, if one has ever been created (may or may not be connected). */
     fun current(): Socket? = socket
 
+    /**
+     * Tears the shared socket down completely — call on LOGOUT / account
+     * deletion so the next sign-in gets a fresh, re-authenticated handshake.
+     * The server authenticates a socket ONCE, at handshake, from the fd_access
+     * cookie; clearing the cookie jar does NOT drop an already-established
+     * connection, so without this the live socket stays bound to the previous
+     * user's identity.
+     *
+     * The bare [Socket.off] here strips EVERY repository's listeners, which is
+     * exactly right for a total teardown (and is the one place it's allowed —
+     * partial teardown must always name its event, see GuildChatRepository).
+     * Callers MUST pair this with a reset of the repositories that cache the
+     * instance, or they will keep emitting into a dead socket: use
+     * [resetSessionState], which does both.
+     */
+    @Synchronized
     fun disconnect() {
         socket?.disconnect()
         socket?.off()

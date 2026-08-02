@@ -1155,7 +1155,11 @@ describe("SWISS — progressive round generation (money-critical)", () => {
 describe("audit — every mutation writes an AuditLog row", () => {
   it("join, leave, start, report, complete, cancel each write their action's audit row", async () => {
     const t = await seedTournament({ status: "OPEN", entryFeeGold: 0, maxPlayers: 4, prizePoolGold: 100, prizeSplitGold: [70, 30] });
-    const admin = await prisma.user.findUniqueOrThrow({ where: { id: t.createdById } });
+    // createdById is nullable since the account-purge migration (a tournament is
+    // a platform object that outlives the admin who created it). seedTournament
+    // always sets it, so asserting is the honest way to narrow.
+    expect(t.createdById).not.toBeNull();
+    const admin = await prisma.user.findUniqueOrThrow({ where: { id: t.createdById! } });
     const actor = await actingAdmin(); // deliberately distinct from t.createdById
 
     const players = [];
