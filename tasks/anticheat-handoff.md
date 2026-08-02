@@ -143,11 +143,34 @@ working correctly, but it makes the console unusable locally. Set
 `.env` is gitignored, so it is not in the commit). The server reads env at
 startup, so it needs a full restart, not a tsx-watch reload.
 
-## NOT done
+## Auto-enqueue — DONE
 
-1. **Nothing queues analysis automatically.** Matches are only analysed when a
-   moderator asks. Enqueue on match settle (`realtime/match.ts`) to build the
-   queue on its own.
+`settleMatch` now queues analysis, placed AFTER the settle gate on purpose:
+exactly one instance in the cluster wins that gate, so exactly one enqueue
+happens per match even with N servers replaying the same job.
+
+Only RANKED / CASUAL / PRIVATE with two human sides are queued — AI and LOCAL
+are offline and client-reported, and DAMATH is a different game the analyser
+does not model. Fire-and-forget with a 30s delay so it can never sit between a
+player finishing and their rewards landing, and so a burst of simultaneous
+finishes spreads across the poller instead of hitting at once.
+
+`handleAbandonForfeit` routes through `settleMatch`, so the common abandon case
+is covered. The one path NOT covered is the rare fully-stranded recovery in
+`sweepAbandonedMatches`, which closes a match by direct DB write when its Redis
+state was lost — its `moves` are whatever was last flushed, so analysing them
+would measure a truncated game. Deliberately skipped.
+
+## Tests — DONE
+
+`apps/server/test/anticheat.test.ts`, 9 tests, all passing in ~11s. They run
+even though the integration suite cannot in this environment, because the
+analyser is pure (no DB, no Redis). Covers: engine-mirroring vs engine-avoiding
+separation, forced-ply exclusion, empty/illegal/malformed input returning an
+error instead of throwing, the significance floor refusing to score, the
+avgSecPerMove average, and shouldFlag's rate-AND-sample-floor behaviour.
+
+## NOT done
 3. **"Move time" cannot be filled honestly.** Stored moves are
    `{from,path,captures,promotion}` with **no timestamps**, so per-move think
    time is unrecoverable for existing matches — and uniform think time is one of
