@@ -279,8 +279,42 @@ android {
         // (POST /api/matches/local accepts mode AI + difficulty) so "wins on
         // Hard" is real rather than invented. Also fixes diff_easy/normal/hard,
         // which shipped as opaque RGB on #101010 and rendered as black squares.
-        versionCode = 51
-        versionName = "0.1.51"
+        // 52 = REALTIME + RELIABILITY batch. (1) SOCKET IDENTITY: SocketClient
+        // handed back a NEW Socket whenever the cached one wasn't connected() —
+        // but socket.io reconnects itself, so !connected() means "mid-backoff",
+        // not "dead". Consumers cache the instance and guarded their listener
+        // registration with a process-lifetime boolean, so the replacement got
+        // ZERO listeners for the rest of the process: a ten-second network blip
+        // followed by Quick Match hung on "Finding opponent…" forever while the
+        // server paired you into a match you never entered — a disconnect
+        // forfeit, losing trophies in RANKED. connect() now returns any existing
+        // instance (only disconnect() replaces it) and every repository keys its
+        // wiring on the socket INSTANCE rather than a sticky flag. (2) CROSS-
+        // MATCH GUARD: match:moved / match:ended applied to whatever match was on
+        // screen, because leaving a match screen never leaves the server-side
+        // match room — a previous game's moves silently swapped the board under
+        // you, and a stale ending showed a result card (with the win/lose text
+        // evaluated against the wrong colour) for a match you weren't in.
+        // match:chat already had the guard; the two handlers that mutate the
+        // board did not. (3) LOGOUT: clearing cookies never ended the realtime
+        // session — socket.io authenticates once, at handshake — so on a shared
+        // device the next user drove the previous user's still-authenticated
+        // socket, emitting matchmaking/moves/chat under their identity, with
+        // their cached DMs and notifications visible. Sign-out now disconnects
+        // the socket and resets every cached repository. (4) FROZEN BOARD: the
+        // abandoned-match sweeper emits `state: null`, which a Kotlin default
+        // doesn't cover, so the whole payload failed to decode and the board sat
+        // on "Opponent's move…" with no result card and no timeout. (5) OFFLINE
+        // BANNER: "You're offline — reconnecting…" lingered long after the
+        // connection returned, because ConnectivityObserver only reports online
+        // once Android sets NET_CAPABILITY_VALIDATED and that probe lags a real
+        // reconnect by seconds. This is the MIRROR IMAGE of the v48 fix (a false
+        // offline on open, same lag) and is NOT fixable by a debounce, since the
+        // delay is in the OS's signal rather than ours; the banner now clears on
+        // proof of life — our own server answering an HTTP request or a socket
+        // CONNECT. Also in 52: the Play dock loadout slot gets its real icon.
+        versionCode = 52
+        versionName = "0.1.52"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
