@@ -35,6 +35,7 @@ import {
   spectatorMatchesForSocket,
 } from "./store.js";
 import { scheduleJob, cancelJob } from "./jobs.js";
+import { queueMatchAnalysis } from "../lib/anticheat-service.js";
 
 /**
  * SERVER-AUTHORITATIVE match loop (Redis-scaled).
@@ -554,6 +555,14 @@ async function recordPlayerOutcome(
   await advanceQuestsFor(userId, { won, drew, captures, isRanked, streak });
 }
 
+/**
+ * How long after settlement to run anti-cheat analysis. Long enough that the
+ * reward path and result broadcast are well clear of it, short enough that a
+ * moderator sees today's matches in the queue. Also spreads the CPU cost of a
+ * burst of simultaneous finishes across the poller instead of all at once.
+ */
+const ANALYSIS_DELAY_MS = 30_000;
+
 async function settleMatch(io: IOServer, lm: StoredMatch): Promise<void> {
   const result = lm.state.result;
   if (!result) return;
@@ -630,6 +639,29 @@ async function settleMatch(io: IOServer, lm: StoredMatch): Promise<void> {
     return;
   }
   if (gateCount === 0) return; // another instance already settled this match.
+
+  // ── Anti-cheat: queue this match for engine-agreement analysis ────────────
+  //
+  // Placed AFTER the settle gate on purpose: exactly one instance in the
+  // cluster wins that gate, so exactly one enqueue happens per match even with
+  // N servers replaying the same job. Enqueuing before it would double-queue.
+  //
+  // Only modes played against another human and with something at stake are
+  // worth the CPU: AI and LOCAL are offline and client-reported, and DAMATH is a
+  // different game the analyser does not model. Bot opponents are skipped again
+  // inside the analyser, per side.
+  //
+  // Deliberately delayed and fire-and-forget. Analysis replays the whole game
+  // against the engine (seconds of CPU), so it must never sit between a player
+  // finishing a match and their rewards landing; a failed enqueue must never
+  // block settlement either.
+  if (lm.mode === "RANKED" || lm.mode === "CASUAL" || lm.mode === "PRIVATE") {
+    if (lm.redId && lm.blueId) {
+      void queueMatchAnalysis(lm.matchId, ANALYSIS_DELAY_MS).catch((e) =>
+        console.error("[match] anti-cheat enqueue failed", lm.matchId, e),
+      );
+    }
+  }
 
   // Apply economy deltas. Each call is atomic + append-only; a failure on one
   // (e.g. a bot user or deleted account) must not block the others.
