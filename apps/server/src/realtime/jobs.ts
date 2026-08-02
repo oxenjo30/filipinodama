@@ -20,7 +20,7 @@ import { redis } from "./store.js";
  * waiting / it's the bot's turn forever only if lost — acceptable, and the next
  * human action re-drives state).
  */
-export type RtJobType = "bot-fill" | "abandon-forfeit" | "bot-move" | "d-bot-move";
+export type RtJobType = "bot-fill" | "abandon-forfeit" | "bot-move" | "d-bot-move" | "anticheat-analyse";
 export type RtJobHandler = (payload: Record<string, unknown>) => Promise<void>;
 
 const ZKEY = "rt:jobs";

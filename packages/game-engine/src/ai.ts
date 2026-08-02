@@ -77,3 +77,36 @@ export function bestMove(state: GameState, difficulty: AiDifficulty = "normal"):
   }
   return best;
 }
+
+/**
+ * Deterministic best-move search at an explicit depth, for ANALYSIS ONLY.
+ *
+ * `bestMove` is the gameplay entry point and is unsuitable as an analysis
+ * reference for two reasons:
+ *  - it applies BLUNDER, so `normal` returns a random legal move 8% of the
+ *    time. A reference that disagrees with itself cannot measure agreement.
+ *  - its difficulty tiers fix the depth, and the only blunder-free tier
+ *    (`hard`, depth 7) is far too slow to run in bulk: measured on this
+ *    codebase it is ~2.4s in the opening and ~13.3s mid-game per call, i.e.
+ *    minutes per match. Depth 4 is ~0.14-0.52s.
+ *
+ * This exposes the same negamax with no blunder and a caller-chosen depth, so
+ * anti-cheat can pick its own speed/strength trade-off without touching how the
+ * game itself plays. Gameplay behaviour is unchanged — nothing else calls this.
+ */
+export function analysisBestMove(state: GameState, depth: number): Move {
+  const moves = legalMoves(state);
+  if (moves.length === 0) throw new Error("No legal moves");
+  const me = state.turn;
+  let best = moves[0]!;
+  let bestVal = -Infinity;
+  for (const mv of moves) {
+    const child = applyMove(state, mv);
+    const val = -negamax(child, depth - 1, -Infinity, Infinity, me);
+    if (val > bestVal) {
+      bestVal = val;
+      best = mv;
+    }
+  }
+  return best;
+}
