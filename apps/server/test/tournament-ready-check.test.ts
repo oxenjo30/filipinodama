@@ -111,6 +111,56 @@ describe("ready-check guards", () => {
     await expect(markReady(io, pending.id, someone.userId)).rejects.toMatchObject({ code: "SLOT_NOT_READY" });
   });
 
+  it("rejects readying a fixture that isn't the player's current one (round-robin ready-sniping)", async () => {
+    const { io } = fakeIO();
+    const admin = await seedUser({ adminRole: "ECONOMY" });
+    const tournament = await prisma.tournament.create({
+      data: {
+        name: "RR Cup",
+        status: "OPEN",
+        format: "ROUND_ROBIN",
+        maxPlayers: 4,
+        readyWindowSec: 600,
+        createdById: admin.id,
+      },
+    });
+    for (let i = 0; i < 4; i++) {
+      const u = await seedUser();
+      await joinTournament(prisma, tournament.id, u.id);
+    }
+    await startTournament(prisma, tournament.id, admin.id);
+
+    // Round robin seeds EVERY fixture "ready" at once, so one player really is
+    // seated in several live slots — the condition the exploit needed.
+    const entry = await prisma.tournamentEntry.findFirstOrThrow({ where: { tournamentId: tournament.id } });
+    const mine = await prisma.tournamentMatch.findMany({
+      where: {
+        tournamentId: tournament.id,
+        status: "ready",
+        OR: [{ redEntryId: entry.id }, { blueEntryId: entry.id }],
+      },
+      orderBy: [{ round: "asc" }, { slot: "asc" }],
+    });
+    expect(mine.length).toBeGreaterThan(1);
+
+    const [current, later] = mine;
+
+    // The fixture their client is NOT showing them is refused...
+    await expect(markReady(io, later!.id, entry.userId)).rejects.toMatchObject({ code: "NOT_YOUR_CURRENT_MATCH" });
+
+    // ...and crucially no no-show clock was armed on it, so the opponent cannot
+    // be forfeited out of a match they were never offered.
+    const untouched = await prisma.tournamentMatch.findUniqueOrThrow({ where: { id: later!.id } });
+    expect(untouched.readyDeadlineAt).toBeNull();
+    expect(untouched.redReadyAt).toBeNull();
+    expect(untouched.blueReadyAt).toBeNull();
+
+    // The one they ARE being shown still works normally.
+    await markReady(io, current!.id, entry.userId);
+    const armed = await prisma.tournamentMatch.findUniqueOrThrow({ where: { id: current!.id } });
+    expect(armed.readyDeadlineAt).not.toBeNull();
+  });
+
   it("rejects readying while the tournament isn't RUNNING", async () => {
     const { io } = fakeIO();
     const { tournament } = await runningCup(4);

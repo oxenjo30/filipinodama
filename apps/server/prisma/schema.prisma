@@ -748,10 +748,16 @@ model TicketMessage {
 
 // ─────────────── Tournaments (V1: admin-managed single-elimination) ───────────────
 enum TournamentFormat {
-  SINGLE_ELIM      // V1
-  DOUBLE_ELIM      // reserved — V2
-  SWISS            // reserved — V2
-  ROUND_ROBIN      // reserved — V2
+  SINGLE_ELIM       // knockout; one loss and you are out
+  DOUBLE_ELIM       // winners + losers bracket; two losses to be out
+  SWISS             // fixed rounds, paired on record, nobody eliminated
+  ROUND_ROBIN       // everyone plays everyone; standings decide it
+  GROUP_DOUBLE_ELIM // round-robin groups, cut the bottom of each, survivors into
+                    // double elim with the top half seeded into the UPPER bracket
+                    // and the bottom half straight into the LOWER one — the
+                    // "Dota 2 The International" shape. The group stage IS winners
+                    // round 1, which is why that round is never materialised.
+                    // docs/superpowers/specs/2026-08-03-ti-group-stage-format-design.md
 }
 
 enum TournamentStatus {
@@ -793,6 +799,24 @@ model Tournament {
   // defaultSwissRounds(n) = ceil(log2(n)) the first time the tournament
   // starts. Unused (stays null) for every other format.
   rounds        Int?
+
+  // GROUP_DOUBLE_ELIM ONLY. Admin-settable at create; required for that format
+  // and null for every other. maxPlayers must divide evenly by groupCount, and
+  // groupCount * qualifiersPerGroup (the survivor count) must be a power of two
+  // — that product IS the playoff bracket size. Validated on write.
+  groupCount         Int?
+  qualifiersPerGroup Int?
+
+  /// The seeded playoff bracket size, persisted at the moment the bracket is
+  /// created.
+  ///
+  /// Every other format recovers B by COUNTING winners-round-1 slots, which
+  /// works because they all seed that round. GROUP_DOUBLE_ELIM deliberately does
+  /// not — its group stage replaces winners round 1 — so that count is 0 and the
+  /// derivation yields B=0, which throws inside losersBracketStructure and makes
+  /// every playoff match unreportable. Storing it removes the dependency on a
+  /// row count for a value that is structural and immutable once seeded.
+  bracketSize   Int?
 
   startsAt      DateTime?        // descriptive in V1 (admin-triggered start); scheduler is V2
 
@@ -838,6 +862,14 @@ model TournamentEntry {
   refunded     Boolean    @default(false) // entry fee refunded (cancel path). guards double-refund at app level too.
   joinedAt     DateTime   @default(now())
 
+  // GROUP_DOUBLE_ELIM ONLY (null for every other format).
+  // groupIndex is 0-based and assigned at Start by a snake draft over seeds.
+  // groupPlacement is 1-based WITHIN the group and written once, when the group
+  // stage completes and the qualification cut is applied — it is what decides
+  // upper bracket vs lower bracket vs eliminated.
+  groupIndex     Int?
+  groupPlacement Int?
+
   // Opposite relation fields for TournamentMatch.redEntry/blueEntry (Prisma requires both
   // sides of a named relation). Not otherwise queried directly — matches are looked up via
   // TournamentMatch, not through these back-relations.
@@ -856,13 +888,14 @@ model TournamentMatch {
   round        Int        // 1 = first round; final round = log2(B)
   slot         Int        // 0-based position within the round (parent = slot >> 1 in round+1)
 
-  // DOUBLE_ELIM only: which sub-bracket this slot belongs to. "W" (winners,
-  // the default — SINGLE_ELIM/ROUND_ROBIN/SWISS never set anything else),
-  // "L" (losers), or "GF" (grand final). round/slot are scoped WITHIN a
-  // bracket but the @@unique below is still (tournamentId,round,slot) only —
-  // see the ROUND-OFFSET note in tournaments-core.ts's DOUBLE_ELIM section
-  // for how W/L/GF avoid colliding on that unique index without a schema
-  // change (L rounds start at 101, GF at 201).
+  // Which sub-bracket this slot belongs to. "W" (winners, the default —
+  // SINGLE_ELIM/ROUND_ROBIN/SWISS never set anything else), "L" (losers), "GF"
+  // (grand final), or "G" (GROUP_DOUBLE_ELIM's group stage). round/slot are
+  // scoped WITHIN a bracket but the @@unique below is still
+  // (tournamentId,round,slot) only — see the ROUND-OFFSET note in
+  // tournaments-core.ts's DOUBLE_ELIM section for how these avoid colliding on
+  // that unique index without a schema change (L rounds start at 101, GF at
+  // 201, G at 301).
   bracket      String     @default("W")
 
   // The two competitors for this slot. null = not yet determined (awaiting a

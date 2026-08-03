@@ -72,10 +72,15 @@ export type TournamentMyMatch = {
 /**
  * The signed-in player's current playable slot in this tournament, or null.
  *
- * "Current" = the one unresolved slot they are seated in. A player is only ever
- * in one at a time (a bracket cannot present the same player with two
- * simultaneous games), so the first unresolved match wins; ordering by round
- * keeps it deterministic if data were ever malformed.
+ * "Current" = the EARLIEST unresolved slot they are seated in, by (round, slot).
+ *
+ * Elimination and Swiss formats seat a player in exactly one live slot at a
+ * time, so "earliest" and "only" coincide there. ROUND_ROBIN does NOT: it
+ * creates every fixture up front, so a player genuinely has several unresolved
+ * slots and this function picks one of them. That made the ordering here
+ * load-bearing rather than merely defensive — markReady enforces the SAME
+ * ordering, so a player can only ready the fixture this function would have
+ * shown them. See the rationale in markReady.
  *
  * Returned by GET /api/tournaments/:id AND pushed over EV.tournamentMatchState,
  * so both clients render one code path whether they polled or were pushed.
@@ -189,6 +194,37 @@ export async function markReady(io: IOServer, tmId: string, userId: string): Pro
   const iAmRed = redUserId === userId;
   const iAmBlue = blueUserId === userId;
   if (!iAmRed && !iAmBlue) throw err.forbidden("NOT_A_PARTICIPANT", "You aren't a competitor in this match");
+
+  // A player may only ready the slot their client is ACTUALLY SHOWING them —
+  // i.e. the same "current" slot myTournamentMatch resolves, using the same
+  // ordering. Without this, readying is exploitable in any format that has more
+  // than one live fixture per player at a time:
+  //
+  //   ROUND_ROBIN creates EVERY fixture status:"ready" up front (startRoundRobin),
+  //   but myTournamentMatch only ever surfaces the EARLIEST unresolved one. So a
+  //   player could ready a fixture their opponent's UI was not pointing at, arm
+  //   that opponent's no-show clock, and take the win by forfeit via resolveNoShow
+  //   without a game ever being played. It also fired by ACCIDENT: anyone who
+  //   cleared their fixtures faster than the field ended up holding matches their
+  //   opponents could not see.
+  //
+  // Single-elim, Swiss and double-elim seat a player in one live slot at a time,
+  // so for them this check is a no-op. It does not deadlock a stuck round robin
+  // either: an absent opponent on the earliest fixture is resolved by that
+  // fixture's own no-show forfeit, which then promotes the next one.
+  const myEntryId = iAmRed ? slot.redEntryId : slot.blueEntryId;
+  const currentSlot = await prisma.tournamentMatch.findFirst({
+    where: {
+      tournamentId: slot.tournamentId,
+      status: { not: "done" },
+      OR: [{ redEntryId: myEntryId }, { blueEntryId: myEntryId }],
+    },
+    orderBy: [{ round: "asc" }, { slot: "asc" }],
+    select: { id: true },
+  });
+  if (currentSlot && currentSlot.id !== tmId) {
+    throw err.conflict("NOT_YOUR_CURRENT_MATCH", "Finish your current match first");
+  }
 
   const alreadyReady = (iAmRed ? slot.redReadyAt : slot.blueReadyAt) != null;
   const opponentReady = (iAmRed ? slot.blueReadyAt : slot.redReadyAt) != null;

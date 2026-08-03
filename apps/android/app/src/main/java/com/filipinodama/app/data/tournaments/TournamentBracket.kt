@@ -12,9 +12,10 @@ package com.filipinodama.app.data.tournaments
  * wrong heading without failing anything, so the values are pinned by test.
  *
  * ROUND-OFFSET SCHEME: a match's sub-bracket is encoded in its round number so
- * that (tournamentId, round, slot) stays unique across all three sub-brackets.
+ * that (tournamentId, round, slot) stays unique across all sub-brackets.
  * Winners rounds are 1..log2(B); losers rounds are 100 + localRound; the grand
- * final is 201 (game 1) and 202 (the bracket-reset game 2).
+ * final is 201 (game 1) and 202 (the bracket-reset game 2); group-stage rounds
+ * are 300 + localRound.
  */
 object TournamentBracket {
 
@@ -22,17 +23,28 @@ object TournamentBracket {
     const val GF_ROUND = 201
     const val GF_RESET_ROUND = 202
 
+    /**
+     * Group-stage band, for GROUP_DOUBLE_ELIM. Sits ABOVE the grand-final band so
+     * the existing W/L/GF numbering is untouched.
+     */
+    const val G_ROUND_OFFSET = 300
+
     /** Which sub-bracket a stored round number belongs to. */
-    enum class BracketKey { W, L, GF }
+    enum class BracketKey { W, L, GF, G }
 
     fun bracketOfRound(round: Int): BracketKey = when {
+        // ORDER MATTERS: the group band is numerically ABOVE the grand-final
+        // band, so it has to be tested FIRST. Swapped, every group match reads
+        // as a grand final — silently, since both are valid keys.
+        round >= G_ROUND_OFFSET -> BracketKey.G
         round >= 200 -> BracketKey.GF
         round >= L_ROUND_OFFSET -> BracketKey.L
         else -> BracketKey.W
     }
 
-    /** Section headings for the three sub-brackets of a double-elimination event. */
+    /** Section headings for the sub-brackets an event can present. */
     val BRACKET_SECTION_LABEL: Map<BracketKey, String> = mapOf(
+        BracketKey.G to "Group Stage",
         BracketKey.W to "Upper Bracket",
         BracketKey.L to "Lower Bracket",
         BracketKey.GF to "Grand Final"
@@ -61,6 +73,12 @@ object TournamentBracket {
         // fromEnd 0 = the last round of this section, 1 = the one before it, …
         val fromEnd = if (idx == -1) ordered.size - 1 else ordered.size - 1 - idx
 
+        if (bracket == BracketKey.G) {
+            // Group rounds are plain sequence numbers — a round robin has no
+            // "final" round, every round is the same kind of thing.
+            return "Group Stage — Round ${round - G_ROUND_OFFSET}"
+        }
+
         if (bracket == BracketKey.L) {
             return when (fromEnd) {
                 0 -> "Lower Bracket Final"
@@ -70,11 +88,17 @@ object TournamentBracket {
             }
         }
 
+        // Number by POSITION in the section, not by the raw round number. They
+        // agree for an ordinary bracket (rounds 1..k), but GROUP_DOUBLE_ELIM
+        // never materialises winners round 1 — the group stage decides it — so
+        // its winners rounds start at 2 and the raw number would name the first
+        // playoff column "Round 2". Only reachable at S >= 32.
+        val displayRound = if (idx == -1) round else idx + 1
         return when (fromEnd) {
             0 -> if (doubleElim) "Upper Bracket Final" else "Final"
             1 -> if (doubleElim) "Upper Bracket Semifinals" else "Semifinals"
             2 -> if (doubleElim) "UB Quarterfinals" else "Quarterfinals"
-            else -> if (doubleElim) "Upper Bracket Round $round" else "Round $round"
+            else -> if (doubleElim) "Upper Bracket Round $displayRound" else "Round $displayRound"
         }
     }
 
@@ -202,9 +226,15 @@ object TournamentBracket {
     )
 
     /**
-     * Group a flat match list into the sections the view draws, in W → L → GF
-     * order, dropping empty ones. Matches carry their own `bracket` field; an
+     * Group a flat match list into the sections the view draws, in G → W → L →
+     * GF order, dropping empty ones. Matches carry their own `bracket` field; an
      * unrecognised value falls back to "W" rather than vanishing from the view.
+     *
+     * The group stage leads because it is played first. [doubleElim] is no longer
+     * what decides whether sections are titled — the SECTION COUNT is. Keying off
+     * the format string meant a format the client didn't recognise silently
+     * un-titled every section, leaving several unlabelled bracket blobs stacked
+     * on screen; "more than one section" is the condition that actually matters.
      */
     fun sections(matches: List<TournamentMatchDto>, doubleElim: Boolean): List<Section> {
         val byBracket = LinkedHashMap<BracketKey, MutableList<TournamentMatchDto>>()
@@ -212,25 +242,28 @@ object TournamentBracket {
             val key = when (m.bracket) {
                 "L" -> BracketKey.L
                 "GF" -> BracketKey.GF
+                "G" -> BracketKey.G
                 else -> BracketKey.W
             }
             byBracket.getOrPut(key) { mutableListOf() }.add(m)
         }
 
-        return listOf(BracketKey.W, BracketKey.L, BracketKey.GF)
+        val present = listOf(BracketKey.G, BracketKey.W, BracketKey.L, BracketKey.GF)
             .filter { !byBracket[it].isNullOrEmpty() }
-            .map { key ->
-                val list = byBracket.getValue(key)
-                val matchesByRound = list.groupBy { it.round }
-                    .mapValues { (_, arr) -> arr.sortedBy { it.slot } }
-                val rounds = matchesByRound.keys.sorted()
-                Section(
-                    key = key,
-                    // Only label sections when there is more than one to tell apart.
-                    title = if (doubleElim) BRACKET_SECTION_LABEL[key] else null,
-                    rounds = rounds,
-                    matchesByRound = matchesByRound
-                )
-            }
+        val titled = present.size > 1 || doubleElim
+
+        return present.map { key ->
+            val list = byBracket.getValue(key)
+            val matchesByRound = list.groupBy { it.round }
+                .mapValues { (_, arr) -> arr.sortedBy { it.slot } }
+            val rounds = matchesByRound.keys.sorted()
+            Section(
+                key = key,
+                // Only label sections when there is more than one to tell apart.
+                title = if (titled) BRACKET_SECTION_LABEL[key] else null,
+                rounds = rounds,
+                matchesByRound = matchesByRound
+            )
+        }
     }
 }
