@@ -439,8 +439,30 @@ android {
         // See PR #105 for why. The chat-composer fix is compile- and
         // review-verified but NOT device-verified — reaching it needs a live
         // online match, i.e. a second account and an opponent.
-        versionCode = 56
-        versionName = "0.1.56"
+        // 57 = MATCHMAKING HOTFIX. Owner-reported on 55: Quick Match sat on
+        // "Finding opponent" for well over 20s and never matched an AI, for
+        // casual AND ranked.
+        //
+        // Diagnosed live against production Redis WHILE the player was
+        // searching: rt:mmq:CASUAL and rt:mmq:RANKED were both empty, no
+        // rt:queuedIn:<user> existed, and no bot-fill job was pending — the
+        // server had no idea anyone was queued, so the 7-20s bot fallback (which
+        // only a received join can arm) could never fire. Two suspects were
+        // ruled out rather than assumed: all 15 bots ARE seeded, and the job
+        // poller IS alive.
+        //
+        // Root cause: joinQueue showed SEARCHING purely optimistically — the
+        // status flipped before anything was sent and nothing ever required the
+        // server's mm:searching ACK, which this client already listened for. A
+        // join that failed to land left an eternal spinner with no error.
+        // Now a 6s ack watchdog drops back to IDLE with a retryable message.
+        //
+        // NOT a regression from 54-56: joinQueue is unchanged since the original
+        // gameplay commit (7bf5eda). It is a latent race that only bites when
+        // the socket is not connected at the moment the player taps Play, which
+        // is why it could appear to have worked before.
+        versionCode = 57
+        versionName = "0.1.57"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
