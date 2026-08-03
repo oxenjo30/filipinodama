@@ -3,9 +3,13 @@ package com.filipinodama.app.ui.components
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.asPaddingValues
+import androidx.compose.foundation.layout.ime
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.systemBars
+import androidx.compose.foundation.layout.union
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.Dp
@@ -45,6 +49,35 @@ fun Modifier.screenInsetsTopOnly(): Modifier = this.statusBarsPadding()
 
 /** Nav/gesture-bar (bottom) padding only — for a screen whose top is already handled. */
 fun Modifier.screenInsetsBottomOnly(): Modifier = this.navigationBarsPadding()
+
+/**
+ * Screen insets for a FORM — a screen root that owns text fields and therefore
+ * has to survive the on-screen keyboard. Use this instead of [screenInsets],
+ * and apply it BEFORE `.verticalScroll(...)`.
+ *
+ * Owner-reported (v53/v54): signing in with a saved password left the keyboard
+ * covering the Sign in button, with no way to reach it — the login screen was
+ * a dead end for anyone using a password manager.
+ *
+ * Two things went wrong, and both are easy to reproduce by hand:
+ *
+ * 1. CONSUMPTION ORDER. `screenInsets()` ends in navigationBarsPadding(), which
+ *    CONSUMES the nav-bar inset. A later `.imePadding()` therefore pads by only
+ *    what's left — and since the IME inset OVERLAPS the nav-bar inset, it
+ *    under-pads by roughly the nav bar's height. The CTA ends up that far below
+ *    the top of the keyboard: on screen, but untappable.
+ *
+ * 2. PLACEMENT. `.imePadding()` written AFTER `.verticalScroll(...)` pads the
+ *    scrolling CONTENT rather than shrinking the scroll VIEWPORT, so the
+ *    viewport still spans the full height, keyboard area included.
+ *
+ * `union` takes the max per edge, so the bottom is the keyboard height while
+ * it's open and the nav-bar height when it isn't — one inset, applied once, so
+ * there is nothing left to double-count or consume in the wrong order.
+ */
+@Composable
+fun Modifier.screenInsetsWithIme(): Modifier =
+    this.windowInsetsPadding(WindowInsets.systemBars.union(WindowInsets.ime))
 
 /**
  * `contentPadding` for a LazyColumn that reserves the real nav/gesture-bar height

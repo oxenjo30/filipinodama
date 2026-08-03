@@ -6,7 +6,6 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -25,6 +24,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -32,7 +32,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.filipinodama.app.data.AuthRepository
 import com.filipinodama.app.data.AuthResult
 import com.filipinodama.app.data.GoogleSignInHelper
-import com.filipinodama.app.ui.components.screenInsets
+import com.filipinodama.app.ui.components.screenInsetsWithIme
 import com.filipinodama.app.ui.theme.Bg
 import com.filipinodama.app.ui.theme.Gold
 import com.filipinodama.app.ui.theme.GoldLt
@@ -77,7 +77,19 @@ fun CreateAccountScreen(
     var googleBusy by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
+    val focusManager = LocalFocusManager.current
     val providers by AuthRepository.providers.collectAsStateWithLifecycle()
+
+    /**
+     * Single exit point once the account exists. Drops focus first so the IME
+     * doesn't ride the navigation out of this screen and sit on top of
+     * Onboarding — same defect as LoginScreen (owner report, v53). Three
+     * success paths reach it: register, Google credential, Google exchange.
+     */
+    fun finishCreated() {
+        focusManager.clearFocus(force = true)
+        onAccountCreated()
+    }
 
     // Same provider-availability fetch as LoginScreen (mirrors the web's
     // authStore.refreshProviders()); harmless to call again if the user
@@ -105,11 +117,11 @@ fun CreateAccountScreen(
             when (val outcome = resolveCredentialResult(credentialResult)) {
                 is GoogleSignInOutcome.Cancelled -> { /* user backed out — no error, no navigation */ }
                 is GoogleSignInOutcome.Error -> error = outcome.message
-                is GoogleSignInOutcome.SignedIn -> onAccountCreated()
+                is GoogleSignInOutcome.SignedIn -> finishCreated()
                 null -> {
                     val idToken = (credentialResult as GoogleSignInHelper.Result.Success).idToken
                     when (val serverOutcome = resolveServerAuthResult(AuthRepository.googleSignIn(idToken))) {
-                        is GoogleSignInOutcome.SignedIn -> onAccountCreated()
+                        is GoogleSignInOutcome.SignedIn -> finishCreated()
                         is GoogleSignInOutcome.Error -> error = serverOutcome.message
                         is GoogleSignInOutcome.Cancelled -> { /* unreachable from a server result */ }
                     }
@@ -149,7 +161,7 @@ fun CreateAccountScreen(
                 is AuthResult.Success -> {
                     // Offer to SAVE the new credential to the vault before leaving.
                     commitAutofillOnAuthSuccess(context)
-                    onAccountCreated()
+                    finishCreated()
                 }
                 is AuthResult.Failure -> error = result.message
             }
@@ -161,10 +173,13 @@ fun CreateAccountScreen(
         modifier = Modifier
             .fillMaxSize()
             .background(Bg)
-            .screenInsets()
+            // Same fix as LoginScreen: insets BEFORE the scroll, IME unioned in
+            // rather than appended after a navigationBarsPadding() that already
+            // consumed part of it. This screen has MORE fields than Login, so
+            // its Create Account button sat even further under the keyboard.
+            .screenInsetsWithIme()
             .verticalScroll(rememberScrollState())
             .padding(horizontal = 28.dp, vertical = 16.dp)
-            .imePadding()
     ) {
         AuthBackButton(onClick = onBack)
 
