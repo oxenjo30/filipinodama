@@ -1,0 +1,15 @@
+[
+  {
+    "relation": [
+      "delegate_permission/common.handle_all_urls",
+      "delegate_permission/common.get_login_creds"
+    ],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "com.filipinodama.app",
+      "sha256_cert_fingerprints": [
+        "BD:25:28:9E:B0:C0:2F:E3:AB:A6:A7:15:BB:7C:88:A2:B6:81:19:50:AD:38:36:08:7A:20:B5:8D:B9:E7:7F:C8"
+      ]
+    }
+  }
+]
