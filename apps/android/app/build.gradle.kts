@@ -378,8 +378,34 @@ android {
         // Nothing else changed in the app for 54: the tournament-notification
         // work merged alongside it is server + web only and reaches Android
         // through the API, not through this bundle.
-        versionCode = 54
-        versionName = "0.1.54"
+        // 55 = SIGN-IN KEYBOARD TRAP (hotfix on 54). Owner-reported on a
+        // Samsung: filling the login form from a saved password left the
+        // keyboard covering the Sign in button, unreachable by ANY amount of
+        // scrolling, and the keyboard then followed the player out to Home.
+        //
+        // Root cause was NOT the auth screens' padding — it was that
+        // MainActivity declared no windowSoftInputMode, so the system chose PAN:
+        // opening the keyboard slid the whole window up rather than reflowing
+        // (measured at 1080x1600, the wordmark jumped y=415 → y=49). A panned
+        // window never reports ime insets, so imePadding() was inert and
+        // verticalScroll had nothing extra to scroll. adjustResize is the fix;
+        // the inset-ordering cleanup below only became effective once it landed.
+        //
+        // Also corrected while in there: Login and Create Account ran
+        // screenInsets() → verticalScroll → imePadding(), which both
+        // under-padded (navigationBarsPadding() had already CONSUMED part of the
+        // overlapping ime inset) and padded the scrolling CONTENT instead of
+        // shrinking the VIEWPORT; Forgot Password had no insets at all, so its
+        // back button sat under the notch. All three now share
+        // screenInsetsWithIme() = windowInsetsPadding(systemBars union ime),
+        // applied BEFORE the scroll. And every auth success path now clears
+        // focus, so the IME stops riding the navigation to the next screen.
+        //
+        // NOTE adjustResize is app-wide: chat/search surfaces now resize rather
+        // than pan when the keyboard opens. Standard behaviour, but it is a
+        // change beyond the auth screens.
+        versionCode = 55
+        versionName = "0.1.55"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
