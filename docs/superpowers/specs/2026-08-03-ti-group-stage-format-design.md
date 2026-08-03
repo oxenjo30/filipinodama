@@ -1,7 +1,29 @@
 # TI-style tournament format: round robin groups → double elimination
 
-Status: **spec v2 — revised after multi-agent review. Blocked on owner decisions.**
-Owner decision: 2026-08-03 — "Configurable per cup"
+Status: **BUILT and merged-ready (2026-08-03).** Spec v3 — v1 design, v2 review
+corrections, v3 records what was actually implemented and which decisions were
+taken to get there.
+Owner decision: 2026-08-03 — "Configurable per cup", then "proceed to fix and complete"
+
+## Decisions taken at implementation time
+
+The owner reaffirmed rather than answering the six open questions individually,
+so these were decided on their behalf and are recorded here as the ones to
+revisit if any turn out wrong:
+
+| Question | Decision | Why |
+| --- | --- | --- |
+| Short fields | **Full-cup gate** (`GROUP_NEEDS_FULL_FIELD`) | Matches the DOUBLE_ELIM precedent already accepted; never reshapes a cup people paid to enter |
+| Group rounds | **Generated one at a time** | The only way to keep "one live fixture per player", which the no-show forfeit depends on |
+| Scheduling / push | **Not built** — capped total matches at 120 instead | Push infrastructure is a separate project; the cap keeps cups finishable |
+| Tied placements | **Share the pooled slots** | Otherwise declared prize gold silently fails to move |
+| Best-of | **Bo1 throughout** | Bo3 would touch match completion, the realtime layer and the schema |
+| Seeding | **Trophies, for this format only** | Join-order seeds would settle the last qualifying place by who clicked Join first |
+
+**Still deferred, and the one to watch:** there is no scheduling and no
+notification system. A 40-match cup is finishable because the no-show forfeit
+keeps things moving, but a pair who are both absent still produce a fixture
+nothing can resolve. See B5.
 Requested: "round robin eliminates 2 players depending on the size of the tournament.
 once all round robin is completed, we move to the group stages, the top N is in the
 upper bracket and the below N are in the lower bracket. This is the game mechanics
@@ -399,28 +421,36 @@ Other corrections:
 
 ---
 
-## Owner decisions needed
+## What shipped
 
-1. **B2** — full-cup gate, re-derive from `n`, or shrink?
-2. **B4** — accept lockstep group rounds as the price of correct forfeits?
-3. **B5** — is a 94-match format viable with no scheduling and no notifications? If not,
-   does that infrastructure come first, or do we cap the format at the 40-match shape?
-4. **B6** — do tied placements split their combined share?
-5. Best-of: this spec assumes Bo1 throughout. TI uses Bo2 groups / Bo3 playoffs; that
-   would touch match completion, the realtime layer and the schema, and should be
-   separate work.
-6. Seed by trophies instead of join order?
+Server: `apps/server/src/modules/tournament-groups.ts` (start, progressive group
+rounds, the cut, playoff seeding, recovery, placements), with the pure helpers in
+`lib/tournament-bracket.ts` (`groupStageShape`, `snakeDraftGroups`,
+`seedPlayoffFromGroups`, `groupStageSchedule`, `groupRoundCount`). Dispatch added to
+`startTournament`, `reportResult` and `completeTournament`; recovery hung off both
+Complete and the ready-check sweeper. Admin validation enforces the shape rules and a
+120-match cap.
 
----
+Clients: web and Android both render per-group standings with qualification bands plus
+the bracket; admin gained the format, the conditional shape fields and a live match
+count. Connector lines are suppressed for the group section on both clients — a round
+robin's columns are a schedule, not a feeder tree.
 
-## Revised cost
+Verification: 640/640 server tests, 389/389 Android unit tests, web and admin typecheck
+clean. The load-bearing test plays a 12-player cup from the first group fixture to a
+champion through the real `reportResult` path and asserts the declared prize pool is
+distributed in full.
 
-v1's estimate is withdrawn. The three pure bracket helpers do hold up unchanged — but
-their caller needs `B` re-sourced, the format needs adding to three dispatch chains, the
-group stage needs round-by-round generation, the transition needs a recovery path, the
-payout needs a tie policy, and the format-string comparisons need auditing across four
-apps and two languages. The two-phase UI is then on top of that, twice, because Android
-does not share the bracket module.
+## Still open
 
-**This is materially larger than v1 implied, and B5 in particular is a product question
-rather than an implementation one.**
+- **B5 — scheduling and notifications.** Unbuilt. Two absent players still produce an
+  unresolvable fixture, and nothing tells a player their forfeit clock is running.
+- **Bo3.** This is a Bo1 implementation throughout.
+- **Collusion in the final group round.** All fixtures in a round are live
+  simultaneously, but nothing forces them to be *played* simultaneously, so a pair can
+  hold their game until they know exactly what result eliminates a third player. TI
+  mitigates this by playing the last round at the same time; we cannot, without
+  scheduling.
+- **Losers-bracket rematches.** `losersDropSlot` uses an index-aligned mapping that is
+  documented as not guaranteeing zero rematches. First-round separation is enforced;
+  later drop rounds are not.
