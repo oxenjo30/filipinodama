@@ -468,13 +468,14 @@ export function swissPairNextRound(
 // anyway for cheap querying/grouping (admin + web bracket views group by it
 // directly instead of re-deriving from the round number).
 //
-// The three constants are DEFINED in @dama/shared (packages/shared/src/bracket.ts)
-// because the clients need them to label rounds, and re-exported here so every
-// existing importer of this module is unchanged. One definition, no drift: a
-// second copy could disagree with the clients' idea of which rounds are losers
-// rounds without failing a single test on this side.
-export { L_ROUND_OFFSET, GF_ROUND, GF_RESET_ROUND } from "@dama/shared";
-import { L_ROUND_OFFSET, GF_ROUND, GF_RESET_ROUND } from "@dama/shared";
+// The round-offset constants are DEFINED in @dama/shared
+// (packages/shared/src/bracket.ts) because the clients need them to label
+// rounds, and re-exported here so every existing importer of this module is
+// unchanged. One definition, no drift: a second copy could disagree with the
+// clients' idea of which rounds are losers rounds without failing a single test
+// on this side.
+export { L_ROUND_OFFSET, G_ROUND_OFFSET, GF_ROUND, GF_RESET_ROUND } from "@dama/shared";
+import { L_ROUND_OFFSET, G_ROUND_OFFSET, GF_ROUND, GF_RESET_ROUND } from "@dama/shared";
 
 /**
  * The losers-bracket ROUND SIZES (match counts) for a winners-bracket of size
@@ -691,4 +692,224 @@ export function computeSwissStandings(
   });
 
   return ranked.map((e, i) => ({ entryId: e.id, placement: i + 1 }));
+}
+
+// ──────────────────── Group stage → double elim (GROUP_DOUBLE_ELIM) ────────────────────
+
+/** Derived sizing for a GROUP_DOUBLE_ELIM event. All fields are consequences of the three inputs. */
+export type GroupShape = {
+  groupCount: number;
+  groupSize: number;
+  qualifiersPerGroup: number;
+  /** Survivors of the group stage — and therefore the playoff bracket size B. */
+  survivors: number;
+  /** Seats in the upper bracket, and separately in the lower. Always survivors/2 each. */
+  upperSeats: number;
+  lowerSeats: number;
+  eliminatedInGroups: number;
+  groupMatches: number;
+  playoffMatches: number;
+  totalMatches: number;
+};
+
+/**
+ * Validate and derive the shape of a GROUP_DOUBLE_ELIM event, or throw 400
+ * INVALID_GROUP_SHAPE explaining which rule failed.
+ *
+ * `fieldSize` is the number of players who will ACTUALLY be seeded — not
+ * maxPlayers. Those differ whenever a cup starts short, and every quantity here
+ * depends on the real field.
+ *
+ * The upper/lower split is NOT configurable. The playoff bracket is an ordinary
+ * double elimination of size `survivors` whose winners round 1 has already been
+ * decided by the group stage, and a winners round 1 of size B yields exactly B/2
+ * winners and B/2 losers — so the split is forced to half and half. That is also
+ * exactly what The International does (4 up, 4 down of 8 qualifiers per group).
+ *
+ * Pure — no I/O.
+ */
+export function groupStageShape(fieldSize: number, groupCount: number, qualifiersPerGroup: number): GroupShape {
+  const bad = (msg: string): never => {
+    throw err.badRequest("INVALID_GROUP_SHAPE", msg);
+  };
+
+  if (!Number.isInteger(groupCount) || groupCount < 2) {
+    bad("groupCount must be a whole number of at least 2 — cross-group seeding needs another group to pair against");
+  }
+  if (!Number.isInteger(fieldSize) || fieldSize < 4) bad("Need at least 4 players");
+  if (fieldSize % groupCount !== 0) {
+    bad(`${fieldSize} players do not divide evenly into ${groupCount} groups — unequal groups make qualification unfair`);
+  }
+
+  const groupSize = fieldSize / groupCount;
+
+  if (!Number.isInteger(qualifiersPerGroup) || qualifiersPerGroup < 2) bad("qualifiersPerGroup must be at least 2");
+  if (qualifiersPerGroup % 2 !== 0) {
+    bad("qualifiersPerGroup must be even so the qualifiers split evenly between the upper and lower brackets");
+  }
+  if (qualifiersPerGroup >= groupSize) {
+    bad(`qualifiersPerGroup (${qualifiersPerGroup}) must be fewer than the group size (${groupSize}) — otherwise the group stage eliminates nobody`);
+  }
+
+  const survivors = groupCount * qualifiersPerGroup;
+  const k = Math.log2(survivors);
+  if (!Number.isInteger(k) || survivors < 4) {
+    bad(`${groupCount} groups x ${qualifiersPerGroup} qualifiers = ${survivors} survivors, which is not a power of two — the playoff bracket cannot be formed`);
+  }
+
+  // Winners rounds 2..k hold B/2^r matches each => B/2 - 1 in total (round 1 is
+  // the group stage). The losers bracket is always B-2 matches. Plus one grand
+  // final (a bracket reset would add a second, and is not counted here).
+  const playoffMatches = survivors / 2 - 1 + (survivors - 2) + 1;
+  const groupMatches = groupCount * ((groupSize * (groupSize - 1)) / 2);
+
+  return {
+    groupCount,
+    groupSize,
+    qualifiersPerGroup,
+    survivors,
+    upperSeats: survivors / 2,
+    lowerSeats: survivors / 2,
+    eliminatedInGroups: fieldSize - survivors,
+    groupMatches,
+    playoffMatches,
+    totalMatches: groupMatches + playoffMatches,
+  };
+}
+
+/**
+ * Assign seeds 1..n to groups by SNAKE draft: 0,1,1,0,0,1,1,0… rather than
+ * straight dealing. Returns `groupIndexBySeed[seed - 1]`.
+ *
+ * Straight dealing (`seed % groupCount`) would put seeds 1 and 2 — and every
+ * other top seed — into the same group whenever seeding correlates with
+ * strength. Snake alternates the direction each row so group strength stays
+ * balanced, which matters because qualification is judged WITHIN a group: an
+ * unbalanced draw eliminates a stronger player than it should.
+ *
+ * Pure — no I/O.
+ */
+export function snakeDraftGroups(n: number, groupCount: number): number[] {
+  const out: number[] = [];
+  for (let i = 0; i < n; i++) {
+    const row = Math.floor(i / groupCount);
+    const pos = i % groupCount;
+    out.push(row % 2 === 0 ? pos : groupCount - 1 - pos);
+  }
+  return out;
+}
+
+export type GroupQualifier = { entryId: string; groupIndex: number; groupPlacement: number };
+export type SeededSlot = { slot: number; redEntryId: string; blueEntryId: string };
+
+/**
+ * Lay the group-stage qualifiers into the first playoff round of each bracket.
+ *
+ * Top half of each group (placements 1..q/2) go to the UPPER bracket, bottom
+ * half (q/2+1..q) go straight to the LOWER bracket. Within each of those, a
+ * global seed is built by INTERLEAVING groups at equal placement — A1, B1, A2,
+ * B2, … — and the pairs then come from `seedPairings`, the same standard
+ * mirror-append order the ordinary bracket uses.
+ *
+ * Going through seedPairings is what buys the separation properties. Listing
+ * cross-group pairs and dropping them into slots 0,1,2,3 in order looks right
+ * and is not: parentSlot(2,0) === parentSlot(2,1), so slots 0 and 1 share a
+ * parent, and a naive listing puts the SAME group's top two seeds into the same
+ * upper-bracket semifinal — a same-group rematch two rounds after they played a
+ * full round robin. Interleaved seeds + seedPairings instead give:
+ *
+ *   slot 0  A1 v B4     slot 1  B2 v A3     slot 2  B1 v A4     slot 3  A2 v B3
+ *
+ * — every first-round match cross-group, A1 and A2 in OPPOSITE halves, and the
+ * two group winners unable to meet before the upper-bracket final.
+ *
+ * (The losers bracket's later drop rounds use losersDropSlot's index-aligned
+ * mapping, which is documented as not guaranteeing zero rematches; this function
+ * only controls the first round of each bracket.)
+ *
+ * Pure — no I/O.
+ */
+export function seedPlayoffFromGroups(
+  qualifiers: GroupQualifier[],
+  shape: Pick<GroupShape, "groupCount" | "qualifiersPerGroup">,
+): { upper: SeededSlot[]; lower: SeededSlot[] } {
+  const half = shape.qualifiersPerGroup / 2;
+
+  const layOut = (members: GroupQualifier[], rankOf: (q: GroupQualifier) => number): SeededSlot[] => {
+    const size = members.length;
+    if (size === 0) return [];
+    const bySeed = new Map<number, string>();
+    for (const q of members) {
+      // Interleave groups at equal rank: rank 1 of every group first, then rank 2, …
+      const seed = (rankOf(q) - 1) * shape.groupCount + q.groupIndex + 1;
+      bySeed.set(seed, q.entryId);
+    }
+    const out: SeededSlot[] = [];
+    for (const p of seedPairings(size, size)) {
+      const red = bySeed.get(p.top);
+      const blue = bySeed.get(p.bottom);
+      if (!red || !blue) {
+        throw err.badRequest("INVALID_GROUP_SHAPE", `Group qualifiers do not fill the bracket (missing seed ${!red ? p.top : p.bottom})`);
+      }
+      out.push({ slot: p.slot, redEntryId: red, blueEntryId: blue });
+    }
+    return out;
+  };
+
+  return {
+    upper: layOut(
+      qualifiers.filter((q) => q.groupPlacement <= half),
+      (q) => q.groupPlacement,
+    ),
+    lower: layOut(
+      qualifiers.filter((q) => q.groupPlacement > half && q.groupPlacement <= shape.qualifiersPerGroup),
+      (q) => q.groupPlacement - half,
+    ),
+  };
+}
+
+/** How many rounds a group of `groupSize` players takes (odd sizes carry a bye each round). */
+export function groupRoundCount(groupSize: number): number {
+  return groupSize % 2 === 1 ? groupSize : groupSize - 1;
+}
+
+/**
+ * The full group-stage fixture list across every group, in STORED coordinates.
+ *
+ * `round` is already offset into the G band (300 + local round) and `slot` is
+ * namespaced by group so the (tournamentId, round, slot) unique index holds with
+ * several groups playing the same round concurrently:
+ *
+ *   slot = groupIndex * matchesPerRound + slotWithinGroup
+ *
+ * `matchesPerRound` is `floor(groupSize / 2)` — the floor matters, because an odd
+ * group carries a bye and plays one fewer match per round than `groupSize / 2`
+ * would suggest. Writing it without the floor yields fractional slots.
+ *
+ * `seedA`/`seedB` are LOCAL to the group (1..groupSize), not global tournament
+ * seeds — `roundRobinSchedule` works in local seat numbers, and the caller maps
+ * them onto that group's entries. Conflating the two silently pairs the wrong
+ * players (or throws on a missing seed) once there is more than one group.
+ *
+ * Pure — no I/O.
+ */
+export function groupStageSchedule(
+  groupSize: number,
+  groupCount: number,
+): Array<{ round: number; slot: number; groupIndex: number; seedA: number; seedB: number }> {
+  const perGroup = roundRobinSchedule(groupSize);
+  const matchesPerRound = Math.floor(groupSize / 2);
+  const out: Array<{ round: number; slot: number; groupIndex: number; seedA: number; seedB: number }> = [];
+  for (let g = 0; g < groupCount; g++) {
+    for (const p of perGroup) {
+      out.push({
+        round: G_ROUND_OFFSET + p.round,
+        slot: g * matchesPerRound + p.slot,
+        groupIndex: g,
+        seedA: p.a,
+        seedB: p.b,
+      });
+    }
+  }
+  return out;
 }

@@ -14,23 +14,33 @@ import type { FastifyInstance } from "fastify";
 import type { Prisma } from "@prisma/client";
 import { z } from "zod";
 import { prisma } from "../db/client.js";
-import { ok, err } from "../lib/errors.js";
+import { ok, err, ApiError } from "../lib/errors.js";
 import { requireAdmin } from "../auth/guards.js";
 import { audit } from "../lib/audit.js";
 import { startTournament, reportResult, completeTournament, cancelTournament } from "./tournaments-core.js";
+import { groupStageShape } from "../lib/tournament-bracket.js";
 
 const POWERS_OF_TWO = [2, 4, 8, 16, 32, 64, 128, 256] as const;
 const ELIMINATION_FORMATS = new Set(["SINGLE_ELIM", "DOUBLE_ELIM"]);
 /** All four tournament formats V2 planned (see
- * docs/superpowers/specs/2026-07-11-tournament-formats-v2.md) are now supported. */
-const SUPPORTED_FORMATS = new Set(["SINGLE_ELIM", "ROUND_ROBIN", "SWISS", "DOUBLE_ELIM"]);
+ * docs/superpowers/specs/2026-07-11-tournament-formats-v2.md) are now supported,
+ * plus GROUP_DOUBLE_ELIM (docs/superpowers/specs/2026-08-03-ti-group-stage-format-design.md). */
+const SUPPORTED_FORMATS = new Set(["SINGLE_ELIM", "ROUND_ROBIN", "SWISS", "DOUBLE_ELIM", "GROUP_DOUBLE_ELIM"]);
 const ROUND_ROBIN_MAX_PLAYERS = 16; // match count = n(n-1)/2 grows fast — cap RR at 16
 const SWISS_MAX_PLAYERS = 32; // Swiss scales far better than RR (rounds, not n(n-1)/2 matches) — cap at 32
+/**
+ * GROUP_DOUBLE_ELIM's group stage IS a round robin, so its match count carries
+ * the same n(n-1)/2 growth per group — the literal International shape (18
+ * players, two groups of nine) is already 94 matches. Cap the TOTAL rather than
+ * the player count, because the player count alone does not tell you the cost:
+ * 18 players in two groups is 94 matches, but 18 in three groups is 48.
+ */
+const GROUP_MAX_TOTAL_MATCHES = 120;
 
 const createBody = z
   .object({
     name: z.string().trim().min(1).max(80),
-    format: z.enum(["SINGLE_ELIM", "DOUBLE_ELIM", "SWISS", "ROUND_ROBIN"]),
+    format: z.enum(["SINGLE_ELIM", "DOUBLE_ELIM", "SWISS", "ROUND_ROBIN", "GROUP_DOUBLE_ELIM"]),
     entryFeeGold: z.number().int().min(0).max(1_000_000),
     prizePoolGold: z.number().int().min(0),
     maxPlayers: z.number().int().min(2),
@@ -43,10 +53,23 @@ const createBody = z
     // SWISS ONLY: the number of Swiss rounds. Optional — Start computes
     // ceil(log2(n)) when left unset. Ignored (but harmless) for other formats.
     rounds: z.number().int().min(1).max(20).optional().nullable(),
+    // GROUP_DOUBLE_ELIM ONLY: how many round-robin groups, and how many of each
+    // group survive into the playoff bracket. Required for that format, ignored
+    // for every other (and nulled out on write, so a format change cannot leave
+    // a stale shape behind).
+    groupCount: z.number().int().min(2).max(16).optional().nullable(),
+    qualifiersPerGroup: z.number().int().min(2).max(64).optional().nullable(),
     // READY CHECK (V1.5): seconds a player has to press Ready once their
     // OPPONENT has, before forfeiting the slot. 1 minute .. 1 hour; the schema
     // default (600 = 10 min) applies when the client omits it.
     readyWindowSec: z.number().int().min(60).max(3600).default(600),
+    // ORGANISER START TIMER (optional; omit or null = off). Seconds a fixture
+    // may sit playable before its no-show clock starts on its own, so a pair
+    // who BOTH fail to turn up cannot block their round indefinitely.
+    // Bounded below by readyWindowSec-scale values for the same reason: a
+    // 60-second start window would forfeit players who are merely slow to open
+    // the app.
+    startWindowSec: z.number().int().min(300).max(86400).optional().nullable(),
   })
   .superRefine((b, ctx) => {
     if (!SUPPORTED_FORMATS.has(b.format)) {
@@ -67,6 +90,29 @@ const createBody = z
     } else if (b.format === "SWISS") {
       if (b.maxPlayers > SWISS_MAX_PLAYERS) {
         ctx.addIssue({ code: "custom", message: `Swiss is capped at ${SWISS_MAX_PLAYERS} players`, path: ["maxPlayers"] });
+      }
+    } else if (b.format === "GROUP_DOUBLE_ELIM") {
+      // maxPlayers is deliberately NOT constrained to a power of two here — 18,
+      // 12 and 10 are all legal fields. It is the SURVIVOR count that has to be
+      // a power of two, which groupStageShape checks.
+      if (b.groupCount == null || b.qualifiersPerGroup == null) {
+        ctx.addIssue({ code: "custom", message: "This format needs groupCount and qualifiersPerGroup", path: ["groupCount"] });
+      } else {
+        try {
+          // Validated against maxPlayers because this format requires a FULL
+          // field to start (see startGroupDoubleElim) — so maxPlayers really is
+          // the field size here, unlike every other format.
+          const shape = groupStageShape(b.maxPlayers, b.groupCount, b.qualifiersPerGroup);
+          if (shape.totalMatches > GROUP_MAX_TOTAL_MATCHES) {
+            ctx.addIssue({
+              code: "custom",
+              message: `That shape is ${shape.totalMatches} matches, over the ${GROUP_MAX_TOTAL_MATCHES} cap — use more groups or fewer players`,
+              path: ["groupCount"],
+            });
+          }
+        } catch (e) {
+          ctx.addIssue({ code: "custom", message: e instanceof ApiError ? e.message : "Invalid group shape", path: ["groupCount"] });
+        }
       }
     }
     if (b.prizeSplitGold.length > b.maxPlayers) {
@@ -185,6 +231,9 @@ export async function adminTournamentsRoutes(app: FastifyInstance) {
           matchMode: b.matchMode,
           startsAt: b.startsAt ? new Date(b.startsAt) : null,
           rounds: b.format === "SWISS" ? (b.rounds ?? null) : null,
+          startWindowSec: b.startWindowSec ?? null,
+          groupCount: b.format === "GROUP_DOUBLE_ELIM" ? (b.groupCount ?? null) : null,
+          qualifiersPerGroup: b.format === "GROUP_DOUBLE_ELIM" ? (b.qualifiersPerGroup ?? null) : null,
           readyWindowSec: b.readyWindowSec,
           createdById: actorId,
         },
@@ -234,6 +283,9 @@ export async function adminTournamentsRoutes(app: FastifyInstance) {
           matchMode: b.matchMode,
           startsAt: b.startsAt ? new Date(b.startsAt) : null,
           rounds: b.format === "SWISS" ? (b.rounds ?? null) : null,
+          startWindowSec: b.startWindowSec ?? null,
+          groupCount: b.format === "GROUP_DOUBLE_ELIM" ? (b.groupCount ?? null) : null,
+          qualifiersPerGroup: b.format === "GROUP_DOUBLE_ELIM" ? (b.qualifiersPerGroup ?? null) : null,
           readyWindowSec: b.readyWindowSec,
         },
       });

@@ -1,7 +1,7 @@
 import { useMemo } from "react";
 import { layoutBracket, bracketHeight, roundLabel, BRACKET_SECTION_LABEL, type BracketKey } from "@dama/shared";
 import { Avatar } from "../../components";
-import type { TournamentEntry, TournamentFormat, TournamentMatch } from "./types";
+import { hasLosersBracket, type TournamentEntry, type TournamentFormat, type TournamentMatch } from "./types";
 
 /**
  * BracketView — the tournament bracket, drawn the way an esports bracket is
@@ -158,7 +158,8 @@ function MatchCard({
   );
 }
 
-/** One sub-bracket (winners / losers / grand final), or the whole thing for single-elim. */
+/** One sub-bracket (group stage / winners / losers / grand final), or the whole
+ *  thing for single-elim. */
 function BracketSection({
   title,
   rounds,
@@ -166,6 +167,7 @@ function BracketSection({
   entryById,
   myEntryId,
   doubleElim,
+  connect,
 }: {
   title: string | null;
   rounds: number[];
@@ -173,6 +175,12 @@ function BracketSection({
   entryById: Map<string, TournamentEntry>;
   myEntryId: string | undefined;
   doubleElim: boolean;
+  /** Whether one round FEEDS the next. True for every elimination section; false
+   *  for the group stage, whose columns are just successive round-robin fixture
+   *  sets — same players, re-paired. Its columns are all the same size, which is
+   *  exactly the shape the connector rule reads as a 1:1 drop round, so without
+   *  this it would draw elbows asserting a progression that does not exist. */
+  connect: boolean;
 }) {
   const sizes = rounds.map((r) => (matchesByRound.get(r) ?? []).length);
   const layout = useMemo(() => layoutBracket(sizes, METRICS), [sizes.join(",")]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -182,7 +190,7 @@ function BracketSection({
   // Elbow connectors: each match runs a horizontal stub out of its right edge,
   // a vertical to its parent's centre line, then a horizontal into the parent.
   const paths: string[] = [];
-  for (let r = 1; r < rounds.length; r++) {
+  for (let r = 1; connect && r < rounds.length; r++) {
     const size = sizes[r]!;
     const prevSize = sizes[r - 1]!;
     const feedersFor = (i: number): number[] => {
@@ -286,18 +294,21 @@ export function BracketView({
   myEntryId: string | undefined;
 }) {
   const entryById = useMemo(() => new Map(entries.map((e) => [e.id, e])), [entries]);
-  const doubleElim = format === "DOUBLE_ELIM";
+  const doubleElim = hasLosersBracket(format);
 
   const sections = useMemo(() => {
     const byBracket = new Map<BracketKey, TournamentMatch[]>();
     for (const m of matches) {
-      const key = (m.bracket === "L" || m.bracket === "GF" ? m.bracket : "W") as BracketKey;
+      // Anything unrecognised falls to "W" — every format except DOUBLE_ELIM and
+      // GROUP_DOUBLE_ELIM stores only the schema default there.
+      const key = (m.bracket === "L" || m.bracket === "GF" || m.bracket === "G" ? m.bracket : "W") as BracketKey;
       const list = byBracket.get(key) ?? [];
       list.push(m);
       byBracket.set(key, list);
     }
 
-    const order: BracketKey[] = ["W", "L", "GF"];
+    // Group stage FIRST — it is played before the bracket it seeds.
+    const order: BracketKey[] = ["G", "W", "L", "GF"];
     return order
       .filter((k) => (byBracket.get(k) ?? []).length > 0)
       .map((k) => {
@@ -312,7 +323,7 @@ export function BracketView({
         const rounds = [...matchesByRound.keys()].sort((a, b) => a - b);
         // Only label sections when there is more than one to tell apart.
         const title = doubleElim ? BRACKET_SECTION_LABEL[k] : null;
-        return { key: k, title, rounds, matchesByRound };
+        return { key: k, title, rounds, matchesByRound, connect: k !== "G" };
       });
   }, [matches, doubleElim]);
 
@@ -329,6 +340,7 @@ export function BracketView({
           entryById={entryById}
           myEntryId={myEntryId}
           doubleElim={doubleElim}
+          connect={s.connect}
         />
       ))}
     </div>

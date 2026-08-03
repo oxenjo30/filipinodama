@@ -4,6 +4,7 @@ import { prisma } from "../db/client.js";
 import { err, ApiError } from "../lib/errors.js";
 import { audit } from "../lib/audit.js";
 import { reportResult } from "../modules/tournaments-core.js";
+import { recoverGroupDoubleElim, groupShapeOf } from "../modules/tournament-groups.js";
 import { createLiveMatch, onMatchEnd } from "./match.js";
 import { scheduleJob, cancelJob } from "./jobs.js";
 import { allow } from "./rate-limit.js";
@@ -72,10 +73,15 @@ export type TournamentMyMatch = {
 /**
  * The signed-in player's current playable slot in this tournament, or null.
  *
- * "Current" = the one unresolved slot they are seated in. A player is only ever
- * in one at a time (a bracket cannot present the same player with two
- * simultaneous games), so the first unresolved match wins; ordering by round
- * keeps it deterministic if data were ever malformed.
+ * "Current" = the EARLIEST unresolved slot they are seated in, by (round, slot).
+ *
+ * Elimination and Swiss formats seat a player in exactly one live slot at a
+ * time, so "earliest" and "only" coincide there. ROUND_ROBIN does NOT: it
+ * creates every fixture up front, so a player genuinely has several unresolved
+ * slots and this function picks one of them. That made the ordering here
+ * load-bearing rather than merely defensive — markReady enforces the SAME
+ * ordering, so a player can only ready the fixture this function would have
+ * shown them. See the rationale in markReady.
  *
  * Returned by GET /api/tournaments/:id AND pushed over EV.tournamentMatchState,
  * so both clients render one code path whether they polled or were pushed.
@@ -189,6 +195,37 @@ export async function markReady(io: IOServer, tmId: string, userId: string): Pro
   const iAmRed = redUserId === userId;
   const iAmBlue = blueUserId === userId;
   if (!iAmRed && !iAmBlue) throw err.forbidden("NOT_A_PARTICIPANT", "You aren't a competitor in this match");
+
+  // A player may only ready the slot their client is ACTUALLY SHOWING them —
+  // i.e. the same "current" slot myTournamentMatch resolves, using the same
+  // ordering. Without this, readying is exploitable in any format that has more
+  // than one live fixture per player at a time:
+  //
+  //   ROUND_ROBIN creates EVERY fixture status:"ready" up front (startRoundRobin),
+  //   but myTournamentMatch only ever surfaces the EARLIEST unresolved one. So a
+  //   player could ready a fixture their opponent's UI was not pointing at, arm
+  //   that opponent's no-show clock, and take the win by forfeit via resolveNoShow
+  //   without a game ever being played. It also fired by ACCIDENT: anyone who
+  //   cleared their fixtures faster than the field ended up holding matches their
+  //   opponents could not see.
+  //
+  // Single-elim, Swiss and double-elim seat a player in one live slot at a time,
+  // so for them this check is a no-op. It does not deadlock a stuck round robin
+  // either: an absent opponent on the earliest fixture is resolved by that
+  // fixture's own no-show forfeit, which then promotes the next one.
+  const myEntryId = iAmRed ? slot.redEntryId : slot.blueEntryId;
+  const currentSlot = await prisma.tournamentMatch.findFirst({
+    where: {
+      tournamentId: slot.tournamentId,
+      status: { not: "done" },
+      OR: [{ redEntryId: myEntryId }, { blueEntryId: myEntryId }],
+    },
+    orderBy: [{ round: "asc" }, { slot: "asc" }],
+    select: { id: true },
+  });
+  if (currentSlot && currentSlot.id !== tmId) {
+    throw err.conflict("NOT_YOUR_CURRENT_MATCH", "Finish your current match first");
+  }
 
   const alreadyReady = (iAmRed ? slot.redReadyAt : slot.blueReadyAt) != null;
   const opponentReady = (iAmRed ? slot.blueReadyAt : slot.redReadyAt) != null;
@@ -377,15 +414,42 @@ export async function resolveNoShow(io: IOServer, tmId: string): Promise<boolean
 
   const redReady = slot.redReadyAt != null;
   const blueReady = slot.blueReadyAt != null;
-  if (redReady === blueReady) return false; // both ready (auto-start will handle it) or neither (unreachable)
+  if (redReady && blueReady) return false; // both ready — auto-start owns it
 
-  const winnerEntryId = redReady ? slot.redEntryId : slot.blueEntryId;
+  let winnerEntryId: string | null;
+  let reason: string;
+
+  if (redReady || blueReady) {
+    winnerEntryId = redReady ? slot.redEntryId : slot.blueEntryId;
+    reason = "auto-advance: opponent did not ready up before the deadline";
+  } else {
+    // DOUBLE NO-SHOW. Unreachable until the organiser start timer existed,
+    // because the clock only ever armed when somebody pressed Ready — so a
+    // fixture with nobody present simply had no deadline. With the timer on it
+    // does, and this branch is what stops one absent PAIR from blocking a round
+    // and stalling the tournament behind it.
+    //
+    // The better seed advances. It has to be somebody: a bracket slot with no
+    // winner never fills its parent, and leaving the fixture unresolved is the
+    // stall we are here to prevent. Seed is the only ordering both players
+    // earned before the fixture, so it is the least arbitrary tiebreak
+    // available, and it is deterministic. An organiser who wants a different
+    // outcome can still report the slot manually before the clock expires.
+    const seats = await prisma.tournamentEntry.findMany({
+      where: { id: { in: [slot.redEntryId, slot.blueEntryId].filter((v): v is string => v != null) } },
+      select: { id: true, seed: true },
+    });
+    const bySeed = [...seats].sort((a, b) => (a.seed ?? Number.MAX_SAFE_INTEGER) - (b.seed ?? Number.MAX_SAFE_INTEGER));
+    winnerEntryId = bySeed[0]?.id ?? null;
+    reason = "auto-advance: neither player readied up before the deadline (better seed advances)";
+  }
+
   if (!winnerEntryId) return false;
 
   try {
     await reportResult(prisma, slot.tournamentId, tmId, winnerEntryId, {
       actorId: SYSTEM_ACTOR,
-      reason: "auto-advance: opponent did not ready up before the deadline",
+      reason,
     });
   } catch (e) {
     if (e instanceof ApiError && e.code === "SLOT_DONE") return false;
@@ -440,6 +504,46 @@ export async function sweepTournamentReadyChecks(io: IOServer): Promise<{ forfei
     }
   }
 
+  // (a2) ORGANISER START TIMER — arm the clock on fixtures nobody has readied.
+  //
+  // readyWindowSec is armed by the FIRST Ready, which means a fixture where
+  // neither player turns up carries no deadline at all and is never swept: it
+  // blocks its round, and the round blocks the tournament. Where the organiser
+  // has set startWindowSec, the clock instead starts from the moment the
+  // fixture is playable, so an absent player is resolved whether or not their
+  // opponent is there to start it.
+  //
+  // Armed HERE rather than at every place a fixture becomes ready — there are a
+  // dozen of those across five formats, and each would be a chance to forget
+  // one. The cost is that the clock starts at the next sweep tick rather than
+  // the exact instant, which is immaterial against a window measured in
+  // minutes. Only ever WRITES a null deadline, so it can never move a deadline
+  // a player's Ready already set.
+  const unarmed = await prisma.tournamentMatch.findMany({
+    where: {
+      status: "ready",
+      matchId: null,
+      readyDeadlineAt: null,
+      tournament: { status: "RUNNING", startWindowSec: { not: null } },
+    },
+    select: { id: true, tournament: { select: { startWindowSec: true } } },
+    take: 200,
+  });
+  for (const row of unarmed) {
+    const window = row.tournament.startWindowSec;
+    if (!window) continue;
+    const deadline = new Date(Date.now() + window * 1000);
+    // Conditional on still being null so a Ready landing in this same instant
+    // wins, rather than having its (earlier) deadline pushed out.
+    const armed = await prisma.tournamentMatch.updateMany({
+      where: { id: row.id, readyDeadlineAt: null, status: "ready", matchId: null },
+      data: { readyDeadlineAt: deadline },
+    });
+    if (armed.count > 0) {
+      await scheduleJob("tournament-noshow", row.id, Math.max(0, deadline.getTime() - Date.now()), { tmId: row.id });
+    }
+  }
+
   // (b) Settled matches whose slot never advanced.
   const stranded = await prisma.tournamentMatch.findMany({
     where: { status: { not: "done" }, matchId: { not: null }, match: { endedAt: { not: null } } },
@@ -453,6 +557,32 @@ export async function sweepTournamentReadyChecks(io: IOServer): Promise<{ forfei
       advanced++;
     } catch (e) {
       console.error("[tournament-live] advance sweep failed", row.matchId, e);
+    }
+  }
+
+  // (c) GROUP_DOUBLE_ELIM cups stuck between phases.
+  //
+  // A concurrent pair of reports can lose a group round's generation — or the
+  // whole group-to-playoff transition — to a READ COMMITTED race (the mechanism
+  // is documented on maybeGenerateNextSwissRound). Swiss recovers this from
+  // completeTournament, but that is not enough here: Complete is only reachable
+  // once the PLAYOFFS are over, so "group stage finished, bracket never
+  // created" would be unreachable by any player action and unrecoverable
+  // without an admin, with entry-fee gold already taken. Sweeping it means a
+  // stranded cup heals on its own within a tick.
+  //
+  // recoverGroupDoubleElim is idempotent and a cheap no-op when nothing is
+  // stuck, so this runs unconditionally for every RUNNING cup of this format.
+  const groupCups = await prisma.tournament.findMany({
+    where: { status: "RUNNING", format: "GROUP_DOUBLE_ELIM" },
+    select: { id: true, maxPlayers: true, groupCount: true, qualifiersPerGroup: true },
+    take: 50,
+  });
+  for (const t of groupCups) {
+    try {
+      await recoverGroupDoubleElim(prisma, t.id, groupShapeOf(t));
+    } catch (e) {
+      console.error("[tournament-live] group-stage recovery sweep failed", t.id, e);
     }
   }
 

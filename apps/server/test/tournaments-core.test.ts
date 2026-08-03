@@ -666,12 +666,27 @@ describe("top-N prize splits (money-critical) — generalized payout-by-placemen
     return { tournament: t, championEntryId, runnerUpEntryId, semiLoserIds };
   }
 
-  it("split length 3: pays 1st, 2nd, and one of the (tied) 3rd-place entries; the other placement-3 entry gets nothing", async () => {
+  // ── TIED PLACEMENTS SHARE THEIR SLOTS (behaviour change, 2026-08-03) ──
+  //
+  // The payout loop used to walk placements 1..split.length and pay "the first
+  // entry found at placement i". Placements are NOT distinct — a 4-player
+  // bracket ends 1,2,3,3, and every losers-bracket format produces ties WITH
+  // GAPS (1,2,3,4,5,5,7,7) — so that loop paid one of two level finishers and
+  // nothing to the other, and silently dropped any slot whose placement number
+  // did not exist. The declared prize pool and the gold that actually moved
+  // could differ, while the audit row recorded the whole split as paid.
+  //
+  // A tied group now shares the pooled value of the CONSECUTIVE slots it
+  // occupies, with any remainder dealt out a gold at a time rather than lost.
+  // The three tests below previously pinned the old behaviour; they now pin
+  // the new one. Untied placements are unaffected.
+
+  it("split length 3: the two entries TIED at 3rd share the 3rd-place money", async () => {
     const { tournament, championEntryId, runnerUpEntryId, semiLoserIds } = await finishedEightPlayerTournament(1000, [500, 300, 200]);
     await completeTournament(prisma, tournament.id, await actingAdmin(), "payout");
 
     const prizeRows = await prisma.ledgerEntry.findMany({ where: { reason: "tournament-prize" } });
-    expect(prizeRows.length).toBe(3); // champion + runner-up + exactly one 3rd-place entry
+    expect(prizeRows.length).toBe(4); // champion + runner-up + BOTH 3rd-place entries
     const totalPaid = prizeRows.reduce((sum, r) => sum + r.amount, 0);
     expect(totalPaid).toBe(1000);
 
@@ -680,34 +695,41 @@ describe("top-N prize splits (money-critical) — generalized payout-by-placemen
     expect(champRow.amount).toBe(500);
     expect(runnerRow.amount).toBe(300);
 
-    const thirdRow = prizeRows.find((r) => r.refId != null && semiLoserIds.includes(r.refId));
-    expect(thirdRow).toBeTruthy();
-    expect(thirdRow!.amount).toBe(200);
+    // The pair occupies slots 3 and 4; slot 4 is past the end of this split and
+    // so worth 0, leaving 200 to halve.
+    const thirdRows = prizeRows.filter((r) => r.refId != null && semiLoserIds.includes(r.refId));
+    expect(thirdRows).toHaveLength(2);
+    expect(thirdRows.map((r) => r.amount)).toEqual([100, 100]);
 
-    // both placement-3 entries are recorded (display), but only one paid.
     const thirdPlaceEntries = await prisma.tournamentEntry.findMany({ where: { id: { in: semiLoserIds } } });
     expect(thirdPlaceEntries.every((e) => e.placement === 3)).toBe(true);
   });
 
-  it("split length 4 summing to prizePoolGold with a ZERO in the middle (skip 2nd, pay 1st + 3rd): no ledger row for the zero slot", async () => {
+  it("split length 4 with a ZERO in the middle (skip 2nd): still no ledger row for the zero slot", async () => {
     const { tournament, championEntryId, runnerUpEntryId, semiLoserIds } = await finishedEightPlayerTournament(1000, [700, 0, 300, 0]);
     await completeTournament(prisma, tournament.id, await actingAdmin(), "payout");
 
     const prizeRows = await prisma.ledgerEntry.findMany({ where: { reason: "tournament-prize" } });
-    expect(prizeRows.length).toBe(2); // 1st + one of the 3rd-place entries; 2nd and 4th are zero/nonexistent
+    // Champion + both 3rd-place entries. A zero-valued placement still produces
+    // no ledger row, which is the property this test exists to protect.
+    expect(prizeRows.length).toBe(3);
     expect(prizeRows.some((r) => r.refId === runnerUpEntryId)).toBe(false);
 
     const champRow = prizeRows.find((r) => r.refId === championEntryId)!;
     expect(champRow.amount).toBe(700);
-    const thirdRow = prizeRows.find((r) => r.refId != null && semiLoserIds.includes(r.refId));
-    expect(thirdRow!.amount).toBe(300);
+
+    // Slots 3 and 4 are 300 and 0, so the tied pair take 150 each.
+    const thirdRows = prizeRows.filter((r) => r.refId != null && semiLoserIds.includes(r.refId));
+    expect(thirdRows.map((r) => r.amount)).toEqual([150, 150]);
 
     const totalPaid = prizeRows.reduce((sum, r) => sum + r.amount, 0);
     expect(totalPaid).toBe(1000);
   });
 
-  it("split length > entrants (e.g. length 4 on a 4-player bracket where only placements 1/2/3/3 exist): placement 4 slot amount is simply unpaid, no crash, sum still validated against prizePoolGold", async () => {
-    // 4-player bracket only ever produces placements {1,2,3,3} — no placement 4 exists.
+  it("split length > distinct placements: the tail slot is absorbed by the tie that spans it, not dropped", async () => {
+    // A 4-player bracket only ever produces placements {1,2,3,3} — there is no
+    // placement 4. The 4th slot is not orphaned: the two players tied at 3rd
+    // occupy slots 3 and 4 between them, so they share 200 + 100.
     const { tournament, championEntryId, runnerUpEntryId } = await finishedFourPlayerTournament(1000, [400, 300, 200, 100]);
     await completeTournament(prisma, tournament.id, await actingAdmin(), "payout");
 
@@ -715,15 +737,14 @@ describe("top-N prize splits (money-critical) — generalized payout-by-placemen
     expect(after.status).toBe("COMPLETED");
 
     const prizeRows = await prisma.ledgerEntry.findMany({ where: { reason: "tournament-prize" } });
-    // 1st(400) + 2nd(300) + exactly one 3rd(200) paid; the 4th-place slot (100)
-    // has no entry at placement 4 in a 4-player bracket, so it's unpaid —
-    // NOT redistributed, NOT paid to someone else. Total paid < prizePoolGold
-    // in this edge case (declared pool is a ceiling, not a guarantee every
-    // gold moves).
     const totalPaid = prizeRows.reduce((sum, r) => sum + r.amount, 0);
-    expect(totalPaid).toBe(900); // 400+300+200, the 100 (placement 4) goes unpaid
+    expect(totalPaid).toBe(1000); // the declared pool leaves the house in full
     expect(prizeRows.some((r) => r.refId === championEntryId)).toBe(true);
     expect(prizeRows.some((r) => r.refId === runnerUpEntryId)).toBe(true);
+
+    const thirdPlace = await prisma.tournamentEntry.findMany({ where: { tournamentId: tournament.id, placement: 3 } });
+    const thirdRows = prizeRows.filter((r) => r.refId != null && thirdPlace.some((e) => e.id === r.refId));
+    expect(thirdRows.map((r) => r.amount)).toEqual([150, 150]);
   });
 
   it("split length 0 → 400 PRIZE_SPLIT_MISMATCH (must be at least length 1)", async () => {

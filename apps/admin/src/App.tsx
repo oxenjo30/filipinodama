@@ -11,7 +11,7 @@ import { Moderation } from "./pages/Moderation";
 import { Support } from "./pages/Support";
 import { EconomyPage } from "./pages/Economy";
 import { LiveOpsPage } from "./pages/LiveOps";
-import { TournamentsPage } from "./pages/Tournaments";
+import { TournamentsPage, formatLabel } from "./pages/Tournaments";
 import { GuildsPage } from "./pages/Guilds";
 import { MatchesPage } from "./pages/Matches";
 import { AuditPage } from "./pages/Audit";
@@ -166,7 +166,9 @@ function GlobalSearch() {
                   <span className="gs-row-badge" style={{ background: "#7a4bbf" }}>T</span>
                   <span style={{ flex: 1, minWidth: 0 }}>
                     <span className="gs-row-label">{t.name}</span>
-                    <span className="gs-row-sub">{t.format}</span>
+                    {/* Friendly label, not the raw enum — falls back to the enum
+                        itself for a format this build doesn't know about. */}
+                    <span className="gs-row-sub">{formatLabel(t.format)}</span>
                   </span>
                   <span className="gs-row-kind">Cup</span>
                 </button>

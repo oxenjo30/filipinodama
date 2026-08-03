@@ -10,27 +10,40 @@
  * matches under the wrong heading without failing any test.
  *
  * ROUND-OFFSET SCHEME: a match's sub-bracket is encoded in its round number so
- * that (tournamentId, round, slot) stays unique across all three sub-brackets
- * without a schema change. Winners rounds are 1..log2(B); losers rounds are
+ * that (tournamentId, round, slot) stays unique across all sub-brackets without
+ * a schema change. Winners rounds are 1..log2(B); losers rounds are
  * 100 + localRound; the grand final is 201 (game 1) and 202 (the bracket-reset
- * game 2).
+ * game 2); group-stage rounds are 300 + localRound.
  */
 
 export const L_ROUND_OFFSET = 100;
 export const GF_ROUND = 201;
 export const GF_RESET_ROUND = 202;
+/**
+ * Group-stage band, for GROUP_DOUBLE_ELIM. Sits ABOVE the grand-final band so
+ * the existing W/L/GF numbering is untouched. A group of `g` players occupies
+ * exactly `g` rounds (circle method), so even a 256-player single group tops out
+ * at 556 and nothing else lives above 300.
+ */
+export const G_ROUND_OFFSET = 300;
 
 /** Which sub-bracket a stored round number belongs to. */
-export type BracketKey = "W" | "L" | "GF";
+export type BracketKey = "W" | "L" | "GF" | "G";
 
 export function bracketOfRound(round: number): BracketKey {
+  // ORDER MATTERS: the group band is numerically ABOVE the grand-final band, so
+  // it has to be tested FIRST. With these two swapped, every group match reads
+  // as a grand final — silently, since both are valid BracketKeys and nothing
+  // else would throw.
+  if (round >= G_ROUND_OFFSET) return "G";
   if (round >= 200) return "GF";
   if (round >= L_ROUND_OFFSET) return "L";
   return "W";
 }
 
-/** Section headings for the three sub-brackets of a double-elimination event. */
+/** Section headings for the sub-brackets an event can present. */
 export const BRACKET_SECTION_LABEL: Record<BracketKey, string> = {
+  G: "Group Stage",
   W: "Upper Bracket",
   L: "Lower Bracket",
   GF: "Grand Final",
@@ -61,6 +74,12 @@ export function roundLabel(round: number, roundsInSection: number[], doubleElim:
   // fromEnd 0 = the last round of this section, 1 = the one before it, …
   const fromEnd = idx === -1 ? ordered.length - 1 : ordered.length - 1 - idx;
 
+  if (bracket === "G") {
+    // Group rounds are plain sequence numbers — there is no "final" round of a
+    // round robin, every round is the same kind of thing.
+    return `Group Stage — Round ${round - G_ROUND_OFFSET}`;
+  }
+
   if (bracket === "L") {
     if (fromEnd === 0) return "Lower Bracket Final";
     if (fromEnd === 1) return "Lower Bracket Semifinal";
@@ -71,7 +90,13 @@ export function roundLabel(round: number, roundsInSection: number[], doubleElim:
   if (fromEnd === 0) return doubleElim ? "Upper Bracket Final" : "Final";
   if (fromEnd === 1) return doubleElim ? "Upper Bracket Semifinals" : "Semifinals";
   if (fromEnd === 2) return doubleElim ? "UB Quarterfinals" : "Quarterfinals";
-  return doubleElim ? `Upper Bracket Round ${round}` : `Round ${round}`;
+  // Number by POSITION in the section, not by the raw round number. They agree
+  // for an ordinary bracket (rounds 1..k), but GROUP_DOUBLE_ELIM never
+  // materialises winners round 1 — the group stage decides it — so its winners
+  // rounds start at 2 and the raw number would name the first playoff column
+  // "Round 2". Only reachable at S >= 32, where three named rounds aren't enough.
+  const displayRound = idx === -1 ? round : idx + 1;
+  return doubleElim ? `Upper Bracket Round ${displayRound}` : `Round ${displayRound}`;
 }
 
 /** Geometry inputs for `layoutBracket`, in px (or dp — the math is unitless). */
