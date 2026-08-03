@@ -80,6 +80,39 @@ async function currentSocketForUser(io: IOServer, userId: string) {
 }
 
 /**
+ * Deliver a matchmaking result to EVERY live socket the user has, not just one.
+ *
+ * OWNER-REPORTED (2026-08-03, reproduced on web AND Android): "searching for a
+ * casual/ranked match, no bot ever appears". The player was in fact matched
+ * every time — their own match history showed three CASUAL games against bots
+ * (kanlaon, diwata, panday), each with moves=1 (the bot's opening move) and then
+ * `reason: "abandon"` because the human never moved. They never moved because
+ * they never SAW the match: `mm:found` was emitted to a single socket picked as
+ * `sockets[0]` out of their presence room, and that account had NINE sockets in
+ * it (accumulated across reconnects and browser tabs). Picking arbitrarily meant
+ * usually picking a dead one, so the event went nowhere while a real match ran
+ * without them — and the queue entry was already consumed, so the player sat on
+ * "Finding opponent" forever with nothing left server-side to show for it.
+ *
+ * `sockets[0]` was never a safe choice: fetchSockets() has no ordering contract,
+ * a presence room legitimately holds several sockets (two tabs, phone + web, a
+ * reconnect whose predecessor has not timed out yet), and socket.io only prunes
+ * a dead member on its own timeout — which is far longer than the 7-20s bot-fill
+ * window. Emitting to the ROOM is both correct and simpler: every live socket is
+ * told, dead members are a no-op, and it matches how the rest of the realtime
+ * layer already addresses a user (`io.to('presence:<id>')` in match.ts and
+ * damath-rooms.ts).
+ *
+ * socketsJoin likewise moves ALL of the user's sockets into the match room, so a
+ * second tab is not left outside the match loop and unable to receive moves.
+ */
+async function deliverToUser(io: IOServer, userId: string, matchId: string, event: string, payload: unknown): Promise<void> {
+  const room = `presence:${userId}`;
+  await io.in(room).socketsJoin(matchId);
+  io.to(room).emit(event, payload);
+}
+
+/**
  * Tell a user their matchmaking attempt was dropped (their socket went away
  * before pairing), so the client leaves the "Finding opponent…" state instead
  * of spinning forever. Targets the presence room so it reaches whatever socket
@@ -215,10 +248,6 @@ async function tryMatch(io: IOServer, mode: QueueMode): Promise<void> {
     // Seed authoritative game state in Redis and register the match loop room.
     await createLiveMatch(matchId, redId, blueId, mode, settings);
 
-    // Both players join the io room named after the match id.
-    await sa.join(matchId);
-    await sb.join(matchId);
-
     const [ua, ub] = await Promise.all([publicUser(a.userId), publicUser(b.userId)]);
 
     const colorOf = (uid: string): PieceColor => (uid === redId ? "red" : "blue");
@@ -229,13 +258,17 @@ async function tryMatch(io: IOServer, mode: QueueMode): Promise<void> {
     const deviceA = (sa.data.device as ClientDevice | undefined) ?? "web";
     const deviceB = (sb.data.device as ClientDevice | undefined) ?? "web";
 
-    sa.emit(EV.mmFound, {
+    // Join + notify EVERY socket each player has, not just the one fetchSockets
+    // happened to return first — see deliverToUser. sa/sb above are still the
+    // right liveness check and the right place to read `data.device`; they are
+    // simply not a safe delivery target.
+    await deliverToUser(io, a.userId, matchId, EV.mmFound, {
       matchId,
       opponent: ub ? { ...ub, device: deviceB } : ub,
       yourColor: colorOf(a.userId),
       settings,
     });
-    sb.emit(EV.mmFound, {
+    await deliverToUser(io, b.userId, matchId, EV.mmFound, {
       matchId,
       opponent: ua ? { ...ua, device: deviceA } : ua,
       yourColor: colorOf(b.userId),
@@ -317,7 +350,6 @@ async function startBotMatch(io: IOServer, userId: string, mode: QueueMode, colo
   }
 
   await createLiveMatch(matchId, redId, blueId, mode, settings, botColor);
-  await socket.join(matchId);
 
   const opponent = await publicUser(bot.id);
   // Bots are deliberately presented as real opponents (existing owner-approved
@@ -326,7 +358,11 @@ async function startBotMatch(io: IOServer, userId: string, mode: QueueMode, colo
   // synthetic value, so the "Playing on {device}" reveal reads the same as a
   // real human opponent's.
   const botDevice: ClientDevice = Math.random() < 0.5 ? "mobile" : "web";
-  socket.emit(EV.mmFound, {
+  // Room delivery, not `socket.emit`. This is the exact line the owner's bug
+  // came through: the match was created and the bot even played its opening
+  // move, but mm:found went to one arbitrarily-chosen socket out of nine and the
+  // player never learned they were in a game. See deliverToUser.
+  await deliverToUser(io, userId, matchId, EV.mmFound, {
     matchId,
     opponent: opponent ? { ...opponent, device: botDevice } : opponent,
     yourColor: humanIsRed ? "red" : "blue",
