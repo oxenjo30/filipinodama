@@ -130,11 +130,25 @@ fun PrivateRoomScreen(
     var signInPromptAction by rememberSaveable { mutableStateOf<String?>(null) }
 
     // ── Deep link: ?code=X auto-join (or auto-spectate) ──
-    LaunchedEffect(deepLinkCode) {
-        if (deepLinkCode != null) {
-            mode = RoomScreenMode.JOINING
-            if (deepLinkSpectate) RoomRepository.spectate(deepLinkCode) else RoomRepository.join(deepLinkCode)
+    //
+    // Gated on [signedIn] exactly like the manual Join/Host buttons below. Now
+    // that an https://filipinodama.com/rooms?code= invite opens this screen
+    // directly (App Links — see DeepLinks.kt), a tapped invite is the single
+    // most likely way to arrive here signed-OUT or as a guest: it is how a new
+    // player first meets the app. The realtime socket rejects unauthenticated
+    // connections (server io.use guard), so firing the join anyway just spins
+    // on "Joining room…" until the watchdog bounces them with an error. Prompt
+    // instead, reusing the same dialog the manual path uses.
+    //
+    // Keyed on signedIn as well so the join fires the moment auth is present.
+    LaunchedEffect(deepLinkCode, signedIn) {
+        if (deepLinkCode == null) return@LaunchedEffect
+        if (!signedIn) {
+            signInPromptAction = "join a room"
+            return@LaunchedEffect
         }
+        mode = RoomScreenMode.JOINING
+        if (deepLinkSpectate) RoomRepository.spectate(deepLinkCode) else RoomRepository.join(deepLinkCode)
     }
 
     // ── Resume an active room on bare entry (no deep link) — mirrors

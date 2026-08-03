@@ -211,6 +211,44 @@ fun AppNavHost() {
     }
 
     /**
+     * Android App Links hand-off (DeepLinks.kt): a tapped
+     * https://filipinodama.com/rooms?code=X opens the app here.
+     *
+     * Deliberately gated on having left SPLASH. Splash resolves the session and
+     * then goClearingStack()s to Home/Login/Onboarding, which would wipe a room
+     * route navigated any earlier — so the link is parked in DeepLinks and
+     * replayed once the entry destination has settled. Keying the effect on the
+     * current route means a cold start (link arrives first, Splash finishes
+     * later) and a warm one (onNewIntent while Home is showing) both land.
+     *
+     * consume() BEFORE navigate() so a recomposition can't double-navigate and
+     * stack two copies of the room.
+     */
+    val pendingDeepLink by DeepLinks.pending.collectAsStateWithLifecycle()
+    LaunchedEffect(pendingDeepLink, currentDestination?.route) {
+        val route = pendingDeepLink ?: return@LaunchedEffect
+        val current = currentDestination?.route ?: return@LaunchedEffect
+        if (current == AppDestinations.SPLASH) return@LaunchedEffect
+        DeepLinks.consume()
+        navController.navigate(route) {
+            // Pop any room we're already sitting on FIRST, so a second invite
+            // lands on a genuinely fresh destination.
+            //
+            // launchSingleTop alone is not safe here: it can reuse the entry
+            // that is already on top, and PrivateRoomScreen auto-joins from
+            // LaunchedEffect(deepLinkCode) — with a reused entry holding the
+            // OLD code that key never changes, the effect never re-fires, and
+            // tapping a friend's invite while already in a room would leave you
+            // sitting in the previous one. Popping guarantees new arguments.
+            //
+            // popUpTo on a route that is not in the stack is a no-op, so the
+            // ordinary "not in a room yet" path is unaffected.
+            popUpTo(AppDestinations.PRIVATE_ROOM) { inclusive = true }
+            launchSingleTop = true
+        }
+    }
+
+    /**
      * ALL ONLINE matchmaking requires a REAL account. The realtime socket
      * rejects unauthenticated connections (server io.use guard), so a guest /
      * anonymous user who starts an online search would just sit in "Finding
@@ -459,11 +497,21 @@ fun AppNavHost() {
                         // A returning, already-onboarded user goes straight to
                         // Home; onboarding only ever triggers right after a
                         // fresh registration (see OnboardingScreen kdoc).
+                        //
+                        // Home is still laid down first even when resuming, so
+                        // backing out of the room lands somewhere sensible
+                        // rather than on the auth form we just cleared.
+                        val resume = DeepLinks.takeAfterAuth()
                         goClearingStack(AppDestinations.HOME)
+                        if (resume != null) navController.navigate(resume)
                     },
                     onCreateAccount = { navController.navigate(AppDestinations.CREATE_ACCOUNT) },
                     onForgotPassword = { navController.navigate(AppDestinations.FORGOT_PASSWORD) },
-                    onBack = if (canGoBack) ({ navController.popBackStack() }) else null
+                    onBack = if (canGoBack) ({
+                        // Abandoning sign-in abandons the invite with it.
+                        DeepLinks.clearAfterAuth()
+                        navController.popBackStack()
+                    }) else null
                 )
             }
 
@@ -489,7 +537,17 @@ fun AppNavHost() {
                 // were cleared via popUpTo when navigating here).
                 BackHandler(enabled = true) { /* no-op: onboarding is not back-navigable */ }
                 OnboardingScreen(
-                    onFinished = { goClearingStack(AppDestinations.HOME) }
+                    onFinished = {
+                        // Resumes here too, not just from Login: a player who
+                        // arrives on an invite with no account signs UP, and
+                        // that path is Login → CreateAccount → Onboarding →
+                        // here, never touching onLoginSuccess. Missing this
+                        // would strand exactly the new player the invite was
+                        // meant to bring in.
+                        val resume = DeepLinks.takeAfterAuth()
+                        goClearingStack(AppDestinations.HOME)
+                        if (resume != null) navController.navigate(resume)
+                    }
                 )
             }
 
@@ -869,7 +927,19 @@ fun AppNavHost() {
                     onBack = {
                         navController.popBackStack(AppDestinations.MODE_SELECT, inclusive = false)
                     },
-                    onRequireSignIn = { navController.navigate(AppDestinations.LOGIN) },
+                    onRequireSignIn = {
+                        // Remember the room so signing in RETURNS here. Joining
+                        // needs a real account and an invite is how a new player
+                        // usually arrives, so without this the commonest path
+                        // through App Links ends on Home with the code gone and
+                        // the invite needing to be found and tapped again.
+                        // Only when the code is known — a bare visit to the room
+                        // screen has nothing worth returning to.
+                        if (code != null) {
+                            DeepLinks.parkForAuth(AppDestinations.privateRoom(code, spectateFlag))
+                        }
+                        navController.navigate(AppDestinations.LOGIN)
+                    },
                     onEnterMatch = {
                         // The match/spectate state is already live in MatchRepository
                         // (RoomRepository's EV.roomStart handler called

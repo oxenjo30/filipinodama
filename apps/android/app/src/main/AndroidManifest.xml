@@ -34,10 +34,51 @@
             android:name=".MainActivity"
             android:exported="true"
             android:label="@string/app_name"
+            android:launchMode="singleTask"
             android:theme="@style/Theme.FilipinoDama">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+
+            <!--
+              Android App Links — private-room invites ONLY.
+
+              PrivateRoomScreen shares rooms as "${WEB_ORIGIN}/rooms?code=XXXX"
+              (PrivateRoomScreen.kt roomUrl), so before this filter existed a
+              room invite sent from the app always bounced the recipient into a
+              BROWSER — the one cross-platform flow the app itself generates
+              links for. DeepLinks.kt parses the code back out and routes to
+              AppDestinations.privateRoom().
+
+              DELIBERATELY NARROW on two axes; widen only with care:
+
+              1. pathPrefix="/rooms", NOT the whole site. Verification is
+                 per-host, but Android only auto-opens paths this filter
+                 matches, so /blog, /learn, /legal, the SEO landing pages and
+                 especially /damath (web-only by owner directive) keep opening
+                 in the browser — which is what they should do. Adding a path
+                 here means committing to a real in-app screen for it.
+
+              2. host="filipinodama.com" ONLY, no www. www.filipinodama.com
+                 301-redirects to the apex and so does not serve its own
+                 /.well-known/assetlinks.json, and Android does NOT follow
+                 redirects when verifying. Listing it would leave an
+                 unverifiable host inside an autoVerify filter, which on
+                 Android 12+ fails verification for EVERY host in the app —
+                 silently killing App Links altogether.
+
+              Query strings are not matchable here (pathPrefix covers the path
+              only); ?code= and &spectate= are read off the Uri at runtime.
+            -->
+            <intent-filter android:autoVerify="true">
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data
+                    android:scheme="https"
+                    android:host="filipinodama.com"
+                    android:pathPrefix="/rooms" />
             </intent-filter>
         </activity>
     </application>
