@@ -62,9 +62,16 @@ object DeepLinks {
     fun takeAfterAuth(): String? = _afterAuth.value.also { _afterAuth.value = null }
 
     /**
-     * Drops the parked route when the player backs out of the auth flow.
-     * Without this it would linger and silently teleport them into a stale
-     * room the next time they signed in from somewhere else entirely.
+     * Drops the parked route on EVERY path that abandons it: the Login chevron,
+     * the system/gesture back that bypasses the chevron, signing OUT, and a newer
+     * invite arriving. Without all four it lingers for the life of the process
+     * and silently teleports the player into a stale room the next time they sign
+     * in from somewhere else entirely — Ranked, a reward claim, creating a guild.
+     *
+     * Note what must NOT call this: the signup path is Login → Create Account →
+     * Onboarding, which disposes the Login screen while the parked room still has
+     * to survive to the far side of onboarding. Clearing has to be tied to
+     * abandonment EVENTS, never to the auth screens leaving composition.
      */
     fun clearAfterAuth() {
         _afterAuth.value = null

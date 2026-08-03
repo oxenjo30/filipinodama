@@ -11,7 +11,6 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -54,7 +53,7 @@ import com.filipinodama.app.data.match.MatchStatus
 import com.filipinodama.app.ui.components.CurrencyAmount
 import com.filipinodama.app.ui.components.CurrencyIconKind
 import com.filipinodama.app.ui.components.MockupBackButton
-import com.filipinodama.app.ui.components.screenInsets
+import com.filipinodama.app.ui.components.screenInsetsWithIme
 import com.filipinodama.app.ui.screens.profile.AvatarView
 import com.filipinodama.app.ui.screens.social.ReportPlayerDialog
 import com.filipinodama.app.ui.theme.GoldLt
@@ -198,10 +197,38 @@ fun OnlineMatchScreen(
                 // Mockup board bg: radial-gradient(circle at 50% 28%, #1c1338, #0b0716 70%).
                 Brush.radialGradient(listOf(Color(0xFF1C1338), Color(0xFF0B0716)))
             )
-            .screenInsets()
+            // IME-aware screen insets, applied BEFORE the scroll — the same fix
+            // the auth screens got in a510ac3 (see screenInsetsWithIme's kdoc).
+            //
+            // v55 made windowSoftInputMode=adjustResize app-wide to free the
+            // sign-in button. That also removed the window PAN this screen was
+            // silently relying on to keep Quick Chat's composer visible, and the
+            // old ordering here could not take over: screenInsets() ends in
+            // navigationBarsPadding(), which CONSUMES the nav-bar inset (so a
+            // later imePadding() under-pads by that height), and .imePadding()
+            // written AFTER .verticalScroll(...) pads the scrolling CONTENT
+            // instead of shrinking the scroll VIEWPORT — and Compose only
+            // auto-scrolls a focused field clear of the keyboard when the
+            // VIEWPORT shrinks (ContentInViewNode.onRemeasured). Result: the
+            // "Say something…" field and Send button sat behind the IME.
+            //
+            // union(systemBars, ime) takes the max per edge: keyboard CLOSED it
+            // is exactly the old status-bar + nav-bar padding, so the board
+            // screen is pixel-identical; keyboard OPEN the viewport shrinks and
+            // the composer is lifted above the IME.
+            //
+            // The BOARD IS NOT SHRUNK by this: BoardView is
+            // fillMaxWidth().aspectRatio(1f) (BoardView.kt:91-92), i.e.
+            // width-driven, so a shorter viewport scrolls it rather than
+            // resizing it, and ONLINE_MATCH stays a full-width route
+            // (TabletWidthCap.fullWidthRoutes).
+            //
+            // NOTE for future edits: windowInsetsPadding CONSUMES what it
+            // applies, so any imePadding() on a DESCENDANT of this Column is a
+            // no-op. Keyboard handling for this screen lives here and only here.
+            .screenInsetsWithIme()
             .verticalScroll(rememberScrollState())
-            .padding(16.dp)
-            .imePadding(),
+            .padding(16.dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
         // Top bar: back ‹ / centered mode label / guide (settings) button.
