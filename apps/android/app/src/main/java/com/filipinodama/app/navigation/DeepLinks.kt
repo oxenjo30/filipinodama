@@ -40,6 +40,36 @@ object DeepLinks {
         _pending.value = null
     }
 
+    private val _afterAuth = MutableStateFlow<String?>(null)
+
+    /**
+     * Route to return to once the player finishes signing in.
+     *
+     * Deliberately SEPARATE from [pending]: AppNavHost consumes `pending` as
+     * soon as the app is off Splash, so parking a room there while the player
+     * is sitting on the Login form would bounce them straight back out of it,
+     * and round and round.
+     *
+     * Joining a room needs a real account, and an invite is how a NEW player
+     * usually meets the app — so "tap invite, sign up, get dumped on Home with
+     * the code gone" is the single most likely path through this feature.
+     */
+    fun parkForAuth(route: String) {
+        _afterAuth.value = route
+    }
+
+    /** Returns the parked post-auth route, clearing it. Null if none. */
+    fun takeAfterAuth(): String? = _afterAuth.value.also { _afterAuth.value = null }
+
+    /**
+     * Drops the parked route when the player backs out of the auth flow.
+     * Without this it would linger and silently teleport them into a stale
+     * room the next time they signed in from somewhere else entirely.
+     */
+    fun clearAfterAuth() {
+        _afterAuth.value = null
+    }
+
     /** Route for an ACTION_VIEW intent, or null when it is not ours. */
     fun routeFor(intent: Intent?): String? {
         if (intent?.action != Intent.ACTION_VIEW) return null
