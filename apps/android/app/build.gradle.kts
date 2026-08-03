@@ -404,8 +404,43 @@ android {
         // NOTE adjustResize is app-wide: chat/search surfaces now resize rather
         // than pan when the keyboard opens. Standard behaviour, but it is a
         // change beyond the auth screens.
-        versionCode = 55
-        versionName = "0.1.55"
+        // 56 = MULTI-AGENT REVIEW FIXES + optimized resource shrinking.
+        //
+        // A 16-agent code + security review of everything since 53, with every
+        // finding adversarially verified, confirmed six defects in the App Links
+        // and keyboard work shipped in 54/55. Four are closed here:
+        //
+        //  - HIGH: back was DEAD on a deep-linked room. Every exit called
+        //    popBackStack(MODE_SELECT, inclusive=false), which is a NO-OP when
+        //    MODE_SELECT is not on the stack — and an invite never puts it there
+        //    (Splash -> goClearingStack(HOME), room pushed on top). Back and the
+        //    chevron did nothing; the only way out was Recents. exitRoomFlow()
+        //    now tries that pop first (Play-tab path unchanged), else pops ONE
+        //    level, else clears to Home. Deliberately NOT a fallback to
+        //    goClearingStack(MODE_SELECT), which would have wiped the stack and
+        //    silently re-routed Exit on Home -> Quick Match, the commonest path.
+        //  - SECURITY: FLAG_SECURE was dropped between auth screens. The flag is
+        //    ONE window-level bit shared by all callers, and SecureScreen cleared
+        //    it in onDispose — so Login -> Create Account went unprotected the
+        //    moment Login's fade ended, exposing a screen where a new password is
+        //    typed to screenshots, screen recorders and the Recents thumbnail.
+        //    Now ref-counted: cleared only when the LAST secure screen leaves.
+        //  - The in-match chat composer sat behind the keyboard, regressed by
+        //    55's app-wide adjustResize (chat had relied on the window panning).
+        //  - A stale post-auth invite is now dropped on sign-out.
+        //
+        // Also carries R8 optimized resource shrinking (Play Console technical-
+        // quality advisory on 55): -66 KB, 46 unused resources removed.
+        //
+        // STILL OPEN, on purpose — both proposed fixes were rejected by their
+        // adversarial reviewer as riskier than the defect: a second invite while
+        // already in a room can drop you to the room chooser, and the launch
+        // intent is replayed on Activity recreation (rotation during a match).
+        // See PR #105 for why. The chat-composer fix is compile- and
+        // review-verified but NOT device-verified — reaching it needs a live
+        // online match, i.e. a second account and an opponent.
+        versionCode = 56
+        versionName = "0.1.56"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
