@@ -50,11 +50,28 @@ object MatchRepository {
     private var wiredSocket: Socket? = null
     private var socket: Socket? = null
 
+    /**
+     * Bumped on every join / leave / found so a join-ack watchdog can tell
+     * whether it is still the CURRENT search before it tears anything down.
+     */
+    private var joinAckToken: Int = 0
+
     /** Injectable delay hook so tests can run the mmFound -> resync timer
      *  synchronously instead of waiting 1.8 real seconds or needing a Looper. */
     var scheduler: (Long, () -> Unit) -> Unit = { delayMs, action ->
         android.os.Handler(android.os.Looper.getMainLooper()).postDelayed(action, delayMs)
     }
+
+    /**
+     * How long to wait for the server's mm:searching ACK before declaring the
+     * join lost. Comfortably above a normal handshake, and well UNDER the
+     * server's 7-20s bot-fill window so a player never sits past the point an
+     * AI would have arrived anyway.
+     */
+    private val JOIN_ACK_TIMEOUT_MS = 6_000L
+
+    private val JOIN_FAILED_MESSAGE =
+        "Couldn't reach the game server. Check your connection and try again."
 
     // ---- event names (packages/shared/src/events.ts, verified verbatim) ----
     private object EV {
@@ -112,11 +129,15 @@ object MatchRepository {
         ).forEach { s.off(it) }
 
         s.on(EV.mmSearching) {
+            // The server ACK. Invalidating the token here is what distinguishes a
+            // real search from the optimistic one that stranded players in v55.
+            joinAckToken += 1
             _state.update { it.copy(status = MatchStatus.SEARCHING, error = null) }
         }
 
         s.on(EV.mmFound) { args ->
             val payload = decode<MmFoundDto>(args) ?: return@on
+            joinAckToken += 1 // matched — no watchdog may fire after this
             _state.update {
                 it.copy(
                     status = MatchStatus.FOUND,
@@ -253,17 +274,67 @@ object MatchRepository {
 
     // ---- public actions (mirror onlineStore.ts's exported actions 1:1) ----
 
+    /**
+     * Join a matchmaking queue.
+     *
+     * OWNER-REPORTED (v55): "Quick Match sat on Finding opponent for well over
+     * 20s and never matched an AI", for casual AND ranked. Confirmed against
+     * production Redis WHILE the player was searching: rt:mmq:CASUAL and
+     * rt:mmq:RANKED were both empty, no rt:queuedIn:<user> key existed, and no
+     * bot-fill job was pending — the server had no idea anyone was queued. The
+     * 7-20s bot fallback is armed only by a join the server actually receives
+     * (matchmaking.ts), so no AI could ever arrive.
+     *
+     * The defect is that SEARCHING was purely optimistic: the status flipped
+     * before anything was sent, and nothing ever required the server to confirm
+     * it. The server DOES acknowledge a successful join with mm:searching, and
+     * this repository already listens for it — it just never insisted on it. So
+     * a join that failed to land (socket still handshaking, handshake rejected,
+     * emit buffered on a socket that never completes CONNECT) left the player on
+     * an eternal spinner with no error and no way to know it had failed.
+     *
+     * Deliberately fixed AT THE ACK rather than by guessing the transport-level
+     * cause: whichever of those it is, an unacknowledged join is not a search
+     * and must not be displayed as one. The emit result is now honoured too,
+     * matching sendMove and resign — this call site was missed when those were
+     * given the same treatment in versionCode 53.
+     */
     fun joinQueue(mode: String, colorPref: String = "either") {
         _state.update { it.copy(status = MatchStatus.SEARCHING, error = null, end = null) }
+        joinAckToken += 1
+        val token = joinAckToken
         try {
             ensureConnected()
-            emitPayload(EV.mmJoin, MmJoinRequest(mode, colorPref))
+            if (!emitPayload(EV.mmJoin, MmJoinRequest(mode, colorPref))) {
+                _state.update { it.copy(status = MatchStatus.IDLE, error = JOIN_FAILED_MESSAGE) }
+                return
+            }
+            armJoinAckWatchdog(token)
         } catch (e: Exception) {
             _state.update { it.copy(status = MatchStatus.IDLE, error = "Could not connect. Are you logged in?") }
         }
     }
 
+    /**
+     * Stop pretending we are searching if the server never acknowledged the join.
+     *
+     * [token] guards against a stale watchdog: re-joining, leaving, or a match
+     * being found all bump [joinAckToken], so an older timer can never tear down
+     * a newer, healthy search.
+     */
+    private fun armJoinAckWatchdog(token: Int) {
+        scheduler(JOIN_ACK_TIMEOUT_MS) {
+            if (token != joinAckToken) return@scheduler
+            // Only fires while STILL un-acknowledged: mm:searching and mm:found
+            // both bump the token, and FOUND/PLAYING must never be torn down.
+            if (_state.value.status != MatchStatus.SEARCHING) return@scheduler
+            _state.update { it.copy(status = MatchStatus.IDLE, error = JOIN_FAILED_MESSAGE) }
+            runCatching { socket?.emit(EV.mmLeave) }
+        }
+    }
+
     fun leaveQueue() {
+        joinAckToken += 1 // cancelled by the player — the watchdog must not fire
         runCatching { socket?.emit(EV.mmLeave) }
         _state.update { it.copy(status = MatchStatus.IDLE) }
     }
