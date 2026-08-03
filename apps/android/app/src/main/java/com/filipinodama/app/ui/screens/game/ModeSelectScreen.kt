@@ -18,7 +18,6 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -26,6 +25,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.filipinodama.app.R
 import com.filipinodama.app.data.AuthRepository
 import com.filipinodama.app.data.config.ConfigRepository
@@ -61,7 +61,7 @@ fun ModeSelectScreen(
     onWatchLive: () -> Unit,
     onRankedGuestBlocked: () -> Unit
 ) {
-    val authState by AuthRepository.state.collectAsState()
+    val authState by AuthRepository.state.collectAsStateWithLifecycle()
     // Ranked requires a real account. That means EITHER a guest account OR an
     // anonymous user (no session at all). A plain `user?.isGuest ?: false` would
     // wrongly treat an anonymous user (user == null) as permitted, so gate on
@@ -70,7 +70,7 @@ fun ModeSelectScreen(
     // Watch Live PAGE gate (owner directive 2026-07-12) — safe-off: the card
     // only renders after /api/config/public explicitly says "true". Room/match
     // spectate deep links elsewhere are NOT gated by this.
-    val watchLiveEnabled by ConfigRepository.watchLiveEnabled.collectAsState()
+    val watchLiveEnabled by ConfigRepository.watchLiveEnabled.collectAsStateWithLifecycle()
 
     Column(
         modifier = Modifier

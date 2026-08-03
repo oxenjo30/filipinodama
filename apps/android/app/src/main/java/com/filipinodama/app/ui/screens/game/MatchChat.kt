@@ -33,6 +33,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -97,8 +98,14 @@ fun MatchChat(
      */
     onReportMessage: ((messageId: String, quoted: String) -> Unit)? = null,
 ) {
-    var draft by remember { mutableStateOf("") }
-    var pickerOpen by remember { mutableStateOf(false) }
+    // BUG FIX 3 (rotation ate the message): the Activity has no
+    // android:configChanges, so rotating — or unfolding, or entering split
+    // screen — destroys and recreates it, and a plain `remember` wiped the
+    // half-typed message and closed the picker. Both are saveable now. The
+    // message list itself is owned by the caller/socket, so nothing else here
+    // needs to survive.
+    var draft by rememberSaveable { mutableStateOf("") }
+    var pickerOpen by rememberSaveable { mutableStateOf(false) }
     val listState = rememberLazyListState()
 
     LaunchedEffect(messages.size) {

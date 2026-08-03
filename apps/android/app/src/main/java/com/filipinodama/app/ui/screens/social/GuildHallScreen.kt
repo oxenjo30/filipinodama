@@ -28,11 +28,11 @@ import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -42,6 +42,7 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil.compose.AsyncImage
 import com.filipinodama.app.data.AuthRepository
 import com.filipinodama.app.data.social.BlockRepository
@@ -100,7 +101,7 @@ fun GuildHallScreen(
     // routes here to prompt sign-in instead of failing silently.
     onRequireSignIn: () -> Unit = {}
 ) {
-    val me = AuthRepository.state.collectAsState().value.user
+    val me = AuthRepository.state.collectAsStateWithLifecycle().value.user
     val scope = rememberCoroutineScope()
     val snackbar = LocalSnackbar.current
 
@@ -114,10 +115,18 @@ fun GuildHallScreen(
     var requestsError by remember { mutableStateOf(false) }
     var requests by remember { mutableStateOf<List<GuildJoinRequestDto>?>(null) }
     var busy by remember { mutableStateOf(false) }
-    var createOpen by remember { mutableStateOf(false) }
-    var editOpen by remember { mutableStateOf(false) }
+    // Dialog visibility + the selected tab are saveable so a configuration change
+    // (rotation, unfold, split screen, font-size change — MainActivity declares no
+    // android:configChanges, so every one of them recreates the Activity) doesn't
+    // slam the Create/Edit sheet shut on a half-typed guild or bounce the player
+    // off the Chat/Wars tab back to Roster. The DTO-shaped state above
+    // (detail/requests/manageMember) stays a plain remember: those types are
+    // neither Parcelable nor Serializable, so rememberSaveable would crash at
+    // runtime — they are re-fetched by the entry LaunchedEffect anyway.
+    var createOpen by rememberSaveable { mutableStateOf(false) }
+    var editOpen by rememberSaveable { mutableStateOf(false) }
     var manageMember by remember { mutableStateOf<GuildMemberDto?>(null) }
-    var tab by remember { mutableStateOf("roster") }
+    var tab by rememberSaveable { mutableStateOf("roster") }
 
     // Extracted as a suspend fun (not just scope.launch'd) so pull-to-refresh and
     // loadMembership() can await the whole chain directly.
@@ -913,11 +922,16 @@ private data class GuildChatReportTarget(val accusedId: String, val messageId: S
 
 @Composable
 private fun GuildChatPanel(guildId: String, guildName: String, onOpenProfile: (String) -> Unit = {}) {
-    val state by GuildChatRepository.state.collectAsState()
+    val state by GuildChatRepository.state.collectAsStateWithLifecycle()
     val scope = rememberCoroutineScope()
-    var draft by remember { mutableStateOf("") }
-    val me = AuthRepository.state.collectAsState().value.user
-    val blockedIds by BlockRepository.blockedIds.collectAsState()
+    // Saveable: rotating (or unfolding, or bumping the system font size) mid-
+    // sentence used to silently throw away the typed guild message.
+    var draft by rememberSaveable { mutableStateOf("") }
+    val me = AuthRepository.state.collectAsStateWithLifecycle().value.user
+    val blockedIds by BlockRepository.blockedIds.collectAsStateWithLifecycle()
+    // Left as a plain remember on purpose: GuildChatReportTarget is a plain data
+    // class (neither Parcelable nor Serializable), so rememberSaveable would throw
+    // at runtime. Losing it only closes the report sheet; it does not lose a draft.
     var reportTarget by remember { mutableStateOf<GuildChatReportTarget?>(null) }
 
     LaunchedEffect(guildId) {
@@ -1079,12 +1093,16 @@ private fun GuildChatPanel(guildId: String, guildName: String, onOpenProfile: (S
 @Composable
 fun GuildCreateDialog(onClose: () -> Unit, onCreated: (String) -> Unit) {
     val scope = rememberCoroutineScope()
-    var crest by remember { mutableStateOf(GUILD_CREST_KEYS.first()) }
-    var name by remember { mutableStateOf("") }
-    var tag by remember { mutableStateOf("") }
-    var desc by remember { mutableStateOf("") }
-    var policy by remember { mutableStateOf("open") }
-    var minTrophies by remember { mutableStateOf(0f) }
+    // Everything the founder actually filled in survives Activity recreation —
+    // a rotation used to wipe the name, tag and description they had just typed.
+    // `busy`/`error` stay transient (a restored "busy = true" would wedge the
+    // Found-Guild button forever with no request left to finish it).
+    var crest by rememberSaveable { mutableStateOf(GUILD_CREST_KEYS.first()) }
+    var name by rememberSaveable { mutableStateOf("") }
+    var tag by rememberSaveable { mutableStateOf("") }
+    var desc by rememberSaveable { mutableStateOf("") }
+    var policy by rememberSaveable { mutableStateOf("open") }
+    var minTrophies by rememberSaveable { mutableStateOf(0f) }
     var busy by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
     val ready = name.trim().length >= 3 && tag.trim().length >= 2
@@ -1150,11 +1168,15 @@ fun GuildCreateDialog(onClose: () -> Unit, onCreated: (String) -> Unit) {
 private fun GuildEditDialog(detail: GuildDetailResponse, onClose: () -> Unit, onSaved: () -> Unit) {
     val scope = rememberCoroutineScope()
     val g = detail.guild
-    var crest by remember { mutableStateOf(resolveGuildCrest(g.crestKey, g.id).key) }
-    var name by remember { mutableStateOf(g.name) }
-    var desc by remember { mutableStateOf(g.description ?: "") }
-    var policy by remember { mutableStateOf(g.joinPolicy) }
-    var minTrophies by remember { mutableStateOf(g.minTrophies.toFloat()) }
+    // Saveable so an edit in progress survives Activity recreation. The restored
+    // values intentionally win over the freshly-passed [detail] — the point is to
+    // keep the officer's UNSAVED edits, not to silently revert them to the server
+    // copy the moment the phone is rotated.
+    var crest by rememberSaveable { mutableStateOf(resolveGuildCrest(g.crestKey, g.id).key) }
+    var name by rememberSaveable { mutableStateOf(g.name) }
+    var desc by rememberSaveable { mutableStateOf(g.description ?: "") }
+    var policy by rememberSaveable { mutableStateOf(g.joinPolicy) }
+    var minTrophies by rememberSaveable { mutableStateOf(g.minTrophies.toFloat()) }
     var busy by remember { mutableStateOf(false) }
 
     Dialog(onDismissRequest = { if (!busy) onClose() }) {

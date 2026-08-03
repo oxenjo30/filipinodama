@@ -22,7 +22,6 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -35,6 +34,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.filipinodama.app.data.economy.EconomyRepository
 import com.filipinodama.app.data.economy.EconomyResult
 import com.filipinodama.app.data.economy.SeasonCurrentResponse
@@ -72,7 +72,7 @@ import kotlinx.coroutines.launch
 fun SeasonScreen(onBack: () -> Unit = {}, onRequireSignIn: () -> Unit = {}) {
     val scope = rememberCoroutineScope()
     val snackbar = LocalSnackbar.current
-    val signedInUser = com.filipinodama.app.data.AuthRepository.state.collectAsState().value.user
+    val signedInUser = com.filipinodama.app.data.AuthRepository.state.collectAsStateWithLifecycle().value.user
     val signedIn = signedInUser != null && signedInUser.isGuest != true
     var data by remember { mutableStateOf<SeasonCurrentResponse?>(null) }
     var error by remember { mutableStateOf<String?>(null) }

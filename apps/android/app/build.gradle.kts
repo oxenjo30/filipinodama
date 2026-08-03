@@ -367,17 +367,29 @@ android {
             // room share links (https://filipinodama.com/rooms?code=X), matching
             // apps/web/src/features/rooms/PrivateRoomPage.tsx's window.location.origin.
             buildConfigField("String", "WEB_ORIGIN", "\"https://filipinodama.com\"")
-            isMinifyEnabled = false
+            // R8 ON (audit follow-up). The previous `false` was justified as
+            // "enabling it needs keep rules … or the release crashes", but
+            // proguard-rules.pro was an EMPTY placeholder — so that had never
+            // actually been tried. Most dependencies ship their own consumer
+            // rules; the real gaps (socket.io's reflective plumbing, and our
+            // GENERATED kotlinx.serialization members) are now covered
+            // explicitly. See that file's header for the per-dependency audit.
+            //
+            // What this buys: the shipped dex no longer carries 438 readable
+            // first-party class names (AuthRepository, SecureStore, ApiClient …),
+            // so reading and repackaging a modified client stops being a
+            // copy-paste job — which matters wherever the server trusts a
+            // client-reported value. It also produces mapping.txt, without which
+            // production crash reports were un-symbolicated and untriageable.
+            isMinifyEnabled = true
+            isShrinkResources = true
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
-            // NOTE on the two Play upload warnings (both advisory-only, never
-            // block an upload):
-            //  1. "no deobfuscation file" — expected: R8/minify is OFF (enabling
-            //     it needs keep rules for Retrofit / kotlinx.serialization /
-            //     socket.io / Coil / Google credentials or the release crashes).
-            //  2. "no native debug symbols" — the app's ONLY native lib is the
+            // NOTE on the remaining Play upload warning (advisory-only, never
+            // blocks an upload):
+            //  - "no native debug symbols" — the app's ONLY native lib is the
             //     prebuilt, already-stripped androidx.graphics.path .so (Compose
             //     path rendering). It carries no symbols to bundle, so
             //     ndk { debugSymbolLevel } has nothing to attach and the warning
@@ -408,6 +420,7 @@ android {
 dependencies {
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)
+    implementation(libs.androidx.lifecycle.runtime.compose)
     implementation(libs.androidx.activity.compose)
 
     implementation(platform(libs.androidx.compose.bom))
@@ -427,7 +440,17 @@ dependencies {
     implementation(libs.okhttp.core)
     implementation(libs.okhttp.logging.interceptor)
 
-    implementation(libs.socketio.client)
+    // socket.io drags in org.json:json:20090211 — a 2009 build that PREDATES the
+    // fixes for CVE-2022-45688 and CVE-2023-5072, and it really was packaged
+    // into the shipped APK (confirmed in the dex string table, not just the
+    // POM). Runtime impact is near-zero, because Android's bootclasspath
+    // org.json shadows the app-dex copy via parent-first delegation — so the
+    // vulnerable code is dead. The cost is real anyway: every SCA scanner, Play
+    // SDK Index check and security questionnaire flags two CVEs in the bundle,
+    // for a library that can never execute. Exclude it.
+    implementation(libs.socketio.client) {
+        exclude(group = "org.json", module = "json")
+    }
 
     implementation(libs.coil.compose)
 

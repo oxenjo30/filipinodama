@@ -20,7 +20,6 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -32,6 +31,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.android.billingclient.api.ProductDetails
 import com.filipinodama.app.data.AuthRepository
 import com.filipinodama.app.data.billing.BillingRepository
@@ -92,11 +92,11 @@ fun WalletScreen(onBack: () -> Unit = {}) {
     com.filipinodama.app.ui.components.SecureScreen()
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
-    val authState by AuthRepository.state.collectAsState()
+    val authState by AuthRepository.state.collectAsStateWithLifecycle()
     val me = authState.user
-    val diamondTopUpEnabled by ConfigRepository.diamondTopUpEnabled.collectAsState()
-    val billingProducts by BillingRepository.products.collectAsState()
-    val purchaseState by BillingRepository.purchaseState.collectAsState()
+    val diamondTopUpEnabled by ConfigRepository.diamondTopUpEnabled.collectAsStateWithLifecycle()
+    val billingProducts by BillingRepository.products.collectAsStateWithLifecycle()
+    val purchaseState by BillingRepository.purchaseState.collectAsStateWithLifecycle()
 
     var ledger by remember { mutableStateOf<List<LedgerEntryDto>?>(null) } // null = loading
     var ledgerError by remember { mutableStateOf(false) }

@@ -17,7 +17,6 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -31,6 +30,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.filipinodama.app.R
 import com.filipinodama.app.data.AuthRepository
 import com.filipinodama.app.data.engine.RankTiers
@@ -58,8 +58,8 @@ import com.filipinodama.app.ui.screens.profile.AvatarView
  */
 @Composable
 fun MatchmakingScreen(mode: String, onCancel: () -> Unit, onEnteredMatch: () -> Unit) {
-    val ui by MatchRepository.state.collectAsState()
-    val authState by AuthRepository.state.collectAsState()
+    val ui by MatchRepository.state.collectAsStateWithLifecycle()
+    val authState by AuthRepository.state.collectAsStateWithLifecycle()
     val me = authState.user
 
     // Preferred side — mirrors web OnlineMatchPage: "either" = no preference

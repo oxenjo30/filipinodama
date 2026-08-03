@@ -26,7 +26,6 @@ import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -37,6 +36,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.filipinodama.app.data.AuthRepository
 import com.filipinodama.app.data.engine.RankTiers
 import com.filipinodama.app.data.social.DmRepository
@@ -51,6 +51,7 @@ import com.filipinodama.app.ui.screens.profile.AvatarView
 import com.filipinodama.app.ui.components.CurrencyAmount
 import com.filipinodama.app.ui.components.CurrencyIconKind
 import com.filipinodama.app.ui.components.LocalSnackbar
+import com.filipinodama.app.ui.components.PresenceSubscription
 import com.filipinodama.app.ui.components.PullRefreshContainer
 import com.filipinodama.app.ui.components.isAuthError
 import com.filipinodama.app.ui.components.screenInsets
@@ -81,13 +82,13 @@ fun FriendsScreen(
     onOpenChat: (String) -> Unit,
     onRequireSignIn: () -> Unit = {}
 ) {
-    val me = AuthRepository.state.collectAsState().value.user
-    val onlineSet by PresenceRepository.online.collectAsState()
+    val me = AuthRepository.state.collectAsStateWithLifecycle().value.user
+    val onlineSet by PresenceRepository.online.collectAsStateWithLifecycle()
     // Per-friend unread DM counts — REAL data from DmRepository's conversation list
     // (GET /api/dm), keyed by the other user's id. Drives the 💬 button's red
     // unread bubble (mockup line 2113). loadConversations() is invoked in the entry
     // LaunchedEffect so this is populated; nothing here is fabricated.
-    val dmState by DmRepository.state.collectAsState()
+    val dmState by DmRepository.state.collectAsStateWithLifecycle()
     val unreadByFriend = remember(dmState.conversations) {
         dmState.conversations.associate { it.user.id to it.unread }
     }
@@ -136,12 +137,15 @@ fun FriendsScreen(
         scope.launch { refreshData() }
     }
 
+    // Live friend presence, scoped to this screen instead of started-and-never-
+    // stopped (see PresenceSubscription for why the teardown is ref-counted).
+    PresenceSubscription(enabled = me != null)
+
     LaunchedEffect(me?.id) {
         if (me == null) {
             loading = false
             return@LaunchedEffect
         }
-        PresenceRepository.start()
         refresh()
         // Populate per-friend unread counts for the 💬 badge (real GET /api/dm).
         DmRepository.loadConversations()
@@ -645,7 +649,7 @@ private fun SuggestedRow(user: FriendUserDto, busy: Boolean, onOpen: () -> Unit,
 @Composable
 private fun AddFriendScreen(onBack: () -> Unit, onOpenProfile: (String) -> Unit) {
     val scope = rememberCoroutineScope()
-    val me = com.filipinodama.app.data.AuthRepository.state.collectAsState().value.user
+    val me = com.filipinodama.app.data.AuthRepository.state.collectAsStateWithLifecycle().value.user
     var query by remember { mutableStateOf("") }
     var results by remember { mutableStateOf<List<com.filipinodama.app.data.social.UserSearchResultDto>>(emptyList()) }
     var loading by remember { mutableStateOf(false) }

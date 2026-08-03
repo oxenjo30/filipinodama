@@ -24,7 +24,6 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -40,6 +39,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil.compose.AsyncImage
 import com.filipinodama.app.BuildConfig
 import com.filipinodama.app.R
@@ -124,7 +124,7 @@ fun HomeScreen(
     onOpenWallet: () -> Unit = {},
     onOpenMessages: () -> Unit = {}
 ) {
-    val authState by AuthRepository.state.collectAsState()
+    val authState by AuthRepository.state.collectAsStateWithLifecycle()
     val me = authState.user
 
     var activeMatch by remember { mutableStateOf<ActiveMatchDto?>(null) }
@@ -193,7 +193,7 @@ fun HomeScreen(
         loadingActive = false
     }
 
-    val notifState by com.filipinodama.app.data.social.NotificationsRepository.state.collectAsState()
+    val notifState by com.filipinodama.app.data.social.NotificationsRepository.state.collectAsStateWithLifecycle()
     LaunchedEffect(notifState.data?.unreadCount) {
         unreadNotifs = notifState.data?.unreadCount ?: 0
     }
@@ -383,7 +383,7 @@ private fun WalletChip(gold: Int, diamonds: Int, onClick: () -> Unit) {
     // server's DIAMOND_TOPUP_ENABLED flag, same fail-closed pattern as
     // ConfigRepository.watchLiveEnabled. While off, only the gold row shows —
     // code stays intact (flag-gated), nothing deleted.
-    val diamondTopUpEnabled by com.filipinodama.app.data.config.ConfigRepository.diamondTopUpEnabled.collectAsState()
+    val diamondTopUpEnabled by com.filipinodama.app.data.config.ConfigRepository.diamondTopUpEnabled.collectAsStateWithLifecycle()
     Column(
         modifier = Modifier
             .clickable(onClick = onClick)

@@ -21,6 +21,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -58,13 +59,20 @@ fun EditProfileDialog(onClose: () -> Unit, onChangeAvatar: () -> Unit) {
     val scope = rememberCoroutineScope()
     val me = AuthRepository.state.value.user
 
-    var name by remember { mutableStateOf(me?.displayName ?: "") }
-    var bio by remember { mutableStateOf("") }
+    // Saveable: MainActivity declares no android:configChanges, so a rotation /
+    // unfold / split-screen / font-size change destroys the Activity and a plain
+    // `remember` handed the player back their OLD name and an empty bio, losing
+    // whatever they had typed. `saving` stays transient — restoring "saving = true"
+    // would leave the Save button dead with no request left to re-enable it.
+    var name by rememberSaveable { mutableStateOf(me?.displayName ?: "") }
+    var bio by rememberSaveable { mutableStateOf("") }
     var saving by remember { mutableStateOf(false) }
 
-    LaunchedEffect(Unit) {
-        name = me?.displayName ?: ""
-    }
+    // NOTE: a LaunchedEffect(Unit) used to re-assign `name = me?.displayName` here.
+    // It was a no-op on first composition (identical to the initializer above, and
+    // `me` is read once, non-reactively) but it re-runs after Activity recreation —
+    // which would clobber the restored draft with the server value, defeating the
+    // rememberSaveable. Removed so the typed name actually survives rotation.
 
     Dialog(onDismissRequest = onClose) {
         Column(

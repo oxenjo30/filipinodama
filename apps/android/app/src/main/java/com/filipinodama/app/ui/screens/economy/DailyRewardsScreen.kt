@@ -26,7 +26,6 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -36,6 +35,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.filipinodama.app.data.AuthRepository
 import com.filipinodama.app.data.economy.DailyLoginStatusResponse
 import com.filipinodama.app.data.economy.DailyRewardRowDto
@@ -70,7 +70,7 @@ import kotlinx.coroutines.launch
 @Composable
 fun DailyRewardsScreen(onBack: () -> Unit = {}, onRequireSignIn: () -> Unit = {}) {
     val scope = rememberCoroutineScope()
-    val signedInUser = com.filipinodama.app.data.AuthRepository.state.collectAsState().value.user
+    val signedInUser = com.filipinodama.app.data.AuthRepository.state.collectAsStateWithLifecycle().value.user
     val signedIn = signedInUser != null && signedInUser.isGuest != true
     var status by remember { mutableStateOf<DailyLoginStatusResponse?>(null) }
     var claiming by remember { mutableStateOf(false) }

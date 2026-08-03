@@ -37,7 +37,6 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -60,6 +59,7 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil.compose.AsyncImage
 import com.filipinodama.app.ui.components.CurrencyAmount
 import com.filipinodama.app.ui.components.CurrencyIcon
@@ -124,7 +124,7 @@ fun StoreScreen(
     // "not authenticated" error. This routes the modal's OK to Login/Signup.
     onRequireSignIn: () -> Unit = {}
 ) {
-    val authState by AuthRepository.state.collectAsState()
+    val authState by AuthRepository.state.collectAsStateWithLifecycle()
     val me = authState.user
     val signedIn = me != null && !me.isGuest
     val scope = rememberCoroutineScope()
@@ -169,7 +169,7 @@ fun StoreScreen(
 
     // Hoisted (not Row-local) — CheckoutScreen's dark-gated Top-up affordance
     // needs the same flag the header's diamond pill already reads.
-    val diamondTopUpEnabled by com.filipinodama.app.data.config.ConfigRepository.diamondTopUpEnabled.collectAsState()
+    val diamondTopUpEnabled by com.filipinodama.app.data.config.ConfigRepository.diamondTopUpEnabled.collectAsStateWithLifecycle()
 
     if (showCheckout) {
         CheckoutScreen(

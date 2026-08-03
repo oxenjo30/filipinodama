@@ -13,7 +13,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -37,6 +36,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavDestination.Companion.hierarchy
 import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.NavType
@@ -252,15 +252,15 @@ fun AppNavHost() {
     // for the same GET /api/config/public endpoint. Blocks the ENTIRE app
     // (not just a dismissible banner like web's desktop nav banner) per
     // mobile-screen-inventory.md SCREEN 1 being a full-screen `sc-if` gate.
-    val maintenance by ConfigRepository.maintenance.collectAsState()
+    val maintenance by ConfigRepository.maintenance.collectAsStateWithLifecycle()
     // "Update available" nudge (once per process): a plain `remember` — NOT
     // keyed, NOT reset on ON_RESUME below — so it survives resume/foreground
     // and only resets on cold start, matching the spec's once-per-process cadence.
-    val updateAvailable by ConfigRepository.updateAvailable.collectAsState()
+    val updateAvailable by ConfigRepository.updateAvailable.collectAsStateWithLifecycle()
     // Dismissed state lives on the ConfigRepository object (process-scoped), NOT a
     // composable remember — so "once per process" survives Activity recreation
     // (rotation, system dark-mode toggle, font/locale change) instead of re-nagging.
-    val updateDismissed by ConfigRepository.updateNudgeDismissed.collectAsState()
+    val updateDismissed by ConfigRepository.updateNudgeDismissed.collectAsStateWithLifecycle()
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     // App-wide transient feedback — one host, provided to the whole NavHost so any
@@ -288,7 +288,7 @@ fun AppNavHost() {
     // whenever the visible route changes (so leaving the match screen, or
     // landing on any tab, refreshes it) and on foreground (above). Only shown
     // when a live match exists AND we're not already on the match screen.
-    val activeMatch by ActiveMatchStore.active.collectAsState()
+    val activeMatch by ActiveMatchStore.active.collectAsStateWithLifecycle()
     val onMatchRoute = currentDestination?.route == AppDestinations.ONLINE_MATCH
     LaunchedEffect(currentDestination?.route) {
         // Skip refreshing while on the match screen itself (we're already there);
@@ -890,7 +890,7 @@ fun AppNavHost() {
                 // Mode Select card that is this screen's only entry point. Room/
                 // match spectate flows (PRIVATE_ROOM spectate arg, spectate from
                 // an invite) are NOT gated.
-                val watchLiveEnabled by ConfigRepository.watchLiveEnabled.collectAsState()
+                val watchLiveEnabled by ConfigRepository.watchLiveEnabled.collectAsStateWithLifecycle()
                 if (!watchLiveEnabled) {
                     LaunchedEffect(Unit) { navController.popBackStack() }
                     return@composable

@@ -31,7 +31,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -47,6 +46,7 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.filipinodama.app.R
 import com.filipinodama.app.data.AuthRepository
 import com.filipinodama.app.data.config.ConfigRepository
@@ -94,14 +94,14 @@ fun BattleScreen(
     onBrowseStore: () -> Unit,
     onRankedGuestBlocked: () -> Unit
 ) {
-    val authState by AuthRepository.state.collectAsState()
+    val authState by AuthRepository.state.collectAsStateWithLifecycle()
     val me = authState.user
     val needsAccountForRanked = me?.isGuest ?: true
-    val watchLiveEnabled by ConfigRepository.watchLiveEnabled.collectAsState()
+    val watchLiveEnabled by ConfigRepository.watchLiveEnabled.collectAsStateWithLifecycle()
 
     val loadout = remember { PlayLoadoutStore.instance }
-    val armedMode by loadout.armedMode.collectAsState()
-    val aiDifficulty by loadout.aiDifficulty.collectAsState()
+    val armedMode by loadout.armedMode.collectAsStateWithLifecycle()
+    val aiDifficulty by loadout.aiDifficulty.collectAsStateWithLifecycle()
 
     var sheetOpen by remember { mutableStateOf(false) }
 
@@ -117,7 +117,7 @@ fun BattleScreen(
 
     // Settings / post-purchase hand off into the loadout by navigating here
     // with a pending request; open it once and clear it.
-    val loadoutRequested by PlayScreenRequests.openLoadout.collectAsState()
+    val loadoutRequested by PlayScreenRequests.openLoadout.collectAsStateWithLifecycle()
     LaunchedEffect(loadoutRequested) {
         if (loadoutRequested) {
             loadoutOpen = true

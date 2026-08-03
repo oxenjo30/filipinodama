@@ -16,11 +16,11 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -28,6 +28,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.filipinodama.app.data.AuthRepository
 import com.filipinodama.app.data.AuthResult
 import com.filipinodama.app.data.GoogleSignInHelper
@@ -55,16 +56,28 @@ fun CreateAccountScreen(
 ) {
     // Block screenshots / Recents capture of typed credentials (M-2).
     com.filipinodama.app.ui.components.SecureScreen()
-    var username by remember { mutableStateOf("") }
-    var email by remember { mutableStateOf("") }
+    // Non-secret fields are saveable: the Activity has no android:configChanges,
+    // so a rotation / unfold / split-screen / font-size change recreates it, and a
+    // plain `remember` emptied the form the player had already filled in.
+    var username by rememberSaveable { mutableStateOf("") }
+    var email by rememberSaveable { mutableStateOf("") }
+    // DELIBERATELY a plain `remember`, NOT rememberSaveable. rememberSaveable
+    // writes through savedInstanceState, which the framework persists to disk (and
+    // may hand to the system process), so promoting the password would put a plaintext
+    // credential on disk — a security regression the SecureScreen() call above exists
+    // to prevent the visual equivalent of. Losing a password field on rotation is the
+    // correct trade; the password manager (NEW_PASSWORD autofill) refills it.
     var password by remember { mutableStateOf("") }
-    var agreed by remember { mutableStateOf(false) }
+    // Saveable: this is a non-secret flag the player explicitly ticked in this same
+    // session, and re-recreating the Activity is not a fresh consent decision — the
+    // terms gate (requireTerms) still runs on every submit either way.
+    var agreed by rememberSaveable { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
     var busy by remember { mutableStateOf(false) }
     var googleBusy by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
-    val providers by AuthRepository.providers.collectAsState()
+    val providers by AuthRepository.providers.collectAsStateWithLifecycle()
 
     // Same provider-availability fetch as LoginScreen (mirrors the web's
     // authStore.refreshProviders()); harmless to call again if the user
