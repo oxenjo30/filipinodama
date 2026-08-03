@@ -414,15 +414,42 @@ export async function resolveNoShow(io: IOServer, tmId: string): Promise<boolean
 
   const redReady = slot.redReadyAt != null;
   const blueReady = slot.blueReadyAt != null;
-  if (redReady === blueReady) return false; // both ready (auto-start will handle it) or neither (unreachable)
+  if (redReady && blueReady) return false; // both ready — auto-start owns it
 
-  const winnerEntryId = redReady ? slot.redEntryId : slot.blueEntryId;
+  let winnerEntryId: string | null;
+  let reason: string;
+
+  if (redReady || blueReady) {
+    winnerEntryId = redReady ? slot.redEntryId : slot.blueEntryId;
+    reason = "auto-advance: opponent did not ready up before the deadline";
+  } else {
+    // DOUBLE NO-SHOW. Unreachable until the organiser start timer existed,
+    // because the clock only ever armed when somebody pressed Ready — so a
+    // fixture with nobody present simply had no deadline. With the timer on it
+    // does, and this branch is what stops one absent PAIR from blocking a round
+    // and stalling the tournament behind it.
+    //
+    // The better seed advances. It has to be somebody: a bracket slot with no
+    // winner never fills its parent, and leaving the fixture unresolved is the
+    // stall we are here to prevent. Seed is the only ordering both players
+    // earned before the fixture, so it is the least arbitrary tiebreak
+    // available, and it is deterministic. An organiser who wants a different
+    // outcome can still report the slot manually before the clock expires.
+    const seats = await prisma.tournamentEntry.findMany({
+      where: { id: { in: [slot.redEntryId, slot.blueEntryId].filter((v): v is string => v != null) } },
+      select: { id: true, seed: true },
+    });
+    const bySeed = [...seats].sort((a, b) => (a.seed ?? Number.MAX_SAFE_INTEGER) - (b.seed ?? Number.MAX_SAFE_INTEGER));
+    winnerEntryId = bySeed[0]?.id ?? null;
+    reason = "auto-advance: neither player readied up before the deadline (better seed advances)";
+  }
+
   if (!winnerEntryId) return false;
 
   try {
     await reportResult(prisma, slot.tournamentId, tmId, winnerEntryId, {
       actorId: SYSTEM_ACTOR,
-      reason: "auto-advance: opponent did not ready up before the deadline",
+      reason,
     });
   } catch (e) {
     if (e instanceof ApiError && e.code === "SLOT_DONE") return false;
@@ -474,6 +501,46 @@ export async function sweepTournamentReadyChecks(io: IOServer): Promise<{ forfei
       if (await resolveNoShow(io, row.id)) forfeited++;
     } catch (e) {
       console.error("[tournament-live] no-show sweep failed", row.id, e);
+    }
+  }
+
+  // (a2) ORGANISER START TIMER — arm the clock on fixtures nobody has readied.
+  //
+  // readyWindowSec is armed by the FIRST Ready, which means a fixture where
+  // neither player turns up carries no deadline at all and is never swept: it
+  // blocks its round, and the round blocks the tournament. Where the organiser
+  // has set startWindowSec, the clock instead starts from the moment the
+  // fixture is playable, so an absent player is resolved whether or not their
+  // opponent is there to start it.
+  //
+  // Armed HERE rather than at every place a fixture becomes ready — there are a
+  // dozen of those across five formats, and each would be a chance to forget
+  // one. The cost is that the clock starts at the next sweep tick rather than
+  // the exact instant, which is immaterial against a window measured in
+  // minutes. Only ever WRITES a null deadline, so it can never move a deadline
+  // a player's Ready already set.
+  const unarmed = await prisma.tournamentMatch.findMany({
+    where: {
+      status: "ready",
+      matchId: null,
+      readyDeadlineAt: null,
+      tournament: { status: "RUNNING", startWindowSec: { not: null } },
+    },
+    select: { id: true, tournament: { select: { startWindowSec: true } } },
+    take: 200,
+  });
+  for (const row of unarmed) {
+    const window = row.tournament.startWindowSec;
+    if (!window) continue;
+    const deadline = new Date(Date.now() + window * 1000);
+    // Conditional on still being null so a Ready landing in this same instant
+    // wins, rather than having its (earlier) deadline pushed out.
+    const armed = await prisma.tournamentMatch.updateMany({
+      where: { id: row.id, readyDeadlineAt: null, status: "ready", matchId: null },
+      data: { readyDeadlineAt: deadline },
+    });
+    if (armed.count > 0) {
+      await scheduleJob("tournament-noshow", row.id, Math.max(0, deadline.getTime() - Date.now()), { tmId: row.id });
     }
   }
 

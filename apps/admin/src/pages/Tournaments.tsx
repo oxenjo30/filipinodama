@@ -25,6 +25,10 @@ type Tournament = {
   createdAt: string;
   rounds: number | null; // SWISS only — configured round count (null = auto ceil(log2(n)))
   readyWindowSec: number; // ready-check (V1.5) — seconds to ready up once the OPPONENT has
+  // ORGANISER START TIMER — seconds a fixture may sit playable before its
+  // no-show clock starts on its own. null = OFF, the historical behaviour.
+  // Written for every format, unlike `rounds`/`groupCount` below.
+  startWindowSec: number | null;
   // GROUP_DOUBLE_ELIM only — the admin-settable group shape (null for every
   // other format). Everything else about the event derives from these two.
   groupCount: number | null;
@@ -230,6 +234,13 @@ const STATUS_LABEL: Record<TournamentStatus, string> = {
 
 const fmtDate = (iso: string | null) =>
   iso ? new Date(iso).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }) : "—";
+
+/** A no-show window (stored in seconds) as an operator reads it — whole hours
+ * once it divides evenly, minutes otherwise. null = the setting is off. */
+const fmtWindow = (sec: number | null): string => {
+  if (sec == null) return "off";
+  return sec >= 3600 && sec % 3600 === 0 ? `${sec / 3600} h` : `${Math.round(sec / 60)} min`;
+};
 
 // ── Exact-value style overrides (mockup fidelity — see fidelity(admin) pass) ─
 /** Row/form "Edit" action — ghost outline, mockup exact values. */
@@ -543,6 +554,13 @@ function TournamentForm({ tournament, onClose, onDone }: { tournament?: Tourname
   // Ready window — stored in SECONDS server-side, edited here in whole MINUTES
   // (how an operator actually thinks about it). 600s = the 10-minute default.
   const [readyWindowMin, setReadyWindowMin] = useState<string>(String(Math.round((tournament?.readyWindowSec ?? 600) / 60)));
+  // Start window — same seconds-stored/minutes-edited treatment, but OPTIONAL:
+  // blank = off, exactly how the SWISS `rounds` field above models "unset".
+  // The server's 300..86400s bound is 5..1440 whole minutes, so nothing in the
+  // range is unreachable from a minutes-only editor.
+  const [startWindowMin, setStartWindowMin] = useState<string>(
+    tournament?.startWindowSec != null ? String(Math.round(tournament.startWindowSec / 60)) : "",
+  );
 
   const isRoundRobin = format === "ROUND_ROBIN";
   const isSwiss = format === "SWISS";
@@ -580,11 +598,16 @@ function TournamentForm({ tournament, onClose, onDone }: { tournament?: Tourname
   // 1..60 minutes — mirrors the server's 60..3600 second bound.
   const readyWindowValid =
     readyWindowMin.trim() !== "" && Number.isInteger(Number(readyWindowMin)) && Number(readyWindowMin) >= 1 && Number(readyWindowMin) <= 60;
+  // Blank = off (a legal value, and the default). Otherwise 5..1440 minutes —
+  // mirrors the server's 300..86400 second bound.
+  const startWindowValid =
+    startWindowMin.trim() === "" ||
+    (Number.isInteger(Number(startWindowMin)) && Number(startWindowMin) >= 5 && Number(startWindowMin) <= 1440);
   const splitSum = split.reduce((a, b) => a + b, 0);
   const splitValid = split.length >= 1 && split.length <= maxPlayers && splitSum === prizePoolGold;
   const supportedFormat =
     format === "SINGLE_ELIM" || format === "ROUND_ROBIN" || format === "SWISS" || format === "DOUBLE_ELIM" || format === "GROUP_DOUBLE_ELIM";
-  const valid = name.trim().length > 0 && supportedFormat && splitValid && roundsValid && readyWindowValid && groupValid;
+  const valid = name.trim().length > 0 && supportedFormat && splitValid && roundsValid && readyWindowValid && startWindowValid && groupValid;
 
   const setPlace = (i: number, gold: number) => setSplit((s) => s.map((v, idx) => (idx === i ? gold : v)));
   const addPlace = () => setSplit((s) => (s.length < maxPlayers ? [...s, 0] : s));
@@ -618,6 +641,9 @@ function TournamentForm({ tournament, onClose, onDone }: { tournament?: Tourname
         groupCount: isGroupDE ? Number(groupCount) : null,
         qualifiersPerGroup: isGroupDE ? Number(qualifiersPerGroup) : null,
         readyWindowSec: Number(readyWindowMin) * 60,
+        // Blank stays null — the server treats null as "no organiser timer",
+        // which is the behaviour every cup had before this setting existed.
+        startWindowSec: startWindowMin.trim() !== "" ? Number(startWindowMin) * 60 : null,
       },
       successMsg: isEdit ? "Tournament updated." : "Tournament created as a draft.",
       onDone: () => { onDone(); onClose(); },
@@ -678,6 +704,20 @@ function TournamentForm({ tournament, onClose, onDone }: { tournament?: Tourname
             onChange={(e) => setReadyWindowMin(e.target.value)}
           />
         </div>
+        <div className="field" style={{ flex: 1, minWidth: 160 }}>
+          {/* "(optional)" in the label, matching the SWISS rounds field — the
+              blank placeholder alone reads as "unfilled", not as a setting. */}
+          <label>Start window (minutes, optional)</label>
+          <input
+            className="input"
+            type="number"
+            min={5}
+            max={1440}
+            placeholder="off"
+            value={startWindowMin}
+            onChange={(e) => setStartWindowMin(e.target.value)}
+          />
+        </div>
         {isSwiss && (
           <div className="field" style={{ flex: 1, minWidth: 160 }}>
             <label>Rounds (optional)</label>
@@ -724,6 +764,18 @@ function TournamentForm({ tournament, onClose, onDone }: { tournament?: Tourname
       <div className="dim" style={{ fontSize: 11, marginTop: -6, marginBottom: 12 }}>
         Ready window: once a player presses Ready on their slot, their opponent has this long to ready up too — miss it and the slot is forfeited to the player who readied. Default 10 minutes.
         {!readyWindowValid && <span style={{ color: "var(--red-lt)" }}> Must be a whole number of minutes from 1 to 60.</span>}
+      </div>
+      {/* The two timers are easy to confuse, so they are described in the same
+        * terms: the ready window is measured from a PLAYER's action, the start
+        * window from the fixture becoming playable. */}
+      <div className="dim" style={{ fontSize: 11, marginTop: -6, marginBottom: 12 }}>
+        Start window: how long a match may sit untouched before it resolves itself. The ready window only begins when somebody presses Ready, so a
+        fixture where NEITHER player turns up carries no clock at all and blocks its round — and with it the tournament. Set this and the countdown
+        instead starts the moment the fixture becomes playable; if it runs out with nobody readied, the better seed advances. It never shortens or
+        extends a clock a player's Ready already started. Leave blank for off.
+        {!startWindowValid && (
+          <span style={{ color: "var(--red-lt)" }}> Must be a whole number of minutes from 5 to 1440 (24 hours), or blank for off.</span>
+        )}
       </div>
       {isRoundRobin && (
         <div className="dim" style={{ fontSize: 11, marginTop: -6, marginBottom: 12 }}>
@@ -950,6 +1002,10 @@ function BracketDrawer({ id, onClose, onDone }: { id: string; onClose: () => voi
                     {d.groupCount ?? "—"} groups · top {d.qualifiersPerGroup ?? "—"} each · playoff bracket of {d.bracketSize ?? "—"}
                   </div>
                 )}
+                {/* No-show timers, read-only here — change them from the row's Edit action. */}
+                <div className="dim" style={{ fontSize: 11, marginTop: 4 }}>
+                  Ready window {fmtWindow(d.readyWindowSec)} · Start window {fmtWindow(d.startWindowSec)}
+                </div>
               </div>
               <button className="btn" onClick={onClose}>Close</button>
             </div>

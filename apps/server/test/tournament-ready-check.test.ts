@@ -161,6 +161,76 @@ describe("ready-check guards", () => {
     expect(armed.readyDeadlineAt).not.toBeNull();
   });
 
+  it("organiser start timer: the sweeper arms a clock on a fixture nobody has readied", async () => {
+    const { io } = fakeIO();
+    const { tournament } = await runningCup(4);
+    await prisma.tournament.update({ where: { id: tournament.id }, data: { startWindowSec: 900 } });
+
+    const before = await firstReadySlot(tournament.id);
+    expect(before.readyDeadlineAt).toBeNull(); // nothing arms it until someone readies...
+
+    await sweepTournamentReadyChecks(io);
+
+    const after = await prisma.tournamentMatch.findUniqueOrThrow({ where: { id: before.id } });
+    expect(after.readyDeadlineAt).not.toBeNull();
+    // ...and the window is the organiser's, not readyWindowSec.
+    const seconds = Math.round((after.readyDeadlineAt!.getTime() - Date.now()) / 1000);
+    expect(seconds).toBeGreaterThan(600);
+    expect(seconds).toBeLessThanOrEqual(900);
+  });
+
+  it("organiser start timer: OFF by default — no clock runs until a player readies", async () => {
+    const { io } = fakeIO();
+    const { tournament } = await runningCup(4);
+
+    await sweepTournamentReadyChecks(io);
+
+    const slot = await firstReadySlot(tournament.id);
+    expect(slot.readyDeadlineAt).toBeNull(); // historical behaviour, unchanged
+  });
+
+  it("organiser start timer: never pushes out a deadline a player's Ready already set", async () => {
+    const { io } = fakeIO();
+    const { tournament } = await runningCup(4, { readyWindowSec: 60 });
+    await prisma.tournament.update({ where: { id: tournament.id }, data: { startWindowSec: 86400 } });
+
+    const slot = await firstReadySlot(tournament.id);
+    const { redUserId } = await usersOf(slot.id);
+    await markReady(io, slot.id, redUserId);
+
+    const armed = await prisma.tournamentMatch.findUniqueOrThrow({ where: { id: slot.id } });
+    await sweepTournamentReadyChecks(io);
+    const afterSweep = await prisma.tournamentMatch.findUniqueOrThrow({ where: { id: slot.id } });
+
+    // The waiting player's 60-second clock must not be replaced by the much
+    // longer start window — that would hand the absent player a free extension.
+    expect(afterSweep.readyDeadlineAt!.getTime()).toBe(armed.readyDeadlineAt!.getTime());
+  });
+
+  it("double no-show: the better seed advances rather than the fixture blocking its round", async () => {
+    const { io } = fakeIO();
+    const { tournament } = await runningCup(4);
+    const slot = await firstReadySlot(tournament.id);
+
+    // The state the organiser timer makes reachable: a deadline has expired and
+    // NEITHER side ever readied. Before the timer existed this could not happen,
+    // because only a Ready armed the clock.
+    await prisma.tournamentMatch.update({
+      where: { id: slot.id },
+      data: { readyDeadlineAt: new Date(Date.now() - 1000) },
+    });
+
+    const red = await prisma.tournamentEntry.findUniqueOrThrow({ where: { id: slot.redEntryId! } });
+    const blue = await prisma.tournamentEntry.findUniqueOrThrow({ where: { id: slot.blueEntryId! } });
+    const betterSeed = (red.seed ?? 1e9) <= (blue.seed ?? 1e9) ? red : blue;
+
+    expect(await resolveNoShow(io, slot.id)).toBe(true);
+
+    const done = await prisma.tournamentMatch.findUniqueOrThrow({ where: { id: slot.id } });
+    expect(done.status).toBe("done");
+    expect(done.winnerEntryId).toBe(betterSeed.id);
+  });
+
   it("rejects readying while the tournament isn't RUNNING", async () => {
     const { io } = fakeIO();
     const { tournament } = await runningCup(4);

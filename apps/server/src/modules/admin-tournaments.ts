@@ -63,6 +63,13 @@ const createBody = z
     // OPPONENT has, before forfeiting the slot. 1 minute .. 1 hour; the schema
     // default (600 = 10 min) applies when the client omits it.
     readyWindowSec: z.number().int().min(60).max(3600).default(600),
+    // ORGANISER START TIMER (optional; omit or null = off). Seconds a fixture
+    // may sit playable before its no-show clock starts on its own, so a pair
+    // who BOTH fail to turn up cannot block their round indefinitely.
+    // Bounded below by readyWindowSec-scale values for the same reason: a
+    // 60-second start window would forfeit players who are merely slow to open
+    // the app.
+    startWindowSec: z.number().int().min(300).max(86400).optional().nullable(),
   })
   .superRefine((b, ctx) => {
     if (!SUPPORTED_FORMATS.has(b.format)) {
@@ -224,6 +231,7 @@ export async function adminTournamentsRoutes(app: FastifyInstance) {
           matchMode: b.matchMode,
           startsAt: b.startsAt ? new Date(b.startsAt) : null,
           rounds: b.format === "SWISS" ? (b.rounds ?? null) : null,
+          startWindowSec: b.startWindowSec ?? null,
           groupCount: b.format === "GROUP_DOUBLE_ELIM" ? (b.groupCount ?? null) : null,
           qualifiersPerGroup: b.format === "GROUP_DOUBLE_ELIM" ? (b.qualifiersPerGroup ?? null) : null,
           readyWindowSec: b.readyWindowSec,
@@ -275,6 +283,7 @@ export async function adminTournamentsRoutes(app: FastifyInstance) {
           matchMode: b.matchMode,
           startsAt: b.startsAt ? new Date(b.startsAt) : null,
           rounds: b.format === "SWISS" ? (b.rounds ?? null) : null,
+          startWindowSec: b.startWindowSec ?? null,
           groupCount: b.format === "GROUP_DOUBLE_ELIM" ? (b.groupCount ?? null) : null,
           qualifiersPerGroup: b.format === "GROUP_DOUBLE_ELIM" ? (b.qualifiersPerGroup ?? null) : null,
           readyWindowSec: b.readyWindowSec,

@@ -794,6 +794,19 @@ model Tournament {
   /// like every other tournament setting.
   readyWindowSec  Int              @default(600)
 
+  /// ORGANISER START TIMER (optional; null = off, which is the historical
+  /// behaviour). Seconds a fixture may sit playable before its no-show clock
+  /// starts on its own.
+  ///
+  /// readyWindowSec only ever arms when SOMEBODY presses Ready, so a fixture
+  /// where NEITHER player turns up has no clock at all and sits unresolved
+  /// forever — and one stuck fixture blocks its whole round, and with it the
+  /// tournament. That is survivable in a 15-match knockout and not in a
+  /// 40-match group stage. With this set, the sweeper arms the clock from the
+  /// moment a fixture becomes playable, so an absent player is resolved whether
+  /// or not their opponent is present to start the timer.
+  startWindowSec  Int?
+
   // SWISS ONLY: the configured number of Swiss rounds. Admin-settable at
   // create (optional); if left null, Start computes+persists
   // defaultSwissRounds(n) = ceil(log2(n)) the first time the tournament
