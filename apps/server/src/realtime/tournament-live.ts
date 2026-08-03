@@ -5,6 +5,7 @@ import { err, ApiError } from "../lib/errors.js";
 import { audit } from "../lib/audit.js";
 import { reportResult } from "../modules/tournaments-core.js";
 import { recoverGroupDoubleElim, groupShapeOf } from "../modules/tournament-groups.js";
+import { notifyOpponentReadied, notifyFixtureClockStarted, notifyForfeit } from "../lib/tournament-notify.js";
 import { createLiveMatch, onMatchEnd } from "./match.js";
 import { scheduleJob, cancelJob } from "./jobs.js";
 import { allow } from "./rate-limit.js";
@@ -34,9 +35,13 @@ import { allow } from "./rate-limit.js";
  *     pressing Ready at the same instant can never produce two boards.
  *  2. READY IS A COMMITMENT — there is no un-ready. Disarming the deadline would
  *     let a player stall the bracket indefinitely (ready, wait, un-ready,
- *     repeat), and leaving it armed with nobody ready has no fair automatic
- *     resolution. So the "neither side ready at the deadline" state is
- *     unreachable by construction.
+ *     repeat).
+ *     This used to add that "neither side ready at the deadline" was unreachable
+ *     by construction, because only a Ready ever armed the clock. The organiser
+ *     START TIMER (Tournament.startWindowSec) makes it reachable on purpose: a
+ *     fixture where NOBODY turns up otherwise has no clock at all and blocks its
+ *     round forever. That state now resolves to the better seed — see
+ *     resolveNoShow.
  *  3. EVERY automatic transition is recoverable. The no-show timer rides the
  *     at-most-once job queue and the advance rides a fire-and-forget onMatchEnd
  *     hook, so both can be dropped by an unlucky crash; `sweepTournamentReadyChecks`
@@ -250,6 +255,15 @@ export async function markReady(io: IOServer, tmId: string, userId: string): Pro
       // Prompt firing; the sweeper is what makes it certain (jobs are at-most-once).
       await scheduleJob("tournament-noshow", tmId, Math.max(0, deadline.getTime() - now.getTime()), { tmId });
     }
+
+    // Warn the other side that their clock is running. This is the ONLY signal a
+    // player gets before losing a match they never saw, so it is sent on every
+    // first-ready — not only when this call armed the deadline, since the
+    // organiser start timer may have armed it earlier.
+    if (!opponentReady) {
+      const fresh = await prisma.tournamentMatch.findUnique({ where: { id: tmId } });
+      if (fresh) await notifyOpponentReadied(fresh);
+    }
   }
 
   // Second ready → play ball.
@@ -456,6 +470,8 @@ export async function resolveNoShow(io: IOServer, tmId: string): Promise<boolean
     throw e;
   }
 
+  await notifyForfeit(slot, winnerEntryId, !redReady && !blueReady);
+
   const { redUserId, blueUserId } = await seatUsers(slot);
   await broadcastSlotState(io, slot.tournamentId, [redUserId, blueUserId]);
   return true;
@@ -541,6 +557,10 @@ export async function sweepTournamentReadyChecks(io: IOServer): Promise<{ forfei
     });
     if (armed.count > 0) {
       await scheduleJob("tournament-noshow", row.id, Math.max(0, deadline.getTime() - Date.now()), { tmId: row.id });
+      const slot = await prisma.tournamentMatch.findUnique({ where: { id: row.id } });
+      // Nobody has acted yet, so BOTH players need telling — that is the whole
+      // point of a clock that starts without a player starting it.
+      if (slot) await notifyFixtureClockStarted(slot, deadline);
     }
   }
 

@@ -32,6 +32,7 @@
 import type { PrismaClient, Prisma } from "@prisma/client";
 import { err } from "../lib/errors.js";
 import { audit } from "../lib/audit.js";
+import { notifyGroupCut, notifyFixtureReady } from "../lib/tournament-notify.js";
 import {
   computeRoundRobinStandings,
   computeDoubleElimPlacements,
@@ -53,6 +54,8 @@ type Tx = Prisma.TransactionClient;
 type Db = PrismaClient;
 
 export type PlacementRow = { entryId: string; placement: number };
+/** A fixture that just became playable, in the shape the notifier needs. */
+export type CreatedFixture = { id: string; tournamentId: string; redEntryId: string | null; blueEntryId: string | null };
 
 function isP2002(e: unknown): boolean {
   return typeof e === "object" && e !== null && (e as { code?: string }).code === "P2002";
@@ -211,16 +214,16 @@ export async function maybeAdvanceGroupStage(
   tournamentId: string,
   shape: GroupShape,
   justResolvedRound: number,
-) {
+): Promise<CreatedFixture[]> {
   const localRound = justResolvedRound - G_ROUND_OFFSET;
-  if (localRound < 1 || localRound >= groupRoundCount(shape.groupSize)) return; // not a group round, or the group stage is over
+  if (localRound < 1 || localRound >= groupRoundCount(shape.groupSize)) return []; // not a group round, or the group stage is over
 
   const roundMatches = await tx.tournamentMatch.findMany({ where: { tournamentId, round: justResolvedRound } });
-  if (roundMatches.length === 0 || roundMatches.some((m) => m.status !== "done")) return;
+  if (roundMatches.length === 0 || roundMatches.some((m) => m.status !== "done")) return [];
 
   const nextRound = justResolvedRound + 1;
   const existingNext = await tx.tournamentMatch.count({ where: { tournamentId, round: nextRound } });
-  if (existingNext > 0) return;
+  if (existingNext > 0) return [];
 
   const entries = await tx.tournamentEntry.findMany({
     where: { tournamentId },
@@ -231,10 +234,11 @@ export async function maybeAdvanceGroupStage(
     entries.filter((e) => e.groupIndex != null).map((e) => ({ id: e.id, groupIndex: e.groupIndex! })),
   );
 
+  const created: CreatedFixture[] = [];
   try {
     for (const f of groupStageSchedule(shape.groupSize, shape.groupCount)) {
       if (f.round !== nextRound) continue;
-      await tx.tournamentMatch.create({
+      const row = await tx.tournamentMatch.create({
         data: {
           tournamentId,
           bracket: "G",
@@ -245,11 +249,13 @@ export async function maybeAdvanceGroupStage(
           status: "ready",
         },
       });
+      created.push({ id: row.id, tournamentId, redEntryId: row.redEntryId, blueEntryId: row.blueEntryId });
     }
   } catch (e) {
-    if (isP2002(e)) return; // lost the race — the other transaction created this round
+    if (isP2002(e)) return []; // lost the race — the other transaction created this round
     throw e;
   }
+  return created;
 }
 
 /**
@@ -260,13 +266,17 @@ export async function maybeAdvanceGroupStage(
  * LOST one, exactly as documented on maybeGenerateNextSwissRound.
  * recoverGroupDoubleElim is what makes a lost transition self-healing.
  */
-export async function maybeStartPlayoffs(tx: Tx, tournamentId: string, shape: GroupShape) {
+export async function maybeStartPlayoffs(
+  tx: Tx,
+  tournamentId: string,
+  shape: GroupShape,
+): Promise<Array<{ entryId: string; groupPlacement: number; bracket: "upper" | "lower" | "out" }>> {
   const groupMatches = await tx.tournamentMatch.findMany({ where: { tournamentId, bracket: "G" } });
-  if (groupMatches.length !== shape.groupMatches) return; // not every round generated yet
-  if (groupMatches.some((m) => m.status !== "done")) return;
+  if (groupMatches.length !== shape.groupMatches) return []; // not every round generated yet
+  if (groupMatches.some((m) => m.status !== "done")) return [];
 
   const already = await tx.tournamentMatch.count({ where: { tournamentId, bracket: { in: ["W", "L", "GF"] } } });
-  if (already > 0) return;
+  if (already > 0) return [];
 
   const entries = await tx.tournamentEntry.findMany({
     where: { tournamentId },
@@ -277,6 +287,10 @@ export async function maybeStartPlayoffs(tx: Tx, tournamentId: string, shape: Gr
   // group, so head-to-head is always defined for a two-way tie there — precisely
   // the case computeRoundRobinStandings was written for.
   const qualifiers: GroupQualifier[] = [];
+  // Collected as we go and sent AFTER the transaction commits — a notification
+  // must never be able to roll back a bracket.
+  const cutOutcomes: Array<{ entryId: string; groupPlacement: number; bracket: "upper" | "lower" | "out" }> = [];
+
   for (let g = 0; g < shape.groupCount; g++) {
     const members = entries.filter((e) => e.groupIndex === g);
     const memberIds = new Set(members.map((m) => m.id));
@@ -296,7 +310,13 @@ export async function maybeStartPlayoffs(tx: Tx, tournamentId: string, shape: Gr
       await tx.tournamentEntry.update({ where: { id: s.entryId }, data: { groupPlacement: s.placement } });
       if (s.placement <= shape.qualifiersPerGroup) {
         qualifiers.push({ entryId: s.entryId, groupIndex: g, groupPlacement: s.placement });
+        cutOutcomes.push({
+          entryId: s.entryId,
+          groupPlacement: s.placement,
+          bracket: s.placement <= shape.qualifiersPerGroup / 2 ? "upper" : "lower",
+        });
       } else {
+        cutOutcomes.push({ entryId: s.entryId, groupPlacement: s.placement, bracket: "out" });
         // Cut. Marked eliminated at the cut rather than at Complete so a player's
         // own view stops showing them as still alive for the whole playoff.
         await tx.tournamentEntry.update({ where: { id: s.entryId }, data: { eliminated: true } });
@@ -352,6 +372,8 @@ export async function maybeStartPlayoffs(tx: Tx, tournamentId: string, shape: Gr
   }
 
   await tx.tournamentMatch.create({ data: { tournamentId, bracket: "GF", round: GF_ROUND, slot: 0, status: "pending" } });
+
+  return cutOutcomes;
 }
 
 /**
@@ -387,13 +409,15 @@ export async function recoverGroupDoubleElim(db: Db, tournamentId: string, shape
 
     const before = await db.tournamentMatch.count({ where: { tournamentId, round: maxGroupRound.round + 1 } });
     if (before === 0) {
-      await db.$transaction((tx) => maybeAdvanceGroupStage(tx, tournamentId, shape, maxGroupRound.round));
+      const made = await db.$transaction((tx) => maybeAdvanceGroupStage(tx, tournamentId, shape, maxGroupRound.round));
+      await notifyFixtureReady(made);
       const after = await db.tournamentMatch.count({ where: { tournamentId, round: maxGroupRound.round + 1 } });
       if (after === 0) return; // that round genuinely isn't finished — real NOT_FINISHED
     }
   }
 
-  await db.$transaction((tx) => maybeStartPlayoffs(tx, tournamentId, shape));
+  const cut = await db.$transaction((tx) => maybeStartPlayoffs(tx, tournamentId, shape));
+  await notifyGroupCut(tournamentId, cut);
 }
 
 /**
