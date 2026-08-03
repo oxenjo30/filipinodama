@@ -468,13 +468,14 @@ export function swissPairNextRound(
 // anyway for cheap querying/grouping (admin + web bracket views group by it
 // directly instead of re-deriving from the round number).
 //
-// The three constants are DEFINED in @dama/shared (packages/shared/src/bracket.ts)
-// because the clients need them to label rounds, and re-exported here so every
-// existing importer of this module is unchanged. One definition, no drift: a
-// second copy could disagree with the clients' idea of which rounds are losers
-// rounds without failing a single test on this side.
-export { L_ROUND_OFFSET, GF_ROUND, GF_RESET_ROUND } from "@dama/shared";
-import { L_ROUND_OFFSET, GF_ROUND, GF_RESET_ROUND } from "@dama/shared";
+// The round-offset constants are DEFINED in @dama/shared
+// (packages/shared/src/bracket.ts) because the clients need them to label
+// rounds, and re-exported here so every existing importer of this module is
+// unchanged. One definition, no drift: a second copy could disagree with the
+// clients' idea of which rounds are losers rounds without failing a single test
+// on this side.
+export { L_ROUND_OFFSET, G_ROUND_OFFSET, GF_ROUND, GF_RESET_ROUND } from "@dama/shared";
+import { L_ROUND_OFFSET, G_ROUND_OFFSET, GF_ROUND, GF_RESET_ROUND } from "@dama/shared";
 
 /**
  * The losers-bracket ROUND SIZES (match counts) for a winners-bracket of size
@@ -865,4 +866,50 @@ export function seedPlayoffFromGroups(
       (q) => q.groupPlacement - half,
     ),
   };
+}
+
+/** How many rounds a group of `groupSize` players takes (odd sizes carry a bye each round). */
+export function groupRoundCount(groupSize: number): number {
+  return groupSize % 2 === 1 ? groupSize : groupSize - 1;
+}
+
+/**
+ * The full group-stage fixture list across every group, in STORED coordinates.
+ *
+ * `round` is already offset into the G band (300 + local round) and `slot` is
+ * namespaced by group so the (tournamentId, round, slot) unique index holds with
+ * several groups playing the same round concurrently:
+ *
+ *   slot = groupIndex * matchesPerRound + slotWithinGroup
+ *
+ * `matchesPerRound` is `floor(groupSize / 2)` — the floor matters, because an odd
+ * group carries a bye and plays one fewer match per round than `groupSize / 2`
+ * would suggest. Writing it without the floor yields fractional slots.
+ *
+ * `seedA`/`seedB` are LOCAL to the group (1..groupSize), not global tournament
+ * seeds — `roundRobinSchedule` works in local seat numbers, and the caller maps
+ * them onto that group's entries. Conflating the two silently pairs the wrong
+ * players (or throws on a missing seed) once there is more than one group.
+ *
+ * Pure — no I/O.
+ */
+export function groupStageSchedule(
+  groupSize: number,
+  groupCount: number,
+): Array<{ round: number; slot: number; groupIndex: number; seedA: number; seedB: number }> {
+  const perGroup = roundRobinSchedule(groupSize);
+  const matchesPerRound = Math.floor(groupSize / 2);
+  const out: Array<{ round: number; slot: number; groupIndex: number; seedA: number; seedB: number }> = [];
+  for (let g = 0; g < groupCount; g++) {
+    for (const p of perGroup) {
+      out.push({
+        round: G_ROUND_OFFSET + p.round,
+        slot: g * matchesPerRound + p.slot,
+        groupIndex: g,
+        seedA: p.a,
+        seedB: p.b,
+      });
+    }
+  }
+  return out;
 }

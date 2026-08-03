@@ -50,6 +50,14 @@ import {
   type SwissStanding,
   type DoubleElimMatchLike,
 } from "../lib/tournament-bracket.js";
+import {
+  startGroupDoubleElim,
+  maybeAdvanceGroupStage,
+  maybeStartPlayoffs,
+  recoverGroupDoubleElim,
+  computeGroupDoubleElimPlacements,
+  groupShapeOf,
+} from "./tournament-groups.js";
 
 type Tx = Prisma.TransactionClient;
 type Db = PrismaClient;
@@ -196,6 +204,9 @@ export async function startTournament(db: Db, tournamentId: string, actorId: str
     }
     if (tournament.format === "DOUBLE_ELIM") {
       return await startDoubleElim(db, tournamentId, n, clamped, actorId);
+    }
+    if (tournament.format === "GROUP_DOUBLE_ELIM") {
+      return await startGroupDoubleElim(db, tournamentId, tournament, clamped, actorId);
     }
     return await startSingleElim(db, tournamentId, n, clamped, actorId);
   } catch (e) {
@@ -789,6 +800,22 @@ export async function reportResult(
   return db.$transaction(async (tx) => {
     if (tournament.format === "ROUND_ROBIN" || tournament.format === "SWISS") {
       await resolveRoundRobinSlot(tx, tmId, winnerEntryId, opts.matchId ?? null);
+    } else if (tournament.format === "GROUP_DOUBLE_ELIM") {
+      // Dispatch on the MATCH's bracket, not the tournament's format: this one
+      // format contains both kinds of slot. A group fixture resolves with
+      // round-robin semantics (mark it done, advance nobody, eliminate nobody —
+      // the cut happens later, from the standings); a playoff slot resolves as
+      // ordinary double elimination.
+      if (slot.bracket === "G") {
+        await resolveRoundRobinSlot(tx, tmId, winnerEntryId, opts.matchId ?? null);
+      } else {
+        // B comes from the STORED bracket size. The W-round-1 count the plain
+        // DOUBLE_ELIM branch uses below would be 0 here — this format never
+        // seeds that round — and B=0 throws inside losersBracketStructure,
+        // making every playoff match permanently unreportable.
+        const B = tournament.bracketSize ?? 0;
+        await resolveDoubleElimSlot(tx, tournamentId, B, tmId, winnerEntryId, opts.matchId ?? null);
+      }
     } else if (tournament.format === "DOUBLE_ELIM") {
       // B = the ACTUAL seeded bracket size, derived from the real W-round-1
       // slot count — NOT nextPow2(maxPlayers), which only bounds the seeded
@@ -803,6 +830,15 @@ export async function reportResult(
 
     if (tournament.format === "SWISS") {
       await maybeGenerateNextSwissRound(tx, tournament.id, tournament.rounds!, after.round);
+    }
+
+    if (tournament.format === "GROUP_DOUBLE_ELIM" && after.bracket === "G") {
+      const shape = groupShapeOf(tournament);
+      // Generate the next group round, then — if that was the last one — cut the
+      // field and seed the playoff bracket. Both are no-ops until their round is
+      // genuinely complete, and both are idempotent.
+      await maybeAdvanceGroupStage(tx, tournamentId, shape, after.round);
+      await maybeStartPlayoffs(tx, tournamentId, shape);
     }
 
     if (opts.actorId) {
@@ -1027,7 +1063,17 @@ export async function completeTournament(db: Db, tournamentId: string, actorId: 
     if (finalRoundMatches.length === 0 || finalRoundMatches.some((m) => m.status !== "done")) {
       throw err.conflict("NOT_FINISHED", "Not every Swiss round has been reported yet");
     }
-  } else if (tournament.format === "DOUBLE_ELIM") {
+  } else if (tournament.format === "DOUBLE_ELIM" || tournament.format === "GROUP_DOUBLE_ELIM") {
+    if (tournament.format === "GROUP_DOUBLE_ELIM") {
+      // LAZY RECOVERY, same reasoning as the SWISS branch above: a concurrent
+      // pair of reports can lose a group round's generation, or the whole
+      // group→playoff transition, to a READ COMMITTED race. Unlike Swiss, the
+      // stranded state can be "group stage finished, no bracket ever created",
+      // which no player action can escape. Idempotent when nothing is stuck.
+      // The ready-check sweeper calls this too, so a stranded cup heals on its
+      // own rather than waiting for an admin to attempt Complete.
+      await recoverGroupDoubleElim(db, tournamentId, groupShapeOf(tournament));
+    }
     // Ready only once the Grand Final is fully decided: game 1 (round
     // GF_ROUND) done AND either (a) the W-side won it outright (no reset,
     // champion decided) or (b) a reset happened and game 2 (GF_RESET_ROUND)
@@ -1067,23 +1113,57 @@ export async function completeTournament(db: Db, tournamentId: string, actorId: 
             ? await computeSwissPlacements(tx, tournamentId)
             : tournament.format === "DOUBLE_ELIM"
               ? await computeDoubleElimPlacementsTx(tx, tournamentId)
-              : await computeSingleElimPlacements(tx, tournamentId);
+              : tournament.format === "GROUP_DOUBLE_ELIM"
+                ? await computeGroupDoubleElimPlacements(tx, tournamentId)
+                : await computeSingleElimPlacements(tx, tournamentId);
 
       for (const p of placements) {
         await tx.tournamentEntry.update({ where: { id: p.entryId }, data: { placement: p.placement } }).catch(() => {});
       }
 
-      // Shared payout-by-placement loop: placement i (1-based) gets split[i-1]
-      // gold, when that slot exists and is > 0.
-      const paidOut: Record<number, { entryId: string; amount: number }> = {};
-      for (let i = 1; i <= split.length; i++) {
-        const amount = split[i - 1]!;
-        if (amount <= 0) continue;
-        const row = placements.find((p) => p.placement === i);
-        if (!row) continue; // fewer real placements than split length (edge case) — nothing to pay
-        const entry = await tx.tournamentEntry.findUniqueOrThrow({ where: { id: row.entryId } });
-        await payPrizeTx(tx, entry, amount);
-        paidOut[i] = { entryId: row.entryId, amount };
+      // Shared payout-by-placement loop. Placement i (1-based) is worth
+      // split[i-1] gold, but placements are NOT necessarily distinct: every
+      // format with a losers bracket produces TIES with GAPS by design —
+      // computeDoubleElimPlacements returns e.g. 1,2,3,4,5,5,7,7, and
+      // GROUP_DOUBLE_ELIM stacks tied group-stage exits on top of that.
+      //
+      // A tied group therefore SPLITS the pooled value of the consecutive
+      // placement slots it occupies: two players tied at 5th share
+      // split[4]+split[5] between them. Paying "the first row that matches
+      // placement 5" instead would hand one of them split[4], pay nobody for
+      // 6th, and leave that gold undistributed while the audit row recorded the
+      // full split as paid out — advertised prize pool != gold actually moved.
+      //
+      // The remainder of an uneven division is dealt out one gold at a time
+      // rather than dropped, so the sum paid always equals the sum of the slots
+      // covered. Members are ordered by entry id purely for determinism.
+      const byPlacement = new Map<number, string[]>();
+      for (const p of placements) {
+        if (!byPlacement.has(p.placement)) byPlacement.set(p.placement, []);
+        byPlacement.get(p.placement)!.push(p.entryId);
+      }
+
+      const paidOut: Array<{ placement: number; entryId: string; amount: number }> = [];
+      for (const place of [...byPlacement.keys()].sort((a, b) => a - b)) {
+        const members = [...byPlacement.get(place)!].sort();
+
+        let pot = 0;
+        for (let i = place; i <= place + members.length - 1; i++) {
+          const amount = split[i - 1] ?? 0;
+          if (amount > 0) pot += amount;
+        }
+        if (pot <= 0) continue;
+
+        const each = Math.floor(pot / members.length);
+        let remainder = pot - each * members.length;
+        for (const entryId of members) {
+          const amount = each + (remainder > 0 ? 1 : 0);
+          if (remainder > 0) remainder -= 1;
+          if (amount <= 0) continue;
+          const entry = await tx.tournamentEntry.findUniqueOrThrow({ where: { id: entryId } });
+          await payPrizeTx(tx, entry, amount);
+          paidOut.push({ placement: place, entryId, amount });
+        }
       }
 
       await audit(tx, {

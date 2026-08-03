@@ -14,7 +14,7 @@ import kotlinx.serialization.Serializable
 data class TournamentListItemDto(
     val id: String,
     val name: String,
-    val format: String, // SINGLE_ELIM | DOUBLE_ELIM | SWISS | ROUND_ROBIN
+    val format: String, // SINGLE_ELIM | DOUBLE_ELIM | SWISS | ROUND_ROBIN | GROUP_DOUBLE_ELIM
     val status: String, // OPEN | RUNNING (server only ever returns these two for the list route)
     val entryFeeGold: Int = 0,
     val prizePoolGold: Int = 0,
@@ -43,7 +43,7 @@ data class TournamentsListResponse(
 data class TournamentDetailDto(
     val id: String,
     val name: String,
-    val format: String, // SINGLE_ELIM | DOUBLE_ELIM | SWISS | ROUND_ROBIN
+    val format: String, // SINGLE_ELIM | DOUBLE_ELIM | SWISS | ROUND_ROBIN | GROUP_DOUBLE_ELIM
     val status: String, // DRAFT | OPEN | RUNNING | COMPLETED | CANCELLED
     val entryFeeGold: Int = 0,
     val prizePoolGold: Int = 0,
@@ -56,6 +56,20 @@ data class TournamentDetailDto(
      *  chrome and its trophy delta on the end card — otherwise every tournament
      *  game would read "CASUAL MATCH" regardless of what is really at stake. */
     val matchMode: String = "CASUAL",
+    /** GROUP_DOUBLE_ELIM ONLY — null for every other format (schema.prisma
+     *  Tournament.groupCount/qualifiersPerGroup/bracketSize). The parser runs
+     *  with ignoreUnknownKeys, so an undeclared server field is dropped in
+     *  silence: these have to be listed here or the group stage arrives on the
+     *  wire and never reaches the screen.
+     *
+     *  [qualifiersPerGroup] is the survivor count per group and is always even;
+     *  its top half seeds the upper bracket and its bottom half the lower, so
+     *  it is the number the qualification bands are drawn from.
+     *  [bracketSize] is the playoff bracket size (groupCount * qualifiersPerGroup),
+     *  persisted server-side because this format never seeds winners round 1. */
+    val groupCount: Int? = null,
+    val qualifiersPerGroup: Int? = null,
+    val bracketSize: Int? = null,
     val entries: List<TournamentEntryDto> = emptyList(),
     val bracket: Map<String, List<TournamentMatchDto>> = emptyMap(),
     val myEntry: TournamentMyEntryDto? = null,
@@ -72,6 +86,14 @@ data class TournamentEntryDto(
     val eliminated: Boolean = false,
     val placement: Int? = null,
     val joinedAt: String? = null,
+    /** GROUP_DOUBLE_ELIM ONLY (null for every other format, and null on every
+     *  entry until the Cup starts). [groupIndex] is 0-based, assigned at Start
+     *  by a snake draft over seeds. [groupPlacement] is 1-based WITHIN the
+     *  group and is written ONCE — when the group stage finishes and the cut is
+     *  applied — so while it is null the standings order is a live tally, and
+     *  once it is set it IS the qualification result. See TournamentGroups. */
+    val groupIndex: Int? = null,
+    val groupPlacement: Int? = null,
     val user: TournamentEntryUserDto
 )
 

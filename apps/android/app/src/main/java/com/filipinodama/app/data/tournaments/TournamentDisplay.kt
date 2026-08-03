@@ -47,6 +47,10 @@ object TournamentDisplay {
             "DOUBLE_ELIM" -> "Double elimination"
             "SWISS" -> "Swiss"
             "ROUND_ROBIN" -> "Round robin"
+            // Same reason the detail screen names it: the fallback below prints
+            // the raw enum, so the LIST row — where a player first meets the
+            // Cup — would read "GROUP_DOUBLE_ELIM · 16 players".
+            TournamentGroups.FORMAT -> "Groups + Double Elim"
             else -> item.format
         }
         val feePart = if (item.entryFeeGold > 0) " · ${item.entryFeeGold} 🪙 entry" else " · Free entry"

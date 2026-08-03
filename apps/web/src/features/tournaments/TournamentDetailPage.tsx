@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { api, ApiError } from "../../lib/api";
 import { useAppStore } from "../../stores/appStore";
@@ -8,7 +8,15 @@ import { Avatar, CurrencyPill } from "../../components";
 import { ICONS } from "../../lib/assets";
 import { BracketView } from "./BracketView";
 import { YourMatchCard } from "./YourMatchCard";
-import { FORMAT_LABEL, STATUS_META, formatStartsAt, isStandingsFormat, type TournamentDetail, type TournamentEntry } from "./types";
+import {
+  FORMAT_LABEL,
+  STATUS_META,
+  formatStartsAt,
+  hasGroupStage,
+  isStandingsFormat,
+  type TournamentDetail,
+  type TournamentEntry,
+} from "./types";
 
 /**
  * TournamentDetailPage (/tournaments/:id) — one Cup's entry list + bracket.
@@ -26,6 +34,13 @@ import { FORMAT_LABEL, STATUS_META, formatStartsAt, isStandingsFormat, type Tour
 
 function seedTag(seed: number | null): string {
   return seed != null ? `#${seed}` : "";
+}
+
+/** "Group A", "Group B", … from the 0-based groupIndex. Past Z it numbers
+ *  instead — unreachable at any sane group count, but a label must always
+ *  exist rather than render an empty heading. */
+function groupLabel(index: number): string {
+  return index < 26 ? `Group ${String.fromCharCode(65 + index)}` : `Group ${index + 1}`;
 }
 
 function EntryRow({ e, isMe }: { e: TournamentEntry; isMe: boolean }) {
@@ -59,7 +74,31 @@ function EntryRow({ e, isMe }: { e: TournamentEntry; isMe: boolean }) {
   );
 }
 
-type StandingsRow = { entry: TournamentEntry; wins: number; losses: number };
+/**
+ * Where a row sits relative to its group's qualification cut. Half of each
+ * group's qualifiers start in the upper bracket and half in the lower one (the
+ * split is derived from qualifiersPerGroup, never configured); everyone below
+ * the qualifier line is out. null for tables with no cut at all — round robin
+ * and Swiss rank a field, they do not divide it.
+ */
+type QualBand = "upper" | "lower" | "out";
+
+const QUAL_BAND_META: Record<QualBand, { label: string; color: string }> = {
+  upper: { label: "Upper Bracket", color: "#7ee6a4" },
+  lower: { label: "Lower Bracket", color: "#8fbaf5" },
+  out: { label: "Eliminated", color: "#ff9aa8" },
+};
+
+type StandingsRow = {
+  entry: TournamentEntry;
+  wins: number;
+  losses: number;
+  /** The CONFIRMED rank for the Place column — overall placement in a standings
+   * format, group placement in a group table. Null until the server writes it;
+   * the leading column shows the live rank the whole time either way. */
+  place: number | null;
+  band: QualBand | null;
+};
 
 function StandingsTable({ rows, myEntryId }: { rows: StandingsRow[]; myEntryId: string | undefined }) {
   return (
@@ -84,31 +123,48 @@ function StandingsTable({ rows, myEntryId }: { rows: StandingsRow[]; myEntryId: 
       </div>
       {rows.map((row, i) => {
         const isMe = row.entry.id === myEntryId;
+        const band = row.band ? QUAL_BAND_META[row.band] : null;
+        // The cut lines are the point of a group table, so each band announces
+        // itself at its first row rather than relying on the reader counting to
+        // the qualifier number. The band's colour also rides the row as a left
+        // inset so it survives the gold "you" border, which still wins outright.
+        const bandStarts = !!row.band && row.band !== rows[i - 1]?.band;
         return (
-          <div
-            key={row.entry.id}
-            style={{
-              display: "grid",
-              gridTemplateColumns: "32px 1fr 44px 44px 70px",
-              gap: 8,
-              alignItems: "center",
-              padding: "8px 10px",
-              borderRadius: 8,
-              border: `1px solid ${isMe ? "var(--gold)" : "rgba(232,184,75,.14)"}`,
-              background: isMe ? "rgba(232,184,75,.08)" : "rgba(255,255,255,.02)",
-            }}
-          >
-            <span style={{ font: "800 12px 'JetBrains Mono',monospace", color: "var(--gold-lt)" }}>{i + 1}</span>
-            <span style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0 }}>
-              <Avatar src={row.entry.user.avatarUrl ?? "champion"} size={24} ring={false} />
-              <span style={{ font: "700 12.5px Inter", color: "#f2e9d2", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-                {row.entry.user.username}
+          <Fragment key={row.entry.id}>
+            {band && bandStarts && (
+              <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "0 2px", marginTop: i === 0 ? 0 : 6 }}>
+                <span style={{ flex: "none", font: "800 9.5px Inter", letterSpacing: ".7px", textTransform: "uppercase", color: band.color }}>
+                  {band.label}
+                </span>
+                <span style={{ flex: 1, height: 1, background: `linear-gradient(90deg,${band.color}66,transparent)` }} />
+              </div>
+            )}
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns: "32px 1fr 44px 44px 70px",
+                gap: 8,
+                alignItems: "center",
+                padding: "8px 10px",
+                borderRadius: 8,
+                border: `1px solid ${isMe ? "var(--gold)" : "rgba(232,184,75,.14)"}`,
+                background: isMe ? "rgba(232,184,75,.08)" : "rgba(255,255,255,.02)",
+                boxShadow: band ? `inset 3px 0 0 ${band.color}` : "none",
+                opacity: row.band === "out" ? 0.62 : 1,
+              }}
+            >
+              <span style={{ font: "800 12px 'JetBrains Mono',monospace", color: "var(--gold-lt)" }}>{i + 1}</span>
+              <span style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0 }}>
+                <Avatar src={row.entry.user.avatarUrl ?? "champion"} size={24} ring={false} />
+                <span style={{ font: "700 12.5px Inter", color: "#f2e9d2", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                  {row.entry.user.username}
+                </span>
               </span>
-            </span>
-            <span style={{ textAlign: "right", font: "700 12px 'JetBrains Mono',monospace", color: "#7ee6a4" }}>{row.wins}</span>
-            <span style={{ textAlign: "right", font: "700 12px 'JetBrains Mono',monospace", color: "var(--ink2)" }}>{row.losses}</span>
-            <span style={{ textAlign: "right", font: "700 12px Inter", color: "var(--gold)" }}>{row.entry.placement ?? "—"}</span>
-          </div>
+              <span style={{ textAlign: "right", font: "700 12px 'JetBrains Mono',monospace", color: "#7ee6a4" }}>{row.wins}</span>
+              <span style={{ textAlign: "right", font: "700 12px 'JetBrains Mono',monospace", color: "var(--ink2)" }}>{row.losses}</span>
+              <span style={{ textAlign: "right", font: "700 12px Inter", color: "var(--gold)" }}>{row.place ?? "—"}</span>
+            </div>
+          </Fragment>
         );
       })}
     </div>
@@ -207,9 +263,84 @@ export function TournamentDetailPage() {
       if (loser) losses.set(loser, (losses.get(loser) ?? 0) + 1);
     }
     return [...data.entries]
-      .map((e) => ({ entry: e, wins: wins.get(e.id) ?? 0, losses: losses.get(e.id) ?? 0 }))
+      .map((e) => ({ entry: e, wins: wins.get(e.id) ?? 0, losses: losses.get(e.id) ?? 0, place: e.placement, band: null }))
       .sort((a, b) => (a.entry.placement ?? 999) - (b.entry.placement ?? 999) || b.wins - a.wins || (a.entry.seed ?? 999) - (b.entry.seed ?? 999));
   }, [data]);
+
+  // GROUP STAGE (GROUP_DOUBLE_ELIM) — one live standings table per group, with
+  // the qualification cut drawn on it.
+  //
+  // The tally is the same client-side win/loss count the standings formats use,
+  // restricted to this Cup's `bracket:"G"` fixtures. A group fixture is always
+  // between two members of the SAME group, so counting all of them once and then
+  // slicing by groupIndex is identical to tallying each group separately.
+  //
+  // RANKING: groupPlacement once the server has written it (which it does in one
+  // shot, when the group stage ends and the cut is applied), otherwise the live
+  // tally — wins desc, then seed. The live order cannot reproduce the server's
+  // head-to-head tiebreak, so players level on wins may swap when the cut lands;
+  // that is also the moment the bands stop being a projection and become fact.
+  const groupStage = useMemo((): { groups: { index: number; label: string; rows: StandingsRow[] }[]; caption: string | null } => {
+    const empty = { groups: [], caption: null };
+    if (!data || !hasGroupStage(data.format)) return empty;
+
+    const byGroup = new Map<number, TournamentEntry[]>();
+    for (const e of data.entries) {
+      if (e.groupIndex == null) continue; // groups are drawn at Start, not at join
+      const list = byGroup.get(e.groupIndex) ?? [];
+      list.push(e);
+      byGroup.set(e.groupIndex, list);
+    }
+    if (byGroup.size === 0) return empty;
+
+    const wins = new Map<string, number>();
+    const losses = new Map<string, number>();
+    for (const e of data.entries) {
+      wins.set(e.id, 0);
+      losses.set(e.id, 0);
+    }
+    for (const m of allMatches) {
+      if (m.bracket !== "G" || m.status !== "done" || !m.winnerEntryId) continue;
+      wins.set(m.winnerEntryId, (wins.get(m.winnerEntryId) ?? 0) + 1);
+      const loser = m.redEntryId === m.winnerEntryId ? m.blueEntryId : m.redEntryId;
+      if (loser) losses.set(loser, (losses.get(loser) ?? 0) + 1);
+    }
+
+    // Half of a group's qualifiers start in the upper bracket and half in the
+    // lower one — derived from qualifiersPerGroup, never configured separately.
+    // Without a (valid, even) qualifier count there is no cut to draw, so the
+    // tables render bandless rather than inventing a line.
+    const qualifiers = data.qualifiersPerGroup;
+    const upperSeats = qualifiers != null && qualifiers > 0 && qualifiers % 2 === 0 ? qualifiers / 2 : null;
+    const bandAt = (rank: number): QualBand | null => {
+      if (upperSeats == null) return null;
+      if (rank < upperSeats) return "upper";
+      if (rank < upperSeats * 2) return "lower";
+      return "out";
+    };
+
+    const groups = [...byGroup.entries()]
+      .sort((a, b) => a[0] - b[0])
+      .map(([index, list]) => ({
+        index,
+        label: groupLabel(index),
+        rows: list
+          .map((e) => ({ entry: e, wins: wins.get(e.id) ?? 0, losses: losses.get(e.id) ?? 0, place: e.groupPlacement, band: null as QualBand | null }))
+          .sort(
+            (a, b) =>
+              (a.entry.groupPlacement ?? 999) - (b.entry.groupPlacement ?? 999) ||
+              b.wins - a.wins ||
+              (a.entry.seed ?? 999) - (b.entry.seed ?? 999),
+          )
+          .map((row, rank) => ({ ...row, band: bandAt(rank) })),
+      }));
+
+    const caption =
+      upperSeats == null
+        ? null
+        : `Top ${upperSeats} of each group start in the Upper Bracket · the next ${upperSeats} start in the Lower Bracket · the rest are out.`;
+    return { groups, caption };
+  }, [data, allMatches]);
 
   const onJoin = useCallback(async () => {
     if (!id) return;
@@ -416,9 +547,31 @@ export function TournamentDetailPage() {
         </div>
       )}
 
+      {/* GROUP STAGE — one live standings table per group, cut lines drawn.
+          GROUP_DOUBLE_ELIM shows this AND the bracket below it: the groups decide
+          who reaches the playoff and which side of it they enter on, so neither
+          half alone tells the player where they stand. */}
+      {groupStage.groups.length > 0 && (
+        <div className="frame fd-card-m" style={{ padding: "20px 22px" }}>
+          <div className="ptitle">Group Stage</div>
+          {groupStage.caption && (
+            <div style={{ font: "500 12px Inter", color: "var(--ink2)", textAlign: "center", marginBottom: 14 }}>{groupStage.caption}</div>
+          )}
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(320px,1fr))", gap: 20 }}>
+            {groupStage.groups.map((g) => (
+              <div key={g.index}>
+                <div style={{ font: "800 12px Inter", letterSpacing: ".7px", textTransform: "uppercase", color: "var(--gold)" }}>{g.label}</div>
+                <StandingsTable rows={g.rows} myEntryId={data.myEntry?.id} />
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
       {/* BRACKET — round-named columns, per-competitor rows and elbow connectors.
-          BracketView handles SINGLE_ELIM and DOUBLE_ELIM's three sub-brackets
-          alike; standings formats (round robin / Swiss) have no tree to draw. */}
+          BracketView handles SINGLE_ELIM, DOUBLE_ELIM's three sub-brackets and
+          GROUP_DOUBLE_ELIM's group stage + playoff alike; standings formats
+          (round robin / Swiss) have no tree to draw. */}
       {!isStandingsFormat(data.format) && allMatches.length > 0 && (
         <div className="frame fd-card-m" style={{ padding: "20px 22px" }}>
           <div className="ptitle">Bracket</div>

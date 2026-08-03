@@ -111,6 +111,12 @@ class TournamentDisplayTest {
             "Round robin · 16 players · Free entry",
             TournamentDisplay.formatLabel(item(status = "OPEN", format = "ROUND_ROBIN"))
         )
+        // An unmapped format falls through to the raw enum string, so every new
+        // one has to be named here or the row shows players a SCREAMING_CASE id.
+        assertEquals(
+            "Groups + Double Elim · 16 players · Free entry",
+            TournamentDisplay.formatLabel(item(status = "OPEN", format = TournamentGroups.FORMAT))
+        )
     }
 
     // ── playersLabel ──

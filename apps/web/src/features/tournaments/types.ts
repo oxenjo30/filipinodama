@@ -2,7 +2,7 @@
  *  the real API in apps/server/src/modules/tournaments.ts. No fabricated
  *  fields: every value here comes straight off the server response. */
 
-export type TournamentFormat = "SINGLE_ELIM" | "DOUBLE_ELIM" | "SWISS" | "ROUND_ROBIN";
+export type TournamentFormat = "SINGLE_ELIM" | "DOUBLE_ELIM" | "SWISS" | "ROUND_ROBIN" | "GROUP_DOUBLE_ELIM";
 export type TournamentStatus = "DRAFT" | "OPEN" | "RUNNING" | "COMPLETED" | "CANCELLED";
 
 /** One row from GET /api/tournaments. */
@@ -32,30 +32,57 @@ export type TournamentEntry = {
   seed: number | null;
   eliminated: boolean;
   placement: number | null;
+  /** GROUP_DOUBLE_ELIM only, null for every other format. 0-based, assigned at
+   * Start by a snake draft over seeds — null while the Cup is still OPEN. */
+  groupIndex: number | null;
+  /** GROUP_DOUBLE_ELIM only. 1-based rank WITHIN the group, written once when
+   * the group stage ends and the qualification cut is applied — so it is null
+   * for the whole time the group stage is actually being played. */
+  groupPlacement: number | null;
   user: TournamentEntryUser;
 };
 
 /** True for formats with no elimination bracket — ranked by a win/loss
- * standings table instead of a bracket tree. */
+ * standings table instead of a bracket tree.
+ *
+ * GROUP_DOUBLE_ELIM is deliberately NOT one of these even though it plays round
+ * robins: its groups feed a real bracket, so its page shows standings AND a
+ * bracket rather than one instead of the other (see hasGroupStage). */
 export function isStandingsFormat(format: TournamentFormat): boolean {
   return format === "ROUND_ROBIN" || format === "SWISS";
 }
 
-/** DOUBLE_ELIM has THREE sub-brackets (winners/losers/grand final) instead of
- * one — every other elimination format's matches all carry `bracket:"W"`
- * (the schema default), so they keep the single flat round list. */
-export function isDoubleElim(format: TournamentFormat): boolean {
-  return format === "DOUBLE_ELIM";
+/** True for the formats that draw a losers bracket, i.e. whose matches carry a
+ * `bracket` other than the schema default "W" — three or four sub-brackets to
+ * separate instead of one flat round list. Also switches round naming to the
+ * "Upper Bracket …" wording that only makes sense next to a lower bracket.
+ *
+ * A predicate rather than `format === "DOUBLE_ELIM"` precisely because a second
+ * format now has one: a string comparison silently un-titles the sections. */
+export function hasLosersBracket(format: TournamentFormat): boolean {
+  return format === "DOUBLE_ELIM" || format === "GROUP_DOUBLE_ELIM";
 }
 
-export const BRACKET_LABEL: Record<string, string> = { W: "Winners bracket", L: "Losers bracket", GF: "Grand final" };
+/** True for formats that play round-robin groups before the bracket — their
+ * entries carry groupIndex/groupPlacement and their group fixtures carry
+ * `bracket:"G"` on rounds 301+. */
+export function hasGroupStage(format: TournamentFormat): boolean {
+  return format === "GROUP_DOUBLE_ELIM";
+}
+
+export const BRACKET_LABEL: Record<string, string> = {
+  W: "Winners bracket",
+  L: "Losers bracket",
+  GF: "Grand final",
+  G: "Group stage",
+};
 
 export type TournamentMatch = {
   id: string;
   tournamentId: string;
   round: number;
   slot: number;
-  bracket: string; // "W" | "L" | "GF" — DOUBLE_ELIM only
+  bracket: string; // "W" | "L" | "GF" (DOUBLE_ELIM) | "G" (GROUP_DOUBLE_ELIM's group stage)
   redEntryId: string | null;
   blueEntryId: string | null;
   winnerEntryId: string | null;
@@ -101,6 +128,14 @@ export type TournamentDetail = {
   registeredCount: number;
   minTrophies: number;
   startsAt: string;
+  /** GROUP_DOUBLE_ELIM only (null for every other format). groupCount and
+   * qualifiersPerGroup are set by the admin at create; bracketSize is the
+   * playoff bracket size, persisted the moment the bracket is seeded. Half of
+   * qualifiersPerGroup starts in the upper bracket and half in the lower one —
+   * that split is derived, never configured. */
+  groupCount: number | null;
+  qualifiersPerGroup: number | null;
+  bracketSize: number | null;
   entries: TournamentEntry[];
   bracket: Record<string, TournamentMatch[]>;
   myEntry: { id: string; seed: number | null; eliminated: boolean; placement: number | null } | null;
@@ -126,6 +161,7 @@ export const FORMAT_LABEL: Record<TournamentFormat, string> = {
   DOUBLE_ELIM: "Double Elimination",
   SWISS: "Swiss",
   ROUND_ROBIN: "Round Robin",
+  GROUP_DOUBLE_ELIM: "Groups + Double Elim",
 };
 
 /** Status badge label + accent colour (matches the app's existing badge language). */

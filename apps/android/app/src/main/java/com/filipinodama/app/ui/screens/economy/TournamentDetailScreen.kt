@@ -47,6 +47,7 @@ import com.filipinodama.app.data.economy.EconomyResult
 import com.filipinodama.app.data.tournaments.TournamentBracket
 import com.filipinodama.app.data.tournaments.TournamentDetailDto
 import com.filipinodama.app.data.tournaments.TournamentEntryDto
+import com.filipinodama.app.data.tournaments.TournamentGroups
 import com.filipinodama.app.data.tournaments.TournamentLiveRepository
 import com.filipinodama.app.data.tournaments.TournamentMatchDto
 import com.filipinodama.app.data.tournaments.TournamentMyMatchDto
@@ -63,8 +64,13 @@ import com.filipinodama.app.ui.components.screenInsets
 import com.filipinodama.app.ui.screens.profile.AvatarView
 import com.filipinodama.app.ui.theme.FdMonoStyles
 import com.filipinodama.app.ui.theme.Gold
+import com.filipinodama.app.ui.theme.GoldHi
+import com.filipinodama.app.ui.theme.GoldLo
 import com.filipinodama.app.ui.theme.GoldLt
+import com.filipinodama.app.ui.theme.Green
+import com.filipinodama.app.ui.theme.Ink
 import com.filipinodama.app.ui.theme.Ink2
+import com.filipinodama.app.ui.theme.Red
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
@@ -271,6 +277,11 @@ fun TournamentDetailScreen(
                     if (t.status == "OPEN") {
                         UpcomingNoteCard()
                     }
+
+                    // GROUP STAGE — the qualification table, above the bracket
+                    // it feeds. Renders for GROUP_DOUBLE_ELIM only; every other
+                    // format has no groups and this draws nothing.
+                    GroupStandingsSection(t)
 
                     if (t.bracket.isNotEmpty()) {
                         BracketSection(t, onWatchReplay = onWatchReplay)
@@ -638,6 +649,223 @@ private fun GoldActionButton(label: String, enabled: Boolean, onClick: () -> Uni
     }
 }
 
+// ─────────────────────────── Group standings ───────────────────────────
+
+/**
+ * The GROUP_DOUBLE_ELIM group tables.
+ *
+ * The bracket below shows WHO plays whom; only this shows WHO IS THROUGH, which
+ * is the entire point of a group stage and is not recoverable from a bracket
+ * that hasn't been seeded yet. Every group therefore gets its own table, cut
+ * into the three qualification bands (upper bracket / lower bracket / out) with
+ * a labelled rule between them — the same "cut line" an esports standings page
+ * uses, because rank alone doesn't say where the line is.
+ *
+ * The W/L tally and the band are LIVE while the group stage runs (the server
+ * writes `groupPlacement` only once, at the cut), so the table says so in
+ * words rather than presenting a projection as a result — see [TournamentGroups].
+ *
+ * Visual language is [LeaderboardScreen]'s RankRow: rank, avatar, name with the
+ * gold YOU pill, value on the right. Those are private and typed to a
+ * leaderboard DTO, hence the separate composable rather than reuse.
+ */
+@Composable
+private fun GroupStandingsSection(t: TournamentDetailDto) {
+    if (t.format != TournamentGroups.FORMAT) return
+
+    val groups = remember(t.entries, t.bracket, t.qualifiersPerGroup) {
+        TournamentGroups.standings(
+            entries = t.entries,
+            matches = t.bracket.values.flatten(),
+            qualifiersPerGroup = t.qualifiersPerGroup
+        )
+    }
+    if (groups.isEmpty()) return
+
+    Text(
+        "GROUP STAGE",
+        color = Color(0xFF8B7CAE),
+        style = MaterialTheme.typography.labelMedium,
+        modifier = Modifier.padding(top = 24.dp, bottom = 8.dp)
+    )
+
+    TournamentGroups.cutSummary(t.qualifiersPerGroup)?.let { summary ->
+        Text(summary, color = Ink2, style = MaterialTheme.typography.bodySmall)
+    }
+
+    // Say plainly when the table is a projection. A cut that is still moving
+    // looks identical to a settled one, and telling a player they are out when
+    // they can still play their way back in is the worst thing this screen
+    // could do.
+    if (groups.any { !it.decided }) {
+        Text(
+            "Live standings — the cut is applied when the group stage finishes.",
+            color = Color(0xFF8B7CAE),
+            style = MaterialTheme.typography.labelSmall,
+            modifier = Modifier.padding(top = 4.dp)
+        )
+    }
+
+    groups.forEach { group ->
+        GroupTableCard(group = group, myEntryId = t.myEntry?.id)
+    }
+}
+
+/** One group's card: title, progress, and its rows split by qualification band. */
+@Composable
+private fun GroupTableCard(group: TournamentGroups.Group, myEntryId: String?) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(top = 12.dp)
+            .background(Color(0xCC1B1030), RoundedCornerShape(14.dp))
+            .border(1.dp, Color(0x24E8B84B), RoundedCornerShape(14.dp))
+            .padding(vertical = 12.dp)
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                group.label.uppercase(),
+                color = Color(0xFFF4D886),
+                style = MaterialTheme.typography.labelMedium,
+                letterSpacing = 0.7.sp
+            )
+            if (group.total > 0) {
+                Text(
+                    "${group.played}/${group.total} played",
+                    color = Ink2,
+                    style = MaterialTheme.typography.labelSmall
+                )
+            }
+        }
+
+        // Column headers, mirroring the leaderboard table's RANK/PLAYER/RATING.
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 10.dp),
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            Text("#", color = Ink2, style = MaterialTheme.typography.labelSmall)
+            Text(
+                "PLAYER",
+                color = Ink2,
+                style = MaterialTheme.typography.labelSmall,
+                modifier = Modifier.weight(1f).padding(start = 20.dp)
+            )
+            Text("W–L", color = Ink2, style = MaterialTheme.typography.labelSmall)
+        }
+
+        var lastBand: TournamentGroups.Band? = null
+        group.rows.forEach { row ->
+            if (row.band != lastBand) {
+                BandDivider(band = row.band, decided = group.decided)
+                lastBand = row.band
+            }
+            GroupStandingRow(row = row, isYou = myEntryId != null && row.entry.id == myEntryId)
+        }
+    }
+}
+
+/**
+ * The cut line: a band heading with a hairline running off it. This is what
+ * makes the qualification bands legible at a glance — without it the table is
+ * an undifferentiated list and the reader has to count rows against a rule
+ * stated somewhere else.
+ */
+@Composable
+private fun BandDivider(band: TournamentGroups.Band, decided: Boolean) {
+    if (band == TournamentGroups.Band.UNKNOWN) return
+    val accent = bandColor(band)
+    val label = TournamentGroups.BAND_LABEL[band] ?: return
+    Row(
+        modifier = Modifier.fillMaxWidth().padding(start = 14.dp, end = 14.dp, top = 8.dp, bottom = 6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        Text(
+            // The arrow marks a band that is still MOVING. A settled cut and a
+            // live projection look identical otherwise, and the difference is
+            // whether the rows below it are out or merely losing.
+            if (decided) label.uppercase() else "→ ${label.uppercase()}",
+            color = accent,
+            style = MaterialTheme.typography.labelSmall,
+            letterSpacing = 0.6.sp
+        )
+        Box(Modifier.weight(1f).height(1.dp).background(accent.copy(alpha = 0.28f)))
+    }
+}
+
+/** One player's line. Layout matches LeaderboardScreen's RankRow. */
+@Composable
+private fun GroupStandingRow(row: TournamentGroups.Row, isYou: Boolean) {
+    val accent = bandColor(row.band)
+    val out = row.band == TournamentGroups.Band.ELIMINATED
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(if (isYou) Gold.copy(alpha = 0.06f) else Color.Transparent)
+            .padding(horizontal = 14.dp, vertical = 9.dp)
+            // Eliminated rows are dimmed on the same principle the bracket
+            // dims a beaten competitor — still readable, clearly done.
+            .alpha(if (out) 0.55f else 1f),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(
+            row.rank.toString(),
+            color = accent,
+            style = MaterialTheme.typography.titleSmall,
+            modifier = Modifier.padding(end = 12.dp)
+        )
+        AvatarView(avatarUrl = row.entry.user.avatarUrl, size = 34.dp, ring = false)
+        Column(modifier = Modifier.weight(1f).padding(start = 10.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(7.dp)) {
+                Text(
+                    row.entry.user.username,
+                    color = Color(0xFFF2E9D2),
+                    style = MaterialTheme.typography.bodyMedium,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f, fill = false)
+                )
+                if (isYou) {
+                    Box(
+                        modifier = Modifier
+                            .background(Brush.verticalGradient(listOf(GoldHi, GoldLo)), RoundedCornerShape(100.dp))
+                            .padding(horizontal = 7.dp, vertical = 2.dp)
+                    ) {
+                        Text("YOU", color = Color(0xFF1A0F2E), style = MaterialTheme.typography.labelSmall)
+                    }
+                }
+            }
+            row.entry.seed?.let { seed ->
+                // Groups are a snake draft over seeds, so the seed explains the
+                // draw rather than being decoration.
+                Text("Seed #$seed", color = Ink2, style = MaterialTheme.typography.labelSmall)
+            }
+        }
+        Text(
+            "${row.wins}–${row.losses}",
+            color = if (out) Ink2 else GoldLt,
+            style = FdMonoStyles.StatSmall
+        )
+    }
+}
+
+/**
+ * Band accent. Gold is this app's "top of the table" colour (champion, YOU
+ * badge), green its "still alive" one, red its "out" one — so the three bands
+ * read in the app's own vocabulary rather than a new one. Colour is only ever
+ * reinforcement here: every band is also spelled out by [BandDivider].
+ */
+private fun bandColor(band: TournamentGroups.Band): Color = when (band) {
+    TournamentGroups.Band.UPPER -> Gold
+    TournamentGroups.Band.LOWER -> Green
+    TournamentGroups.Band.ELIMINATED -> Red
+    TournamentGroups.Band.UNKNOWN -> Ink
+}
+
 // ─────────────────────────── Bracket ───────────────────────────
 
 /**
@@ -676,7 +904,11 @@ private fun columnX(roundIndex: Int) = (COL_W + COL_GAP) * roundIndex
 @Composable
 private fun BracketSection(t: TournamentDetailDto, onWatchReplay: (String) -> Unit) {
     val matches = t.bracket.values.flatten()
-    val doubleElim = t.format == "DOUBLE_ELIM"
+    // GROUP_DOUBLE_ELIM's playoff IS a double elimination — its group stage
+    // only replaces winners round 1 — so it takes the "Upper/Lower Bracket"
+    // round wording too. Left out, every playoff column would read as a plain
+    // single-elimination round while a Lower Bracket section sat beside it.
+    val doubleElim = t.format == "DOUBLE_ELIM" || t.format == TournamentGroups.FORMAT
     val sections = remember(matches, doubleElim) { TournamentBracket.sections(matches, doubleElim) }
     val entryById = remember(t.entries) { t.entries.associateBy { it.id } }
     // Swiss / round-robin rounds are re-paired every round — their columns
@@ -697,7 +929,10 @@ private fun BracketSection(t: TournamentDetailDto, onWatchReplay: (String) -> Un
             entryById = entryById,
             myEntryId = t.myEntry?.id,
             doubleElim = doubleElim,
-            connectors = elimination
+            // …except the GROUP section, for exactly the reason above: a round
+            // robin re-pairs every round, so its columns are a schedule, not a
+            // tree. The playoff sections of the same Cup still get connectors.
+            connectors = elimination && section.key != TournamentBracket.BracketKey.G
         )
     }
 
@@ -964,6 +1199,9 @@ private fun formatName(format: String): String = when (format) {
     "DOUBLE_ELIM" -> "Double elimination"
     "SWISS" -> "Swiss"
     "ROUND_ROBIN" -> "Round robin"
+    // Named, not passed through: the fallback below prints the raw enum, so an
+    // unmapped format shows players "GROUP_DOUBLE_ELIM" under the Cup's title.
+    TournamentGroups.FORMAT -> "Groups + Double Elim"
     else -> format
 }
 

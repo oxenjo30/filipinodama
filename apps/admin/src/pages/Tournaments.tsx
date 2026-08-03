@@ -7,7 +7,7 @@ import { Pagination, usePagination } from "../components/Pagination";
 // ── Types (mirror admin-tournaments.ts response shapes) ────────────────────
 
 type TournamentStatus = "DRAFT" | "OPEN" | "RUNNING" | "COMPLETED" | "CANCELLED";
-type TournamentFormat = "SINGLE_ELIM" | "DOUBLE_ELIM" | "SWISS" | "ROUND_ROBIN";
+type TournamentFormat = "SINGLE_ELIM" | "DOUBLE_ELIM" | "SWISS" | "ROUND_ROBIN" | "GROUP_DOUBLE_ELIM";
 
 type Tournament = {
   id: string;
@@ -25,6 +25,14 @@ type Tournament = {
   createdAt: string;
   rounds: number | null; // SWISS only — configured round count (null = auto ceil(log2(n)))
   readyWindowSec: number; // ready-check (V1.5) — seconds to ready up once the OPPONENT has
+  // GROUP_DOUBLE_ELIM only — the admin-settable group shape (null for every
+  // other format). Everything else about the event derives from these two.
+  groupCount: number | null;
+  qualifiersPerGroup: number | null;
+  // SERVER-WRITTEN, never admin-settable: the playoff bracket size, persisted
+  // when the bracket is seeded (GROUP_DOUBLE_ELIM skips winners round 1, so the
+  // server can't recover it from a row count). Read-only here.
+  bracketSize: number | null;
 };
 
 type Stats = { liveNow: number; upcoming: number; playersRegistered: number; goldPrizePool: number };
@@ -47,7 +55,7 @@ type TournamentMatch = {
   tournamentId: string;
   round: number;
   slot: number;
-  bracket: string; // "W" | "L" | "GF" — DOUBLE_ELIM only; every other format's matches are all "W" (the schema default)
+  bracket: string; // "W" | "L" | "GF" (DOUBLE_ELIM) | "G" (GROUP_DOUBLE_ELIM's group stage); every other format's matches are all "W" (the schema default)
   redEntryId: string | null;
   blueEntryId: string | null;
   matchId: string | null; // non-null on a `ready` slot ⇒ the match is LIVE (server auto-started it)
@@ -73,24 +81,137 @@ const ROUND_ROBIN_SIZES = [2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16] a
 const ROUND_ROBIN_MAX_PLAYERS = 16;
 const SWISS_SIZES = Array.from({ length: 31 }, (_, i) => i + 2); // 2..32
 const SWISS_MAX_PLAYERS = 32;
+// GROUP_DOUBLE_ELIM field sizes. NOT power-of-two constrained like the
+// elimination brackets — the field only has to divide into equal groups, so
+// 10/12/18/20 are all legal. 6 (2 groups of 3, top 2 each) is the smallest
+// shape that satisfies every rule; the upper end is a sanity cap only, because
+// group play is a round robin and its cost is quadratic (the form warns live).
+const GROUP_MIN_PLAYERS = 6;
+const GROUP_MAX_PLAYERS = 24;
+const GROUP_SIZES = Array.from({ length: GROUP_MAX_PLAYERS - GROUP_MIN_PLAYERS + 1 }, (_, i) => i + GROUP_MIN_PLAYERS); // 6..24
+/** Total-match count above which the form flags the shape as oversized. The
+ * recommended 12/2/4 shape is 40 matches; the literal TI shape is 94. */
+const GROUP_MATCH_WARN = 60;
+/** Hard ceiling — mirrors the server's GROUP_MAX_TOTAL_MATCHES
+ * (apps/server/src/modules/admin-tournaments.ts). Blocks submit rather than
+ * letting the admin fill the whole form and collect a 400. */
+const GROUP_MATCH_MAX = 120;
 const FORMATS: { value: TournamentFormat; label: string; v1: boolean }[] = [
   { value: "SINGLE_ELIM", label: "Single elimination", v1: true },
   { value: "DOUBLE_ELIM", label: "Double elimination", v1: true },
   { value: "SWISS", label: "Swiss", v1: true },
   { value: "ROUND_ROBIN", label: "Round robin", v1: true },
+  { value: "GROUP_DOUBLE_ELIM", label: "Group stage → double elim", v1: true },
 ];
+/** Format → friendly label, falling back to the raw enum so a value this build
+ * doesn't know about (newer server) renders as itself instead of blank.
+ * Exported for the header global search, which lists cups outside this page. */
+export function formatLabel(format: string): string {
+  return FORMATS.find((f) => f.value === format)?.label ?? format;
+}
 /** Formats ranked by a win/loss/points standings table instead of a bracket
  * tree — RR and SWISS this stage (mirrors apps/web's isStandingsFormat). */
 function isStandingsFormat(format: TournamentFormat): boolean {
   return format === "ROUND_ROBIN" || format === "SWISS";
 }
-/** DOUBLE_ELIM's bracket view groups matches by sub-bracket (W/L/GF) first,
- * round second — every other elimination format has just one implicit
- * bracket ("W", the schema default) so it keeps the flat round-only view. */
-function isDoubleElim(format: TournamentFormat): boolean {
-  return format === "DOUBLE_ELIM";
+/** Formats whose matches carry more than one sub-bracket (a losers bracket
+ * exists), so the drawer groups by sub-bracket (G/W/L/GF) first and round
+ * second — every other format has just one implicit bracket ("W", the schema
+ * default) and keeps the flat round-only view. A PREDICATE, not a `===
+ * "DOUBLE_ELIM"` string test: GROUP_DOUBLE_ELIM's playoff IS a double
+ * elimination and would silently lose its L/GF section headers otherwise. */
+function hasLosersBracket(format: TournamentFormat): boolean {
+  return format === "DOUBLE_ELIM" || format === "GROUP_DOUBLE_ELIM";
 }
-const BRACKET_LABEL: Record<string, string> = { W: "Winners bracket", L: "Losers bracket", GF: "Grand final" };
+const BRACKET_LABEL: Record<string, string> = {
+  G: "Group stage",
+  W: "Winners bracket",
+  L: "Losers bracket",
+  GF: "Grand final",
+};
+/** Round-number offset of the group-stage band (group rounds are 301+, so the
+ * lockstep round-robin round shown to the operator is `round - 300`). Mirrors
+ * the server's G_ROUND_OFFSET. */
+const G_ROUND_OFFSET = 300;
+
+// ── GROUP_DOUBLE_ELIM shape ─────────────────────────────────────────────────
+
+/** Everything a GROUP_DOUBLE_ELIM event is, derived from field size + the two
+ * admin inputs. Mirrors the server's GroupShape. */
+type GroupShape = {
+  groupSize: number;
+  /** Group-stage survivors — and therefore the playoff bracket size. */
+  survivors: number;
+  upperSeats: number;
+  lowerSeats: number;
+  eliminatedInGroups: number;
+  groupMatches: number;
+  playoffMatches: number;
+  totalMatches: number;
+};
+
+/**
+ * Client mirror of the server's `groupStageShape`
+ * (apps/server/src/lib/tournament-bracket.ts) — same rules, same arithmetic,
+ * purely so the form can say what's wrong before the request. The server
+ * re-validates authoritatively on write and again at Start; `fieldSize` is
+ * `maxPlayers` on both sides because this format refuses to start short.
+ *
+ * Returns the derived shape, or the message for the first rule that failed.
+ */
+function groupStageShape(fieldSize: number, groupCount: number, qualifiersPerGroup: number): { shape: GroupShape | null; error: string | null } {
+  const bad = (error: string) => ({ shape: null, error });
+
+  if (!Number.isInteger(groupCount) || groupCount < 2) {
+    return bad("Groups must be a whole number of at least 2 — cross-group seeding needs another group to pair against.");
+  }
+  if (fieldSize % groupCount !== 0) {
+    return bad(`${fieldSize} players do not divide evenly into ${groupCount} groups — unequal groups make qualification unfair.`);
+  }
+
+  const groupSize = fieldSize / groupCount;
+
+  if (!Number.isInteger(qualifiersPerGroup) || qualifiersPerGroup < 2) {
+    return bad("Qualifiers per group must be a whole number of at least 2.");
+  }
+  if (qualifiersPerGroup % 2 !== 0) {
+    return bad("Qualifiers per group must be even so they split evenly between the upper and lower brackets.");
+  }
+  if (qualifiersPerGroup >= groupSize) {
+    return bad(`Qualifiers per group (${qualifiersPerGroup}) must be fewer than the group size (${groupSize}) — otherwise the group stage eliminates nobody.`);
+  }
+
+  const survivors = groupCount * qualifiersPerGroup;
+  if (survivors < 4 || !Number.isInteger(Math.log2(survivors))) {
+    return bad(`${groupCount} groups × ${qualifiersPerGroup} qualifiers = ${survivors} survivors, which is not a power of two of at least 4 — the playoff bracket cannot be formed.`);
+  }
+
+  // Winners rounds 2..k hold B/2^r matches each => B/2 - 1 in total (round 1 IS
+  // the group stage, never materialised). The losers bracket is always B-2
+  // matches, plus one grand final (a bracket reset would add a second and is
+  // not counted). Group play is a full round robin per group.
+  const groupMatches = groupCount * ((groupSize * (groupSize - 1)) / 2);
+  const playoffMatches = survivors / 2 - 1 + (survivors - 2) + 1;
+  const totalMatches = groupMatches + playoffMatches;
+
+  if (totalMatches > GROUP_MATCH_MAX) {
+    return bad(`That shape is ${totalMatches} matches, over the ${GROUP_MATCH_MAX} cap — use more groups or fewer players.`);
+  }
+
+  return {
+    shape: {
+      groupSize,
+      survivors,
+      upperSeats: survivors / 2,
+      lowerSeats: survivors / 2,
+      eliminatedInGroups: fieldSize - survivors,
+      groupMatches,
+      playoffMatches,
+      totalMatches,
+    },
+    error: null,
+  };
+}
 
 const STATUS_CLASS: Record<TournamentStatus, string> = {
   DRAFT: "st-muted",
@@ -294,7 +415,9 @@ function TournamentRow({
           ? `Seeds the match schedule from ${t.registeredCount} registered player(s). This cannot be undone.`
           : t.format === "SWISS"
             ? `Seeds round 1 only from ${t.registeredCount} registered player(s) (${t.rounds ?? "auto"} round${t.rounds === 1 ? "" : "s"} total — later rounds generate automatically as each round is fully reported). This cannot be undone.`
-            : `Seeds the bracket from ${t.registeredCount} registered player(s). This cannot be undone.`,
+            : t.format === "GROUP_DOUBLE_ELIM"
+              ? `Draws the field into ${t.groupCount ?? "?"} groups and seeds the group stage only — the playoff bracket is built automatically once every group has finished. Needs the FULL field of ${t.maxPlayers} (currently ${t.registeredCount}) or Start is refused. This cannot be undone.`
+              : `Seeds the bracket from ${t.registeredCount} registered player(s). This cannot be undone.`,
       requireReason: true,
       confirmLabel: "Start",
       method: "POST",
@@ -304,7 +427,9 @@ function TournamentRow({
           ? "Matches scheduled — tournament is live."
           : t.format === "SWISS"
             ? "Round 1 seeded — tournament is live."
-            : "Bracket seeded — tournament is live.",
+            : t.format === "GROUP_DOUBLE_ELIM"
+              ? "Groups drawn — tournament is live."
+              : "Bracket seeded — tournament is live.",
       onDone,
     });
 
@@ -345,7 +470,7 @@ function TournamentRow({
         <div className="mono dim" style={{ fontSize: 10 }}>{t.id}</div>
       </td>
       <td><span className={`badge-st ${STATUS_CLASS[t.status]}`}>{STATUS_LABEL[t.status]}</span></td>
-      <td className="dim">{FORMATS.find((f) => f.value === t.format)?.label ?? t.format}</td>
+      <td className="dim">{formatLabel(t.format)}</td>
       <td className="num">{t.entryFeeGold > 0 ? `${t.entryFeeGold.toLocaleString()} 🪙` : "Free"}</td>
       <td className="num" style={{ color: "var(--gold-lt)" }}>{t.prizePoolGold.toLocaleString()} 🪙</td>
       <td className="num">{t.registeredCount} / {t.maxPlayers}</td>
@@ -408,35 +533,58 @@ function TournamentForm({ tournament, onClose, onDone }: { tournament?: Tourname
   const [startsAt, setStartsAt] = useState(tournament?.startsAt ? toLocalInput(tournament.startsAt) : "");
   // SWISS ONLY: rounds — blank/null = auto (ceil(log2(n)), computed at Start).
   const [rounds, setRounds] = useState<string>(tournament?.rounds != null ? String(tournament.rounds) : "");
+  // GROUP_DOUBLE_ELIM ONLY: the group shape. Unlike Swiss rounds these are
+  // REQUIRED — nothing about the event can be derived without them — so they
+  // default to the recommended 2 groups / top 4 shape instead of "auto".
+  const [groupCount, setGroupCount] = useState<string>(tournament?.groupCount != null ? String(tournament.groupCount) : "2");
+  const [qualifiersPerGroup, setQualifiersPerGroup] = useState<string>(
+    tournament?.qualifiersPerGroup != null ? String(tournament.qualifiersPerGroup) : "4",
+  );
   // Ready window — stored in SECONDS server-side, edited here in whole MINUTES
   // (how an operator actually thinks about it). 600s = the 10-minute default.
   const [readyWindowMin, setReadyWindowMin] = useState<string>(String(Math.round((tournament?.readyWindowSec ?? 600) / 60)));
 
   const isRoundRobin = format === "ROUND_ROBIN";
   const isSwiss = format === "SWISS";
-  const bracketSizeOptions = isRoundRobin ? ROUND_ROBIN_SIZES : isSwiss ? SWISS_SIZES : BRACKET_SIZES;
+  const isGroupDE = format === "GROUP_DOUBLE_ELIM";
+  const bracketSizeOptions = isRoundRobin ? ROUND_ROBIN_SIZES : isSwiss ? SWISS_SIZES : isGroupDE ? GROUP_SIZES : BRACKET_SIZES;
 
   // When switching format, clamp maxPlayers into the new format's valid set
-  // (power-of-two bracket sizes for elimination, 2..16 for round robin, 2..32 for swiss).
+  // (power-of-two bracket sizes for elimination, 2..16 for round robin, 2..32
+  // for swiss, 6..24 for group stage). GROUP_DOUBLE_ELIM is deliberately NOT
+  // folded into the power-of-two branch: its field only has to divide into
+  // equal groups, so 10/12/18/20 must survive the switch untouched.
   const onFormatChange = (next: TournamentFormat) => {
     setFormat(next);
-    if (next === "ROUND_ROBIN" && maxPlayers > ROUND_ROBIN_MAX_PLAYERS) {
-      setMaxPlayers(ROUND_ROBIN_MAX_PLAYERS);
-    } else if (next === "SWISS" && maxPlayers > SWISS_MAX_PLAYERS) {
-      setMaxPlayers(SWISS_MAX_PLAYERS);
-    } else if (next !== "ROUND_ROBIN" && next !== "SWISS" && !(BRACKET_SIZES as readonly number[]).includes(maxPlayers)) {
+    if (next === "ROUND_ROBIN") {
+      if (maxPlayers > ROUND_ROBIN_MAX_PLAYERS) setMaxPlayers(ROUND_ROBIN_MAX_PLAYERS);
+    } else if (next === "SWISS") {
+      if (maxPlayers > SWISS_MAX_PLAYERS) setMaxPlayers(SWISS_MAX_PLAYERS);
+    } else if (next === "GROUP_DOUBLE_ELIM") {
+      if (maxPlayers > GROUP_MAX_PLAYERS) setMaxPlayers(GROUP_MAX_PLAYERS);
+      else if (maxPlayers < GROUP_MIN_PLAYERS) setMaxPlayers(GROUP_MIN_PLAYERS);
+    } else if (!(BRACKET_SIZES as readonly number[]).includes(maxPlayers)) {
       setMaxPlayers(8);
     }
   };
 
   const roundsValid = rounds.trim() === "" || (Number.isInteger(Number(rounds)) && Number(rounds) >= 1 && Number(rounds) <= 20);
+  // GROUP_DOUBLE_ELIM: derive the whole shape live from the planned field size.
+  // Blank inputs parse to NaN and fall out of the first integer rule, which is
+  // the message we want anyway ("must be a whole number of at least 2").
+  const group = isGroupDE
+    ? groupStageShape(maxPlayers, parseInt(groupCount, 10), parseInt(qualifiersPerGroup, 10))
+    : { shape: null, error: null };
+  const groupValid = !isGroupDE || !!group.shape;
+  const groupOversized = !!group.shape && group.shape.totalMatches > GROUP_MATCH_WARN;
   // 1..60 minutes — mirrors the server's 60..3600 second bound.
   const readyWindowValid =
     readyWindowMin.trim() !== "" && Number.isInteger(Number(readyWindowMin)) && Number(readyWindowMin) >= 1 && Number(readyWindowMin) <= 60;
   const splitSum = split.reduce((a, b) => a + b, 0);
   const splitValid = split.length >= 1 && split.length <= maxPlayers && splitSum === prizePoolGold;
-  const supportedFormat = format === "SINGLE_ELIM" || format === "ROUND_ROBIN" || format === "SWISS" || format === "DOUBLE_ELIM";
-  const valid = name.trim().length > 0 && supportedFormat && splitValid && roundsValid && readyWindowValid;
+  const supportedFormat =
+    format === "SINGLE_ELIM" || format === "ROUND_ROBIN" || format === "SWISS" || format === "DOUBLE_ELIM" || format === "GROUP_DOUBLE_ELIM";
+  const valid = name.trim().length > 0 && supportedFormat && splitValid && roundsValid && readyWindowValid && groupValid;
 
   const setPlace = (i: number, gold: number) => setSplit((s) => s.map((v, idx) => (idx === i ? gold : v)));
   const addPlace = () => setSplit((s) => (s.length < maxPlayers ? [...s, 0] : s));
@@ -444,9 +592,12 @@ function TournamentForm({ tournament, onClose, onDone }: { tournament?: Tourname
 
   const submit = () => {
     if (!splitValid) return; // client-side gate — mirrors server's PRIZE_SPLIT_MISMATCH
+    if (!groupValid) return; // ditto for the group shape — mirrors INVALID_GROUP_SHAPE
     mutate({
       title: isEdit ? `Edit tournament "${name}"` : `Create tournament "${name}"`,
-      body: `${FORMATS.find((f) => f.value === format)?.label} · ${maxPlayers} players · entry ${entryFeeGold} 🪙 · pool ${prizePoolGold} 🪙 (${split.join("/")}). Audited.`,
+      body: `${formatLabel(format)} · ${maxPlayers} players${
+        group.shape ? ` in ${groupCount} groups of ${group.shape.groupSize}, top ${qualifiersPerGroup} each → ${group.shape.totalMatches} matches` : ""
+      } · entry ${entryFeeGold} 🪙 · pool ${prizePoolGold} 🪙 (${split.join("/")}). Audited.`,
       requireReason: true,
       confirmLabel: isEdit ? "Save tournament" : "Create tournament",
       method: isEdit ? "PATCH" : "POST",
@@ -462,6 +613,10 @@ function TournamentForm({ tournament, onClose, onDone }: { tournament?: Tourname
         matchMode,
         startsAt: startsAt ? new Date(startsAt).toISOString() : null,
         rounds: isSwiss && rounds.trim() !== "" ? Number(rounds) : null,
+        // Required for GROUP_DOUBLE_ELIM, null for every other format (same
+        // shape as `rounds` above — the server persists exactly what it gets).
+        groupCount: isGroupDE ? Number(groupCount) : null,
+        qualifiersPerGroup: isGroupDE ? Number(qualifiersPerGroup) : null,
         readyWindowSec: Number(readyWindowMin) * 60,
       },
       successMsg: isEdit ? "Tournament updated." : "Tournament created as a draft.",
@@ -495,7 +650,9 @@ function TournamentForm({ tournament, onClose, onDone }: { tournament?: Tourname
           </select>
         </div>
         <div className="field" style={{ flex: 1, minWidth: 160 }}>
-          <label>{isRoundRobin ? "Players (cap 16)" : isSwiss ? "Players (cap 32)" : "Bracket size (cap)"}</label>
+          <label>
+            {isRoundRobin ? "Players (cap 16)" : isSwiss ? "Players (cap 32)" : isGroupDE ? "Players (field size)" : "Bracket size (cap)"}
+          </label>
           <select className="select" value={maxPlayers} onChange={(e) => setMaxPlayers(Number(e.target.value))}>
             {bracketSizeOptions.map((n) => (
               <option key={n} value={n}>{n}</option>
@@ -535,6 +692,34 @@ function TournamentForm({ tournament, onClose, onDone }: { tournament?: Tourname
             />
           </div>
         )}
+        {isGroupDE && (
+          <>
+            <div className="field" style={{ flex: 1, minWidth: 160 }}>
+              <label>Groups</label>
+              <input
+                className="input"
+                type="number"
+                min={2}
+                max={GROUP_MAX_PLAYERS / 2}
+                placeholder="2"
+                value={groupCount}
+                onChange={(e) => setGroupCount(e.target.value)}
+              />
+            </div>
+            <div className="field" style={{ flex: 1, minWidth: 160 }}>
+              <label>Qualifiers per group</label>
+              <input
+                className="input"
+                type="number"
+                min={2}
+                step={2}
+                placeholder="4"
+                value={qualifiersPerGroup}
+                onChange={(e) => setQualifiersPerGroup(e.target.value)}
+              />
+            </div>
+          </>
+        )}
       </div>
       <div className="dim" style={{ fontSize: 11, marginTop: -6, marginBottom: 12 }}>
         Ready window: once a player presses Ready on their slot, their opponent has this long to ready up too — miss it and the slot is forfeited to the player who readied. Default 10 minutes.
@@ -549,6 +734,37 @@ function TournamentForm({ tournament, onClose, onDone }: { tournament?: Tourname
         <div className="dim" style={{ fontSize: 11, marginTop: -6, marginBottom: 12 }}>
           Swiss: players are paired by score each round (rematches avoided where possible). Leave rounds blank for the standard ceil(log2(players)) count.
           {!roundsValid && <span style={{ color: "var(--red-lt)" }}> Rounds must be an integer from 1 to 20.</span>}
+        </div>
+      )}
+      {isGroupDE && (
+        <div className="dim" style={{ fontSize: 11, marginTop: -6, marginBottom: 12 }}>
+          Group stage → double elim: each group plays a full round robin, then the qualifiers go into a double-elimination playoff — the top half of
+          each group into the upper bracket, the bottom half straight into the lower one. The group stage IS winners round 1.
+          {group.error ? (
+            <div style={{ color: "var(--red-lt)", marginTop: 4 }}>{group.error}</div>
+          ) : group.shape ? (
+            <>
+              {/* Live derived shape. Match count is the number that matters: group
+                * play is quadratic, so a couple of extra players is a dozen extra
+                * matches an operator has to shepherd. */}
+              <div style={{ marginTop: 4, color: "var(--ink-2)" }}>
+                {groupCount} groups of {group.shape.groupSize} · {group.shape.survivors} qualify ({group.shape.upperSeats} upper /{" "}
+                {group.shape.lowerSeats} lower) · {group.shape.eliminatedInGroups} eliminated in groups ·{" "}
+                <strong style={{ color: groupOversized ? "var(--red-lt)" : "var(--gold-lt)" }}>{group.shape.totalMatches} matches total</strong>{" "}
+                ({group.shape.groupMatches} group + {group.shape.playoffMatches} playoff)
+              </div>
+              {groupOversized && (
+                <div style={{ color: "var(--red-lt)", marginTop: 4 }}>
+                  {group.shape.totalMatches} matches is a long event to run with no scheduling — the recommended shape is 12 players / 2 groups / 4
+                  qualifiers (40 matches).
+                </div>
+              )}
+              <div style={{ marginTop: 4 }}>
+                This format needs the FULL field of {maxPlayers} before it can start — a short field changes the group size and can leave no valid
+                playoff bracket, so Start refuses instead of silently reshaping a cup people paid to enter.
+              </div>
+            </>
+          ) : null}
         </div>
       )}
 
@@ -661,15 +877,16 @@ function BracketDrawer({ id, onClose, onDone }: { id: string; onClose: () => voi
   const isRoundRobin = d?.format === "ROUND_ROBIN";
   const isSwiss = d?.format === "SWISS";
   const isStandings = d ? isStandingsFormat(d.format) : false;
-  const isDE = d ? isDoubleElim(d.format) : false;
+  const isDE = d ? hasLosersBracket(d.format) : false;
 
-  // DOUBLE_ELIM: group the flat round->matches map by each match's own
-  // `bracket` field ("W"/"L"/"GF") so the drawer can render three separate
+  // Multi-bracket formats: group the flat round->matches map by each match's
+  // own `bracket` field ("G"/"W"/"L"/"GF") so the drawer can render separate
   // labeled sections instead of one flat, interleaved round list — the
-  // round-offset scheme (W 1..k, L 101+, GF 201+) guarantees round numbers
-  // never collide across brackets, so this grouping is purely presentational.
+  // round-offset scheme (W 1..k, L 101+, GF 201+, G 301+) guarantees round
+  // numbers never collide across brackets, so this grouping is purely
+  // presentational. Group stage first: it is chronologically winners round 1.
   const bracketGroups: Array<{ key: string; label: string; rounds: number[] }> = isDE
-    ? (["W", "L", "GF"] as const)
+    ? (["G", "W", "L", "GF"] as const)
         .map((key) => {
           const roundsInBracket = rounds.filter((r) => (d!.bracket[String(r)] ?? []).some((m) => m.bracket === key));
           return { key, label: BRACKET_LABEL[key]!, rounds: roundsInBracket };
@@ -723,9 +940,16 @@ function BracketDrawer({ id, onClose, onDone }: { id: string; onClose: () => voi
           <>
             <div className="row" style={{ justifyContent: "space-between", alignItems: "flex-start" }}>
               <div>
-                <div className="crumb">{STATUS_LABEL[d.status]} · {FORMATS.find((f) => f.value === d.format)?.label}</div>
+                <div className="crumb">{STATUS_LABEL[d.status]} · {formatLabel(d.format)}</div>
                 <div style={{ font: "800 18px var(--serif)", color: "var(--gold-lt)", marginTop: 4 }}>{d.name}</div>
                 <div className="dim mono" style={{ fontSize: 12, marginTop: 2 }}>{d.id}</div>
+                {d.format === "GROUP_DOUBLE_ELIM" && (
+                  // Read-only shape recap. bracketSize is server-written when the
+                  // playoff is seeded, so it stays "—" for the whole group stage.
+                  <div className="dim" style={{ fontSize: 11, marginTop: 4 }}>
+                    {d.groupCount ?? "—"} groups · top {d.qualifiersPerGroup ?? "—"} each · playoff bracket of {d.bracketSize ?? "—"}
+                  </div>
+                )}
               </div>
               <button className="btn" onClick={onClose}>Close</button>
             </div>
@@ -816,8 +1040,10 @@ function BracketDrawer({ id, onClose, onDone }: { id: string; onClose: () => voi
             {rounds.length === 0 ? (
               <div className="panel panel-pad dim">{isStandings ? "Matches" : "Bracket"} not seeded yet — Start the tournament first.</div>
             ) : isDE ? (
-              // DOUBLE_ELIM: three labeled sections (Winners / Losers / Grand
-              // final), each with its own round-by-round slot list — grouping
+              // Multi-bracket formats: one labeled section per sub-bracket
+              // (Group stage / Winners / Losers / Grand final — a plain
+              // DOUBLE_ELIM simply has no "G" matches, so that section drops
+              // out), each with its own round-by-round slot list. Grouping is
               // derived client-side from each match's `bracket` field (see
               // `bracketGroups` above).
               bracketGroups.map((group) => (
@@ -826,11 +1052,23 @@ function BracketDrawer({ id, onClose, onDone }: { id: string; onClose: () => voi
                   {group.rounds.map((r) => (
                     <div key={r} style={{ marginBottom: 16 }}>
                       <div className="dim" style={{ font: "700 11px var(--sans)", textTransform: "uppercase", letterSpacing: 1, marginBottom: 8 }}>
-                        {group.key === "GF" ? (r === 202 ? "Bracket reset (game 2)" : "Game 1") : `Round ${r}`}
+                        {group.key === "GF"
+                          ? r === 202
+                            ? "Bracket reset (game 2)"
+                            : "Game 1"
+                          : group.key === "G"
+                            // Group rounds live in the 301+ band and run in
+                            // lockstep across every group — show the operator
+                            // the round they'd count, not the raw offset.
+                            ? `Round ${r - G_ROUND_OFFSET}`
+                            : `Round ${r}`}
                       </div>
                       <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
                         {d.bracket[String(r)]!.filter((m) => m.bracket === group.key).sort((a, b) => a.slot - b.slot).map((m) => (
-                          <SlotRow key={m.id} tournamentId={d.id} m={m} entryLabel={entryLabel} onDone={() => { load(); onDone(); }} isRoundRobin={false} />
+                          // Group slots resolve like round-robin fixtures (no
+                          // winner to advance — the qualification cut happens
+                          // when the whole group stage finishes).
+                          <SlotRow key={m.id} tournamentId={d.id} m={m} entryLabel={entryLabel} onDone={() => { load(); onDone(); }} isRoundRobin={group.key === "G"} />
                         ))}
                       </div>
                     </div>

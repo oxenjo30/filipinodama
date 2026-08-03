@@ -4,6 +4,7 @@ import { prisma } from "../db/client.js";
 import { err, ApiError } from "../lib/errors.js";
 import { audit } from "../lib/audit.js";
 import { reportResult } from "../modules/tournaments-core.js";
+import { recoverGroupDoubleElim, groupShapeOf } from "../modules/tournament-groups.js";
 import { createLiveMatch, onMatchEnd } from "./match.js";
 import { scheduleJob, cancelJob } from "./jobs.js";
 import { allow } from "./rate-limit.js";
@@ -489,6 +490,32 @@ export async function sweepTournamentReadyChecks(io: IOServer): Promise<{ forfei
       advanced++;
     } catch (e) {
       console.error("[tournament-live] advance sweep failed", row.matchId, e);
+    }
+  }
+
+  // (c) GROUP_DOUBLE_ELIM cups stuck between phases.
+  //
+  // A concurrent pair of reports can lose a group round's generation — or the
+  // whole group-to-playoff transition — to a READ COMMITTED race (the mechanism
+  // is documented on maybeGenerateNextSwissRound). Swiss recovers this from
+  // completeTournament, but that is not enough here: Complete is only reachable
+  // once the PLAYOFFS are over, so "group stage finished, bracket never
+  // created" would be unreachable by any player action and unrecoverable
+  // without an admin, with entry-fee gold already taken. Sweeping it means a
+  // stranded cup heals on its own within a tick.
+  //
+  // recoverGroupDoubleElim is idempotent and a cheap no-op when nothing is
+  // stuck, so this runs unconditionally for every RUNNING cup of this format.
+  const groupCups = await prisma.tournament.findMany({
+    where: { status: "RUNNING", format: "GROUP_DOUBLE_ELIM" },
+    select: { id: true, maxPlayers: true, groupCount: true, qualifiersPerGroup: true },
+    take: 50,
+  });
+  for (const t of groupCups) {
+    try {
+      await recoverGroupDoubleElim(prisma, t.id, groupShapeOf(t));
+    } catch (e) {
+      console.error("[tournament-live] group-stage recovery sweep failed", t.id, e);
     }
   }
 
