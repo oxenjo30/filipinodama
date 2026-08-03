@@ -43,6 +43,22 @@ export const EV = {
   roomSpectate: "room:spectate",
   roomStart: "room:start",
 
+  // ── Tournament ready-check (V1.5) — a bracket slot is played as a real Match
+  //    that the SERVER creates once BOTH competitors have readied up. Mirrors the
+  //    room:start handoff (server → presence:<userId>), but with "both ready"
+  //    replacing "the host clicked start". See realtime/tournament-live.ts. ──
+  /** client → server: "I'm ready to play my bracket slot" (payload {tmId}).
+   *  Ready is a COMMITMENT — there is no un-ready (it would let a player stall
+   *  the bracket); the first ready arms the opponent's no-show deadline. */
+  tournamentReady: "tournament:ready",
+  /** server → both competitors (presence:<userId>): readiness/deadline changed.
+   *  Payload is the same `myMatch` shape GET /api/tournaments/:id returns, so a
+   *  client renders one code path whether it polled or was pushed. */
+  tournamentMatchState: "tournament:matchState",
+  /** server → each competitor: the match is live, go play it
+   *  (payload {tournamentId, tmId, matchId, yourColor}). */
+  tournamentStart: "tournament:start",
+
   // spectating
   spectateJoin: "spectate:join",
   spectateLeave: "spectate:leave",

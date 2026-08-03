@@ -20,7 +20,17 @@ import { redis } from "./store.js";
  * waiting / it's the bot's turn forever only if lost — acceptable, and the next
  * human action re-drives state).
  */
-export type RtJobType = "bot-fill" | "abandon-forfeit" | "bot-move" | "d-bot-move" | "anticheat-analyse";
+export type RtJobType =
+  | "bot-fill"
+  | "abandon-forfeit"
+  | "bot-move"
+  | "d-bot-move"
+  | "anticheat-analyse"
+  // Tournament ready-check deadline: fires when a player's opponent has readied
+  // and they have not, forfeiting the slot to the player who showed up. Its
+  // backstop against this queue's at-most-once delivery is
+  // sweepTournamentReadyChecks (realtime/tournament-live.ts).
+  | "tournament-noshow";
 export type RtJobHandler = (payload: Record<string, unknown>) => Promise<void>;
 
 const ZKEY = "rt:jobs";

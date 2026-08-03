@@ -21,6 +21,7 @@ import { prisma } from "../db/client.js";
 import { ok, err } from "../lib/errors.js";
 import { requireAuth, attachUser } from "../auth/guards.js";
 import { joinTournament, leaveTournament } from "./tournaments-core.js";
+import { myTournamentMatch } from "../realtime/tournament-live.js";
 
 export async function tournamentsRoutes(app: FastifyInstance) {
   // GET /api/tournaments?status=OPEN|RUNNING — public list of joinable/live
@@ -86,6 +87,12 @@ export async function tournamentsRoutes(app: FastifyInstance) {
 
     const myEntry = entries.find((e) => e.userId === req.userId) ?? null;
 
+    // The signed-in player's current playable slot (opponent, both ready flags,
+    // no-show deadline, live matchId). Present here as well as on the socket so
+    // the page is correct on a cold load — the socket only keeps it live. null
+    // for anonymous browsers, non-entrants, and anyone with no open slot.
+    const myMatch = req.userId ? await myTournamentMatch(t.id, req.userId) : null;
+
     return ok({
       ...t,
       entries,
@@ -93,6 +100,7 @@ export async function tournamentsRoutes(app: FastifyInstance) {
       myEntry: myEntry
         ? { id: myEntry.id, seed: myEntry.seed, eliminated: myEntry.eliminated, placement: myEntry.placement }
         : null,
+      myMatch,
     });
   });
 

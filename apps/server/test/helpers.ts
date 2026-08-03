@@ -114,12 +114,33 @@ export async function truncateAll() {
 
 /** Delete every realtime key (rt:*) from the test Redis without a blanket
  *  flushall — SCAN the rt: namespace and UNLINK in batches. Idempotent + safe to
- *  call from any suite's cleanup. */
+ *  call from any suite's cleanup.
+ *
+ *  UNLINK needs Redis >= 4.0. A dev box running an older server (notably the
+ *  Windows 3.0.x port) would otherwise fail EVERY suite in its afterEach with
+ *  "ERR unknown command 'unlink'" — the tests themselves pass, but the cleanup
+ *  hook takes the whole file down with it, which reads like a code failure and
+ *  isn't. Fall back to DEL, which every version has: it blocks rather than
+ *  reclaiming memory in the background, and for a test keyspace of a few dozen
+ *  keys that difference does not matter. The flag is sticky so the fallback
+ *  costs one failed command per process, not one per batch. */
+let unlinkUnsupported = false;
 export async function flushRealtimeKeys(): Promise<void> {
   let cursor = "0";
   do {
     const [next, keys] = await redis.scan(cursor, "MATCH", "rt:*", "COUNT", 500);
     cursor = next;
-    if (keys.length) await redis.unlink(...keys);
+    if (!keys.length) continue;
+    if (unlinkUnsupported) {
+      await redis.del(...keys);
+      continue;
+    }
+    try {
+      await redis.unlink(...keys);
+    } catch (e) {
+      if (!/unknown command/i.test((e as Error).message)) throw e;
+      unlinkUnsupported = true;
+      await redis.del(...keys);
+    }
   } while (cursor !== "0");
 }

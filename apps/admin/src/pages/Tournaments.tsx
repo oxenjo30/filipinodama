@@ -24,6 +24,7 @@ type Tournament = {
   startsAt: string | null;
   createdAt: string;
   rounds: number | null; // SWISS only — configured round count (null = auto ceil(log2(n)))
+  readyWindowSec: number; // ready-check (V1.5) — seconds to ready up once the OPPONENT has
 };
 
 type Stats = { liveNow: number; upcoming: number; playersRegistered: number; goldPrizePool: number };
@@ -49,10 +50,17 @@ type TournamentMatch = {
   bracket: string; // "W" | "L" | "GF" — DOUBLE_ELIM only; every other format's matches are all "W" (the schema default)
   redEntryId: string | null;
   blueEntryId: string | null;
-  matchId: string | null;
+  matchId: string | null; // non-null on a `ready` slot ⇒ the match is LIVE (server auto-started it)
   winnerEntryId: string | null;
   status: "pending" | "ready" | "done";
   resolvedAt: string | null;
+  // Ready-check (V1.5) — set when that side pressed Ready; both set ⇒ the
+  // server auto-starts and claims `matchId`. Cleared on a draw replay.
+  redReadyAt: string | null;
+  blueReadyAt: string | null;
+  // Armed by the FIRST Ready (now + Tournament.readyWindowSec). Past it, the
+  // side that never readied forfeits to the side that did.
+  readyDeadlineAt: string | null;
 };
 
 type TournamentDetail = Tournament & {
@@ -400,6 +408,9 @@ function TournamentForm({ tournament, onClose, onDone }: { tournament?: Tourname
   const [startsAt, setStartsAt] = useState(tournament?.startsAt ? toLocalInput(tournament.startsAt) : "");
   // SWISS ONLY: rounds — blank/null = auto (ceil(log2(n)), computed at Start).
   const [rounds, setRounds] = useState<string>(tournament?.rounds != null ? String(tournament.rounds) : "");
+  // Ready window — stored in SECONDS server-side, edited here in whole MINUTES
+  // (how an operator actually thinks about it). 600s = the 10-minute default.
+  const [readyWindowMin, setReadyWindowMin] = useState<string>(String(Math.round((tournament?.readyWindowSec ?? 600) / 60)));
 
   const isRoundRobin = format === "ROUND_ROBIN";
   const isSwiss = format === "SWISS";
@@ -419,10 +430,13 @@ function TournamentForm({ tournament, onClose, onDone }: { tournament?: Tourname
   };
 
   const roundsValid = rounds.trim() === "" || (Number.isInteger(Number(rounds)) && Number(rounds) >= 1 && Number(rounds) <= 20);
+  // 1..60 minutes — mirrors the server's 60..3600 second bound.
+  const readyWindowValid =
+    readyWindowMin.trim() !== "" && Number.isInteger(Number(readyWindowMin)) && Number(readyWindowMin) >= 1 && Number(readyWindowMin) <= 60;
   const splitSum = split.reduce((a, b) => a + b, 0);
   const splitValid = split.length >= 1 && split.length <= maxPlayers && splitSum === prizePoolGold;
   const supportedFormat = format === "SINGLE_ELIM" || format === "ROUND_ROBIN" || format === "SWISS" || format === "DOUBLE_ELIM";
-  const valid = name.trim().length > 0 && supportedFormat && splitValid && roundsValid;
+  const valid = name.trim().length > 0 && supportedFormat && splitValid && roundsValid && readyWindowValid;
 
   const setPlace = (i: number, gold: number) => setSplit((s) => s.map((v, idx) => (idx === i ? gold : v)));
   const addPlace = () => setSplit((s) => (s.length < maxPlayers ? [...s, 0] : s));
@@ -448,6 +462,7 @@ function TournamentForm({ tournament, onClose, onDone }: { tournament?: Tourname
         matchMode,
         startsAt: startsAt ? new Date(startsAt).toISOString() : null,
         rounds: isSwiss && rounds.trim() !== "" ? Number(rounds) : null,
+        readyWindowSec: Number(readyWindowMin) * 60,
       },
       successMsg: isEdit ? "Tournament updated." : "Tournament created as a draft.",
       onDone: () => { onDone(); onClose(); },
@@ -494,6 +509,18 @@ function TournamentForm({ tournament, onClose, onDone }: { tournament?: Tourname
             <option value="RANKED">Ranked</option>
           </select>
         </div>
+        <div className="field" style={{ flex: 1, minWidth: 160 }}>
+          <label>Ready window (minutes)</label>
+          <input
+            className="input"
+            type="number"
+            min={1}
+            max={60}
+            placeholder="10"
+            value={readyWindowMin}
+            onChange={(e) => setReadyWindowMin(e.target.value)}
+          />
+        </div>
         {isSwiss && (
           <div className="field" style={{ flex: 1, minWidth: 160 }}>
             <label>Rounds (optional)</label>
@@ -508,6 +535,10 @@ function TournamentForm({ tournament, onClose, onDone }: { tournament?: Tourname
             />
           </div>
         )}
+      </div>
+      <div className="dim" style={{ fontSize: 11, marginTop: -6, marginBottom: 12 }}>
+        Ready window: once a player presses Ready on their slot, their opponent has this long to ready up too — miss it and the slot is forfeited to the player who readied. Default 10 minutes.
+        {!readyWindowValid && <span style={{ color: "var(--red-lt)" }}> Must be a whole number of minutes from 1 to 60.</span>}
       </div>
       {isRoundRobin && (
         <div className="dim" style={{ fontSize: 11, marginTop: -6, marginBottom: 12 }}>
@@ -827,6 +858,25 @@ function BracketDrawer({ id, onClose, onDone }: { id: string; onClose: () => voi
   );
 }
 
+/** Re-renders once a second while `on` — drives the ready-window countdown.
+ * Off (the common case: pending/done/live slots) it never sets a timer. */
+function useTick(on: boolean): number {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    if (!on) return;
+    setNow(Date.now());
+    const t = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(t);
+  }, [on]);
+  return now;
+}
+
+/** ms → "m:ss" for the ready-window countdown. */
+function fmtCountdown(ms: number): string {
+  const s = Math.max(0, Math.round(ms / 1000));
+  return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
+}
+
 function SlotRow({
   tournamentId,
   m,
@@ -860,6 +910,34 @@ function SlotRow({
     m.status === "ready" ? <span className="badge-st st-active">ready</span> :
     <span className="badge-st st-muted">pending</span>;
 
+  // ── Ready-check state (V1.5) ──────────────────────────────────────────────
+  // Only an unresolved, seated slot has ready state: a `pending` slot has no
+  // opponent yet and a `done` slot is history. `matchId` on a `ready` slot means
+  // the server already auto-started the game, so the countdown is over.
+  const isReadySlot = m.status === "ready";
+  const live = isReadySlot && !!m.matchId;
+  const countingDown = isReadySlot && !m.matchId && !!m.readyDeadlineAt;
+  const now = useTick(countingDown);
+  const msLeft = m.readyDeadlineAt ? new Date(m.readyDeadlineAt).getTime() - now : 0;
+
+  const readyNote: { text: string; color?: string } | null = (() => {
+    if (!isReadySlot) return null;
+    if (live) return { text: "Live — both players readied; the bracket advances by itself when the match settles.", color: "var(--gold-lt)" };
+    const redReady = !!m.redReadyAt;
+    const blueReady = !!m.blueReadyAt;
+    // Both ready but no matchId yet is the split second between the second
+    // Ready and the auto-start claiming the match.
+    if (redReady && blueReady) return { text: "Both ready — starting the match…", color: "var(--gold-lt)" };
+    if (!redReady && !blueReady) return { text: "Waiting for both players to ready up." };
+    const readied = entryLabel(redReady ? m.redEntryId : m.blueEntryId);
+    const waitingOn = entryLabel(redReady ? m.blueEntryId : m.redEntryId);
+    if (!m.readyDeadlineAt) return { text: `${readied} is ready — waiting on ${waitingOn}.` };
+    if (msLeft <= 0) {
+      return { text: `Overdue — ${waitingOn} never readied; forfeits to ${readied} shortly.`, color: "var(--red-lt)" };
+    }
+    return { text: `${readied} is ready — waiting on ${waitingOn} (${fmtCountdown(msLeft)} left).` };
+  })();
+
   return (
     <div className="acard" style={{ padding: 12 }}>
       <div className="row" style={{ justifyContent: "space-between", alignItems: "center", flexWrap: "wrap" }}>
@@ -881,6 +959,11 @@ function SlotRow({
         )}
         {m.status === "done" && <span className="dim" style={{ fontSize: 12 }}>Winner: {entryLabel(m.winnerEntryId)}</span>}
       </div>
+      {readyNote && (
+        <div className={readyNote.color ? undefined : "dim"} style={{ fontSize: 11, marginTop: 6, color: readyNote.color }}>
+          {readyNote.text}
+        </div>
+      )}
     </div>
   );
 }

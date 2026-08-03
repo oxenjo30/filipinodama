@@ -556,3 +556,21 @@
   not just the new tests. Then ask what the old constraint was implicitly
   guaranteeing — here, "a payment can never outlive its user" was cleaning up
   test data for free.
+
+## 2026-08-03 - "One side empty" is not the same as "bye"
+
+- Mistake: the bracket card labelled a slot BYE whenever exactly one competitor
+  was set. That is true of a real bye, but it is ALSO true of every slot still
+  waiting on the match that feeds its empty side — so a live tournament's Upper
+  Bracket Final read "Mateo / BYE" instead of "Mateo / TBD". The old flat bracket
+  had the same test and nobody noticed, because the label was small and the state
+  is transient.
+- Cause: the predicate described the SHAPE of the data (one id null) instead of
+  the EVENT it was meant to detect (this slot resolved with only one player).
+  The server distinguishes them clearly — a bye is seeded `status:"done"` with a
+  winner — and the client just wasn't reading that.
+- Rule: when a UI label names an event, test for the event, not for a shape that
+  happens to correlate with it. And: render the component in a headless browser
+  with realistic MID-FLIGHT data (some rounds done, some pending, some empty) —
+  this was invisible in a typecheck, a unit test, and a fully-finished bracket,
+  and took one screenshot to spot.

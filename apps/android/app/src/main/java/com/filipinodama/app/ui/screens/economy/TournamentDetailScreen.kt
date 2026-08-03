@@ -1,5 +1,6 @@
 package com.filipinodama.app.ui.screens.economy
 
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -11,6 +12,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.horizontalScroll
@@ -21,7 +23,9 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -29,24 +33,39 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.filipinodama.app.R
 import com.filipinodama.app.data.AuthRepository
 import com.filipinodama.app.data.economy.EconomyResult
+import com.filipinodama.app.data.tournaments.TournamentBracket
 import com.filipinodama.app.data.tournaments.TournamentDetailDto
+import com.filipinodama.app.data.tournaments.TournamentEntryDto
+import com.filipinodama.app.data.tournaments.TournamentLiveRepository
 import com.filipinodama.app.data.tournaments.TournamentMatchDto
+import com.filipinodama.app.data.tournaments.TournamentMyMatchDto
 import com.filipinodama.app.data.tournaments.TournamentsRepository
+import com.filipinodama.app.data.tournaments.YourMatchState
+import com.filipinodama.app.data.tournaments.countdownRunning
+import com.filipinodama.app.data.tournaments.formatCountdown
+import com.filipinodama.app.data.tournaments.secondsUntilDeadline
+import com.filipinodama.app.data.tournaments.yourMatchState
 import com.filipinodama.app.ui.components.CurrencyIcon
 import com.filipinodama.app.ui.components.CurrencyIconKind
 import com.filipinodama.app.ui.components.MockupBackButton
 import com.filipinodama.app.ui.components.screenInsets
+import com.filipinodama.app.ui.screens.profile.AvatarView
+import com.filipinodama.app.ui.theme.FdMonoStyles
 import com.filipinodama.app.ui.theme.Gold
 import com.filipinodama.app.ui.theme.GoldLt
-import com.filipinodama.app.ui.theme.Ink
 import com.filipinodama.app.ui.theme.Ink2
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 /**
@@ -60,21 +79,33 @@ import kotlinx.coroutines.launch
  * (grouped by round), and myEntry are all real, no fabricated data. Register/
  * Leave call the real join/leave routes and reload detail on success.
  *
+ * LIVE PLAY (ready-check + auto-start): while the Cup is RUNNING the player's
+ * own slot renders as a [YourMatchCard] — both Ready flags, the no-show
+ * countdown, and an "I'm Ready" button. When both sides ready, the SERVER
+ * creates and seeds the match and pushes "tournament:start"; this screen never
+ * starts a match itself, it just navigates once [TournamentLiveRepository] has
+ * handed the match to MatchRepository. See that repository for why there is no
+ * un-ready button.
+ *
  * Deviations from the mockup (both honest, not fabricated substitutes):
  *  - Match cards show ONLY player names (no aScore/bScore) — the Prisma
  *    TournamentMatch model (schema.prisma:698-737) has no score column at
- *    all (V1 reports only winnerEntryId via an admin action), so a per-side
- *    numeric score does not exist server-side to display.
- *  - "▶ WATCH FINAL REPLAY" only renders on the final-round match when that
- *    match's `matchId` is non-null (a real Match row was linked by the admin
- *    report) — omitted otherwise rather than always shown on "the final".
+ *    all (a slot is decided by winnerEntryId), so a per-side numeric score
+ *    does not exist server-side to display.
+ *  - "▶ WATCH FINAL REPLAY" only renders when the final slot is DONE and its
+ *    `matchId` is non-null (a real Match row is linked) — omitted otherwise
+ *    rather than always shown on "the final". The done-check matters now that
+ *    a live slot also carries a matchId.
  */
 @Composable
 fun TournamentDetailScreen(
     tournamentId: String,
     onBack: () -> Unit = {},
     onRequireSignIn: () -> Unit = {},
-    onWatchReplay: (String) -> Unit = {}
+    onWatchReplay: (String) -> Unit = {},
+    /** Carries the Cup's own MatchMode so the board shows the chrome that matches
+     *  what is really at stake (a RANKED Cup moves trophies; CASUAL does not). */
+    onEnterMatch: (matchMode: String) -> Unit = {}
 ) {
     val scope = rememberCoroutineScope()
     var data by remember { mutableStateOf<TournamentDetailDto?>(null) }
@@ -82,14 +113,62 @@ fun TournamentDetailScreen(
     var busy by remember { mutableStateOf(false) }
     var actionMessage by remember { mutableStateOf<String?>(null) }
 
+    val live by TournamentLiveRepository.state.collectAsState()
+
     suspend fun load() {
         when (val result = TournamentsRepository.detail(tournamentId)) {
-            is EconomyResult.Success -> { data = result.data; error = null }
+            is EconomyResult.Success -> {
+                data = result.data
+                error = null
+                // Seed the live layer from REST so the card is right even if
+                // the socket never connects.
+                TournamentLiveRepository.hydrate(result.data.myMatch)
+            }
             is EconomyResult.Failure -> error = result.message
         }
     }
 
     LaunchedEffect(tournamentId) { load() }
+
+    // ── Live half: readiness echoes + the auto-start handoff. Guests can't be
+    //    in a bracket at all, so they never need the socket. ──
+    DisposableEffect(tournamentId) {
+        val user = AuthRepository.state.value.user
+        if (user != null && !user.isGuest) TournamentLiveRepository.bind()
+        onDispose { TournamentLiveRepository.reset() }
+    }
+
+    // Prefer the socket's view (it reflects a ready that landed after load);
+    // fall back to the REST payload so the card works without a socket at all.
+    val myMatch = live.myMatch ?: data?.myMatch
+
+    // ── The server started our match: it has already seeded the board and put
+    //    our socket in the match room, so all that's left is to go there. ──
+    LaunchedEffect(live.startedMatchId) {
+        if (live.startedMatchId != null) {
+            TournamentLiveRepository.consumeStart()
+            onEnterMatch(data?.matchMode ?: "CASUAL")
+        }
+    }
+
+    // ── A rejected ready usually means our view is stale (the slot already
+    //    started, or an admin resolved it) — refetch rather than stay wrong. ──
+    LaunchedEffect(live.error) {
+        val e = live.error ?: return@LaunchedEffect
+        actionMessage = e.message
+        TournamentLiveRepository.consumeError()
+        load()
+    }
+
+    // ── Re-render once a second, but ONLY while a deadline is actually running. ──
+    var nowMs by remember { mutableStateOf(System.currentTimeMillis()) }
+    val counting = myMatch != null && countdownRunning(myMatch)
+    LaunchedEffect(counting) {
+        while (counting) {
+            nowMs = System.currentTimeMillis()
+            delay(1000)
+        }
+    }
 
     Column(modifier = Modifier.fillMaxSize().screenInsets().background(MaterialTheme.colorScheme.background).padding(horizontal = 16.dp, vertical = 20.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -168,6 +247,24 @@ fun TournamentDetailScreen(
                             color = Color(0xFFF2B8B8),
                             style = MaterialTheme.typography.bodySmall,
                             modifier = Modifier.padding(top = 8.dp)
+                        )
+                    }
+
+                    // YOUR MATCH — the player's own slot: ready up, and the
+                    // server drops both of you onto the board by itself.
+                    if (t.status == "RUNNING" && myMatch != null) {
+                        YourMatchCard(
+                            myMatch = myMatch,
+                            pending = live.pending,
+                            nowMs = nowMs,
+                            onReady = { TournamentLiveRepository.ready(myMatch.tmId) },
+                            onRejoin = {
+                                // The start event fires once; a player returning
+                                // to a running slot needs the match handed over
+                                // before the board can render it.
+                                TournamentLiveRepository.enterLiveMatch(myMatch)
+                                onEnterMatch(t.matchMode)
+                            }
                         )
                     }
 
@@ -349,11 +446,243 @@ private fun UpcomingNoteCard() {
     }
 }
 
+// ─────────────────────────── Your Match ───────────────────────────
+
+/**
+ * The player's own slot, at the top of a running Cup.
+ *
+ * This is the surface that replaced "find your opponent in the bracket and go
+ * arrange a game somewhere else". Both players press Ready; when the second
+ * one does, the server creates the match and drops them both onto the board,
+ * so this card never starts anything itself — it reports state until
+ * "tournament:start" arrives.
+ *
+ * READY IS A COMMITMENT. There is no un-ready button because there is no
+ * un-ready: the first Ready starts the opponent's no-show clock, and letting a
+ * player take it back would let them stall the bracket indefinitely. The
+ * button says so before it is pressed.
+ */
+@Composable
+private fun YourMatchCard(
+    myMatch: TournamentMyMatchDto,
+    pending: Boolean,
+    nowMs: Long,
+    onReady: () -> Unit,
+    onRejoin: () -> Unit
+) {
+    val shape = RoundedCornerShape(16.dp)
+    val counting = countdownRunning(myMatch)
+    val secondsLeft = secondsUntilDeadline(myMatch.deadlineAt, nowMs)
+    val urgent = counting && secondsLeft <= 60
+    val opponentName = myMatch.opponent?.username ?: "your opponent"
+
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(top = 14.dp)
+            .background(Brush.verticalGradient(listOf(Color(0x14E8B84B), Color(0x05E8B84B))), shape)
+            .border(1.dp, Gold, shape)
+            .padding(16.dp)
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text("YOUR MATCH", color = Gold, style = MaterialTheme.typography.labelMedium, letterSpacing = 0.6.sp)
+            Text(myMatch.roundLabel, color = Ink2, style = MaterialTheme.typography.labelSmall)
+        }
+
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(top = 12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            AvatarView(
+                avatarUrl = myMatch.opponent?.avatarUrl,
+                size = 40.dp,
+                frameId = myMatch.opponent?.frameId,
+                ring = false
+            )
+            Column(modifier = Modifier.weight(1f)) {
+                Text("You play", color = Color(0xFF8B7CAE), style = MaterialTheme.typography.labelSmall)
+                if (myMatch.opponent != null) {
+                    Row(verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                        Text(
+                            myMatch.opponent.username,
+                            color = Color(0xFFF4ECD6),
+                            style = MaterialTheme.typography.titleMedium,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.weight(1f, fill = false)
+                        )
+                        if (myMatch.opponent.tag.isNotEmpty()) {
+                            Text("#${myMatch.opponent.tag}", color = Ink2, style = FdMonoStyles.StatSmall)
+                        }
+                    }
+                } else {
+                    Text(
+                        "Waiting for an opponent",
+                        color = Color(0xFFF4ECD6),
+                        style = MaterialTheme.typography.titleMedium
+                    )
+                }
+            }
+        }
+
+        // The no-show clock. Only armed once SOMEBODY has readied, so its
+        // absence is meaningful too (nobody has committed yet).
+        if (counting) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 12.dp)
+                    .background(Color(0x66120922), RoundedCornerShape(12.dp))
+                    .padding(horizontal = 12.dp, vertical = 9.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    if (myMatch.iAmReady) "Opponent must ready in" else "You must ready in",
+                    color = Color(0xFF8B7CAE),
+                    style = MaterialTheme.typography.labelSmall
+                )
+                Text(
+                    formatCountdown(secondsLeft),
+                    color = if (urgent) Color(0xFFFF9AA8) else GoldLt,
+                    style = FdMonoStyles.Timer
+                )
+            }
+        }
+
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(top = 12.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            ReadyPill("You", myMatch.iAmReady, Modifier.weight(1f))
+            ReadyPill(myMatch.opponent?.username ?: "Opponent", myMatch.opponentReady, Modifier.weight(1f))
+        }
+
+        when (yourMatchState(myMatch)) {
+            YourMatchState.LIVE -> {
+                GoldActionButton(label = "Rejoin your match", enabled = true, onClick = onRejoin)
+                Text(
+                    "Your game is in progress.",
+                    color = Ink2,
+                    style = MaterialTheme.typography.bodySmall,
+                    modifier = Modifier.padding(top = 8.dp)
+                )
+            }
+            YourMatchState.READY_WAITING -> Text(
+                "You're ready — waiting for $opponentName. The match starts by itself the moment they're ready too.",
+                color = Color(0xFF7EE6A4),
+                style = MaterialTheme.typography.bodySmall,
+                modifier = Modifier.padding(top = 12.dp)
+            )
+            YourMatchState.AWAITING_OPPONENT -> Text(
+                "This slot is still waiting on the result of an earlier match.",
+                color = Ink2,
+                style = MaterialTheme.typography.bodySmall,
+                modifier = Modifier.padding(top = 12.dp)
+            )
+            YourMatchState.CAN_READY -> {
+                GoldActionButton(label = if (pending) "…" else "I'm Ready", enabled = !pending, onClick = onReady)
+                Text(
+                    if (myMatch.opponentReady) "Your opponent is waiting — press Ready to start immediately."
+                    else "Readying up starts a countdown for your opponent. You can't undo it.",
+                    color = Ink2,
+                    style = MaterialTheme.typography.bodySmall,
+                    modifier = Modifier.padding(top = 8.dp)
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun ReadyPill(label: String, ready: Boolean, modifier: Modifier = Modifier) {
+    val shape = RoundedCornerShape(100.dp)
+    Row(
+        modifier = modifier
+            .background(if (ready) Color(0x292F8F5B) else Color(0x0AFFFFFF), shape)
+            .border(1.dp, if (ready) Color(0x663FBF6F) else Color(0x17FFFFFF), shape)
+            .padding(horizontal = 10.dp, vertical = 6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(5.dp)
+    ) {
+        Text(if (ready) "✓" else "○", color = if (ready) Color(0xFF7EE6A4) else Ink2, style = MaterialTheme.typography.labelSmall)
+        Text(
+            "$label ${if (ready) "ready" else "not ready"}",
+            color = if (ready) Color(0xFF7EE6A4) else Ink2,
+            style = MaterialTheme.typography.labelSmall,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis
+        )
+    }
+}
+
+/** The card's primary action, in the same gold-gradient language as [CtaButton]. */
+@Composable
+private fun GoldActionButton(label: String, enabled: Boolean, onClick: () -> Unit) {
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(top = 14.dp)
+            .clickable(enabled = enabled, onClick = onClick)
+            .background(Brush.verticalGradient(listOf(Color(0xFFEFC25A), Color(0xFFC9971F))), RoundedCornerShape(12.dp))
+            .alpha(if (enabled) 1f else 0.7f)
+            .padding(vertical = 13.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        Text(label, color = Color(0xFF2A1608), style = MaterialTheme.typography.titleSmall)
+    }
+}
+
+// ─────────────────────────── Bracket ───────────────────────────
+
+/**
+ * Bracket geometry, in dp. [BRACKET_METRICS] feeds the shared layout math
+ * (TournamentBracket, the Kotlin port of packages/shared/src/bracket.ts), so
+ * Android and web place every card the same way — the numbers below are just
+ * the mobile sizing of the same shape.
+ */
+private val CARD_H = 60.dp
+private val CARD_GAP = 14.dp
+private val COL_W = 168.dp
+private val COL_GAP = 30.dp
+private val ROUND_HEADER_H = 26.dp
+private val ROUND_HEADER_GAP = 10.dp
+private val BRACKET_METRICS = TournamentBracket.Metrics(cardH = CARD_H.value, gap = CARD_GAP.value)
+
+private fun columnX(roundIndex: Int) = (COL_W + COL_GAP) * roundIndex
+
+/**
+ * The bracket, drawn the way an esports bracket is drawn: a named header over
+ * each round column, one card per match with a row per competitor, and elbow
+ * connectors running from each match into the one it feeds.
+ *
+ * WHY POSITIONS ARE COMPUTED, NOT FLOWED. A winners bracket halves every
+ * round, so a plain column of evenly-spaced cards would very nearly work. The
+ * losers bracket does not: a "drop" round (where the winners bracket's fresh
+ * losers enter) has the SAME match count as the round before it. Feeding is
+ * therefore derived from the ratio of adjacent column sizes and every card is
+ * placed at the midpoint of the matches that feed it — see
+ * TournamentBracket.layoutBracket.
+ *
+ * NO SCORE COLUMN. Real esports brackets show a series score (2-1); our slots
+ * are a single game, replayed only on a draw, so a score here would be
+ * invented. The winner's row gets a check instead.
+ */
 @Composable
 private fun BracketSection(t: TournamentDetailDto, onWatchReplay: (String) -> Unit) {
-    val rounds = t.bracket.entries.sortedBy { it.key.toIntOrNull() ?: 0 }
-    val maxRound = rounds.maxOfOrNull { it.key.toIntOrNull() ?: 0 } ?: 0
-    val entryNames = t.entries.associateBy({ it.id }, { it.user.username })
+    val matches = t.bracket.values.flatten()
+    val doubleElim = t.format == "DOUBLE_ELIM"
+    val sections = remember(matches, doubleElim) { TournamentBracket.sections(matches, doubleElim) }
+    val entryById = remember(t.entries) { t.entries.associateBy { it.id } }
+    // Swiss / round-robin rounds are re-paired every round — their columns
+    // aren't a tree, so drawing feeder lines between them would assert a
+    // relationship that doesn't exist.
+    val elimination = t.format == "SINGLE_ELIM" || doubleElim
 
     Text(
         "BRACKET",
@@ -361,19 +690,134 @@ private fun BracketSection(t: TournamentDetailDto, onWatchReplay: (String) -> Un
         style = MaterialTheme.typography.labelMedium,
         modifier = Modifier.padding(top = 24.dp, bottom = 12.dp)
     )
-    Row(modifier = Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-        rounds.forEach { (roundKey, matches) ->
-            val roundNum = roundKey.toIntOrNull() ?: 0
-            Column(modifier = Modifier.width(184.dp)) {
-                Text(
-                    roundName(roundNum, maxRound),
-                    color = Color(0xFFF4D886),
-                    style = MaterialTheme.typography.labelMedium,
-                    modifier = Modifier.padding(bottom = 8.dp)
-                )
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    matches.sortedBy { it.slot }.forEach { m ->
-                        MatchCard(m, roundNum == maxRound, entryNames, onWatchReplay)
+
+    sections.forEach { section ->
+        BracketSectionView(
+            section = section,
+            entryById = entryById,
+            myEntryId = t.myEntry?.id,
+            doubleElim = doubleElim,
+            connectors = elimination
+        )
+    }
+
+    // The final slot's replay, once it is actually decided and linked to a
+    // real Match row (a live slot carries a matchId too, hence the done-check).
+    val finalMatch = sections.lastOrNull()
+        ?.let { s -> s.matchesByRound[s.rounds.lastOrNull()] }
+        ?.lastOrNull { it.status == "done" && it.matchId != null }
+    if (finalMatch?.matchId != null) {
+        Text(
+            "▶ WATCH FINAL REPLAY",
+            color = Color(0xFFF4D886),
+            style = MaterialTheme.typography.labelSmall,
+            modifier = Modifier
+                .padding(top = 12.dp)
+                .clickable { onWatchReplay(finalMatch.matchId) }
+        )
+    }
+}
+
+/** One sub-bracket (winners / losers / grand final), or the whole tree for a
+ *  single-elimination Cup. Horizontally scrollable — a 16-player round 1 is
+ *  far wider than a phone. */
+@Composable
+private fun BracketSectionView(
+    section: TournamentBracket.Section,
+    entryById: Map<String, TournamentEntryDto>,
+    myEntryId: String?,
+    doubleElim: Boolean,
+    connectors: Boolean
+) {
+    val sizes = section.rounds.map { (section.matchesByRound[it] ?: emptyList()).size }
+    val layout = remember(sizes) { TournamentBracket.layoutBracket(sizes, BRACKET_METRICS) }
+    val bodyH = TournamentBracket.bracketHeight(layout, BRACKET_METRICS).dp
+    val totalW = COL_W * section.rounds.size + COL_GAP * (section.rounds.size - 1).coerceAtLeast(0)
+
+    Column(modifier = Modifier.padding(bottom = 18.dp)) {
+        section.title?.let { title ->
+            Text(
+                title.uppercase(),
+                color = Color(0xFFF4D886),
+                style = MaterialTheme.typography.labelMedium,
+                letterSpacing = 0.7.sp,
+                modifier = Modifier.padding(bottom = 10.dp)
+            )
+        }
+        Box(modifier = Modifier.horizontalScroll(rememberScrollState())) {
+            Box(modifier = Modifier.width(totalW).height(ROUND_HEADER_H + ROUND_HEADER_GAP + bodyH)) {
+                // Round headers.
+                section.rounds.forEachIndexed { ri, round ->
+                    Box(
+                        modifier = Modifier
+                            .offset(x = columnX(ri))
+                            .width(COL_W)
+                            .height(ROUND_HEADER_H)
+                            .background(Color(0x0DFFFFFF), RoundedCornerShape(8.dp))
+                            .border(1.dp, Color(0x24E8B84B), RoundedCornerShape(8.dp)),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            TournamentBracket.roundLabel(round, section.rounds, doubleElim),
+                            color = Color(0xFFE7DCC2),
+                            style = MaterialTheme.typography.labelSmall,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.padding(horizontal = 8.dp)
+                        )
+                    }
+                }
+
+                // Elbow connectors, UNDER the cards: a horizontal stub out of
+                // each match's right edge, a vertical to its parent's centre
+                // line, then a horizontal into the parent.
+                if (connectors) {
+                    Canvas(
+                        modifier = Modifier
+                            .offset(y = ROUND_HEADER_H + ROUND_HEADER_GAP)
+                            .width(totalW)
+                            .height(bodyH)
+                    ) {
+                        val stroke = 1.5.dp.toPx()
+                        val cardHpx = CARD_H.toPx()
+                        val colWpx = COL_W.toPx()
+                        val colGapPx = COL_GAP.toPx()
+                        // Alpha .42, not .28 — the elbows were near-invisible
+                        // against the dark board at the lower value.
+                        val line = Color(0x6BE8B84B)
+
+                        for (r in 1 until section.rounds.size) {
+                            val size = sizes[r]
+                            val prevSize = sizes[r - 1]
+                            val parentX = (colWpx + colGapPx) * r
+                            val childRight = (colWpx + colGapPx) * (r - 1) + colWpx
+                            val midX = childRight + colGapPx / 2f
+                            for (i in 0 until size) {
+                                val parentY = (layout.getOrNull(r)?.getOrNull(i) ?: 0f).dp.toPx() + cardHpx / 2f
+                                for (f in TournamentBracket.feedersFor(i, size, prevSize)) {
+                                    val childTop = layout.getOrNull(r - 1)?.getOrNull(f) ?: continue
+                                    val childY = childTop.dp.toPx() + cardHpx / 2f
+                                    drawLine(line, Offset(childRight, childY), Offset(midX, childY), stroke)
+                                    drawLine(line, Offset(midX, childY), Offset(midX, parentY), stroke)
+                                    drawLine(line, Offset(midX, parentY), Offset(parentX, parentY), stroke)
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // Match cards.
+                section.rounds.forEachIndexed { ri, round ->
+                    (section.matchesByRound[round] ?: emptyList()).forEachIndexed { mi, m ->
+                        BracketMatchCard(
+                            m = m,
+                            entryById = entryById,
+                            myEntryId = myEntryId,
+                            modifier = Modifier.offset(
+                                x = columnX(ri),
+                                y = ROUND_HEADER_H + ROUND_HEADER_GAP + (layout.getOrNull(ri)?.getOrNull(mi) ?: 0f).dp
+                            )
+                        )
                     }
                 }
             }
@@ -382,41 +826,104 @@ private fun BracketSection(t: TournamentDetailDto, onWatchReplay: (String) -> Un
 }
 
 @Composable
-private fun MatchCard(m: TournamentMatchDto, isFinal: Boolean, entryNames: Map<String, String>, onWatchReplay: (String) -> Unit) {
-    val aName = m.redEntryId?.let { entryNames[it] } ?: "—"
-    val bName = m.blueEntryId?.let { entryNames[it] } ?: "—"
-    val aWon = m.winnerEntryId != null && m.winnerEntryId == m.redEntryId
-    val bWon = m.winnerEntryId != null && m.winnerEntryId == m.blueEntryId
-    val canWatchFinal = isFinal && m.matchId != null
+private fun BracketMatchCard(
+    m: TournamentMatchDto,
+    entryById: Map<String, TournamentEntryDto>,
+    myEntryId: String?,
+    modifier: Modifier = Modifier
+) {
+    val red = m.redEntryId?.let { entryById[it] }
+    val blue = m.blueEntryId?.let { entryById[it] }
+    // An empty side is a BYE only on a slot that RESOLVED with one competitor;
+    // an unresolved slot's empty side is still waiting on its feeder — TBD.
+    val bye = TournamentBracket.isBye(m)
+    val decided = TournamentBracket.isDecided(m)
+    val live = TournamentBracket.isLive(m)
+    val mine = myEntryId != null && (m.redEntryId == myEntryId || m.blueEntryId == myEntryId)
+    val shape = RoundedCornerShape(10.dp)
 
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable(enabled = canWatchFinal) { m.matchId?.let(onWatchReplay) }
-            .background(Color(0xCC1B1030), RoundedCornerShape(12.dp))
-            .border(1.dp, Color(0x24E8B84B), RoundedCornerShape(12.dp))
-            .padding(horizontal = 11.dp, vertical = 9.dp)
+    Box(
+        modifier = modifier
+            .width(COL_W)
+            .height(CARD_H)
+            .background(Color(0xCC1B1030), shape)
+            .border(if (mine) 1.5.dp else 1.dp, if (mine) Gold else Color(0x24E8B84B), shape)
     ) {
-        Text(
-            aName,
-            color = if (aWon) Color(0xFFF4D886) else Ink,
-            style = MaterialTheme.typography.bodySmall,
-            maxLines = 1
-        )
-        Box(Modifier.fillMaxWidth().height(1.dp).padding(vertical = 6.dp).background(Color(0x1AE8B84B)))
-        Text(
-            bName,
-            color = if (bWon) Color(0xFFF4D886) else Ink,
-            style = MaterialTheme.typography.bodySmall,
-            maxLines = 1
-        )
-        if (canWatchFinal) {
-            Text(
-                "▶ WATCH FINAL REPLAY",
-                color = Color(0xFFF4D886),
-                style = MaterialTheme.typography.labelSmall,
-                modifier = Modifier.padding(top = 8.dp).fillMaxWidth(),
+        Column(modifier = Modifier.fillMaxSize()) {
+            CompetitorRow(
+                entry = red,
+                isWinner = decided && m.winnerEntryId == m.redEntryId,
+                isBye = bye && red == null,
+                isMe = myEntryId != null && m.redEntryId == myEntryId,
+                decided = decided,
+                modifier = Modifier.weight(1f)
             )
+            Box(Modifier.fillMaxWidth().height(1.dp).background(Color(0x1FE8B84B)))
+            CompetitorRow(
+                entry = blue,
+                isWinner = decided && m.winnerEntryId == m.blueEntryId,
+                isBye = bye && blue == null,
+                isMe = myEntryId != null && m.blueEntryId == myEntryId,
+                decided = decided,
+                modifier = Modifier.weight(1f)
+            )
+        }
+        if (live) {
+            Box(
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .background(Color(0xE6A83744), RoundedCornerShape(topEnd = 9.dp, bottomStart = 7.dp))
+                    .padding(horizontal = 6.dp, vertical = 2.dp)
+            ) {
+                Text("LIVE", color = Color(0xFFFFE8EC), style = MaterialTheme.typography.labelSmall, letterSpacing = 0.6.sp)
+            }
+        }
+    }
+}
+
+/** One competitor line of a match card. Before a result both rows read
+ *  neutral; after it the winner is lifted and the loser dimmed — the single
+ *  strongest signal in a bracket. */
+@Composable
+private fun CompetitorRow(
+    entry: TournamentEntryDto?,
+    isWinner: Boolean,
+    isBye: Boolean,
+    isMe: Boolean,
+    decided: Boolean,
+    modifier: Modifier = Modifier
+) {
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .alpha(if (decided && !isWinner) 0.5f else 1f)
+            .background(if (isWinner) Color(0x242F8F5B) else Color.Transparent)
+            .padding(horizontal = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(5.dp)
+    ) {
+        if (entry == null) {
+            Text(
+                if (isBye) "BYE" else "TBD",
+                color = Ink2,
+                style = MaterialTheme.typography.labelSmall
+            )
+        } else {
+            AvatarView(avatarUrl = entry.user.avatarUrl, size = 16.dp, ring = false)
+            Text(
+                entry.user.username,
+                color = if (isWinner) Color(0xFFA9F0C4) else Color(0xFFF2E9D2),
+                style = MaterialTheme.typography.labelSmall,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f, fill = false)
+            )
+            if (isMe) {
+                Text("YOU", color = Gold, style = MaterialTheme.typography.labelSmall, letterSpacing = 0.5.sp)
+            }
+            if (isWinner) {
+                Text("✓", color = Color(0xFF7EE6A4), style = MaterialTheme.typography.labelMedium)
+            }
         }
     }
 }
@@ -458,13 +965,6 @@ private fun formatName(format: String): String = when (format) {
     "SWISS" -> "Swiss"
     "ROUND_ROBIN" -> "Round robin"
     else -> format
-}
-
-private fun roundName(round: Int, maxRound: Int): String = when (maxRound - round) {
-    0 -> "Final"
-    1 -> "Semifinal"
-    2 -> "Quarterfinal"
-    else -> "Round $round"
 }
 
 private fun startsLabel(t: TournamentDetailDto): String {

@@ -61,6 +61,32 @@ export type TournamentMatch = {
   winnerEntryId: string | null;
   status: string; // "pending" | "ready" | "done"
   resolvedAt: string | null;
+  /** Non-null while this slot is being played right now (ready-check auto-start). */
+  matchId: string | null;
+  redReadyAt: string | null;
+  blueReadyAt: string | null;
+  readyDeadlineAt: string | null;
+};
+
+/**
+ * The signed-in player's current playable slot, or null. Served both by
+ * GET /api/tournaments/:id (so the page is right on a cold load) and pushed on
+ * EV.tournamentMatchState — identical shape, so one renderer handles both.
+ */
+export type TournamentMyMatch = {
+  tournamentId: string;
+  tmId: string;
+  round: number;
+  bracket: string;
+  roundLabel: string;
+  opponent: { userId: string; username: string; tag: string; avatarUrl: string | null; frameId: string | null } | null;
+  iAmReady: boolean;
+  opponentReady: boolean;
+  /** ISO. Non-null once EITHER player has readied — the no-show countdown. */
+  deadlineAt: string | null;
+  /** Non-null once the match is live; the player should be on the board. */
+  matchId: string | null;
+  yourColor: "red" | "blue";
 };
 
 /** GET /api/tournaments/:id — the Tournament row plus entries/bracket/myEntry. */
@@ -78,7 +104,22 @@ export type TournamentDetail = {
   entries: TournamentEntry[];
   bracket: Record<string, TournamentMatch[]>;
   myEntry: { id: string; seed: number | null; eliminated: boolean; placement: number | null } | null;
+  myMatch: TournamentMyMatch | null;
 };
+
+/** Whole seconds left on a ready deadline, floored at 0. */
+export function secondsUntil(iso: string | null): number {
+  if (!iso) return 0;
+  const ms = new Date(iso).getTime() - Date.now();
+  return Number.isNaN(ms) ? 0 : Math.max(0, Math.floor(ms / 1000));
+}
+
+/** "4:07" / "0:38" — a countdown, not a clock time. */
+export function formatCountdown(totalSeconds: number): string {
+  const m = Math.floor(totalSeconds / 60);
+  const s = totalSeconds % 60;
+  return `${m}:${String(s).padStart(2, "0")}`;
+}
 
 export const FORMAT_LABEL: Record<TournamentFormat, string> = {
   SINGLE_ELIM: "Single Elimination",

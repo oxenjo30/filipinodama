@@ -43,6 +43,10 @@ const createBody = z
     // SWISS ONLY: the number of Swiss rounds. Optional — Start computes
     // ceil(log2(n)) when left unset. Ignored (but harmless) for other formats.
     rounds: z.number().int().min(1).max(20).optional().nullable(),
+    // READY CHECK (V1.5): seconds a player has to press Ready once their
+    // OPPONENT has, before forfeiting the slot. 1 minute .. 1 hour; the schema
+    // default (600 = 10 min) applies when the client omits it.
+    readyWindowSec: z.number().int().min(60).max(3600).default(600),
   })
   .superRefine((b, ctx) => {
     if (!SUPPORTED_FORMATS.has(b.format)) {
@@ -181,6 +185,7 @@ export async function adminTournamentsRoutes(app: FastifyInstance) {
           matchMode: b.matchMode,
           startsAt: b.startsAt ? new Date(b.startsAt) : null,
           rounds: b.format === "SWISS" ? (b.rounds ?? null) : null,
+          readyWindowSec: b.readyWindowSec,
           createdById: actorId,
         },
       });
@@ -229,6 +234,7 @@ export async function adminTournamentsRoutes(app: FastifyInstance) {
           matchMode: b.matchMode,
           startsAt: b.startsAt ? new Date(b.startsAt) : null,
           rounds: b.format === "SWISS" ? (b.rounds ?? null) : null,
+          readyWindowSec: b.readyWindowSec,
         },
       });
       await audit(tx, {
