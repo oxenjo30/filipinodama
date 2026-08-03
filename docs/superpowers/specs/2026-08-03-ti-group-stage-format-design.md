@@ -443,8 +443,15 @@ distributed in full.
 
 ## Still open
 
-- **B5 — scheduling and notifications.** Unbuilt. Two absent players still produce an
-  unresolvable fixture, and nothing tells a player their forfeit clock is running.
+- **B5 — partly closed.** The organiser start timer (`Tournament.startWindowSec`, null =
+  off) now starts a fixture's clock from the moment it becomes playable rather than from
+  a player's Ready, so **two absent players no longer block a round** — the deadline
+  expires and the better seed advances. What remains unbuilt is *notification*: nothing
+  tells a player their clock is running, because there is no push infrastructure. A
+  player who never opens the app can still be forfeited without warning, which is the
+  argument for setting a generous start window (hours, not minutes) on a casual cup.
+- **No scheduled match times.** Fixtures still have no appointment; the timer bounds how
+  long one can sit, it does not tell players when to be there.
 - **Bo3.** This is a Bo1 implementation throughout.
 - **Collusion in the final group round.** All fixtures in a round are live
   simultaneously, but nothing forces them to be *played* simultaneously, so a pair can
