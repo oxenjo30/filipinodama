@@ -23,6 +23,7 @@ type NotifData = {
   avatarUrl?: string | null;
   status?: "accepted" | "declined";
   ticketId?: string;
+  tournamentId?: string;
 };
 
 /** A support ticket notification (staff reply or resolution) carries a ticketId to deep-link to. */
@@ -41,6 +42,17 @@ type Notif = {
 };
 
 /** A friend-request notification carries a real friend-request id to act on. */
+/**
+ * Every tournament notification carries a tournamentId and deep-links to that
+ * cup. Matched by PREFIX rather than a fixed list: the server adds tournament
+ * types as the format grows (ready clock, match ready, forfeit, group cut,
+ * result), and a list here would silently fall back to a generic bell with no
+ * tap-through for each new one.
+ */
+function isTournamentType(type: NotifType): boolean {
+  return type.startsWith("tournament_");
+}
+
 function isFriendType(type: NotifType): boolean {
   return type.includes("friend");
 }
@@ -76,6 +88,8 @@ const GROUP_LABELS: Array<{ key: "today" | "yesterday" | "earlier"; label: strin
 /** Icon + wrapper gradient per notification type, matching the prototype. */
 function styleFor(type: NotifType): { icon: string; bg: string } {
   if (isFriendType(type)) return { icon: "👥", bg: "linear-gradient(160deg,#5a3a8c,#3a2568)" };
+  // Gold, matching the tournament surfaces elsewhere in the app.
+  if (isTournamentType(type)) return { icon: "🏅", bg: "linear-gradient(160deg,#c99a2e,#8a6410)" };
   switch (type) {
     case "achievement":
       return { icon: "🏆", bg: "linear-gradient(160deg,#c99a2e,#8a6410)" };
@@ -402,11 +416,17 @@ export function NotificationsMenu({ open, onClose, onUnreadChange }: Notificatio
                     // A support ticket reply/resolution deep-links to that
                     // ticket's thread in Contact > My Tickets.
                     const ticketId = isSupportTicketType(n.type) ? d.ticketId : undefined;
+                    // A tournament notification is usually acted on — "ready up
+                    // or forfeit" is useless if it doesn't take you there.
+                    const tournamentId = isTournamentType(n.type) ? d.tournamentId : undefined;
                     const handleClick = () => {
                       markRead(n.id);
                       if (ticketId) {
                         onClose();
                         navigate(`/contact?tab=tickets&ticket=${ticketId}`);
+                      } else if (tournamentId) {
+                        onClose();
+                        navigate(`/tournaments/${tournamentId}`);
                       }
                     };
                     return (

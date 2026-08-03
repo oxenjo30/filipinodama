@@ -28,6 +28,7 @@
 import type { PrismaClient, Prisma } from "@prisma/client";
 import { err, ApiError } from "../lib/errors.js";
 import { audit } from "../lib/audit.js";
+import { notifyGroupCut, notifyFinalPlacements, notifyFixtureReady } from "../lib/tournament-notify.js";
 import { chargeEntryFeeTx, refundEntryFeeTx, payPrizeTx } from "../economy/tournament-ledger.js";
 import {
   seedPairings,
@@ -57,6 +58,7 @@ import {
   recoverGroupDoubleElim,
   computeGroupDoubleElimPlacements,
   groupShapeOf,
+  type CreatedFixture,
 } from "./tournament-groups.js";
 
 type Tx = Prisma.TransactionClient;
@@ -797,7 +799,12 @@ export async function reportResult(
   const slot = await db.tournamentMatch.findUnique({ where: { id: tmId } });
   if (!slot || slot.tournamentId !== tournamentId) throw err.notFound("NO_TOURNAMENT_MATCH", "Tournament match slot not found");
 
-  return db.$transaction(async (tx) => {
+  // Filled inside the transaction, sent after it commits — a failed
+  // notification must never roll back a reported result.
+  let cutOutcomes: Array<{ entryId: string; groupPlacement: number; bracket: "upper" | "lower" | "out" }> = [];
+  let newFixtures: CreatedFixture[] = [];
+
+  const settled = await db.$transaction(async (tx) => {
     if (tournament.format === "ROUND_ROBIN" || tournament.format === "SWISS") {
       await resolveRoundRobinSlot(tx, tmId, winnerEntryId, opts.matchId ?? null);
     } else if (tournament.format === "GROUP_DOUBLE_ELIM") {
@@ -837,8 +844,8 @@ export async function reportResult(
       // Generate the next group round, then — if that was the last one — cut the
       // field and seed the playoff bracket. Both are no-ops until their round is
       // genuinely complete, and both are idempotent.
-      await maybeAdvanceGroupStage(tx, tournamentId, shape, after.round);
-      await maybeStartPlayoffs(tx, tournamentId, shape);
+      newFixtures = await maybeAdvanceGroupStage(tx, tournamentId, shape, after.round);
+      cutOutcomes = await maybeStartPlayoffs(tx, tournamentId, shape);
     }
 
     if (opts.actorId) {
@@ -855,6 +862,13 @@ export async function reportResult(
 
     return after;
   });
+
+  // The group stage just ended: tell everyone whether they are through, and to
+  // which side of the bracket. Empty for every other report.
+  await notifyFixtureReady(newFixtures);
+  await notifyGroupCut(tournamentId, cutOutcomes);
+
+  return settled;
 }
 
 /**
@@ -1101,7 +1115,7 @@ export async function completeTournament(db: Db, tournamentId: string, actorId: 
   }
 
   try {
-    return await db.$transaction(async (tx) => {
+    const result = await db.$transaction(async (tx) => {
       // FIRST STEP: guarded status flip.
       const flip = await tx.tournament.updateMany({ where: { id: tournamentId, status: "RUNNING" }, data: { status: "COMPLETED", completedAt: new Date() } });
       if (flip.count === 0) throw new Error("ALREADY_TERMINAL");
@@ -1180,8 +1194,16 @@ export async function completeTournament(db: Db, tournamentId: string, actorId: 
       // read championEntryId/runnerUpEntryId) plus the general placements/payout.
       const championEntryId = placements.find((p) => p.placement === 1)?.entryId ?? null;
       const runnerUpEntryId = placements.find((p) => p.placement === 2)?.entryId ?? null;
-      return { championEntryId, runnerUpEntryId, payout: split, placements };
+      return { championEntryId, runnerUpEntryId, payout: split, placements, paidOut };
     });
+
+    // AFTER the payout transaction has COMMITTED. Everyone learns how they
+    // finished, and anyone paid learns what they won — a gold balance moving
+    // with no explanation is indistinguishable from a bug. Best-effort by
+    // construction: notifyFinalPlacements swallows its own errors, so a bell
+    // failure can never unwind a prize that has already been paid.
+    await notifyFinalPlacements(tournamentId, result.placements, result.paidOut);
+    return result;
   } catch (e) {
     if (e instanceof Error && e.message === "ALREADY_TERMINAL") throw err.conflict("ALREADY_TERMINAL", "Tournament is already terminal");
     if (e instanceof ApiError) throw e;
