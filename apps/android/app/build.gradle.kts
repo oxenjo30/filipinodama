@@ -313,8 +313,43 @@ android {
         // delay is in the OS's signal rather than ours; the banner now clears on
         // proof of life — our own server answering an HTTP request or a socket
         // CONNECT. Also in 52: the Play dock loadout slot gets its real icon.
-        versionCode = 52
-        versionName = "0.1.52"
+        // 53 = FIRST MINIFIED RELEASE + the audit's Tier-2/Tier-3 batches +
+        // Tournaments V1.5.
+        //
+        // ⚠ R8 IS ON FROM THIS BUILD. Every prior release shipped unminified, on
+        // the belief that enabling it needed keep rules "or the release crashes".
+        // That was never tested — proguard-rules.pro was an empty placeholder.
+        // Most dependencies ship their own consumer rules; the real gaps
+        // (socket.io's reflective plumbing, our generated kotlinx.serialization
+        // members) are now covered explicitly. Result: 19.05 MB -> ~11.4 MB, zero
+        // readable ui/ class names, and a mapping.txt so production crashes are
+        // finally triageable. SMOKE-TEST THIS BUILD ON A DEVICE before rollout —
+        // an R8 misconfiguration fails at RUNTIME, not at build time.
+        //
+        // Also in 53:
+        //  - CHAT: profanity filtering on in-match and private-room chat (the two
+        //    stranger-facing surfaces had none, while DM/guild always did), and
+        //    per-message reporting on both, with the excerpt snapshotted SERVER-
+        //    side so evidence is never a string the accuser typed.
+        //  - CHAT SPEED: sending now renders instantly. Match/room use a nonce
+        //    the server echoes back; DM/guild append-then-swap on the POST. You
+        //    no longer wait a full round trip to see your own message.
+        //  - Resigning an offline game can no longer be undone by the AI's
+        //    in-flight search (which also double-recorded the result).
+        //  - Splash is bounded to 8s (was up to ~90s on a blackholing network).
+        //  - A failed socket emit is no longer silently treated as success —
+        //    moves and resigns used to vanish and lose you the match on the clock.
+        //  - A lost move echo now self-heals via a 7s resync watchdog instead of
+        //    locking the board forever.
+        //  - Rotation no longer resets an offline game or double-records it.
+        //  - Presence crash fix: a reshaped server payload could throw on the
+        //    Engine.IO thread and kill the process on every client at once.
+        //  - Forms survive rotation (passwords deliberately NOT persisted).
+        //  - Flow collection is lifecycle-aware; presence is ref-counted.
+        //  - org.json:20090211 (two CVEs) excluded; taskAffinity hardened.
+        //  - Tournaments V1.5: ready-check, auto-start, auto-advance, bracket.
+        versionCode = 53
+        versionName = "0.1.53"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 

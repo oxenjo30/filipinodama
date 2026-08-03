@@ -25,7 +25,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -113,7 +113,7 @@ fun TournamentDetailScreen(
     var busy by remember { mutableStateOf(false) }
     var actionMessage by remember { mutableStateOf<String?>(null) }
 
-    val live by TournamentLiveRepository.state.collectAsState()
+    val live by TournamentLiveRepository.state.collectAsStateWithLifecycle()
 
     suspend fun load() {
         when (val result = TournamentsRepository.detail(tournamentId)) {
