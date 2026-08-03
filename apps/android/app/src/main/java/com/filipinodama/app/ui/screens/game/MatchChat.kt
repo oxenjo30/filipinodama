@@ -13,7 +13,6 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
-import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyRow
@@ -153,10 +152,16 @@ fun MatchChat(
         // chips never reached their .clickable. A Column stacks the picker ABOVE
         // the Row with no overlap (mirrors web's popover-above-composer layout),
         // so each has its own hit area.
-        // BUG FIX 2 (keyboard hid the composer): OnlineMatchScreen is a non-tab
-        // game route with no other IME handling, so imePadding lifts the whole
-        // composer (picker + input + send) above the soft keyboard.
-        Column(modifier = Modifier.imePadding()) {
+        // KEYBOARD HANDLING LIVES ON THE SCREEN ROOT, NOT HERE. This Column used
+        // to carry Modifier.imePadding(); it was inert. OnlineMatchScreen's root
+        // applies windowInsetsPadding(systemBars union ime) (screenInsetsWithIme)
+        // and windowInsetsPadding CONSUMES the insets it applies, so `ime` is
+        // already zero by the time it reaches here. What actually lifts the
+        // composer is the root's scroll VIEWPORT shrinking when the IME opens,
+        // which makes Compose scroll the focused field back into view. Do not
+        // re-add imePadding() here — it cannot work, and it hides where the real
+        // fix lives.
+        Column {
             if (pickerOpen) {
                 ChatPicker(
                     onEmote = { pick(emote = it) },

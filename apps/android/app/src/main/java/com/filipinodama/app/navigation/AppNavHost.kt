@@ -211,6 +211,37 @@ fun AppNavHost() {
     }
 
     /**
+     * The single way out of the private-room / online-match flow — the back
+     * gesture, the header chevron and the lobby's Leave button all route here.
+     *
+     * popBackStack(MODE_SELECT, inclusive = false) is a NO-OP that merely
+     * returns false when MODE_SELECT is not on the back stack (Navigation logs
+     * "Ignoring popBackStack to route ... as it was not found on the current
+     * back stack"). Every App Links entry lands exactly there: a cold invite
+     * resolves Splash -> goClearingStack(HOME) and then pushes the room, so the
+     * stack is [graph, HOME, ROOM] with no MODE_SELECT anywhere. Back and the
+     * chevron therefore did NOTHING, and the only way out of a deep-linked room
+     * was swiping the app away from Recents.
+     *
+     * Deliberately NOT "fall back to goClearingStack(MODE_SELECT)": that wipes
+     * the stack, throws away the HOME the player actually came from, and
+     * silently changes where Exit lands on the ordinary Home -> Quick Match
+     * path — the app's most common online flow, which has no MODE_SELECT on the
+     * stack either and would therefore be re-routed too. Popping ONE level
+     * instead preserves whatever is genuinely underneath (HOME for a cold
+     * invite, LOGIN for a signed-out one) and only clears to HOME in the
+     * otherwise-unrecoverable case where the room is the sole entry.
+     *
+     * The MODE_SELECT pop is attempted FIRST so the normal Play-tab path
+     * (MODE_SELECT -> room) keeps behaving exactly as it does today.
+     */
+    fun exitRoomFlow() {
+        if (navController.popBackStack(AppDestinations.MODE_SELECT, inclusive = false)) return
+        if (navController.popBackStack()) return
+        goClearingStack(AppDestinations.HOME)
+    }
+
+    /**
      * Android App Links hand-off (DeepLinks.kt): a tapped
      * https://filipinodama.com/rooms?code=X opens the app here.
      *
@@ -591,6 +622,9 @@ fun AppNavHost() {
             composable(AppDestinations.PROFILE) {
                 ProfileScreen(
                     onSignedOut = {
+                        // Signing out abandons any invite parked for post-auth
+                        // resume — otherwise it survives into the NEXT sign-in.
+                        DeepLinks.clearAfterAuth()
                         goClearingStack(AppDestinations.LOGIN)
                     },
                     // Guest tapping "Sign In / Create Account" on the Overview:
@@ -630,7 +664,11 @@ fun AppNavHost() {
                 SettingsScreen(
                     onBack = { navController.popBackStack() },
                     onOpenLoadout = { goToLoadout() },
-                    onSignedOut = { goClearingStack(AppDestinations.LOGIN) },
+                    onSignedOut = {
+                        // Same as Profile's sign-out: drop any parked invite.
+                        DeepLinks.clearAfterAuth()
+                        goClearingStack(AppDestinations.LOGIN)
+                    },
                     onOpenLegal = { doc -> navController.navigate(AppDestinations.legal(doc)) },
                     onOpenTickets = { navController.navigate(AppDestinations.MY_TICKETS) }
                 )
@@ -897,7 +935,7 @@ fun AppNavHost() {
                     OnlineMatchScreen(
                         mode = mode,
                         onExit = {
-                            navController.popBackStack(AppDestinations.MODE_SELECT, inclusive = false)
+                            exitRoomFlow()
                         },
                         onWatchReplay = { matchId -> navController.navigate(AppDestinations.replay(matchId)) },
                         onOpenSettings = { navController.navigate(AppDestinations.SETTINGS) }
@@ -919,13 +957,13 @@ fun AppNavHost() {
                 BackHandler(enabled = true) {
                     RoomRepository.leave()
                     RoomRepository.reset()
-                    navController.popBackStack(AppDestinations.MODE_SELECT, inclusive = false)
+                    exitRoomFlow()
                 }
                 PrivateRoomScreen(
                     deepLinkCode = code,
                     deepLinkSpectate = spectateFlag,
                     onBack = {
-                        navController.popBackStack(AppDestinations.MODE_SELECT, inclusive = false)
+                        exitRoomFlow()
                     },
                     onRequireSignIn = {
                         // Remember the room so signing in RETURNS here. Joining
