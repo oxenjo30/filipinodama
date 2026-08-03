@@ -348,8 +348,38 @@ android {
         //  - Flow collection is lifecycle-aware; presence is ref-counted.
         //  - org.json:20090211 (two CVEs) excluded; taskAffinity hardened.
         //  - Tournaments V1.5: ready-check, auto-start, auto-advance, bracket.
-        versionCode = 53
-        versionName = "0.1.53"
+        // 54 = ANDROID APP LINKS. A private-room invite is shared as
+        // "https://filipinodama.com/rooms?code=XXXX" (PrivateRoomScreen), and
+        // until now tapping one always opened a BROWSER — the one cross-platform
+        // flow the app itself generates links for. The Digital Asset Links
+        // statement is now live at /.well-known/assetlinks.json (served from
+        // apps/web/public) and the app declares the matching autoVerify
+        // intent-filter, so an invite opens the room directly. DeepLinks.kt
+        // parses the code out and AppNavHost replays it once Splash has settled;
+        // signing in from an invite RETURNS to that room instead of dumping the
+        // player on Home.
+        //
+        // Scoped narrowly on purpose: pathPrefix="/rooms" ONLY, so /blog, /learn,
+        // /legal and /damath keep opening in the browser; and the apex host only
+        // — www 301s to it and serves no assetlinks of its own, and a single
+        // unverifiable host inside an autoVerify filter fails verification for
+        // the WHOLE app on Android 12+.
+        //
+        // MainActivity is launchMode="singleTask" for this: singleTop is not
+        // enough because taskAffinity="" (the v52 task-hijack mitigation) leaves
+        // an incoming VIEW intent no task to be matched into, so it started a
+        // second MainActivity — two nav hosts over one socket.
+        //
+        // NOTE the fingerprint in assetlinks.json is the PLAY APP SIGNING cert,
+        // so verification only succeeds once Play has re-signed the build. A
+        // sideloaded copy of this bundle reports "filipinodama.com: none" —
+        // expected, not a regression.
+        //
+        // Nothing else changed in the app for 54: the tournament-notification
+        // work merged alongside it is server + web only and reaches Android
+        // through the API, not through this bundle.
+        versionCode = 54
+        versionName = "0.1.54"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
