@@ -30,11 +30,28 @@
         android:roundIcon="@mipmap/ic_launcher"
         android:supportsRtl="true"
         android:theme="@style/Theme.FilipinoDama">
+        <!--
+          windowSoftInputMode="adjustResize" below is REQUIRED, not cosmetic.
+          Without it the system chose PAN for this window: opening the keyboard
+          slid the WHOLE window up by the keyboard's height (measured on a
+          1080x1600 display — the wordmark jumped from y=415 to y=49) instead of
+          reflowing. Panning means the layout never learns the keyboard exists:
+          WindowInsets.ime stays empty, so imePadding() / screenInsetsWithIme()
+          are inert and verticalScroll has nothing extra to scroll. The Sign in
+          button was simply pushed off the bottom, unreachable by any amount of
+          scrolling (owner report, v53: "I can't press the button to sign" —
+          reproduced, six scroll attempts never brought it back).
+
+          With adjustResize the window shrinks to the space above the keyboard,
+          WindowInsets.ime reports its real height, and the form screens'
+          union(systemBars, ime) padding + verticalScroll keep the CTA on screen.
+        -->
         <activity
             android:name=".MainActivity"
             android:exported="true"
             android:label="@string/app_name"
             android:launchMode="singleTask"
+            android:windowSoftInputMode="adjustResize"
             android:theme="@style/Theme.FilipinoDama">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />

@@ -24,6 +24,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
@@ -31,6 +32,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.filipinodama.app.data.AuthRepository
 import com.filipinodama.app.data.AuthResult
+import com.filipinodama.app.ui.components.screenInsetsWithIme
 import com.filipinodama.app.ui.theme.Bg
 import com.filipinodama.app.ui.theme.Gold
 import com.filipinodama.app.ui.theme.GoldLt
@@ -54,6 +56,7 @@ fun ForgotPasswordScreen(onBack: () -> Unit) {
     var busy by remember { mutableStateOf(false) }
     var done by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
+    val focusManager = LocalFocusManager.current
 
     fun submit() {
         val cleanEmail = email.trim().lowercase()
@@ -65,7 +68,12 @@ fun ForgotPasswordScreen(onBack: () -> Unit) {
         busy = true
         scope.launch {
             when (val result = AuthRepository.forgotPassword(cleanEmail)) {
-                is AuthResult.Success -> done = true
+                is AuthResult.Success -> {
+                    // The form is replaced by the "check your email" panel; without
+                    // this the keyboard stays up covering that confirmation.
+                    focusManager.clearFocus(force = true)
+                    done = true
+                }
                 is AuthResult.Failure -> error = result.message
             }
             busy = false
@@ -76,6 +84,11 @@ fun ForgotPasswordScreen(onBack: () -> Unit) {
         modifier = Modifier
             .fillMaxSize()
             .background(Bg)
+            // This screen had NO inset handling at all: no status-bar padding
+            // (so its back button tucked under the notch — AppNavHost zeroes
+            // insets for pushed routes, see ScreenInsets.kt) and no IME padding
+            // either. Same form treatment as Login and Create Account.
+            .screenInsetsWithIme()
             .verticalScroll(rememberScrollState())
             .padding(horizontal = 28.dp, vertical = 16.dp)
     ) {

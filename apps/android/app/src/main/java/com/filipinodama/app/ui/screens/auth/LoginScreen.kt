@@ -9,7 +9,6 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
@@ -31,6 +30,7 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -38,7 +38,7 @@ import com.filipinodama.app.R
 import com.filipinodama.app.data.AuthRepository
 import com.filipinodama.app.data.AuthResult
 import com.filipinodama.app.data.GoogleSignInHelper
-import com.filipinodama.app.ui.components.screenInsets
+import com.filipinodama.app.ui.components.screenInsetsWithIme
 import com.filipinodama.app.ui.theme.Bg
 import com.filipinodama.app.ui.theme.Gold
 import com.filipinodama.app.ui.theme.GoldLt
@@ -73,7 +73,24 @@ fun LoginScreen(
     var googleBusy by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
+    val focusManager = LocalFocusManager.current
     val providers by AuthRepository.providers.collectAsStateWithLifecycle()
+
+    /**
+     * Single exit point for a successful sign-in.
+     *
+     * Compose keeps the IME open across a navigation while a text field still
+     * holds focus, so the keyboard followed the player out of Login and sat on
+     * top of Home (owner report, v53 — reproduced from the home screen with the
+     * keyboard still up). Dropping focus first hides it. Routed through one
+     * function because there are THREE success paths — password, Google
+     * credential, and Google-token-exchange — and fixing only the one that was
+     * reported would leave the other two still doing it.
+     */
+    fun finishSignedIn() {
+        focusManager.clearFocus(force = true)
+        onLoginSuccess()
+    }
 
     // Mirrors the web's authStore.bootstrap() -> refreshProviders() call: fetch
     // provider availability once when the auth shell is entered, so the Google
@@ -89,12 +106,12 @@ fun LoginScreen(
             when (val outcome = resolveCredentialResult(credentialResult)) {
                 is GoogleSignInOutcome.Cancelled -> { /* user backed out — no error, no navigation */ }
                 is GoogleSignInOutcome.Error -> error = outcome.message
-                is GoogleSignInOutcome.SignedIn -> onLoginSuccess()
+                is GoogleSignInOutcome.SignedIn -> finishSignedIn()
                 null -> {
                     // Credential Manager succeeded — exchange the ID token with our server.
                     val idToken = (credentialResult as GoogleSignInHelper.Result.Success).idToken
                     when (val serverOutcome = resolveServerAuthResult(AuthRepository.googleSignIn(idToken))) {
-                        is GoogleSignInOutcome.SignedIn -> onLoginSuccess()
+                        is GoogleSignInOutcome.SignedIn -> finishSignedIn()
                         is GoogleSignInOutcome.Error -> error = serverOutcome.message
                         is GoogleSignInOutcome.Cancelled -> { /* unreachable from a server result */ }
                     }
@@ -124,7 +141,7 @@ fun LoginScreen(
                     // shows "Save password?" (the fill-only tree API never triggers
                     // save on its own). No-op if autofill is off / no session.
                     commitAutofillOnAuthSuccess(context)
-                    onLoginSuccess()
+                    finishSignedIn()
                 }
                 is AuthResult.Failure -> error = result.message
             }
@@ -136,10 +153,14 @@ fun LoginScreen(
         modifier = Modifier
             .fillMaxSize()
             .background(Bg)
-            .screenInsets()
+            // Form insets, applied BEFORE the scroll so the viewport actually
+            // shrinks when the keyboard opens. The old
+            // screenInsets() → verticalScroll → imePadding() ordering left the
+            // Sign in button under the keyboard with no way to reach it (owner
+            // report, v53) — see screenInsetsWithIme's kdoc for why.
+            .screenInsetsWithIme()
             .verticalScroll(rememberScrollState())
-            .padding(horizontal = 28.dp, vertical = 24.dp)
-            .imePadding(),
+            .padding(horizontal = 28.dp, vertical = 24.dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
         // Back chevron — only when there's somewhere to return to (a gated
