@@ -211,6 +211,44 @@ fun AppNavHost() {
     }
 
     /**
+     * Android App Links hand-off (DeepLinks.kt): a tapped
+     * https://filipinodama.com/rooms?code=X opens the app here.
+     *
+     * Deliberately gated on having left SPLASH. Splash resolves the session and
+     * then goClearingStack()s to Home/Login/Onboarding, which would wipe a room
+     * route navigated any earlier — so the link is parked in DeepLinks and
+     * replayed once the entry destination has settled. Keying the effect on the
+     * current route means a cold start (link arrives first, Splash finishes
+     * later) and a warm one (onNewIntent while Home is showing) both land.
+     *
+     * consume() BEFORE navigate() so a recomposition can't double-navigate and
+     * stack two copies of the room.
+     */
+    val pendingDeepLink by DeepLinks.pending.collectAsStateWithLifecycle()
+    LaunchedEffect(pendingDeepLink, currentDestination?.route) {
+        val route = pendingDeepLink ?: return@LaunchedEffect
+        val current = currentDestination?.route ?: return@LaunchedEffect
+        if (current == AppDestinations.SPLASH) return@LaunchedEffect
+        DeepLinks.consume()
+        navController.navigate(route) {
+            // Pop any room we're already sitting on FIRST, so a second invite
+            // lands on a genuinely fresh destination.
+            //
+            // launchSingleTop alone is not safe here: it can reuse the entry
+            // that is already on top, and PrivateRoomScreen auto-joins from
+            // LaunchedEffect(deepLinkCode) — with a reused entry holding the
+            // OLD code that key never changes, the effect never re-fires, and
+            // tapping a friend's invite while already in a room would leave you
+            // sitting in the previous one. Popping guarantees new arguments.
+            //
+            // popUpTo on a route that is not in the stack is a no-op, so the
+            // ordinary "not in a room yet" path is unaffected.
+            popUpTo(AppDestinations.PRIVATE_ROOM) { inclusive = true }
+            launchSingleTop = true
+        }
+    }
+
+    /**
      * ALL ONLINE matchmaking requires a REAL account. The realtime socket
      * rejects unauthenticated connections (server io.use guard), so a guest /
      * anonymous user who starts an online search would just sit in "Finding
