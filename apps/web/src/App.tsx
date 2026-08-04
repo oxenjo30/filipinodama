@@ -35,6 +35,7 @@ import { TraditionalGamesPage } from "./features/culture/TraditionalGamesPage";
 import { AuthPage } from "./features/auth/AuthPage";
 import { ResetPasswordPage } from "./features/auth/ResetPasswordPage";
 import { VerifyEmailPage } from "./features/auth/VerifyEmailPage";
+import { VerifyEmailChangePage } from "./features/auth/VerifyEmailChangePage";
 import { OnlineMatchPage } from "./features/play/OnlineMatchPage";
 import { MessagesPage } from "./features/messages/MessagesPage";
 import { PrivateRoomPage } from "./features/rooms/PrivateRoomPage";
@@ -132,6 +133,7 @@ export function AppRoutes() {
             links 404. */}
         <Route path="/reset" element={<ResetPasswordPage />} />
         <Route path="/verify" element={<VerifyEmailPage />} />
+        <Route path="/verify-email-change" element={<VerifyEmailChangePage />} />
 
         <Route element={<AppLayout />}>
           {/* ── fully built ── */}

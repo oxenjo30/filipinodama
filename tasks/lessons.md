@@ -672,3 +672,34 @@
   log line and, where the user is blocked, a timeout that surfaces something. A
   branch that silently declines to act is indistinguishable from a hang, and it
   is exactly the branch you will need evidence for later.
+
+## 2026-08-04 - Request-schema validation can make your good error messages unreachable
+
+- Mistake: `currentPassword: z.string().min(1).optional()` on POST
+  /api/auth/email/change. Leaving the password box empty produced "String must
+  contain at least 1 character(s)" instead of the service's own "Enter your
+  current password to change your email." The service had well-designed codes —
+  PASSWORD_REQUIRED, PASSWORD_NOT_SET, BAD_PASSWORD — and two of the three could
+  not be reached by any client.
+- Cause: clients send a form field VERBATIM; an untouched input is `""`, not an
+  omitted key. The schema rejected that one layer above the code that had a good
+  answer for it. The whole test file called the service functions directly, so
+  every test bypassed the schema and all of them passed.
+- Rule: for any endpoint whose refusals are part of the UX, add at least one test
+  that goes through the ROUTE with the exact payload the client sends — including
+  empty strings and nulls. `.min(1)` on an optional field is a smell: decide
+  whether blank means absent, and normalise it where the coded errors live.
+
+## 2026-08-04 - "It compiles and the tests pass" says nothing about whether a user can reach it
+
+- Mistake: shipped the Android account card wired into `SettingsScreen`, which is
+  a real destination reachable from exactly one legacy entry point. The settings
+  surface players actually use is the Profile "Settings" TAB, rendered inline by
+  `ProfileSettingsTab`. The feature was invisible, and both typecheck and the
+  server suite were green.
+- Cause: verified the code existed, not that the screen rendering it is the one
+  users open. Also placed a header ("Email") directly above a row with the same
+  label, which reads as a duplicate — only obvious once rendered.
+- Rule: for any user-facing surface, run it and navigate to it the way a player
+  would before calling it done. Grep for which route actually renders a screen
+  before adding to that screen; two files can both plausibly be "settings".

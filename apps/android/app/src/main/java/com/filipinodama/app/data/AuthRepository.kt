@@ -83,22 +83,33 @@ object AuthRepository {
      */
     suspend fun refreshMe(): AuthUser? {
         return try {
-            var user = authApi.me().let { if (it.ok) it.data?.user else null }
+            var me = authApi.me().let { if (it.ok) it.data else null }
+            var user = me?.user
             if (user == null) {
                 // No session from the access cookie — try the refresh cookie
                 // before giving up. A refresh failure (no/expired fd_refresh) is
                 // fine: /me stays null and the user is truly logged out.
                 val refreshed = runCatching { authApi.refresh().ok }.getOrDefault(false)
                 if (refreshed) {
-                    user = authApi.me().let { if (it.ok) it.data?.user else null }
+                    me = authApi.me().let { if (it.ok) it.data else null }
+                    user = me?.user
                 }
             }
-            _state.value = _state.value.copy(user = user, checked = true)
+            _state.value = _state.value.copy(user = user, account = me?.account, checked = true)
             user
         } catch (e: Exception) {
-            _state.value = _state.value.copy(user = null, checked = true)
+            _state.value = _state.value.copy(user = null, account = null, checked = true)
             null
         }
+    }
+
+    /**
+     * Re-read only the `account` block. Never touches `user`: this runs straight
+     * after a successful sign-in, and a transient failure here must not undo it.
+     */
+    private suspend fun refreshAccountOnly() {
+        runCatching { authApi.me() }
+            .onSuccess { env -> if (env.ok) env.data?.account?.let { _state.value = _state.value.copy(account = it) } }
     }
 
     suspend fun login(email: String, password: String): AuthResult {
@@ -108,6 +119,11 @@ object AuthRepository {
         }.fold(
             onSuccess = { user ->
                 _state.value = _state.value.copy(user = user, checked = true)
+                // `account` is only returned by /me. Fetch JUST that — calling
+                // refreshMe() here was a regression: its catch sets
+                // user = null, so one flaky request right after a successful
+                // login signed the player straight back out.
+                refreshAccountOnly()
                 AuthResult.Success(user)
             },
             onFailure = { toResult(it) }
@@ -124,6 +140,11 @@ object AuthRepository {
             onSuccess = { user ->
                 justRegistered = true
                 _state.value = _state.value.copy(user = user, checked = true)
+                // `account` is only returned by /me. Fetch JUST that — calling
+                // refreshMe() here was a regression: its catch sets
+                // user = null, so one flaky request right after a successful
+                // login signed the player straight back out.
+                refreshAccountOnly()
                 AuthResult.Success(user)
             },
             onFailure = { toResult(it) }
@@ -138,6 +159,11 @@ object AuthRepository {
             onSuccess = { user ->
                 ApiClient.secureStore.putBoolean(SecureStore.KEY_IS_GUEST, true)
                 _state.value = _state.value.copy(user = user, checked = true)
+                // `account` is only returned by /me. Fetch JUST that — calling
+                // refreshMe() here was a regression: its catch sets
+                // user = null, so one flaky request right after a successful
+                // login signed the player straight back out.
+                refreshAccountOnly()
                 AuthResult.Success(user)
             },
             onFailure = { toResult(it) }
@@ -175,7 +201,35 @@ object AuthRepository {
         }.fold(
             onSuccess = { user ->
                 _state.value = _state.value.copy(user = user, checked = true)
+                // `account` is only returned by /me. Fetch JUST that — calling
+                // refreshMe() here was a regression: its catch sets
+                // user = null, so one flaky request right after a successful
+                // login signed the player straight back out.
+                refreshAccountOnly()
                 AuthResult.Success(user)
+            },
+            onFailure = { toResult(it) }
+        )
+    }
+
+    /**
+     * Stage an email change. Nothing moves until the owner of the NEW address
+     * clicks the emailed link — so a "success" here means "check your inbox",
+     * not "your email changed". [currentPassword] is null for OAuth-only
+     * accounts; the server decides whether one is required.
+     */
+    suspend fun requestEmailChange(newEmail: String, currentPassword: String?): AuthResult {
+        return runCatching {
+            val envelope = authApi.changeEmail(EmailChangeRequest(newEmail = newEmail, currentPassword = currentPassword))
+            unwrap(envelope) { it }
+            Unit
+        }.fold(
+            onSuccess = {
+                // account-only re-read. refreshMe() here was a live bug: its
+                // catch sets user = null, so one flaky request right after a
+                // successful email-change request signed the player out.
+                refreshAccountOnly()
+                AuthResult.Success(null)
             },
             onFailure = { toResult(it) }
         )
@@ -256,6 +310,13 @@ fun throwableToAuthFailure(throwable: Throwable): AuthResult.Failure {
 
 data class AuthSessionState(
     val user: AuthUser? = null,
+    /**
+     * Account/security state as the SERVER computed it (email, linked
+     * providers, pending email change, and whether unlinking is safe). Comes
+     * down on the same /api/auth/me call as [user], so this screen shows the
+     * same thing on Android and web wherever the player signs in.
+     */
+    val account: AccountState? = null,
     /** True once the first refreshMe() call has completed (success or failure). */
     val checked: Boolean = false
 )
