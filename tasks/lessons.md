@@ -574,3 +574,48 @@
   with realistic MID-FLIGHT data (some rounds done, some pending, some empty) —
   this was invisible in a typecheck, a unit test, and a fully-finished bracket,
   and took one screenshot to spot.
+
+## 2026-08-04 - Fixing delivery is not fixing teardown (same multi-socket bug, twice)
+
+- Mistake: PR #109 fixed "no bot ever fills my ranked queue" by making mmFound
+  DELIVERY multi-socket-safe (emit to the presence ROOM, not `sockets[0]`). It
+  shipped and the owner hit the exact same symptom the next morning. The
+  teardown half of the very same assumption was still there: the `disconnect`
+  handler called `leaveAllQueues(userId)` unconditionally, so ANY of the user's
+  other sockets closing dequeued them and cancelled the pending bot-fill while
+  they sat connected on another socket watching "Finding opponent".
+- Cause: the first fix corrected ONE call site of a wrong premise ("a user has
+  one socket") instead of sweeping every place that premise was encoded. The
+  premise was even written down in that PR's own comment — nine sockets on one
+  account — and still wasn't applied to the disconnect path four lines below.
+- Rule: when a root cause is a false ASSUMPTION rather than a typo, grep every
+  site that encodes it before calling it fixed. For "user identity vs socket
+  identity" that means: delivery, teardown, cleanup-on-disconnect, and any
+  `leave*`/`cancel*` keyed by userId. Ask "what else believed this?"
+
+## 2026-08-04 - Silent early-returns make a bug undiagnosable
+
+- Mistake: burned an investigation cycle on production logs that showed
+  literally nothing. The bot-fill path had THREE silent `return`s (no live
+  socket / no seeded bots / stood-down queue re-check) and no log on the happy
+  path, so nine hours of logs could not distinguish "the job fired and worked"
+  from "the job was never scheduled" from "the poller never claimed it".
+- Cause: the module only logged in catch blocks. Every non-exception failure
+  mode — which is all of them here — was invisible.
+- Rule: on a scheduled/deferred path nobody is watching (jobs, sweepers,
+  fallbacks), log the STAND-DOWN reasons, not just the exceptions. A branch that
+  silently declines to do the thing is exactly the branch you'll need evidence
+  for at 3am.
+
+## 2026-08-04 - Read what a log line actually MEANS before trusting the pattern
+
+- Mistake: a subagent reported "a web client is establishing a brand-new socket
+  every 60.0s, sustained" as the smoking gun for reconnect churn. It wasn't —
+  `[conn]` is re-emitted by a 60s `setInterval` RTT re-sampler in
+  realtime/index.ts, so one healthy long-lived socket prints it every minute by
+  design. The metronome regularity was the tell.
+- Cause: pattern-matched on the log's shape without reading the code that emits
+  it. Suspiciously exact periodicity in "organic" traffic is almost always a
+  timer, not user behaviour.
+- Rule: before building a theory on a log line, open the emit site. And treat
+  perfectly-regular intervals as machine-generated until proven otherwise.
