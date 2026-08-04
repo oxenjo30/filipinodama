@@ -40,6 +40,20 @@ model User {
   resetToken      String?   @unique // password-reset token (nullable)
   resetExpires    DateTime?
 
+  // Email CHANGE, staged. The new address is parked here and only replaces
+  // `email` once the owner of the NEW address clicks the emailed link. Writing
+  // `email` straight away would let a hijacked session move the account to an
+  // address the real owner does not control, and would silently rewire OAuth
+  // sign-in, since findOrCreateOAuthUser links a Google identity BY EMAIL.
+  //
+  // pendingEmail is deliberately NOT @unique: two people may stage the same
+  // address, and a unique constraint would turn that into a 500 at request
+  // time. Whoever confirms first wins; the loser's confirm then fails the
+  // same EMAIL_TAKEN check that registration uses.
+  pendingEmail        String?
+  pendingEmailToken   String?   @unique
+  pendingEmailExpires DateTime?
+
   // economy caches (authoritative source = LedgerEntry aggregates)
   trophies Int    @default(0) // new players start at Squire (0); earn trophies to climb
   gold     Int    @default(0)
@@ -129,7 +143,13 @@ model OAuthAccount {
   userId     String
   user       User   @relation(fields: [userId], references: [id], onDelete: Cascade)
 
+  // One identity per provider per user. Without this a stolen session could
+  // silently attach a SECOND Google identity to an account that already had one
+  // — invisible in Settings, which only renders "connected or not" — and it also
+  // broke the last-sign-in-method guard, which counted ROWS rather than distinct
+  // providers.
   @@unique([provider, providerId])
+  @@unique([userId, provider])
 }
 
 model Session {

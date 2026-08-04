@@ -264,8 +264,20 @@ fun SettingsScreen(
             // mockup's 4 groups above so the mockup's own order/structure is
             // reproduced exactly at the top; see the file kdoc). Nothing here
             // is invented mockup copy — every row traces to a real endpoint.
+            // Email + Google, above the read-only rows: these are the things
+            // players actually come to Settings to change. Renders nothing for a
+            // guest (the server reports canChangeEmail=false), so the read-only
+            // "Guest account" row below still covers that case.
+            AccountSecurityCard()
+
             SectionCard(title = "Account") {
-                SettingsInfoRow(label = "Email", value = me.email ?: if (me.isGuest) "Guest account" else "—")
+                // Kept for the cases AccountSecurityCard cannot cover — a guest,
+                // or any state where the server sent no `account` block. Removing
+                // it outright left those users with no email/account-type row at
+                // all (review finding).
+                if (me.isGuest) {
+                    SettingsInfoRow(label = "Email", value = "Guest account")
+                }
                 SettingsInfoRow(label = "Player Tag", value = "${me.username}${me.tag}")
                 NavRow(label = "Board & Piece Skin", sub = "Equip what you bring to the board", onClick = onOpenLoadout)
                 NavRow(label = "Blocked Players", sub = "Manage players you've blocked", onClick = { blockedOpen = true })
