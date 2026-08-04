@@ -2,7 +2,7 @@ package com.filipinodama.app.data
 
 import kotlinx.serialization.Serializable
 import retrofit2.http.Body
-import retrofit2.http.DELETE
+import retrofit2.http.HTTP
 import retrofit2.http.GET
 import retrofit2.http.POST
 
@@ -66,10 +66,12 @@ interface AuthApi {
      * address differs from their account email silently gets a SECOND account.
      */
     @POST("api/auth/link/google")
-    suspend fun linkGoogle(@Body body: GoogleTokenRequest): ApiEnvelope<LinkResponse>
+    suspend fun linkGoogle(@Body body: LinkGoogleRequest): ApiEnvelope<LinkResponse>
 
-    @DELETE("api/auth/link/google")
-    suspend fun unlinkGoogle(): ApiEnvelope<UnlinkResponse>
+    // @HTTP(hasBody) rather than @DELETE: unlinking is a credential change and
+    // carries the re-auth password, and Retrofit's @DELETE cannot take a body.
+    @HTTP(method = "DELETE", path = "api/auth/link/google", hasBody = true)
+    suspend fun unlinkGoogle(@Body body: UnlinkRequest): ApiEnvelope<UnlinkResponse>
 
     @POST("api/auth/oauth/google/token")
     suspend fun googleToken(@Body request: GoogleTokenRequest): ApiEnvelope<AuthUserResponse>
@@ -142,8 +144,16 @@ data class AccountState(
     /** New address awaiting confirmation, or null. */
     val pendingEmail: String? = null,
     val canUnlink: Boolean = false,
+    /** Guests are refused server-side, so the button is not offered to them. */
+    val canLink: Boolean = false,
     val canChangeEmail: Boolean = false,
 )
+
+@Serializable
+data class LinkGoogleRequest(val idToken: String, val currentPassword: String? = null)
+
+@Serializable
+data class UnlinkRequest(val currentPassword: String? = null)
 
 @Serializable
 data class EmailChangeRequest(val newEmail: String, val currentPassword: String? = null)

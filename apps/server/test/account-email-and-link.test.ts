@@ -131,10 +131,10 @@ describe("google link / unlink", () => {
   it("links, and is idempotent when the same identity is re-linked", async () => {
     const u = await seedWithPassword("a@example.com");
 
-    const first = await linkOAuthAccount(prisma, u.id, "google", "google-sub-1");
+    const first = await linkOAuthAccount(prisma, u.id, "google", "google-sub-1", PASSWORD);
     expect(first.alreadyLinked).toBe(false);
 
-    const again = await linkOAuthAccount(prisma, u.id, "google", "google-sub-1");
+    const again = await linkOAuthAccount(prisma, u.id, "google", "google-sub-1", PASSWORD);
     expect(again.alreadyLinked).toBe(true);
 
     expect(await prisma.oAuthAccount.count({ where: { userId: u.id } })).toBe(1);
@@ -143,10 +143,10 @@ describe("google link / unlink", () => {
   it("refuses to re-point a Google identity already owned by someone else", async () => {
     const owner = await seedWithPassword("owner@example.com");
     const attacker = await seedWithPassword("attacker@example.com");
-    await linkOAuthAccount(prisma, owner.id, "google", "google-sub-shared");
+    await linkOAuthAccount(prisma, owner.id, "google", "google-sub-shared", PASSWORD);
 
     // This is account takeover, not linking.
-    await expect(linkOAuthAccount(prisma, attacker.id, "google", "google-sub-shared")).rejects.toThrow();
+    await expect(linkOAuthAccount(prisma, attacker.id, "google", "google-sub-shared", PASSWORD)).rejects.toThrow();
 
     const still = await prisma.oAuthAccount.findFirstOrThrow({ where: { providerId: "google-sub-shared" } });
     expect(still.userId).toBe(owner.id);
@@ -157,15 +157,35 @@ describe("google link / unlink", () => {
     // account to a victim who already had one — and Settings, which only renders
     // "connected or not", would look identical before and after.
     const u = await seedWithPassword("dup@example.com");
-    await linkOAuthAccount(prisma, u.id, "google", "google-sub-first");
+    await linkOAuthAccount(prisma, u.id, "google", "google-sub-first", PASSWORD);
 
-    await expect(linkOAuthAccount(prisma, u.id, "google", "google-sub-second")).rejects.toThrow();
+    await expect(linkOAuthAccount(prisma, u.id, "google", "google-sub-second", PASSWORD)).rejects.toThrow();
     expect(await prisma.oAuthAccount.count({ where: { userId: u.id } })).toBe(1);
   });
 
   it("refuses to link for a guest, who could never unlink or claim the identity", async () => {
     const g = await seedUser({ isGuest: true, email: null });
     await expect(linkOAuthAccount(prisma, g.id, "google", "google-sub-guest")).rejects.toThrow();
+  });
+
+  it("requires the current password to link — a stolen session alone must not mint a credential", async () => {
+    // Review finding: linking is STRICTLY more powerful than an email change
+    // (it creates an independent sign-in method) yet was the one with no
+    // re-auth, and resetPassword clears sessions but not OAuthAccount rows —
+    // so the victim's only self-service remedy could not evict the attacker.
+    const u = await seedWithPassword("reauth@example.com");
+
+    await expect(linkOAuthAccount(prisma, u.id, "google", "attacker-sub")).rejects.toThrow();
+    await expect(linkOAuthAccount(prisma, u.id, "google", "attacker-sub", "wrong")).rejects.toThrow();
+    expect(await prisma.oAuthAccount.count({ where: { userId: u.id } })).toBe(0);
+  });
+
+  it("requires the current password to UNLINK too", async () => {
+    const u = await seedWithPassword("reauth2@example.com");
+    await linkOAuthAccount(prisma, u.id, "google", "sub-x", PASSWORD);
+
+    await expect(unlinkOAuthAccount(prisma, u.id, "google")).rejects.toThrow();
+    expect(await prisma.oAuthAccount.count({ where: { userId: u.id } })).toBe(1);
   });
 
   it("refuses to unlink the LAST sign-in method (OAuth-only account)", async () => {
@@ -179,9 +199,9 @@ describe("google link / unlink", () => {
 
   it("allows unlinking when a password remains as a way back in", async () => {
     const u = await seedWithPassword("both@example.com");
-    await linkOAuthAccount(prisma, u.id, "google", "google-sub-3");
+    await linkOAuthAccount(prisma, u.id, "google", "google-sub-3", PASSWORD);
 
-    await unlinkOAuthAccount(prisma, u.id, "google");
+    await unlinkOAuthAccount(prisma, u.id, "google", PASSWORD);
     expect(await prisma.oAuthAccount.count({ where: { userId: u.id } })).toBe(0);
   });
 });
@@ -189,7 +209,7 @@ describe("google link / unlink", () => {
 describe("accountState — the shape both clients render from", () => {
   it("reports linkage, password and pending email so web and Android agree", async () => {
     const u = await seedWithPassword("state@example.com");
-    await linkOAuthAccount(prisma, u.id, "google", "google-sub-4");
+    await linkOAuthAccount(prisma, u.id, "google", "google-sub-4", PASSWORD);
     await requestEmailChange(prisma, u.id, "next@example.com", PASSWORD);
 
     const s = await accountState(prisma, u.id);

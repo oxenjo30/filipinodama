@@ -72,6 +72,10 @@ fun AccountSecurityCard() {
     // persisted through savedInstanceState, which would put a plaintext password
     // on disk. Losing it on rotation is the correct trade.
     var password by remember { mutableStateOf("") }
+    // Re-auth password for connect/disconnect, which the server now requires.
+    // Plain remember, never rememberSaveable — see the note on `password`.
+    var linkPassword by remember { mutableStateOf("") }
+    var askLinkPassword by remember { mutableStateOf(false) }
     var busy by remember { mutableStateOf(false) }
     var message by remember { mutableStateOf<String?>(null) }
     var error by remember { mutableStateOf<String?>(null) }
@@ -83,7 +87,17 @@ fun AccountSecurityCard() {
     // only the actions are gated.
     if (account == null) return
 
+    // Every other screen that renders a credential sets FLAG_SECURE; this one
+    // renders the current password and did not, so it leaked into screenshots,
+    // screen recordings and the Recents thumbnail.
+    if (expanded || askLinkPassword) {
+        com.filipinodama.app.ui.components.SecureScreen()
+    }
+
     val googleLinked = account.linkedProviders.contains("google")
+    // A guest cannot link (the server refuses) and has nothing to unlink, so the
+    // button must not be offered at all rather than failing on tap.
+    val isGuest = auth.user?.isGuest == true
 
     Column(
         modifier = Modifier.fillMaxWidth().background(Panel, RoundedCornerShape(14.dp)).padding(18.dp),
@@ -192,11 +206,15 @@ fun AccountSecurityCard() {
             }
             TextButton(
                 onClick = {
+                    // The server requires the current password for both
+                    // directions. Ask for it first rather than firing a call
+                    // that is going to be refused.
+                    if (account.hasPassword && linkPassword.isBlank()) { askLinkPassword = true; return@TextButton }
                     busy = true; error = null; message = null
                     scope.launch {
                         if (googleLinked) {
-                            when (val r = AuthRepository.unlinkGoogle()) {
-                                is AuthResult.Success -> message = "Google disconnected."
+                            when (val r = AuthRepository.unlinkGoogle(linkPassword.ifBlank { null })) {
+                                is AuthResult.Success -> { message = "Google disconnected."; linkPassword = ""; askLinkPassword = false }
                                 is AuthResult.Failure -> error = r.message
                             }
                         } else {
@@ -204,8 +222,8 @@ fun AccountSecurityCard() {
                             // only the endpoint differs (link, not find-or-create).
                             when (val cred = GoogleSignInHelper.requestIdToken(context, providers.googleClientId)) {
                                 is GoogleSignInHelper.Result.Success ->
-                                    when (val r = AuthRepository.linkGoogle(cred.idToken)) {
-                                        is AuthResult.Success -> message = "Google connected."
+                                    when (val r = AuthRepository.linkGoogle(cred.idToken, linkPassword.ifBlank { null })) {
+                                        is AuthResult.Success -> { message = "Google connected."; linkPassword = ""; askLinkPassword = false }
                                         is AuthResult.Failure -> error = r.message
                                     }
                                 is GoogleSignInHelper.Result.Cancelled -> { /* user backed out */ }
@@ -218,10 +236,28 @@ fun AccountSecurityCard() {
                 // The server refuses an unlink that would strand the player; the
                 // button is disabled to explain that BEFORE the tap rather than
                 // failing afterwards.
-                enabled = !busy && (!googleLinked || account.canUnlink)
+                enabled = !busy && providers.google && (if (googleLinked) account.canUnlink else account.canLink)
             ) {
                 Text(if (googleLinked) "Disconnect" else "Connect", color = if (googleLinked) Ink2 else GoldLt)
             }
+        }
+
+        if (askLinkPassword && account.hasPassword) {
+            OutlinedTextField(
+                value = linkPassword,
+                onValueChange = { linkPassword = it },
+                label = { Text("Current password") },
+                singleLine = true,
+                visualTransformation = PasswordVisualTransformation(),
+                keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = KeyboardType.Password),
+                colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = Gold, cursorColor = Gold),
+                modifier = Modifier.fillMaxWidth().padding(top = 6.dp)
+            )
+            Text(
+                "Confirm your password, then tap ${if (googleLinked) "Disconnect" else "Connect"} again.",
+                color = Ink2,
+                style = MaterialTheme.typography.labelSmall
+            )
         }
 
         if (googleLinked && !account.canUnlink) {

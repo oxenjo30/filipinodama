@@ -4,6 +4,7 @@ import { hashPassword, verifyPassword, opaqueToken, randomTag, newRefreshToken }
 import { err } from "../lib/errors.js";
 import { env } from "../config/env.js";
 import { sendEmail, verifyEmailHtml, resetEmailHtml, welcomeEmailHtml } from "../lib/email.js";
+import { redis } from "../realtime/store.js";
 
 const VERIFY_TTL_MS = 24 * 3600 * 1000;
 const RESET_TTL_MS = 60 * 60 * 1000;
@@ -283,6 +284,39 @@ export async function requestPasswordReset(prisma: PrismaClient, email: string) 
 
 const EMAIL_CHANGE_TTL_MS = 60 * 60 * 1000;
 
+const REAUTH_TTL_SEC = 5 * 60;
+const reauthKey = (userId: string) => `rt:reauth:${userId}`;
+
+/**
+ * Re-authentication marker for the WEB link flow.
+ *
+ * A password cannot travel through an OAuth redirect, so the browser proves
+ * itself first (POST /api/auth/reauth) and the marker is consumed when the
+ * redirect is started. Without it, a stolen session alone could mint a
+ * permanent new sign-in credential by connecting the attacker's Google account.
+ */
+export async function markReauthenticated(prisma: PrismaClient, userId: string, currentPassword?: string) {
+  const user = await prisma.user.findUniqueOrThrow({ where: { id: userId } });
+  if (user.isGuest) throw err.badRequest("GUEST_ACCOUNT", "Create an account first.");
+  if (user.passwordHash) {
+    if (!currentPassword) throw err.badRequest("PASSWORD_REQUIRED", "Enter your current password.");
+    if (!(await verifyPassword(currentPassword, user.passwordHash)))
+      throw err.badRequest("BAD_PASSWORD", "That password is incorrect.");
+  }
+  // An OAuth-only account has no password to check. It is still gated: the
+  // unlink guard refuses to remove its last provider, and linking a SECOND
+  // identity for the same provider is refused outright.
+  await redis.set(reauthKey(userId), "1", "EX", REAUTH_TTL_SEC);
+  return { ok: true };
+}
+
+/** Atomic GET+DEL so a marker is single-use, matching consumeState's pattern. */
+const CONSUME_REAUTH_LUA = `local v = redis.call('GET', KEYS[1]); if v then redis.call('DEL', KEYS[1]) end; return v`;
+export async function consumeReauth(userId: string): Promise<boolean> {
+  const v = (await redis.eval(CONSUME_REAUTH_LUA, 1, reauthKey(userId))) as string | null;
+  return v != null;
+}
+
 /**
  * Everything the account screens need to render identically on web and Android.
  *
@@ -318,6 +352,9 @@ export async function accountState(prisma: PrismaClient, userId: string) {
     // chooses the new address, so the attacker receives the proof. A stolen
     // session on a Google-signup account was a full takeover.
     canChangeEmail: !u.isGuest && hasPassword,
+    // Guests are refused by linkOAuthAccount, so neither client should offer
+    // Connect to them — a button that always fails is worse than no button.
+    canLink: !u.isGuest,
   };
 }
 
@@ -368,9 +405,21 @@ export async function requestEmailChange(
     data: { pendingEmail: newEmail, pendingEmailToken, pendingEmailExpires: new Date(Date.now() + EMAIL_CHANGE_TTL_MS) },
   });
   const link = `${env.WEB_ORIGIN}/verify-email-change?token=${pendingEmailToken}`;
-  // Sent to the NEW address ONLY — mailing the old one would prove nothing
-  // about who controls the new one.
+  // The CONFIRMATION goes to the new address only — mailing the old one would
+  // prove nothing about who controls the new one.
   await sendEmail(newEmail, "Confirm your new FilipinoDama Royal email", verifyEmailHtml(user.username, link), link);
+  // But the OLD address gets a heads-up, so a change the real owner did not
+  // start is visible to them while the one-hour link is still unconfirmed.
+  // Best-effort: a failure here must never abort a legitimate change.
+  if (user.email) {
+    await sendEmail(
+      user.email,
+      "Someone requested an email change on your FilipinoDama Royal account",
+      `<p>A request was made to move your account to <b>${newEmail}</b>.</p>
+       <p>If that was you, click the link we sent to the new address. <b>If it was not</b>,
+       change your password now — your current address stays active until the link is used.</p>`,
+    ).catch(() => {});
+  }
   return { pendingEmail: newEmail };
 }
 
@@ -391,17 +440,33 @@ export async function confirmEmailChange(prisma: PrismaClient, token: string) {
     throw err.conflict("EMAIL_TAKEN", "That email was claimed by another account. Try a different one.");
   }
 
-  await prisma.user.update({
-    where: { id: user.id },
-    data: {
-      email: user.pendingEmail,
-      // Confirmed by clicking a link sent to it — that IS the verification.
-      emailVerified: new Date(),
-      pendingEmail: null,
-      pendingEmailToken: null,
-      pendingEmailExpires: null,
-    },
-  });
+  try {
+    await prisma.user.update({
+      where: { id: user.id },
+      data: {
+        email: user.pendingEmail,
+        // Confirmed by clicking a link sent to it — that IS the verification.
+        emailVerified: new Date(),
+        pendingEmail: null,
+        pendingEmailToken: null,
+        pendingEmailExpires: null,
+      },
+    });
+  } catch (e) {
+    // The findUnique above is a TOCTOU window: two confirms for the same address
+    // can both pass it and the second hits User.email's unique constraint. Turn
+    // that into the same clean 409 the pre-check gives, and clear the dead
+    // staging row so the player is not left with a permanent "awaiting
+    // confirmation" banner they cannot dismiss.
+    if (typeof e === "object" && e !== null && (e as { code?: string }).code === "P2002") {
+      await prisma.user.update({
+        where: { id: user.id },
+        data: { pendingEmail: null, pendingEmailToken: null, pendingEmailExpires: null },
+      });
+      throw err.conflict("EMAIL_TAKEN", "That email was claimed by another account. Try a different one.");
+    }
+    throw e;
+  }
   return { email: user.pendingEmail };
 }
 
@@ -419,11 +484,26 @@ export async function linkOAuthAccount(
   userId: string,
   provider: string,
   providerId: string,
+  currentPassword?: string,
 ) {
   const me = await prisma.user.findUniqueOrThrow({
     where: { id: userId },
-    select: { isGuest: true, oauthAccounts: { select: { provider: true, providerId: true } } },
+    select: {
+      isGuest: true,
+      passwordHash: true,
+      oauthAccounts: { select: { provider: true, providerId: true } },
+    },
   });
+  // Re-authenticate, exactly as requestEmailChange does. Linking is STRICTLY
+  // more powerful than an email change: it mints an independent sign-in method,
+  // and resetPassword clears sessions but NOT OAuthAccount rows — so without
+  // this, a stolen session became permanent access that the victim's only
+  // self-service remedy could not revoke.
+  if (me.passwordHash) {
+    if (!currentPassword) throw err.badRequest("PASSWORD_REQUIRED", "Enter your current password to connect an account.");
+    if (!(await verifyPassword(currentPassword, me.passwordHash)))
+      throw err.badRequest("BAD_PASSWORD", "That password is incorrect.");
+  }
   // A guest has no account to attach an identity to, and linking one would burn
   // that Google identity forever: the guest can never become a real account, and
   // the identity can never be linked anywhere else.
@@ -452,11 +532,22 @@ export async function linkOAuthAccount(
 }
 
 /** Detach a provider, refusing anything that would leave no way back in. */
-export async function unlinkOAuthAccount(prisma: PrismaClient, userId: string, provider: string) {
+export async function unlinkOAuthAccount(
+  prisma: PrismaClient,
+  userId: string,
+  provider: string,
+  currentPassword?: string,
+) {
   const user = await prisma.user.findUniqueOrThrow({
     where: { id: userId },
     select: { passwordHash: true, oauthAccounts: { select: { provider: true } } },
   });
+  // Same re-auth as linking: removing a sign-in method is a credential change.
+  if (user.passwordHash) {
+    if (!currentPassword) throw err.badRequest("PASSWORD_REQUIRED", "Enter your current password to disconnect an account.");
+    if (!(await verifyPassword(currentPassword, user.passwordHash)))
+      throw err.badRequest("BAD_PASSWORD", "That password is incorrect.");
+  }
   // DISTINCT providers: the guard asks "would this leave you with no way in?",
   // which is a question about providers, not rows. Counting rows let a
   // passwordless account with two identities for one provider unlink itself into

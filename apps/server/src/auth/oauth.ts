@@ -257,7 +257,17 @@ export async function findOrCreateOAuthUser(p: OAuthProvider, profile: Profile):
     // would silently revive it. The address frees up when the purge job runs.
     if (byEmail?.deletedAt) throw err.unauthorized("ACCOUNT_DELETED", "This account has been deleted.");
     if (byEmail) {
-      await prisma.oAuthAccount.create({ data: { provider: p, providerId: profile.providerId, userId: byEmail.id } });
+      // Respect @@unique([userId, provider]): an account that already has an
+      // identity for this provider must not get a second row. Sign-in still
+      // succeeds — the existing link is what matters — it simply does not
+      // create a duplicate that would throw P2002 mid-login.
+      const already = await prisma.oAuthAccount.findFirst({
+        where: { userId: byEmail.id, provider: p },
+        select: { id: true },
+      });
+      if (!already) {
+        await prisma.oAuthAccount.create({ data: { provider: p, providerId: profile.providerId, userId: byEmail.id } });
+      }
       return byEmail;
     }
   }

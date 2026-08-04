@@ -19,6 +19,7 @@ export type AccountState = {
   pendingEmail: string | null;
   canUnlink: boolean;
   canChangeEmail: boolean;
+  canLink: boolean;
 };
 
 const CARD: React.CSSProperties = {
@@ -67,6 +68,7 @@ export function AccountSecuritySection({
   const [open, setOpen] = React.useState(false);
   const [newEmail, setNewEmail] = React.useState("");
   const [password, setPassword] = React.useState("");
+  const [linkPassword, setLinkPassword] = React.useState("");
   const [busy, setBusy] = React.useState(false);
   const [msg, setMsg] = React.useState<string | null>(null);
   const [error, setError] = React.useState<string | null>(null);
@@ -113,12 +115,23 @@ export function AccountSecuritySection({
     }
   }
 
-  function connectGoogle() {
-    // MUST be absolute against the API origin. A relative "/api/..." goes to the
-    // WEB origin, where the static host / Vite dev server just serves the SPA
-    // shell — the consent screen never opens and linking silently does nothing.
-    // api.base is the same VITE_API_URL every other call uses.
-    window.location.href = `${api.base}/api/auth/oauth/google?link=1`;
+  async function connectGoogle() {
+    setBusy(true);
+    setError(null);
+    setMsg(null);
+    try {
+      // Re-authenticate FIRST. A password cannot travel through an OAuth
+      // redirect, so the server takes it here and remembers for 5 minutes;
+      // ?link=1 refuses without that marker. Otherwise a stolen session alone
+      // could attach a new, permanent sign-in credential.
+      await api.post("/api/auth/reauth", account!.hasPassword ? { currentPassword: linkPassword } : {});
+      // Absolute against the API origin — a relative "/api/..." hits the WEB
+      // origin, where the static host just serves the SPA shell.
+      window.location.href = `${api.base}/api/auth/oauth/google?link=1`;
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Could not start connecting Google.");
+      setBusy(false);
+    }
   }
 
   async function disconnectGoogle() {
@@ -126,7 +139,7 @@ export function AccountSecuritySection({
     setError(null);
     setMsg(null);
     try {
-      await api.del("/api/auth/link/google");
+      await api.del("/api/auth/link/google", account!.hasPassword ? { currentPassword: linkPassword } : undefined);
       setMsg("Google disconnected.");
       onChanged();
     } catch (err) {
@@ -213,12 +226,22 @@ export function AccountSecuritySection({
             >
               Disconnect
             </button>
-          ) : (
+          ) : account.canLink ? (
             <button type="button" style={BTN} onClick={connectGoogle} disabled={busy}>
               Connect
             </button>
-          )}
+          ) : null}
         </div>
+        {account.hasPassword && (googleLinked ? account.canUnlink : account.canLink) && (
+          <input
+            style={INPUT}
+            type="password"
+            value={linkPassword}
+            placeholder="Current password"
+            onChange={(e) => setLinkPassword(e.target.value)}
+          />
+        )}
+
         {googleLinked && !account.canUnlink && (
           <span style={SUB}>Set a password first — Google is currently your only way to sign in.</span>
         )}

@@ -103,6 +103,15 @@ object AuthRepository {
         }
     }
 
+    /**
+     * Re-read only the `account` block. Never touches `user`: this runs straight
+     * after a successful sign-in, and a transient failure here must not undo it.
+     */
+    private suspend fun refreshAccountOnly() {
+        runCatching { authApi.me() }
+            .onSuccess { env -> if (env.ok) env.data?.account?.let { _state.value = _state.value.copy(account = it) } }
+    }
+
     suspend fun login(email: String, password: String): AuthResult {
         return runCatching {
             val envelope = authApi.login(LoginRequest(email = email, password = password))
@@ -110,9 +119,11 @@ object AuthRepository {
         }.fold(
             onSuccess = { user ->
                 _state.value = _state.value.copy(user = user, checked = true)
-                // `account` is only returned by /me — without this re-read the
-                // Settings card stays invisible until the app is restarted.
-                runCatching { refreshMe() }
+                // `account` is only returned by /me. Fetch JUST that — calling
+                // refreshMe() here was a regression: its catch sets
+                // user = null, so one flaky request right after a successful
+                // login signed the player straight back out.
+                refreshAccountOnly()
                 AuthResult.Success(user)
             },
             onFailure = { toResult(it) }
@@ -129,9 +140,11 @@ object AuthRepository {
             onSuccess = { user ->
                 justRegistered = true
                 _state.value = _state.value.copy(user = user, checked = true)
-                // `account` is only returned by /me — without this re-read the
-                // Settings card stays invisible until the app is restarted.
-                runCatching { refreshMe() }
+                // `account` is only returned by /me. Fetch JUST that — calling
+                // refreshMe() here was a regression: its catch sets
+                // user = null, so one flaky request right after a successful
+                // login signed the player straight back out.
+                refreshAccountOnly()
                 AuthResult.Success(user)
             },
             onFailure = { toResult(it) }
@@ -146,9 +159,11 @@ object AuthRepository {
             onSuccess = { user ->
                 ApiClient.secureStore.putBoolean(SecureStore.KEY_IS_GUEST, true)
                 _state.value = _state.value.copy(user = user, checked = true)
-                // `account` is only returned by /me — without this re-read the
-                // Settings card stays invisible until the app is restarted.
-                runCatching { refreshMe() }
+                // `account` is only returned by /me. Fetch JUST that — calling
+                // refreshMe() here was a regression: its catch sets
+                // user = null, so one flaky request right after a successful
+                // login signed the player straight back out.
+                refreshAccountOnly()
                 AuthResult.Success(user)
             },
             onFailure = { toResult(it) }
@@ -186,9 +201,11 @@ object AuthRepository {
         }.fold(
             onSuccess = { user ->
                 _state.value = _state.value.copy(user = user, checked = true)
-                // `account` is only returned by /me — without this re-read the
-                // Settings card stays invisible until the app is restarted.
-                runCatching { refreshMe() }
+                // `account` is only returned by /me. Fetch JUST that — calling
+                // refreshMe() here was a regression: its catch sets
+                // user = null, so one flaky request right after a successful
+                // login signed the player straight back out.
+                refreshAccountOnly()
                 AuthResult.Success(user)
             },
             onFailure = { toResult(it) }
@@ -226,9 +243,9 @@ object AuthRepository {
      * the Google address MATCHES the account email, so a player with a different
      * Gmail silently ended up with a second account.
      */
-    suspend fun linkGoogle(idToken: String): AuthResult {
+    suspend fun linkGoogle(idToken: String, currentPassword: String?): AuthResult {
         return runCatching {
-            val envelope = authApi.linkGoogle(GoogleTokenRequest(idToken = idToken))
+            val envelope = authApi.linkGoogle(LinkGoogleRequest(idToken = idToken, currentPassword = currentPassword))
             unwrap(envelope) { it }
         }.fold(
             onSuccess = { res ->
@@ -241,9 +258,9 @@ object AuthRepository {
         )
     }
 
-    suspend fun unlinkGoogle(): AuthResult {
+    suspend fun unlinkGoogle(currentPassword: String?): AuthResult {
         return runCatching {
-            val envelope = authApi.unlinkGoogle()
+            val envelope = authApi.unlinkGoogle(UnlinkRequest(currentPassword = currentPassword))
             unwrap(envelope) { it }
         }.fold(
             onSuccess = { res ->

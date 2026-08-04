@@ -33,6 +33,9 @@ const emailChangeSchema = z.object({
   currentPassword: z.string().min(1).max(200).optional(),
 });
 const emailConfirmSchema = z.object({ token: z.string().min(1).max(200) });
+const linkSchema = z.object({ idToken: z.string().min(1), currentPassword: z.string().min(1).max(200).optional() });
+const unlinkSchema = z.object({ currentPassword: z.string().min(1).max(200).optional() }).optional();
+const reauthSchema = z.object({ currentPassword: z.string().min(1).max(200).optional() });
 
 const accessMs = ttlToMs(env.JWT_ACCESS_TTL);
 const refreshMs = ttlToMs(env.JWT_REFRESH_TTL);
@@ -175,21 +178,31 @@ export async function authRoutes(app: FastifyInstance) {
     return ok(res);
   });
 
+  // Proves the browser still holds the password, for the ~5 minutes it takes to
+  // bounce through Google's consent screen. The redirect flow cannot carry a
+  // password, so this is how it gets the same gate the native route applies
+  // inline. See svc.markReauthenticated / consumeReauth.
+  app.post("/reauth", { preHandler: requireAuth, ...strictLimit(10, "15 minutes") }, async (req) => {
+    const { currentPassword } = reauthSchema.parse(req.body ?? {});
+    return ok(await svc.markReauthenticated(prisma, req.userId!, currentPassword));
+  });
+
   // ── Account: connect / disconnect Google ────────────────────────────────────
   // Same ID-token verification as native sign-in, but bound to the CURRENT
   // session instead of find-or-create. Without it, a player whose Google address
   // differs from their account email silently ends up with a SECOND account.
   app.post("/link/google", { preHandler: requireAuth, ...strictLimit(10, "15 minutes") }, async (req) => {
     if (!isConfigured("google")) throw new ApiError(503, "NOT_CONFIGURED", "Google sign-in is not configured yet");
-    const { idToken } = googleTokenSchema.parse(req.body);
+    const { idToken, currentPassword } = linkSchema.parse(req.body);
     const profile = await verifyGoogleIdToken(idToken);
-    const res = await svc.linkOAuthAccount(prisma, req.userId!, "google", profile.providerId);
+    const res = await svc.linkOAuthAccount(prisma, req.userId!, "google", profile.providerId, currentPassword);
     await audit(prisma, { actorId: req.userId!, action: "auth.oauth.linked", targetType: "user", targetId: req.userId!, after: { provider: "google" } });
     return ok({ ...res, account: await svc.accountState(prisma, req.userId!) });
   });
 
   app.delete("/link/google", { preHandler: requireAuth, ...strictLimit(10, "15 minutes") }, async (req) => {
-    const res = await svc.unlinkOAuthAccount(prisma, req.userId!, "google");
+    const body = unlinkSchema.parse(req.body);
+    const res = await svc.unlinkOAuthAccount(prisma, req.userId!, "google", body?.currentPassword);
     await audit(prisma, { actorId: req.userId!, action: "auth.oauth.unlinked", targetType: "user", targetId: req.userId!, before: { provider: "google" } });
     return ok({ ...res, account: await svc.accountState(prisma, req.userId!) });
   });
@@ -207,9 +220,35 @@ export async function authRoutes(app: FastifyInstance) {
     // ?link=1 from a SIGNED-IN player means "attach this provider to my
     // account", not "sign me in". The intent is stored server-side in the state
     // entry, never in a query param, so the browser cannot pick whose account
-    // gets linked. Anonymous callers just get the normal sign-in flow.
+    // gets linked.
     await attachUser(req);
-    const linkUserId = req.query.link === "1" && req.userId ? req.userId : undefined;
+    let linkUserId: string | undefined;
+    if (req.query.link === "1") {
+      // FAIL CLOSED. Previously a link request with an expired 15-minute access
+      // cookie silently became a normal SIGN-IN: the player pressed "Connect" and
+      // was instead logged in as whichever Google account they picked — on a
+      // shared device, somebody else's. Refuse instead of guessing.
+      if (!req.userId)
+        return reply.redirect(
+          `${env.WEB_ORIGIN}/settings?linkError=${encodeURIComponent("Your session expired. Sign in again, then reconnect Google.")}`,
+        );
+      // Linking is only wired for Google (only Google can be unlinked, and only
+      // Google is rendered). A facebook link would be invisible and permanent.
+      if (p !== "google")
+        return reply.redirect(
+          `${env.WEB_ORIGIN}/settings?linkError=${encodeURIComponent("Only Google can be connected right now.")}`,
+        );
+      // Re-authentication marker, set by POST /api/auth/reauth in the last 5
+      // minutes. A password cannot ride through an OAuth redirect, so this is
+      // how the redirect path gets the same re-auth the native route enforces
+      // directly — without it, a stolen session alone could mint a permanent
+      // new sign-in credential.
+      if (!(await svc.consumeReauth(req.userId)))
+        return reply.redirect(
+          `${env.WEB_ORIGIN}/settings?linkError=${encodeURIComponent("Confirm your password before connecting Google.")}`,
+        );
+      linkUserId = req.userId;
+    }
     const state = await makeState(safeNext(req.query.next), linkUserId);
     reply.redirect(authUrl(p, state));
   });
@@ -236,8 +275,25 @@ export async function authRoutes(app: FastifyInstance) {
         // the player is already signed in, and re-issuing would let a stale tab
         // silently swap identities.
         if (entry.linkUserId) {
+          // The state entry says WHO started the link, but the person coming
+          // back from Google must be that same signed-in user. Without this
+          // check an attacker who obtained a state value (or replayed a link
+          // they started) could attach an identity to a session that is not
+          // theirs — the state alone was being treated as authorisation.
+          await attachUser(req);
+          if (req.userId !== entry.linkUserId)
+            return reply.redirect(
+              `${env.WEB_ORIGIN}/settings?linkError=${encodeURIComponent("Sign in again, then reconnect Google.")}`,
+            );
           try {
             await svc.linkOAuthAccount(prisma, entry.linkUserId, p, profile.providerId);
+            await audit(prisma, {
+              actorId: entry.linkUserId,
+              action: "auth.oauth.linked",
+              targetType: "user",
+              targetId: entry.linkUserId,
+              after: { provider: p, via: "redirect" },
+            });
           } catch (e) {
             const msg = e instanceof ApiError ? e.message : "Could not connect that account";
             return reply.redirect(`${env.WEB_ORIGIN}/settings?linkError=${encodeURIComponent(msg)}`);
