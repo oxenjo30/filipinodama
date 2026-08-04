@@ -110,6 +110,9 @@ object AuthRepository {
         }.fold(
             onSuccess = { user ->
                 _state.value = _state.value.copy(user = user, checked = true)
+                // `account` is only returned by /me — without this re-read the
+                // Settings card stays invisible until the app is restarted.
+                runCatching { refreshMe() }
                 AuthResult.Success(user)
             },
             onFailure = { toResult(it) }
@@ -126,6 +129,9 @@ object AuthRepository {
             onSuccess = { user ->
                 justRegistered = true
                 _state.value = _state.value.copy(user = user, checked = true)
+                // `account` is only returned by /me — without this re-read the
+                // Settings card stays invisible until the app is restarted.
+                runCatching { refreshMe() }
                 AuthResult.Success(user)
             },
             onFailure = { toResult(it) }
@@ -140,6 +146,9 @@ object AuthRepository {
             onSuccess = { user ->
                 ApiClient.secureStore.putBoolean(SecureStore.KEY_IS_GUEST, true)
                 _state.value = _state.value.copy(user = user, checked = true)
+                // `account` is only returned by /me — without this re-read the
+                // Settings card stays invisible until the app is restarted.
+                runCatching { refreshMe() }
                 AuthResult.Success(user)
             },
             onFailure = { toResult(it) }
@@ -177,6 +186,9 @@ object AuthRepository {
         }.fold(
             onSuccess = { user ->
                 _state.value = _state.value.copy(user = user, checked = true)
+                // `account` is only returned by /me — without this re-read the
+                // Settings card stays invisible until the app is restarted.
+                runCatching { refreshMe() }
                 AuthResult.Success(user)
             },
             onFailure = { toResult(it) }

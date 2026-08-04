@@ -143,7 +143,13 @@ model OAuthAccount {
   userId     String
   user       User   @relation(fields: [userId], references: [id], onDelete: Cascade)
 
+  // One identity per provider per user. Without this a stolen session could
+  // silently attach a SECOND Google identity to an account that already had one
+  // — invisible in Settings, which only renders "connected or not" — and it also
+  // broke the last-sign-in-method guard, which counted ROWS rather than distinct
+  // providers.
   @@unique([provider, providerId])
+  @@unique([userId, provider])
 }
 
 model Session {

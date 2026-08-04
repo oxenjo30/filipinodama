@@ -300,7 +300,7 @@ export async function accountState(prisma: PrismaClient, userId: string) {
       oauthAccounts: { select: { provider: true } },
     },
   });
-  const providers = u.oauthAccounts.map((a) => a.provider);
+  const providers = [...new Set(u.oauthAccounts.map((a) => a.provider))];
   const hasPassword = !!u.passwordHash;
   const pendingLive = !!u.pendingEmail && !!u.pendingEmailExpires && u.pendingEmailExpires > new Date();
   return {
@@ -312,7 +312,12 @@ export async function accountState(prisma: PrismaClient, userId: string) {
     // The client must not offer an unlink that would lock the player out, and
     // must not have to derive that rule itself.
     canUnlink: providers.length > 1 || hasPassword,
-    canChangeEmail: !u.isGuest,
+    // Requires a PASSWORD, not merely a non-guest account. Review finding: for
+    // an OAuth-only user there is nothing to re-authenticate against, and the
+    // "confirmation link proves ownership" argument is circular — the ATTACKER
+    // chooses the new address, so the attacker receives the proof. A stolen
+    // session on a Google-signup account was a full takeover.
+    canChangeEmail: !u.isGuest && hasPassword,
   };
 }
 
@@ -330,14 +335,24 @@ export async function requestEmailChange(
   const user = await prisma.user.findUniqueOrThrow({ where: { id: userId } });
   if (user.isGuest) throw err.badRequest("GUEST_ACCOUNT", "Create an account before changing your email.");
 
-  // Re-authenticate. OAuth-only accounts have no password to check; for them the
-  // link sent to the NEW address is the only proof of ownership, which is why
-  // that link is what actually applies the change.
-  if (user.passwordHash) {
-    if (!currentPassword) throw err.badRequest("PASSWORD_REQUIRED", "Enter your current password to change your email.");
-    if (!(await verifyPassword(currentPassword, user.passwordHash)))
-      throw err.badRequest("BAD_PASSWORD", "That password is incorrect.");
-  }
+  // Re-authentication is MANDATORY, and an account with no password cannot do
+  // this at all.
+  //
+  // The first cut let OAuth-only accounts through on the reasoning that "the
+  // link sent to the new address proves ownership". That is circular: the
+  // attacker picks the new address, so the attacker gets the link. One stolen
+  // session on a Google-signup account was therefore a complete takeover.
+  // Until there is a set-a-password flow, those accounts are refused outright
+  // (accountState reports canChangeEmail=false so the UI never offers it).
+  if (!user.passwordHash)
+    throw err.badRequest(
+      "PASSWORD_REQUIRED",
+      "Set a password on your account before changing your email.",
+    );
+  if (!currentPassword)
+    throw err.badRequest("PASSWORD_REQUIRED", "Enter your current password to change your email.");
+  if (!(await verifyPassword(currentPassword, user.passwordHash)))
+    throw err.badRequest("BAD_PASSWORD", "That password is incorrect.");
 
   const newEmail = newEmailRaw.trim().toLowerCase();
   if (newEmail === user.email?.toLowerCase())
@@ -405,6 +420,23 @@ export async function linkOAuthAccount(
   provider: string,
   providerId: string,
 ) {
+  const me = await prisma.user.findUniqueOrThrow({
+    where: { id: userId },
+    select: { isGuest: true, oauthAccounts: { select: { provider: true, providerId: true } } },
+  });
+  // A guest has no account to attach an identity to, and linking one would burn
+  // that Google identity forever: the guest can never become a real account, and
+  // the identity can never be linked anywhere else.
+  if (me.isGuest)
+    throw err.badRequest("GUEST_ACCOUNT", "Create an account before connecting Google.");
+
+  const sameProvider = me.oauthAccounts.find((a) => a.provider === provider);
+  if (sameProvider && sameProvider.providerId !== providerId)
+    throw err.conflict(
+      "ALREADY_LINKED",
+      "A different Google account is already connected. Disconnect it first.",
+    );
+
   const existing = await prisma.oAuthAccount.findUnique({
     where: { provider_providerId: { provider, providerId } },
     select: { userId: true },
@@ -425,7 +457,11 @@ export async function unlinkOAuthAccount(prisma: PrismaClient, userId: string, p
     where: { id: userId },
     select: { passwordHash: true, oauthAccounts: { select: { provider: true } } },
   });
-  const links = user.oauthAccounts.map((a) => a.provider);
+  // DISTINCT providers: the guard asks "would this leave you with no way in?",
+  // which is a question about providers, not rows. Counting rows let a
+  // passwordless account with two identities for one provider unlink itself into
+  // a lockout, since the delete below removes them all.
+  const links = [...new Set(user.oauthAccounts.map((a) => a.provider))];
   if (!links.includes(provider)) throw err.badRequest("NOT_LINKED", "That account isn't connected.");
   // The point of the guard: an OAuth-only player who unlinks their only provider
   // has no password to fall back on and can never sign in again.

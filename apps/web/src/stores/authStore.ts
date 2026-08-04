@@ -23,6 +23,8 @@ export type AuthStore = {
   justRegistered: boolean;
 
   bootstrap: () => Promise<void>;
+  /** Re-read just the `account` block (only /me returns it). */
+  refreshAccount: () => Promise<void>;
   refreshProviders: () => Promise<void>;
   register: (input: { email: string; password: string; username: string }) => Promise<{ needsVerification: boolean; emailConfigured: boolean }>;
   login: (input: { email: string; password: string }) => Promise<void>;
@@ -40,6 +42,16 @@ export const useAuthStore = create<AuthStore>((set, get) => ({
   ready: false,
   providers: { email: true, guest: true, google: false, facebook: false, emailDelivery: false, diamondTopUp: false },
   justRegistered: false,
+
+  refreshAccount: async () => {
+    try {
+      const { account } = await api.get<{ account: AccountState | null }>("/api/auth/me");
+      set({ account: account ?? null });
+    } catch {
+      // Non-fatal: the card simply stays hidden until the next successful read.
+      set({ account: null });
+    }
+  },
 
   bootstrap: async () => {
     try {
@@ -67,6 +79,7 @@ export const useAuthStore = create<AuthStore>((set, get) => ({
     try {
       const res = await api.post<{ user: Me; needsVerification: boolean; emailConfigured: boolean }>("/api/auth/register", input);
       set({ me: res.user, justRegistered: true });
+      void get().refreshAccount();
       return { needsVerification: res.needsVerification, emailConfigured: res.emailConfigured };
     } finally {
       set({ loading: false });
@@ -78,6 +91,7 @@ export const useAuthStore = create<AuthStore>((set, get) => ({
     try {
       const { user } = await api.post<{ user: Me }>("/api/auth/login", input);
       set({ me: user });
+      void get().refreshAccount();
     } finally {
       set({ loading: false });
     }
@@ -88,6 +102,7 @@ export const useAuthStore = create<AuthStore>((set, get) => ({
     try {
       const { user } = await api.post<{ user: Me }>("/api/auth/guest");
       set({ me: user });
+      void get().refreshAccount();
     } finally {
       set({ loading: false });
     }
@@ -99,7 +114,7 @@ export const useAuthStore = create<AuthStore>((set, get) => ({
     } catch {
       /* ignore */
     }
-    set({ me: null });
+    set({ me: null, account: null });
   },
 
   setMe: (me) => set({ me }),

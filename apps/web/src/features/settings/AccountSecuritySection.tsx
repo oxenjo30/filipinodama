@@ -114,11 +114,11 @@ export function AccountSecuritySection({
   }
 
   function connectGoogle() {
-    // Full redirect, not fetch: this is the standard OAuth consent round trip.
-    // `link=1` tells the server to attach the identity to the CURRENT session
-    // instead of running find-or-create (which would make a second account when
-    // the Google address differs from the account email).
-    window.location.href = "/api/auth/oauth/google?link=1";
+    // MUST be absolute against the API origin. A relative "/api/..." goes to the
+    // WEB origin, where the static host / Vite dev server just serves the SPA
+    // shell — the consent screen never opens and linking silently does nothing.
+    // api.base is the same VITE_API_URL every other call uses.
+    window.location.href = `${api.base}/api/auth/oauth/google?link=1`;
   }
 
   async function disconnectGoogle() {

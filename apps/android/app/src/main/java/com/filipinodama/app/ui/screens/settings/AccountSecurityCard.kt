@@ -15,6 +15,7 @@ import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -48,13 +49,20 @@ import kotlinx.coroutines.launch
  * signs in — most importantly `canUnlink`, which encodes "never remove your only
  * way back in" and must not be re-implemented per client.
  *
- * Guests see nothing: `canChangeEmail` is false for them, and there is no
- * account to secure until they register.
+ * Shown to everyone with an account block, but the ACTIONS are gated by the
+ * server: canChangeEmail is false for guests and for accounts with no password,
+ * and canUnlink is false when a provider is the only way left to sign in.
  */
 @Composable
 fun AccountSecurityCard() {
     val auth by AuthRepository.state.collectAsStateWithLifecycle()
     val account = auth.account
+    // The Google client id comes from the SERVER (GET /api/auth/providers), the
+    // same way LoginScreen gets it. Passing null here made Connect fail on every
+    // normal build with "Google sign-in is not configured yet", because the
+    // BuildConfig fallback is only ever set as a local-dev gradle property.
+    val providers by AuthRepository.providers.collectAsStateWithLifecycle()
+    LaunchedEffect(Unit) { AuthRepository.refreshProviders() }
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
 
@@ -68,7 +76,12 @@ fun AccountSecurityCard() {
     var message by remember { mutableStateOf<String?>(null) }
     var error by remember { mutableStateOf<String?>(null) }
 
-    if (account == null || !account.canChangeEmail) return
+    // Render whenever there IS an account block. The earlier
+    // `!canChangeEmail -> return` hid the WHOLE card — email row and Google row
+    // together — from guests and from OAuth-only players, who lost the only
+    // place either value was shown. Now the card always shows what is true, and
+    // only the actions are gated.
+    if (account == null) return
 
     val googleLinked = account.linkedProviders.contains("google")
 
@@ -92,9 +105,19 @@ fun AccountSecurityCard() {
                     style = MaterialTheme.typography.labelSmall
                 )
             }
-            TextButton(onClick = { expanded = !expanded }, enabled = !busy) {
-                Text(if (expanded) "Cancel" else "Change", color = GoldLt)
+            if (account.canChangeEmail) {
+                TextButton(onClick = { expanded = !expanded }, enabled = !busy) {
+                    Text(if (expanded) "Cancel" else "Change", color = GoldLt)
+                }
             }
+        }
+
+        if (!account.canChangeEmail && !auth.user?.isGuest.orFalse()) {
+            Text(
+                "Set a password on your account before changing your email.",
+                color = Ink2,
+                style = MaterialTheme.typography.labelSmall
+            )
         }
 
         account.pendingEmail?.let { pending ->
@@ -115,9 +138,9 @@ fun AccountSecurityCard() {
                 colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = Gold, cursorColor = Gold),
                 modifier = Modifier.fillMaxWidth()
             )
-            // Only asked for when the account actually HAS a password. An
-            // OAuth-only player has none, and the confirmation link to the new
-            // address is their proof of ownership instead.
+            // Always required now: the server refuses an email change on an
+            // account with no password, because "the confirmation link proves
+            // ownership" is circular when the attacker picks the address.
             if (account.hasPassword) {
                 OutlinedTextField(
                     value = password,
@@ -179,7 +202,7 @@ fun AccountSecurityCard() {
                         } else {
                             // Same Credential Manager token as native sign-in —
                             // only the endpoint differs (link, not find-or-create).
-                            when (val cred = GoogleSignInHelper.requestIdToken(context, null)) {
+                            when (val cred = GoogleSignInHelper.requestIdToken(context, providers.googleClientId)) {
                                 is GoogleSignInHelper.Result.Success ->
                                     when (val r = AuthRepository.linkGoogle(cred.idToken)) {
                                         is AuthResult.Success -> message = "Google connected."
@@ -213,3 +236,5 @@ fun AccountSecurityCard() {
         error?.let { Text(it, color = androidx.compose.ui.graphics.Color(0xFFFF8398), style = MaterialTheme.typography.labelSmall) }
     }
 }
+
+private fun Boolean?.orFalse(): Boolean = this ?: false

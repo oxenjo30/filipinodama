@@ -159,7 +159,7 @@ export async function authRoutes(app: FastifyInstance) {
   // immediately would let a hijacked session move the account to an address the
   // real owner does not control — and would silently rewire Google sign-in,
   // which links an OAuth identity BY EMAIL.
-  app.post("/email/change", { preHandler: requireAuth }, async (req) => {
+  app.post("/email/change", { preHandler: requireAuth, ...strictLimit(5, "15 minutes") }, async (req) => {
     const { newEmail, currentPassword } = emailChangeSchema.parse(req.body);
     const res = await svc.requestEmailChange(prisma, req.userId!, newEmail, currentPassword);
     await audit(prisma, { actorId: req.userId!, action: "auth.email.change_requested", targetType: "user", targetId: req.userId! });
@@ -179,7 +179,7 @@ export async function authRoutes(app: FastifyInstance) {
   // Same ID-token verification as native sign-in, but bound to the CURRENT
   // session instead of find-or-create. Without it, a player whose Google address
   // differs from their account email silently ends up with a SECOND account.
-  app.post("/link/google", { preHandler: requireAuth }, async (req) => {
+  app.post("/link/google", { preHandler: requireAuth, ...strictLimit(10, "15 minutes") }, async (req) => {
     if (!isConfigured("google")) throw new ApiError(503, "NOT_CONFIGURED", "Google sign-in is not configured yet");
     const { idToken } = googleTokenSchema.parse(req.body);
     const profile = await verifyGoogleIdToken(idToken);
@@ -188,7 +188,7 @@ export async function authRoutes(app: FastifyInstance) {
     return ok({ ...res, account: await svc.accountState(prisma, req.userId!) });
   });
 
-  app.delete("/link/google", { preHandler: requireAuth }, async (req) => {
+  app.delete("/link/google", { preHandler: requireAuth, ...strictLimit(10, "15 minutes") }, async (req) => {
     const res = await svc.unlinkOAuthAccount(prisma, req.userId!, "google");
     await audit(prisma, { actorId: req.userId!, action: "auth.oauth.unlinked", targetType: "user", targetId: req.userId!, before: { provider: "google" } });
     return ok({ ...res, account: await svc.accountState(prisma, req.userId!) });

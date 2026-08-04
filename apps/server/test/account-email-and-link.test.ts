@@ -109,6 +109,22 @@ describe("email change", () => {
     const g = await seedUser({ isGuest: true, email: null });
     await expect(requestEmailChange(prisma, g.id, "new@example.com")).rejects.toThrow();
   });
+
+  it("refuses an OAuth-only account outright — the confirmation link is NOT proof", async () => {
+    // Review finding. The first cut let a passwordless account through on the
+    // reasoning that the emailed link proves ownership; that is circular,
+    // because the ATTACKER supplies the address and so receives the link. One
+    // stolen session was a full takeover of any Google-signup account.
+    const u = await seedUser({ email: "oauth-only@example.com" }); // no passwordHash
+    await linkOAuthAccount(prisma, u.id, "google", "google-sub-email");
+
+    await expect(requestEmailChange(prisma, u.id, "attacker@evil.com")).rejects.toThrow();
+
+    const after = await prisma.user.findUniqueOrThrow({ where: { id: u.id } });
+    expect(after.pendingEmail).toBeNull();
+    // …and the UI is told not to offer it in the first place.
+    expect((await accountState(prisma, u.id)).canChangeEmail).toBe(false);
+  });
 });
 
 describe("google link / unlink", () => {
@@ -134,6 +150,22 @@ describe("google link / unlink", () => {
 
     const still = await prisma.oAuthAccount.findFirstOrThrow({ where: { providerId: "google-sub-shared" } });
     expect(still.userId).toBe(owner.id);
+  });
+
+  it("refuses a SECOND identity for a provider already connected", async () => {
+    // Otherwise a stolen session could quietly attach the attacker's Google
+    // account to a victim who already had one — and Settings, which only renders
+    // "connected or not", would look identical before and after.
+    const u = await seedWithPassword("dup@example.com");
+    await linkOAuthAccount(prisma, u.id, "google", "google-sub-first");
+
+    await expect(linkOAuthAccount(prisma, u.id, "google", "google-sub-second")).rejects.toThrow();
+    expect(await prisma.oAuthAccount.count({ where: { userId: u.id } })).toBe(1);
+  });
+
+  it("refuses to link for a guest, who could never unlink or claim the identity", async () => {
+    const g = await seedUser({ isGuest: true, email: null });
+    await expect(linkOAuthAccount(prisma, g.id, "google", "google-sub-guest")).rejects.toThrow();
   });
 
   it("refuses to unlink the LAST sign-in method (OAuth-only account)", async () => {
@@ -184,5 +216,7 @@ describe("accountState — the shape both clients render from", () => {
     const s = await accountState(prisma, u.id);
     expect(s.hasPassword).toBe(false);
     expect(s.canUnlink).toBe(false);
+    // No password means no way to re-authenticate an email change either.
+    expect(s.canChangeEmail).toBe(false);
   });
 });
