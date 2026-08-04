@@ -28,9 +28,21 @@ const googleTokenSchema = z.object({ idToken: z.string().min(1) });
 // currentPassword is OPTIONAL at the schema level because OAuth-only accounts
 // have no password to supply; requestEmailChange decides whether one is
 // required, based on whether the account actually has a passwordHash.
+//
+// "" and null count as NOT SUPPLIED. Both clients send the field verbatim from
+// an empty input rather than omitting the key, and a bare `.min(1)` rejected
+// that in the schema — so the service's own PASSWORD_REQUIRED / PASSWORD_NOT_SET
+// codes were unreachable and the player got raw zod copy instead ("String must
+// contain at least 1 character(s)"), seen on the emulator. Normalising here
+// keeps those coded messages reachable for every client, present and future;
+// the password itself is still verified in requestEmailChange.
 const emailChangeSchema = z.object({
   newEmail: z.string().email().max(200),
-  currentPassword: z.string().min(1).max(200).optional(),
+  currentPassword: z
+    .string()
+    .max(200)
+    .nullish()
+    .transform((v) => v || undefined),
 });
 const emailConfirmSchema = z.object({ token: z.string().min(1).max(200) });
 

@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { prisma } from "../src/db/client.js";
-import { seedUser, truncateAll } from "./helpers.js";
+import { buildTestApp, seedUser, authFor, truncateAll } from "./helpers.js";
 import { hashPassword } from "../src/auth/tokens.js";
 import { accountState, requestEmailChange, confirmEmailChange } from "../src/auth/service.js";
 
@@ -135,6 +135,86 @@ describe("email change", () => {
     expect(after.pendingEmail).toBeNull();
     // …and the UI is told not to offer it in the first place.
     expect((await accountState(prisma, u.id)).canChangeEmail).toBe(false);
+  });
+});
+
+/**
+ * Route level, not service level. The tests above call the service directly and
+ * so skip the request schema entirely — which is exactly where a real bug hid:
+ * an empty password field failed zod's `.min(1)` BEFORE the service ran, so the
+ * player saw "String must contain at least 1 character(s)" instead of the
+ * intended "Enter your current password to change your email." Found by
+ * submitting the form on the emulator with the password left blank.
+ */
+describe("POST /api/auth/email/change — what the clients actually send", () => {
+  it("treats a blank password as ABSENT, so the coded message survives", async () => {
+    const app = await buildTestApp();
+    const u = await seedWithPassword("blank@example.com");
+
+    // Both clients send the input verbatim; an untouched field is "".
+    const res = await app.inject({
+      method: "POST",
+      url: "/api/auth/email/change",
+      headers: { cookie: authFor({ sub: u.id }) },
+      payload: { newEmail: "next@example.com", currentPassword: "" },
+    });
+
+    expect(res.statusCode).toBe(400);
+    expect(res.json().error.code).toBe("PASSWORD_REQUIRED");
+    expect(res.json().error.message).not.toMatch(/at least 1 character/i);
+    expect((await prisma.user.findUniqueOrThrow({ where: { id: u.id } })).pendingEmail).toBeNull();
+    await app.close();
+  });
+
+  it("treats an explicit null the same way — kotlinx serialises absent fields as null", async () => {
+    const app = await buildTestApp();
+    const u = await seedWithPassword("nullpw@example.com");
+
+    const res = await app.inject({
+      method: "POST",
+      url: "/api/auth/email/change",
+      headers: { cookie: authFor({ sub: u.id }) },
+      payload: { newEmail: "next@example.com", currentPassword: null },
+    });
+
+    expect(res.statusCode).toBe(400);
+    expect(res.json().error.code).toBe("PASSWORD_REQUIRED");
+    await app.close();
+  });
+
+  it("still rejects a WRONG password with BAD_PASSWORD, and stages nothing", async () => {
+    const app = await buildTestApp();
+    const u = await seedWithPassword("wrong@example.com");
+
+    const res = await app.inject({
+      method: "POST",
+      url: "/api/auth/email/change",
+      headers: { cookie: authFor({ sub: u.id }) },
+      payload: { newEmail: "next@example.com", currentPassword: "not-my-password" },
+    });
+
+    expect(res.statusCode).toBe(400);
+    expect(res.json().error.code).toBe("BAD_PASSWORD");
+    expect((await prisma.user.findUniqueOrThrow({ where: { id: u.id } })).pendingEmail).toBeNull();
+    await app.close();
+  });
+
+  it("accepts the correct password and stages without touching the live address", async () => {
+    const app = await buildTestApp();
+    const u = await seedWithPassword("good@example.com");
+
+    const res = await app.inject({
+      method: "POST",
+      url: "/api/auth/email/change",
+      headers: { cookie: authFor({ sub: u.id }) },
+      payload: { newEmail: "Next@Example.com", currentPassword: PASSWORD },
+    });
+
+    expect(res.statusCode).toBe(200);
+    const after = await prisma.user.findUniqueOrThrow({ where: { id: u.id } });
+    expect(after.email).toBe("good@example.com");
+    expect(after.pendingEmail).toBe("next@example.com");
+    await app.close();
   });
 });
 

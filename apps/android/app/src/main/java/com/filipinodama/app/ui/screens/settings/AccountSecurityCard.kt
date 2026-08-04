@@ -86,7 +86,7 @@ fun AccountSecurityCard() {
         modifier = Modifier.fillMaxWidth().background(Panel, RoundedCornerShape(14.dp)).padding(18.dp),
         verticalArrangement = Arrangement.spacedBy(6.dp)
     ) {
-        Text("Email", color = Gold, style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold)
+        Text("Account", color = Gold, style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold)
 
         // ── Email ───────────────────────────────────────────────────────────
         Row(

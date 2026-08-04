@@ -703,6 +703,14 @@ private fun ProfileSettingsTab(
             SettingsToggleRow("Guild activity", null, pushGuild) { store.setPushGuild(it) }
             SettingsToggleRow("Events & offers", null, pushEvent) { store.setPushEvent(it) }
         }
+        // Email change. Placed HERE, in the Profile "Settings" TAB, because that
+        // is the settings surface players actually reach: the tab renders inline
+        // (owner round-3 fix) and the separate SettingsScreen destination is only
+        // reachable from one legacy entry point. Adding the card there instead
+        // shipped a feature nobody could see — caught by running the app, not by
+        // typechecking it.
+        com.filipinodama.app.ui.screens.settings.AccountSecurityCard()
+
         SettingsGroupCard(title = "Support") {
             SettingsNavRow("How to Play") { onOpenLegal("howto") }
             SettingsNavRow("Help & FAQ") { onOpenLegal("faq") }
