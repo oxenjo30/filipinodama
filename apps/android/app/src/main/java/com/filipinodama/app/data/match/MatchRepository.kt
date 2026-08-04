@@ -73,6 +73,36 @@ object MatchRepository {
     private val JOIN_FAILED_MESSAGE =
         "Couldn't reach the game server. Check your connection and try again."
 
+    /**
+     * How long to sit in a SEARCHING state before re-asking the server.
+     *
+     * The join-ack watchdog above only covers the window BEFORE mm:searching
+     * arrives — receiving it bumps joinAckToken and disarms the watchdog for
+     * good. After that the client has no timer at all, so anything that goes
+     * wrong with the later mm:found leaves us on "Finding an opponent" forever:
+     * no error, no timeout, nothing logged. That is the exact silent-forever
+     * shape behind the 2026-08-04 reports, and `decode(...) ?: return@on` below
+     * is one way to enter it.
+     *
+     * So we re-send mm:join once per SEARCHING period. The server answers
+     * "you're already in a game" first (matchmaking.ts deliverExistingMatch), so
+     * a recovery costs the queue nothing; only a genuinely-unqueued player is
+     * re-queued. MUST stay longer than the server's BOT_FILL_MAX_MS (20s),
+     * because re-joining cancels and reschedules the pending bot-fill — a
+     * shorter period could push the bot back indefinitely. Mirrors the web
+     * client's SEARCH_RETRY_MS.
+     *
+     * Armed once per mm:searching rather than self-rescheduling: re-sending
+     * mm:join produces another mm:searching, which arms the next one. That keeps
+     * it self-sustaining without a recursive timer that a synchronous test
+     * scheduler would spin forever.
+     */
+    private val SEARCH_RETRY_MS = 25_000L
+    private var searchRetryToken: Int = 0
+
+    /** The queue we last asked for, so a retry can re-send the same request. */
+    private var lastQueueRequest: MmJoinRequest? = null
+
     // ---- event names (packages/shared/src/events.ts, verified verbatim) ----
     private object EV {
         const val mmJoin = "mm:join"
@@ -132,12 +162,16 @@ object MatchRepository {
             // The server ACK. Invalidating the token here is what distinguishes a
             // real search from the optimistic one that stranded players in v55.
             joinAckToken += 1
+            // ...but that also disarms the only timer we had. Arm the search
+            // retry so a later lost/undecodable mm:found can't strand us silently.
+            armSearchRetry()
             _state.update { it.copy(status = MatchStatus.SEARCHING, error = null) }
         }
 
         s.on(EV.mmFound) { args ->
             val payload = decode<MmFoundDto>(args) ?: return@on
             joinAckToken += 1 // matched — no watchdog may fire after this
+            cancelSearchRetry()
             _state.update {
                 it.copy(
                     status = MatchStatus.FOUND,
@@ -160,8 +194,20 @@ object MatchRepository {
 
         s.on(EV.mmCancelled) { args ->
             val payload = decode<MmCancelledDto>(args)
-            _state.update {
-                it.copy(status = MatchStatus.IDLE, error = if (payload?.reason == "left") null else payload?.reason)
+            // Only "left" is the player choosing to stop. Any other reason is the
+            // server cancelling a search we still believe we're in, so keep the
+            // retry armed and let it re-join rather than dropping to IDLE with a
+            // reason string the matchmaking screen doesn't surface. Mirrors the
+            // web client's mmCancelled handling.
+            val recoverable = payload?.reason != "left" && lastQueueRequest != null
+            if (recoverable) {
+                armSearchRetry()
+                _state.update { it.copy(status = MatchStatus.SEARCHING, error = null) }
+            } else {
+                cancelSearchRetry()
+                _state.update {
+                    it.copy(status = MatchStatus.IDLE, error = if (payload?.reason == "left") null else payload?.reason)
+                }
             }
         }
 
@@ -303,16 +349,45 @@ object MatchRepository {
         _state.update { it.copy(status = MatchStatus.SEARCHING, error = null, end = null) }
         joinAckToken += 1
         val token = joinAckToken
+        val request = MmJoinRequest(mode, colorPref)
+        lastQueueRequest = request // so a search retry can re-send the same ask
         try {
             ensureConnected()
-            if (!emitPayload(EV.mmJoin, MmJoinRequest(mode, colorPref))) {
+            if (!emitPayload(EV.mmJoin, request)) {
+                lastQueueRequest = null
+                cancelSearchRetry()
                 _state.update { it.copy(status = MatchStatus.IDLE, error = JOIN_FAILED_MESSAGE) }
                 return
             }
             armJoinAckWatchdog(token)
         } catch (e: Exception) {
+            lastQueueRequest = null
+            cancelSearchRetry()
             _state.update { it.copy(status = MatchStatus.IDLE, error = "Could not connect. Are you logged in?") }
         }
+    }
+
+    /**
+     * Re-ask the server for a match if we are still SEARCHING in
+     * [SEARCH_RETRY_MS]. Single-shot: the resulting mm:searching arms the next
+     * one, so the loop sustains itself without a self-rescheduling timer.
+     * [searchRetryToken] invalidates any in-flight retry when we match, leave, or
+     * re-join, so a stale timer can never re-queue a player who has moved on.
+     */
+    private fun armSearchRetry() {
+        searchRetryToken += 1
+        val token = searchRetryToken
+        scheduler(SEARCH_RETRY_MS) {
+            if (token != searchRetryToken) return@scheduler
+            if (_state.value.status != MatchStatus.SEARCHING) return@scheduler
+            val request = lastQueueRequest ?: return@scheduler
+            emitPayload(EV.mmJoin, request)
+        }
+    }
+
+    /** Invalidate any pending search retry (matched, cancelled, or left). */
+    private fun cancelSearchRetry() {
+        searchRetryToken += 1
     }
 
     /**
@@ -335,6 +410,8 @@ object MatchRepository {
 
     fun leaveQueue() {
         joinAckToken += 1 // cancelled by the player — the watchdog must not fire
+        cancelSearchRetry()
+        lastQueueRequest = null
         runCatching { socket?.emit(EV.mmLeave) }
         _state.update { it.copy(status = MatchStatus.IDLE) }
     }
@@ -633,12 +710,28 @@ object MatchRepository {
         }
     }
 
+    /**
+     * Decode a socket payload, or null.
+     *
+     * The null is NOT silent any more. Every caller does `decode(...) ?: return@on`,
+     * so a decode failure drops the event with no state change, no error and no
+     * trace — for mm:found that means the player sits on "Finding an opponent"
+     * indefinitely with nothing to go on, on the device OR the server. During the
+     * 2026-08-04 investigation this was the single hardest branch to rule out,
+     * precisely because it left no evidence. One logcat line makes it a two-minute
+     * question next time. Kept at warn (not error) since a payload we don't
+     * understand is recoverable — the search retry re-asks.
+     */
     private inline fun <reified T> decode(args: Array<Any>): T? {
         val raw = args.firstOrNull() ?: return null
         val jsonString = raw.toString()
         return try {
             json.decodeFromString<T>(jsonString)
-        } catch (_: Exception) {
+        } catch (e: Exception) {
+            android.util.Log.w(
+                "MatchRepository",
+                "socket payload decode failed for ${T::class.simpleName}: ${e.message} — payload=${jsonString.take(400)}",
+            )
             null
         }
     }
