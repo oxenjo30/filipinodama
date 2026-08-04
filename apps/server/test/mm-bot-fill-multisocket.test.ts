@@ -205,7 +205,7 @@ describe("matchmaking bot-fill survives a multi-socket user", () => {
     sockets.push(sock);
     await waitFor(sock, "connect");
 
-    const found = waitFor(sock, EV.mmFound);
+    const found = waitFor<{ matchId: string; yourColor: string }>(sock, EV.mmFound);
     sock.emit(EV.mmJoin, { mode: "CASUAL" });
 
     // We're handed straight back into the match we were already in…
@@ -234,8 +234,9 @@ describe("matchmaking bot-fill survives a multi-socket user", () => {
 
     // Resolve it the way the engine would, then re-save.
     const lm = await getMatch(matchId);
-    lm.state.result = { winner: "red", reason: "resign" };
-    await saveMatch(lm);
+    expect(lm).not.toBeNull();
+    lm!.state.result = { winner: "red", reason: "resign" };
+    await saveMatch(lm!);
 
     expect(await liveMatchForUser(userId)).toBeNull();
   }, 15000);
