@@ -339,8 +339,11 @@ export async function requestEmailChange(
   // Until there is a set-a-password flow, those accounts are refused outright
   // (accountState reports canChangeEmail=false so the UI never offers it).
   if (!user.passwordHash)
+    // Distinct from PASSWORD_REQUIRED (which means "you didn't send one").
+    // This means "there is nothing to send" — a different remedy for the user,
+    // and the only way a test can prove THIS branch is what rejected.
     throw err.badRequest(
-      "PASSWORD_REQUIRED",
+      "PASSWORD_NOT_SET",
       "Set a password on your account before changing your email.",
     );
   if (!currentPassword)

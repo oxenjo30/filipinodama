@@ -107,7 +107,12 @@ describe("email change", () => {
     const g = await seedUser({ isGuest: true, email: "guest@example.com" });
     await prisma.user.update({ where: { id: g.id }, data: { passwordHash: await hashPassword(PASSWORD) } });
 
-    await expect(requestEmailChange(prisma, g.id, "new@example.com", PASSWORD)).rejects.toThrow(/GUEST|guest/i);
+    // Assert the CODE, not the message: the copy says "Create an account…" and
+    // never contains the word "guest", so a message regex silently matched
+    // nothing useful. The code is what pins which branch rejected.
+    await expect(requestEmailChange(prisma, g.id, "new@example.com", PASSWORD)).rejects.toMatchObject({
+      code: "GUEST_ACCOUNT",
+    });
     expect((await accountState(prisma, g.id)).canChangeEmail).toBe(false);
   });
 
@@ -118,7 +123,13 @@ describe("email change", () => {
     // stolen session was a full takeover of any Google-signup account.
     const u = await seedUser({ email: "oauth-only@example.com" }); // no passwordHash
 
-    await expect(requestEmailChange(prisma, u.id, "attacker@evil.com")).rejects.toThrow();
+    // Supply a password DELIBERATELY. Calling with none would be rejected by the
+    // "you didn't send a password" branch instead, and the test would pass even
+    // with this guard deleted — verified by mutation: disabling the guard left
+    // the old assertion green.
+    await expect(requestEmailChange(prisma, u.id, "attacker@evil.com", "anything")).rejects.toMatchObject({
+      code: "PASSWORD_NOT_SET",
+    });
 
     const after = await prisma.user.findUniqueOrThrow({ where: { id: u.id } });
     expect(after.pendingEmail).toBeNull();
