@@ -131,6 +131,16 @@ export type OnlineStore = {
 
 let wired = false;
 
+/**
+ * The queue we are currently searching in, remembered so a socket reconnect can
+ * RE-JOIN it. The server drops a player's queue entry (and cancels their pending
+ * bot-fill job) once their last socket goes — correct on its own, but the client
+ * previously never re-queued, so a routine reconnect while searching left the
+ * player spinning on "Finding opponent" forever with nothing queued server-side.
+ * Set on joinQueue, cleared once we're matched or we stop searching.
+ */
+let searchingIn: { mode: "CASUAL" | "RANKED"; colorPref: "red" | "blue" | "either" } | null = null;
+
 function landing(m: Move): Square {
   return m.path[m.path.length - 1];
 }
@@ -145,6 +155,7 @@ export const useOnlineStore = create<OnlineStore>((set, get) => {
     s.on(EV.mmSearching, () => set({ status: "searching", error: null }));
 
     s.on(EV.mmFound, (p: { matchId: string; opponent: Opponent; yourColor: PieceColor; settings: unknown }) => {
+      searchingIn = null; // matched — a later reconnect must resync, not re-queue
       set({
         status: "found",
         matchId: p.matchId,
@@ -169,6 +180,7 @@ export const useOnlineStore = create<OnlineStore>((set, get) => {
     });
 
     s.on(EV.mmCancelled, (p: { reason?: string }) => {
+      searchingIn = null; // no longer queued — don't re-join on the next reconnect
       set({ status: "idle", error: p?.reason === "left" ? null : p?.reason ?? "cancelled" });
     });
 
@@ -204,6 +216,12 @@ export const useOnlineStore = create<OnlineStore>((set, get) => {
       const st = useOnlineStore.getState();
       if (st.matchId) {
         s.emit(EV.matchResync, { matchId: st.matchId });
+      } else if (st.status === "searching" && searchingIn) {
+        // We were in a queue when the socket dropped. The server dequeued us the
+        // moment our last socket went (and cancelled the pending bot-fill), so
+        // without this we'd sit on "Finding opponent" forever against an empty
+        // server-side queue. Re-join the SAME queue we were searching in.
+        s.emit(EV.mmJoin, searchingIn);
       }
       set({ connectionLost: false });
     });
@@ -383,16 +401,19 @@ export const useOnlineStore = create<OnlineStore>((set, get) => {
 
     joinQueue: async (mode, colorPref = "either") => {
       set({ status: "searching", error: null, end: null });
+      searchingIn = { mode, colorPref }; // so a reconnect can re-join this queue
       try {
         await connectSocket();
         wire();
         getSocket().emit(EV.mmJoin, { mode, colorPref });
       } catch {
+        searchingIn = null;
         set({ status: "idle", error: "Could not connect. Are you logged in?" });
       }
     },
 
     leaveQueue: () => {
+      searchingIn = null;
       try {
         getSocket().emit(EV.mmLeave);
       } catch {
@@ -493,6 +514,7 @@ export const useOnlineStore = create<OnlineStore>((set, get) => {
     },
 
     reset: () => {
+      searchingIn = null;
       // Leaving a spectated match — tell the server to drop us from its room
       // (never sent for a real player: their match room membership is theirs).
       const cur = get();
