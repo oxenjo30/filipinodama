@@ -281,6 +281,160 @@ export async function requestPasswordReset(prisma: PrismaClient, email: string) 
   await sendEmail(user.email, "Reset your FilipinoDama Royal password", resetEmailHtml(user.username, link), link);
 }
 
+const EMAIL_CHANGE_TTL_MS = 60 * 60 * 1000;
+
+/**
+ * Everything the account screens need to render identically on web and Android.
+ *
+ * Derived on the SERVER and returned from /api/auth/me rather than assembled
+ * client-side: the requirement is that this state is the same wherever you sign
+ * in, and two clients each working out "can I unlink Google?" from their own
+ * cache is exactly how they drift apart.
+ */
+export async function accountState(prisma: PrismaClient, userId: string) {
+  const u = await prisma.user.findUniqueOrThrow({
+    where: { id: userId },
+    select: {
+      email: true, emailVerified: true, passwordHash: true, isGuest: true,
+      pendingEmail: true, pendingEmailExpires: true,
+    },
+  });
+  const hasPassword = !!u.passwordHash;
+  const pendingLive = !!u.pendingEmail && !!u.pendingEmailExpires && u.pendingEmailExpires > new Date();
+  return {
+    email: u.email,
+    emailVerified: !!u.emailVerified,
+    hasPassword,
+    pendingEmail: pendingLive ? u.pendingEmail : null,
+    // Requires a PASSWORD, not merely a non-guest account. Review finding: for
+    // an OAuth-only user there is nothing to re-authenticate against, and the
+    // "confirmation link proves ownership" argument is circular — the ATTACKER
+    // chooses the new address, so the attacker receives the proof. A stolen
+    // session on a Google-signup account was a full takeover.
+    canChangeEmail: !u.isGuest && hasPassword,
+  };
+}
+
+/**
+ * Stage an email change. The address is NOT applied here — see
+ * User.pendingEmail. Requires the current password when the account has one, so
+ * a stolen session alone cannot begin moving the account elsewhere.
+ */
+export async function requestEmailChange(
+  prisma: PrismaClient,
+  userId: string,
+  newEmailRaw: string,
+  currentPassword?: string,
+) {
+  const user = await prisma.user.findUniqueOrThrow({ where: { id: userId } });
+  if (user.isGuest) throw err.badRequest("GUEST_ACCOUNT", "Create an account before changing your email.");
+
+  // Re-authentication is MANDATORY, and an account with no password cannot do
+  // this at all.
+  //
+  // The first cut let OAuth-only accounts through on the reasoning that "the
+  // link sent to the new address proves ownership". That is circular: the
+  // attacker picks the new address, so the attacker gets the link. One stolen
+  // session on a Google-signup account was therefore a complete takeover.
+  // Until there is a set-a-password flow, those accounts are refused outright
+  // (accountState reports canChangeEmail=false so the UI never offers it).
+  if (!user.passwordHash)
+    throw err.badRequest(
+      "PASSWORD_REQUIRED",
+      "Set a password on your account before changing your email.",
+    );
+  if (!currentPassword)
+    throw err.badRequest("PASSWORD_REQUIRED", "Enter your current password to change your email.");
+  if (!(await verifyPassword(currentPassword, user.passwordHash)))
+    throw err.badRequest("BAD_PASSWORD", "That password is incorrect.");
+
+  const newEmail = newEmailRaw.trim().toLowerCase();
+  if (newEmail === user.email?.toLowerCase())
+    throw err.badRequest("SAME_EMAIL", "That is already your email address.");
+  // Same non-deletedAt-scoped check register() uses: the address stays
+  // unavailable while a soft-deleted account still holds it.
+  if (await prisma.user.findUnique({ where: { email: newEmail } }))
+    throw err.conflict("EMAIL_TAKEN", "That email is already in use.");
+
+  const pendingEmailToken = opaqueToken();
+  await prisma.user.update({
+    where: { id: userId },
+    data: { pendingEmail: newEmail, pendingEmailToken, pendingEmailExpires: new Date(Date.now() + EMAIL_CHANGE_TTL_MS) },
+  });
+  const link = `${env.WEB_ORIGIN}/verify-email-change?token=${pendingEmailToken}`;
+  // The CONFIRMATION goes to the new address only — mailing the old one would
+  // prove nothing about who controls the new one.
+  await sendEmail(newEmail, "Confirm your new FilipinoDama Royal email", verifyEmailHtml(user.username, link), link);
+  // But the OLD address gets a heads-up, so a change the real owner did not
+  // start is visible to them while the one-hour link is still unconfirmed.
+  // Best-effort: a failure here must never abort a legitimate change.
+  if (user.email) {
+    await sendEmail(
+      user.email,
+      "Someone requested an email change on your FilipinoDama Royal account",
+      `<p>A request was made to move your account to <b>${newEmail}</b>.</p>
+       <p>If that was you, click the link we sent to the new address. <b>If it was not</b>,
+       change your password now — your current address stays active until the link is used.</p>`,
+    ).catch(() => {});
+  }
+  return { pendingEmail: newEmail };
+}
+
+/** Apply a staged email change; the link's holder proves they own the address. */
+export async function confirmEmailChange(prisma: PrismaClient, token: string) {
+  const user = await prisma.user.findUnique({ where: { pendingEmailToken: token } });
+  if (!user || !user.pendingEmail || !user.pendingEmailExpires || user.pendingEmailExpires < new Date())
+    throw err.badRequest("BAD_TOKEN", "That confirmation link is invalid or has expired.");
+  // A soft-deleted account must not be able to claim an address: it would hold
+  // that email hostage for the whole 30-day purge window, and the account is on
+  // its way out anyway.
+  if (user.deletedAt) throw err.badRequest("BAD_TOKEN", "That confirmation link is no longer valid.");
+
+  // Re-check at APPLY time, not only at request time: someone else may have
+  // taken the address during the hour the link was valid.
+  const clash = await prisma.user.findUnique({ where: { email: user.pendingEmail } });
+  if (clash && clash.id !== user.id) {
+    await prisma.user.update({
+      where: { id: user.id },
+      data: { pendingEmail: null, pendingEmailToken: null, pendingEmailExpires: null },
+    });
+    throw err.conflict("EMAIL_TAKEN", "That email was claimed by another account. Try a different one.");
+  }
+
+  try {
+    await prisma.user.update({
+      where: { id: user.id },
+      data: {
+        email: user.pendingEmail,
+        // Confirmed by clicking a link sent to it — that IS the verification.
+        emailVerified: new Date(),
+        pendingEmail: null,
+        pendingEmailToken: null,
+        pendingEmailExpires: null,
+      },
+    });
+  } catch (e) {
+    // The findUnique above is a TOCTOU window: two confirms for the same address
+    // can both pass it and the second hits User.email's unique constraint. Turn
+    // that into the same clean 409 the pre-check gives, and clear the dead
+    // staging row so the player is not left with a permanent "awaiting
+    // confirmation" banner they cannot dismiss.
+    if (typeof e === "object" && e !== null && (e as { code?: string }).code === "P2002") {
+      await prisma.user.update({
+        where: { id: user.id },
+        data: { pendingEmail: null, pendingEmailToken: null, pendingEmailExpires: null },
+      });
+      throw err.conflict("EMAIL_TAKEN", "That email was claimed by another account. Try a different one.");
+    }
+    throw e;
+  }
+  // Revoke every other session, exactly as resetPassword does. The email is a
+  // recovery credential — if this change was made by someone who should not
+  // have had access, their sessions must not survive it.
+  await prisma.session.deleteMany({ where: { userId: user.id } });
+  return { email: user.pendingEmail };
+}
+
 export async function resetPassword(prisma: PrismaClient, token: string, password: string) {
   const user = await prisma.user.findUnique({ where: { resetToken: token } });
   if (!user || !user.resetExpires || user.resetExpires < new Date())

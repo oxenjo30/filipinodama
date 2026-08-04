@@ -25,6 +25,15 @@ const forgotSchema = z.object({ email: z.string().email() });
 const resetSchema = z.object({ token: z.string().min(1), password: z.string().min(8).max(72) });
 const googleTokenSchema = z.object({ idToken: z.string().min(1) });
 
+// currentPassword is OPTIONAL at the schema level because OAuth-only accounts
+// have no password to supply; requestEmailChange decides whether one is
+// required, based on whether the account actually has a passwordHash.
+const emailChangeSchema = z.object({
+  newEmail: z.string().email().max(200),
+  currentPassword: z.string().min(1).max(200).optional(),
+});
+const emailConfirmSchema = z.object({ token: z.string().min(1).max(200) });
+
 const accessMs = ttlToMs(env.JWT_ACCESS_TTL);
 const refreshMs = ttlToMs(env.JWT_REFRESH_TTL);
 
@@ -138,7 +147,32 @@ export async function authRoutes(app: FastifyInstance) {
     if (!req.userId) return ok({ user: null });
     const user = await prisma.user.findUnique({ where: { id: req.userId } });
     if (!user || user.deletedAt) return ok({ user: null });
-    return ok({ user: svc.publicUser(user) });
+    // `account` rides along on the call BOTH clients already make at start-up
+    // and after every auth action, so the Account screen shows identical state
+    // on web and Android without either client deriving it locally.
+    return ok({ user: svc.publicUser(user), account: await svc.accountState(prisma, user.id) });
+  });
+
+  // ── Account: change email (STAGED) ──────────────────────────────────────────
+  // Two steps on purpose. The new address is parked on the user until its owner
+  // clicks the emailed link; only then does it replace `email`. Applying it
+  // immediately would let a hijacked session move the account to an address the
+  // real owner does not control — and would silently rewire Google sign-in,
+  // which links an OAuth identity BY EMAIL.
+  app.post("/email/change", { preHandler: requireAuth, ...strictLimit(5, "15 minutes") }, async (req) => {
+    const { newEmail, currentPassword } = emailChangeSchema.parse(req.body);
+    const res = await svc.requestEmailChange(prisma, req.userId!, newEmail, currentPassword);
+    await audit(prisma, { actorId: req.userId!, action: "auth.email.change_requested", targetType: "user", targetId: req.userId! });
+    return ok(res);
+  });
+
+  // Unauthenticated ON PURPOSE: the confirmation is usually opened in whichever
+  // browser holds the NEW mailbox, where there is no session. The single-use,
+  // one-hour token is the credential.
+  app.post("/email/confirm", strictLimit(10, "15 minutes"), async (req) => {
+    const { token } = emailConfirmSchema.parse(req.body);
+    const res = await svc.confirmEmailChange(prisma, token);
+    return ok(res);
   });
 
   // Only allow returning to a same-origin relative path (guards against an
