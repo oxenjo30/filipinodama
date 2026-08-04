@@ -4,7 +4,7 @@ import type { MatchMode as PrismaMatchMode } from "@prisma/client";
 import { prisma } from "../db/client.js";
 import { createLiveMatch, maybePlayBotMove } from "./match.js";
 import { scheduleJob, cancelJob } from "./jobs.js";
-import { queuePush, queueUnshift, queueRemove, queuePopPair, getQueuedIn, setQueuedIn, type QueueEntry } from "./store.js";
+import { queuePush, queueUnshift, queueRemove, queuePopPair, getQueuedIn, setQueuedIn, matchIdsForUser, getMatch, type QueueEntry, type StoredMatch } from "./store.js";
 
 /** Mirrors ClientDevice from ./index.ts (kept as a plain union here to avoid an
  *  import cycle — index.ts registers this module). */
@@ -283,6 +283,68 @@ async function requeueFront(mode: QueueMode, w: QueueEntry): Promise<void> {
 }
 
 /**
+ * The user's current LIVE match (authoritative Redis state, result not yet
+ * decided), or null. Settled matches are removed from Redis by settleMatch and
+ * abandoned ones by the abandon sweeper, so anything still here is in progress.
+ */
+export async function liveMatchForUser(userId: string): Promise<StoredMatch | null> {
+  for (const id of await matchIdsForUser(userId)) {
+    const lm = await getMatch(id);
+    if (lm && !lm.state.result) return lm;
+  }
+  return null;
+}
+
+/**
+ * Re-deliver an EXISTING live match to a player who doesn't know they're in it.
+ *
+ * OWNER-REPORTED (2026-08-04, web, CASUAL — the THIRD report of "no opponent
+ * ever appears"). By then the queue itself was fixed and the logs proved it:
+ * `bot-fill firing` fired, no error followed, so the match was created and
+ * mm:found was emitted — and the player still saw nothing.
+ *
+ * Root cause is architectural, not a typo: `mm:found` is a ONE-SHOT push and
+ * was the ONLY signal that a bot match exists. The web socket churns constantly
+ * in production (observed /rt lifetimes of 167ms, 231ms, 46s and 83s), so an
+ * event emitted during a reconnect gap is simply gone, and nothing ever repeats
+ * it. Worse, there was no recovery path anywhere: /api/matches/active — which
+ * OnlineMatchPage calls on mount precisely to ask "am I already in a game?" —
+ * explicitly excludes any match with a bot seat (`red/blue: { isNot: { isBot:
+ * true } }`). That exclusion was correct when bot matches lived only in an
+ * in-process Map and could not survive a restart; since the Redis migration
+ * they are durable, but the exclusion stayed.
+ *
+ * So a single missed event stranded the player permanently: dequeued, a match
+ * running without them, and every retry minting ANOTHER match against another
+ * bot (we observed two bot-fills 53s apart for one player) rather than
+ * returning them to the first.
+ *
+ * Answering "you're already in a game" on mm:join closes the loop for every
+ * client (web and Android) and on every entry point — fresh mount and reconnect
+ * re-join alike — with no new endpoint and no client-side polling.
+ */
+async function deliverExistingMatch(io: IOServer, userId: string, lm: StoredMatch): Promise<void> {
+  const opponentId = lm.redId === userId ? lm.blueId : lm.redId;
+  const yourColor: PieceColor = lm.redId === userId ? "red" : "blue";
+  const opponent = opponentId ? await publicUser(opponentId) : null;
+  // Mirror startBotMatch's disguise: a bot seat gets a plausible random device,
+  // a human seat reports whatever their own live socket connected with.
+  const opponentIsBot = lm.botColor != null && lm.botColor !== yourColor;
+  let device: ClientDevice = "web";
+  if (opponentIsBot) device = Math.random() < 0.5 ? "mobile" : "web";
+  else if (opponentId) {
+    const oppSocket = await currentSocketForUser(io, opponentId);
+    device = (oppSocket?.data.device as ClientDevice | undefined) ?? "web";
+  }
+  await deliverToUser(io, userId, lm.matchId, EV.mmFound, {
+    matchId: lm.matchId,
+    opponent: opponent ? { ...opponent, device } : opponent,
+    yourColor,
+    settings: DEFAULT_SETTINGS,
+  });
+}
+
+/**
  * Fill an empty queue with a highly-skilled BOT after the grace window. Picks a
  * seeded bot user closest to the player's trophy tier (so it reads as a fair,
  * real-looking opponent — no "BOT" label), creates a real Match against it, and
@@ -415,6 +477,25 @@ export function registerMatchmaking(io: IOServer, socket: Socket) {
       return;
     }
     const colorPref = asColorPref(payload?.colorPref);
+
+    // ALREADY IN A GAME? Put them back into it instead of queueing.
+    //
+    // The recovery path for a player whose mm:found never landed — see
+    // deliverExistingMatch. Without it a single missed event strands them
+    // permanently AND every retry mints another live match against another bot.
+    // Wrapped so a failure here can never strand them either: fall through to a
+    // normal queue rather than returning with nothing done.
+    try {
+      const existing = await liveMatchForUser(userId);
+      if (existing) {
+        console.log(`[matchmaking] mm:join → resuming existing live match ${existing.matchId} for ${userId}`);
+        await leaveAllQueues(userId);
+        await deliverExistingMatch(io, userId, existing);
+        return;
+      }
+    } catch (e) {
+      console.error("[matchmaking] live-match recovery check failed; queueing normally", e);
+    }
 
     // A user may only be in one queue at a time — leaving any previous one first.
     await leaveAllQueues(userId);

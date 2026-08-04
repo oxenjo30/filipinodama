@@ -5,9 +5,11 @@ import { Server as IOServer } from "socket.io";
 import { io as ioClient, type Socket as ClientSocket } from "socket.io-client";
 import { EV } from "@dama/shared";
 import { registerPresence } from "../src/realtime/presence.js";
-import { registerMatchmaking } from "../src/realtime/matchmaking.js";
+import { registerMatchmaking, liveMatchForUser } from "../src/realtime/matchmaking.js";
 import { signAccess, verifyAccess } from "../src/auth/tokens.js";
-import { redis } from "../src/realtime/store.js";
+import { redis, createMatch, getMatch, saveMatch } from "../src/realtime/store.js";
+import { createInitialState } from "@dama/game-engine";
+import { DEFAULT_SETTINGS } from "@dama/shared";
 
 /**
  * OWNER-REPORTED (2026-08-04, web, RANKED): "I queue for a ranked match and no
@@ -172,6 +174,70 @@ describe("matchmaking bot-fill survives a multi-socket user", () => {
     const after = await queueState(userId);
     expect(after.queuedIn).toBe("RANKED");
     expect(after.botFillScheduled).toBe(true);
+  }, 15000);
+
+  // ── Recovery: a player who never received their mm:found ──────────────────
+  //
+  // The 2026-08-04 CASUAL report. bot-fill fired and created the match, but the
+  // one-shot mm:found landed in a socket-reconnect gap and was lost. There was
+  // no way back in: /api/matches/active excludes bot matches, so the client
+  // asked "am I in a game?", was told no, and queued AGAIN — minting a second
+  // live match. mm:join must answer "you're already in one" instead.
+  //
+  // Seeded with a NULL opponent seat so the assertion stays DB-free (a null
+  // opponent short-circuits the publicUser lookup); the branch under test is
+  // the same one a bot seat takes.
+  it("mm:join RESUMES an existing live match instead of queueing a second one", async () => {
+    const server = await startRealtimeServer();
+    servers.push(server);
+    const userId = `u_resume_${process.pid}`;
+    const matchId = `m_resume_${process.pid}`;
+
+    await createMatch({
+      matchId,
+      redId: userId,
+      blueId: null,
+      mode: "CASUAL",
+      state: createInitialState(DEFAULT_SETTINGS, matchId),
+    });
+
+    const sock = connect(server.url, userId);
+    sockets.push(sock);
+    await waitFor(sock, "connect");
+
+    const found = waitFor(sock, EV.mmFound);
+    sock.emit(EV.mmJoin, { mode: "CASUAL" });
+
+    // We're handed straight back into the match we were already in…
+    const payload = await found;
+    expect(payload.matchId).toBe(matchId);
+    expect(payload.yourColor).toBe("red");
+
+    // …and crucially we are NOT queued, so no second match can be minted.
+    await settle(300);
+    const st = await queueState(userId);
+    expect(st.queuedIn).toBeNull();
+    expect(st.botFillScheduled).toBe(false);
+  }, 15000);
+
+  it("liveMatchForUser ignores a match whose result is already decided", async () => {
+    const userId = `u_done_${process.pid}`;
+    const matchId = `m_done_${process.pid}`;
+    await createMatch({
+      matchId,
+      redId: userId,
+      blueId: null,
+      mode: "CASUAL",
+      state: createInitialState(DEFAULT_SETTINGS, matchId),
+    });
+    expect(await liveMatchForUser(userId)).not.toBeNull();
+
+    // Resolve it the way the engine would, then re-save.
+    const lm = await getMatch(matchId);
+    lm.state.result = { winner: "red", reason: "resign" };
+    await saveMatch(lm);
+
+    expect(await liveMatchForUser(userId)).toBeNull();
   }, 15000);
 
   it("still dequeues + cancels bot-fill when the player's LAST socket drops", async () => {
