@@ -44,6 +44,9 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shadow
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.StrokeJoin
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.font.FontWeight
@@ -76,6 +79,7 @@ import com.filipinodama.app.ui.components.idlePulse
 import com.filipinodama.app.ui.components.rememberMotionBudget
 import com.filipinodama.app.ui.screens.profile.AvatarView
 import com.filipinodama.app.ui.theme.Ink2
+import com.filipinodama.app.ui.theme.LilitaFontFamily
 
 /**
  * The Play tab, rebuilt as a Battle screen (owner-approved, this replaces
@@ -719,48 +723,66 @@ private fun BattleButton(word: String, sub: String, onClick: () -> Unit, modifie
  */
 @Composable
 private fun BattleWord(word: String) {
-    // The primary CTA earns the heaviest weight in the family. headlineSmall is
-    // Cinzel SemiBold, which reads as a heading rather than as a button; Cinzel
-    // Black with a little tracking reads as struck metal. Both weights already
-    // ship inside cinzel_variable.ttf, so this costs no new asset. The pale
-    // shadow sits BELOW the dark letters, which on the gold face reads as
-    // engraving rather than as a drop shadow.
+    // White fill over a heavy black outline — the arcade CTA treatment. Compose
+    // has no text stroke, so the word is drawn TWICE at identical layout: a
+    // stroked pass underneath, then the filled pass on top. Both must share the
+    // same family, size, tracking, alignment and width or the two passes drift
+    // apart and the outline shows as a ghost.
     val base = MaterialTheme.typography.headlineSmall.copy(
-        fontWeight = FontWeight.Black,
-        letterSpacing = 0.05.em,
-        shadow = Shadow(
-            color = Color(0x59FFF3CE),
-            offset = Offset(0f, 1.6f),
-            blurRadius = 0.5f
-        )
+        fontFamily = LilitaFontFamily,
+        fontWeight = FontWeight.Normal, // Lilita One ships one weight; it is already heavy
+        letterSpacing = 0.03.em
     )
-    val fontScale = LocalDensity.current.fontScale
+    val density = LocalDensity.current
+    val fontScale = density.fontScale
     var size by remember(word, fontScale) { mutableStateOf(base.fontSize) }
     var settled by remember(word, fontScale) { mutableStateOf(false) }
 
-    Text(
-        word,
-        color = Color(0xFF3A2405),
-        style = base,
-        fontSize = size,
-        maxLines = 1,
-        softWrap = false,
-        textAlign = TextAlign.Center,
-        // Ellipsis only as a floor guard — the shrink loop should always win
-        // first, but a truncated word must never masquerade as a whole one.
-        overflow = TextOverflow.Ellipsis,
-        modifier = Modifier.fillMaxWidth(),
-        onTextLayout = { result ->
-            // hasVisualOverflow, NOT didOverflowWidth: with Ellipsis the
-            // paragraph is truncated to fit, so didOverflowWidth reads false and
-            // the shrink below would never run — the word would just ellipsise.
-            if (!settled && result.hasVisualOverflow && size.value > MIN_BATTLE_WORD_SP) {
-                size = size * 0.94f
-            } else {
-                settled = true
+    // Stroke is centred on the glyph outline, so half of it eats into the fill.
+    // Scaling off the rendered size keeps the outline proportional at every font
+    // scale instead of turning spindly on large text.
+    val strokePx = with(density) { size.toPx() } * 0.17f
+
+    Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
+        Text(
+            word,
+            color = Color(0xFF1A0E04),
+            style = base.copy(
+                drawStyle = Stroke(width = strokePx, join = StrokeJoin.Round, cap = StrokeCap.Round),
+                // Drop shadow lives on the stroke pass so it sits behind
+                // everything, rather than between the outline and the fill.
+                shadow = Shadow(color = Color(0x73000000), offset = Offset(0f, 3f), blurRadius = 3f)
+            ),
+            fontSize = size,
+            maxLines = 1,
+            softWrap = false,
+            textAlign = TextAlign.Center,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.fillMaxWidth()
+        )
+        Text(
+            word,
+            color = Color.White,
+            style = base,
+            fontSize = size,
+            maxLines = 1,
+            softWrap = false,
+            textAlign = TextAlign.Center,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.fillMaxWidth(),
+            onTextLayout = { result ->
+                // hasVisualOverflow, NOT didOverflowWidth: with Ellipsis the
+                // paragraph is truncated to fit, so didOverflowWidth reads false
+                // and the shrink below would never run — the word would just
+                // ellipsise ("CREATE RO...") instead of scaling down.
+                if (!settled && result.hasVisualOverflow && size.value > MIN_BATTLE_WORD_SP) {
+                    size = size * 0.94f
+                } else {
+                    settled = true
+                }
             }
-        }
-    )
+        )
+    }
 }
 
 /** Floor for [BattleWord]'s shrink-to-fit, below which the CTA stops reading as one. */

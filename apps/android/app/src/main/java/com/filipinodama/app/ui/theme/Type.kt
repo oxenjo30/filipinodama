@@ -44,6 +44,19 @@ private fun jetBrainsMonoWeight(weight: FontWeight) = Font(
     variationSettings = FontVariation.Settings(FontVariation.weight(weight.weight))
 )
 
+/**
+ * Lilita One — display face for the Play screen's primary CTA only.
+ *
+ * One static weight, so no variation axis: it is heavy by design. Deliberately
+ * NOT wired into [Typography]. Cinzel stays the app's display face everywhere
+ * else; this exists so the BATTLE / CREATE ROOM button can carry a chunky
+ * arcade face under a white-fill / black-outline treatment, which a serif's
+ * thin strokes and serifs cannot survive.
+ *
+ * SIL Open Font License 1.1 — see docs/licenses/LilitaOne-OFL.txt.
+ */
+val LilitaFontFamily = FontFamily(Font(resId = R.font.lilita_one))
+
 val CinzelFontFamily = FontFamily(
     cinzelWeight(FontWeight.Medium),
     cinzelWeight(FontWeight.SemiBold),
