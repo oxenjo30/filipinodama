@@ -22,7 +22,6 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -226,16 +225,26 @@ fun ModeTicket(
                     contentDescription = null,
                     modifier = Modifier
                         .align(Alignment.BottomEnd)
-                        .offset(x = 14.dp, y = 18.dp)
+                        // Inset, not bled. The previous offset(14, 18) pushed the
+                        // medallion past the panel so the parent clip sliced its
+                        // right edge at the stub seam and cut its base off.
+                        .padding(end = 12.dp, bottom = 10.dp)
                         .graphicsLayer {
-                            translationY = -artFloat * 3.5f
-                            val s = 1f + artFloat * 0.022f
+                            translationY = -artFloat * 2.5f
+                            val s = 1f + artFloat * 0.018f
                             scaleX = s
                             scaleY = s
                         }
-                        .size(104.dp)
+                        .size(88.dp)
                 )
-                Column(modifier = Modifier.padding(start = 14.dp, top = 11.dp, end = 10.dp, bottom = 11.dp)) {
+                // Everything BELOW the title has to clear the medallion: 88dp of
+                // art plus its 12dp inset, and 4dp so they never quite touch.
+                val clearsArt = Modifier.padding(end = 104.dp)
+                Column(modifier = Modifier.padding(start = 14.dp, top = 11.dp, end = 14.dp, bottom = 11.dp)) {
+                    // The title row keeps the full width. It sits at the top of the
+                    // panel, where the medallion is round and transparent, so it has
+                    // nothing to clear — reserving space here is what wrapped the
+                    // CASUAL pill onto two lines.
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Text(
                             title,
@@ -259,7 +268,7 @@ fun ModeTicket(
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.spacedBy(6.dp),
-                            modifier = Modifier.padding(top = 7.dp)
+                            modifier = clearsArt.padding(top = 7.dp)
                         ) {
                             if (statIconRes != null) {
                                 Image(
@@ -273,9 +282,9 @@ fun ModeTicket(
                     }
                     if (progress != null) {
                         Box(
-                            modifier = Modifier
+                            modifier = clearsArt
                                 .padding(top = 8.dp)
-                                .fillMaxWidth(0.74f)
+                                .fillMaxWidth()
                                 .height(5.dp)
                                 .clip(RoundedCornerShape(100.dp))
                                 .background(Color.White.copy(alpha = 0.14f))
@@ -294,7 +303,7 @@ fun ModeTicket(
                             progressLabel,
                             color = Ink2,
                             style = MaterialTheme.typography.labelSmall,
-                            modifier = Modifier.padding(top = 5.dp)
+                            modifier = clearsArt.padding(top = 5.dp)
                         )
                     }
                     if (sub != null) {
@@ -302,12 +311,12 @@ fun ModeTicket(
                             sub,
                             color = Ink2,
                             style = MaterialTheme.typography.labelSmall,
-                            modifier = Modifier.padding(top = 4.dp)
+                            modifier = clearsArt.padding(top = 4.dp)
                         )
                     }
                     if (timer != null) {
                         Box(
-                            modifier = Modifier
+                            modifier = clearsArt
                                 .padding(top = 9.dp)
                                 .clip(RoundedCornerShape(100.dp))
                                 .background(Color(0xCC0A0514))
