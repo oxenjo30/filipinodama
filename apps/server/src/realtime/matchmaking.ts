@@ -110,6 +110,26 @@ async function deliverToUser(io: IOServer, userId: string, matchId: string, even
   const room = `presence:${userId}`;
   await io.in(room).socketsJoin(matchId);
   io.to(room).emit(event, payload);
+
+  // DECISIVE INSTRUMENTATION (2026-08-04). Three fixes in, the server logs prove
+  // the match is created and this emit runs, yet the player still sees nothing —
+  // and we have been inferring the reason instead of measuring it. Recording the
+  // recipient count here settles it in one retry:
+  //   sockets=0  → the event went nowhere; this is a DELIVERY gap (the player's
+  //                socket was mid-reconnect, or never joined presence:<id>)
+  //   sockets=N  → it reached N live sockets and the CLIENT dropped it, which
+  //                moves the investigation entirely to the web/Android handler
+  // Cheap (one room lookup on a rare path) and worth keeping: it is the one
+  // measurement that distinguishes the two halves of this whole class of bug.
+  try {
+    const recipients = await io.in(room).fetchSockets();
+    console.log(
+      `[matchmaking] delivered ${event} for ${matchId} to ${recipients.length} socket(s) of ${userId}` +
+        (recipients.length ? ` [${recipients.map((s) => s.id).join(",")}]` : " — NOBODY RECEIVED IT"),
+    );
+  } catch {
+    /* logging must never break delivery */
+  }
 }
 
 /**
@@ -527,7 +547,15 @@ export function registerMatchmaking(io: IOServer, socket: Socket) {
 
   socket.on(EV.mmLeave, async () => {
     const was = await leaveAllQueues(userId);
-    if (was) socket.emit(EV.mmCancelled, { reason: "left" });
+    if (was) {
+      // Logged because an UNEXPECTED leave is indistinguishable, from the
+      // player's side, from the bug we've been chasing: OnlineMatchPage renders
+      // the "Finding opponent" screen for an idle store too, so a stray dequeue
+      // leaves them on a spinner over an empty queue. If these appear without
+      // the player pressing Cancel, the page is unmounting under them.
+      console.log(`[matchmaking] mm:leave dequeued ${userId}`);
+      socket.emit(EV.mmCancelled, { reason: "left" });
+    }
   });
 
   socket.on("disconnect", () => {

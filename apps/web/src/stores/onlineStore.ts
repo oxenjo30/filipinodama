@@ -141,6 +141,52 @@ let wired = false;
  */
 let searchingIn: { mode: "CASUAL" | "RANKED"; colorPref: "red" | "blue" | "either" } | null = null;
 
+/**
+ * Searching watchdog. While we sit on "Finding opponent", re-ask the server
+ * every SEARCH_RETRY_MS.
+ *
+ * mm:found is a one-shot push, and the socket churns in production (observed
+ * /rt lifetimes of 167ms-83s). If that single event lands in a reconnect gap it
+ * is gone, and nothing on this screen ever asks again — the player waits on a
+ * spinner while a real match runs without them. Reconnect-driven re-joining
+ * (below) only helps if a reconnect actually happens; this covers the rest.
+ *
+ * mm:join is the right thing to re-send because the server answers "you're
+ * already in a game" first (matchmaking.ts deliverExistingMatch), so the
+ * recovery case costs the queue nothing. Only if there is genuinely no match
+ * does it re-queue us — which is also correct, since it means we somehow fell
+ * out of the queue.
+ *
+ * The interval MUST stay longer than the server's maximum bot-fill wait
+ * (BOT_FILL_MAX_MS, 20s) — re-joining cancels and reschedules the pending
+ * bot-fill job, so a shorter period could keep pushing the bot back forever.
+ */
+const SEARCH_RETRY_MS = 25_000;
+let searchRetryTimer: ReturnType<typeof setInterval> | null = null;
+
+function stopSearchRetry(): void {
+  if (searchRetryTimer !== null) {
+    clearInterval(searchRetryTimer);
+    searchRetryTimer = null;
+  }
+}
+
+function startSearchRetry(): void {
+  stopSearchRetry();
+  searchRetryTimer = setInterval(() => {
+    const st = useOnlineStore.getState();
+    if (st.status !== "searching" || !searchingIn) {
+      stopSearchRetry();
+      return;
+    }
+    try {
+      getSocket().emit(EV.mmJoin, searchingIn);
+    } catch {
+      /* socket unavailable — the reconnect handler re-joins for us */
+    }
+  }, SEARCH_RETRY_MS);
+}
+
 function landing(m: Move): Square {
   return m.path[m.path.length - 1];
 }
@@ -156,6 +202,7 @@ export const useOnlineStore = create<OnlineStore>((set, get) => {
 
     s.on(EV.mmFound, (p: { matchId: string; opponent: Opponent; yourColor: PieceColor; settings: unknown }) => {
       searchingIn = null; // matched — a later reconnect must resync, not re-queue
+      stopSearchRetry();
       set({
         status: "found",
         matchId: p.matchId,
@@ -180,8 +227,29 @@ export const useOnlineStore = create<OnlineStore>((set, get) => {
     });
 
     s.on(EV.mmCancelled, (p: { reason?: string }) => {
-      searchingIn = null; // no longer queued — don't re-join on the next reconnect
-      set({ status: "idle", error: p?.reason === "left" ? null : p?.reason ?? "cancelled" });
+      // Only "left" is US choosing to stop (mm:leave). Every other reason —
+      // "dropped", "server-error", "invalid-mode" — is the server cancelling a
+      // search we still believe we're in, and it is INVISIBLE to the player:
+      // OnlineMatchPage renders the "Finding opponent" screen for `idle` with no
+      // board too (`status === "idle" && !state`), so the spinner and the music
+      // keep running over a queue we are no longer in. That is indistinguishable
+      // from the bug we've been chasing.
+      //
+      // So: on a user-initiated cancel, stand down. On an involuntary one, keep
+      // `searchingIn` and leave the watchdog armed so it re-joins within
+      // SEARCH_RETRY_MS instead of stranding us on a spinner that means nothing.
+      // `searchingIn` is the honest record of whether we still want a match; if
+      // it's null we weren't searching (e.g. a stray cancel while in a game) and
+      // there is nothing to recover.
+      const recoverable = p?.reason !== "left" && searchingIn !== null;
+      if (!recoverable) {
+        searchingIn = null;
+        stopSearchRetry();
+        set({ status: "idle", error: p?.reason === "left" ? null : p?.reason ?? "cancelled" });
+        return;
+      }
+      startSearchRetry(); // re-arm in case it had been stopped
+      set({ status: "searching", error: null });
     });
 
     s.on(EV.matchState, (p: { matchId: string; state: GameState; yourColor: PieceColor | null }) => {
@@ -411,14 +479,17 @@ export const useOnlineStore = create<OnlineStore>((set, get) => {
         await connectSocket();
         wire();
         getSocket().emit(EV.mmJoin, { mode, colorPref });
+        startSearchRetry();
       } catch {
         searchingIn = null;
+        stopSearchRetry();
         set({ status: "idle", error: "Could not connect. Are you logged in?" });
       }
     },
 
     leaveQueue: () => {
       searchingIn = null;
+      stopSearchRetry();
       try {
         getSocket().emit(EV.mmLeave);
       } catch {
@@ -520,6 +591,7 @@ export const useOnlineStore = create<OnlineStore>((set, get) => {
 
     reset: () => {
       searchingIn = null;
+      stopSearchRetry();
       // Leaving a spectated match — tell the server to drop us from its room
       // (never sent for a real player: their match room membership is theirs).
       const cur = get();
