@@ -188,6 +188,11 @@ export const useOnlineStore = create<OnlineStore>((set, get) => {
       set((st) => ({
         status: "playing",
         state: p.state,
+        // Adopt the match this state belongs to. Without it a store that learned
+        // about a match some other way (a recovered mm:found whose reveal was
+        // interrupted) could render a live board with matchId still null, and
+        // every move would then emit against a null id.
+        matchId: p.matchId ?? st.matchId,
         myColor: p.yourColor ?? st.myColor,
         selected: null,
         // A full resync is authoritative — discard any in-flight optimistic move.
