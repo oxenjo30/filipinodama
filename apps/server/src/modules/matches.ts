@@ -147,10 +147,16 @@ export async function matchRoutes(app: FastifyInstance) {
         mode: { in: ["CASUAL", "RANKED", "PRIVATE"] },
         startedAt: { gte: new Date(Date.now() - STALE_MS) },
         OR: [{ redId: me }, { blueId: me }],
-        // Neither side is a bot — bot games are unresumable after a restart.
-        // `isNot` (null passes) rather than `is`, since red/blue are nullable.
-        red: { isNot: { isBot: true } },
-        blue: { isNot: { isBot: true } },
+        // Bot matches ARE included. The old exclusion was written when a bot
+        // game lived only in an in-process Map and genuinely could not survive a
+        // restart, so advertising one risked a dead "Continue Playing" card.
+        // Since the Redis migration (582e458) live matches are durable in
+        // rt:match:<id>, so a bot game is exactly as resumable as a human one —
+        // and hiding them meant this endpoint answered "you have no game" to a
+        // player who was in one, which is the question OnlineMatchPage asks on
+        // mount. If the Redis state HAS expired, resuming emits match:illegal
+        // with reason "no-such-match", which the client already handles by
+        // ending the match cleanly rather than hanging.
       },
       orderBy: { startedAt: "desc" },
       include: { red: playerSelect, blue: playerSelect },

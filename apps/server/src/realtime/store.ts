@@ -116,7 +116,22 @@ export async function withLockRetry(
 // ─── Domain wrappers ────────────────────────────────────────────────────────
 export const RT_TTL = 86_400; // 24h safety net on match/room JSON
 
-export type StoredMatch = { matchId: string; redId: string | null; blueId: string | null; mode: string; state: GameState; botColor?: PieceColor; version: number };
+export type StoredMatch = {
+  matchId: string;
+  redId: string | null;
+  blueId: string | null;
+  mode: string;
+  state: GameState;
+  botColor?: PieceColor;
+  /** Epoch ms the live match was seeded. Stamped by createLiveMatch, which is
+   *  the single funnel for every match (matchmaking, bot-fill, rooms, rematch,
+   *  tournaments). Used to refuse to "resume" a player into an ancient orphan —
+   *  see liveMatchForUser. OPTIONAL because matches seeded before this field
+   *  existed are still in Redis under the 24h TTL; those are treated as
+   *  resumable so a deploy never strands an in-flight game. */
+  startedAt?: number;
+  version: number;
+};
 const matchKey = (id: string) => `rt:match:${id}`;
 const userMatchKey = (uid: string) => `rt:userMatch:${uid}`;
 

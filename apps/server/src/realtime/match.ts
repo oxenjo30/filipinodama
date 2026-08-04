@@ -378,6 +378,7 @@ export async function createLiveMatch(
     mode: mode as string,
     state,
     botColor,
+    startedAt: Date.now(),
   };
   await createMatch(lm);
   return { ...lm, version: 0 };
@@ -872,14 +873,6 @@ export function registerMatch(io: IOServer, socket: Socket) {
   socket.on(EV.matchResync, async (payload: { matchId?: unknown } = {}) => {
     const matchId = typeof payload?.matchId === "string" ? payload.matchId : null;
     if (!matchId) return;
-    // Diagnostic (2026-08-04, Android "stuck on Finding an opponent"). A client
-    // only sends this ~1.8s AFTER it has successfully decoded mm:found and moved
-    // to the FOUND state, so its presence is proof the client got that far — and
-    // its ABSENCE, when the server's delivery log shows mm:found went out, means
-    // the client silently dropped the payload (Android does `decode(...) ?: return`).
-    // That distinction is invisible from any other server-side signal, because
-    // mm:searching has already disarmed the client's join watchdog by then.
-    console.log(`[match] match:resync from ${userId} for ${matchId}`);
     const lm = await getMatch(matchId);
     if (!lm) {
       socket.emit(EV.matchIllegal, { matchId, reason: "no-such-match" });
