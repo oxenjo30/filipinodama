@@ -619,3 +619,56 @@
   timer, not user behaviour.
 - Rule: before building a theory on a log line, open the emit site. And treat
   perfectly-regular intervals as machine-generated until proven otherwise.
+
+## 2026-08-04 - Measure the LAST hop before theorising about the ones before it
+
+- Mistake: shipped three fixes for "no opponent is ever found" (queue teardown,
+  missing recovery path, no retry while searching). Each removed a real,
+  log-confirmed defect. None was the bug. The actual cause was a React effect in
+  OnlineMatchPage that cancelled its own timer, so the post-match loader never
+  dismissed — the player was already IN the match, staring at "Pairing You With
+  a Rival" forever.
+- Cause: every round of reasoning stopped at the edge of what server logs could
+  see, then inferred the rest. The one hop never measured — does the event reach
+  the browser, and what does the browser do with it — was the hop that was broken.
+- Rule: when a symptom survives a fix, find the LAST point you have real evidence
+  for and instrument the very next hop, rather than re-reasoning about hops you
+  already have logs for. One owner screenshot identified the failing component
+  in seconds; three rounds of server-log inference did not get close.
+
+## 2026-08-04 - A screenshot names the component; ask for one early
+
+- Mistake: spent three cycles asking "is the server pairing them?" when the
+  answer was visible in the UI copy all along. "Pairing You With a Rival" is
+  LoadingScreen, which only renders once status === "found" — i.e. matchmaking
+  had ALREADY succeeded. One image collapsed the entire hypothesis space.
+- Cause: treated a UI symptom ("stuck finding an opponent") as the user's
+  description of state rather than as a literal string I could grep for and map
+  to a component.
+- Rule: for any "stuck on screen X" report, grep the exact on-screen copy FIRST
+  and identify which component/branch renders it. That tells you the client's
+  actual state, which is usually the fact the whole diagnosis turns on.
+
+## 2026-08-04 - Don't grep your own verification down to the files you expected
+
+- Mistake: broke CI on main. Ran `tsc --noEmit`, but filtered the output with
+  `grep "realtime/matchmaking"` — and the four type errors were in the TEST file,
+  the third file I had touched. Reported "tsc clean on both touched files": true
+  as written, and useless, because I had touched three.
+- Cause: verified against the files I expected to be wrong instead of against
+  everything I changed, and used a narrower command than CI runs.
+- Rule: verify with the SAME command CI runs (`pnpm typecheck --force`), and if
+  filtering output, filter to every file in `git status`, not the ones you have
+  in mind. A filter that can only show expected failures is not verification.
+
+## 2026-08-04 - A silent early-return is a permanent, invisible dead end
+
+- Discovery: three separate silent failure paths conspired here. The server's
+  bot-fill had three unlogged `return`s; Android does
+  `decode<MmFoundDto>(args) ?: return@on`; and Android's 6s join watchdog is
+  disarmed by mm:searching, so a decode failure 7-20s later strands the client
+  on SEARCHING with no error, no timeout and no log — forever.
+- Rule: any `?: return` / bare `return` on a path a user is WAITING on needs a
+  log line and, where the user is blocked, a timeout that surfaces something. A
+  branch that silently declines to act is indistinguishable from a hang, and it
+  is exactly the branch you will need evidence for later.
