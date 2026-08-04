@@ -83,17 +83,19 @@ object AuthRepository {
      */
     suspend fun refreshMe(): AuthUser? {
         return try {
-            var user = authApi.me().let { if (it.ok) it.data?.user else null }
+            var me = authApi.me().let { if (it.ok) it.data else null }
+            var user = me?.user
             if (user == null) {
                 // No session from the access cookie — try the refresh cookie
                 // before giving up. A refresh failure (no/expired fd_refresh) is
                 // fine: /me stays null and the user is truly logged out.
                 val refreshed = runCatching { authApi.refresh().ok }.getOrDefault(false)
                 if (refreshed) {
-                    user = authApi.me().let { if (it.ok) it.data?.user else null }
+                    me = authApi.me().let { if (it.ok) it.data else null }
+                    user = me?.user
                 }
             }
-            _state.value = _state.value.copy(user = user, checked = true)
+            _state.value = _state.value.copy(user = user, account = me?.account, checked = true)
             user
         } catch (e: Exception) {
             _state.value = _state.value.copy(user = null, checked = true)
@@ -181,6 +183,65 @@ object AuthRepository {
         )
     }
 
+    /**
+     * Stage an email change. Nothing moves until the owner of the NEW address
+     * clicks the emailed link — so a "success" here means "check your inbox",
+     * not "your email changed". [currentPassword] is null for OAuth-only
+     * accounts; the server decides whether one is required.
+     */
+    suspend fun requestEmailChange(newEmail: String, currentPassword: String?): AuthResult {
+        return runCatching {
+            val envelope = authApi.changeEmail(EmailChangeRequest(newEmail = newEmail, currentPassword = currentPassword))
+            unwrap(envelope) { it }
+            Unit
+        }.fold(
+            onSuccess = {
+                // Re-read so the pending-email banner appears immediately and
+                // matches what web would show for the same account.
+                refreshMe()
+                AuthResult.Success(null)
+            },
+            onFailure = { toResult(it) }
+        )
+    }
+
+    /**
+     * Attach a Google identity to the CURRENT account (not sign-in).
+     *
+     * Uses the same Credential Manager ID token as native sign-in, but posts it
+     * to /link/google, which binds it to this session instead of running
+     * find-or-create. That is the whole point: find-or-create only links when
+     * the Google address MATCHES the account email, so a player with a different
+     * Gmail silently ended up with a second account.
+     */
+    suspend fun linkGoogle(idToken: String): AuthResult {
+        return runCatching {
+            val envelope = authApi.linkGoogle(GoogleTokenRequest(idToken = idToken))
+            unwrap(envelope) { it }
+        }.fold(
+            onSuccess = { res ->
+                // The endpoint returns the fresh account block; adopt it rather
+                // than re-fetching, so the toggle flips without a round trip.
+                res.account?.let { _state.value = _state.value.copy(account = it) }
+                AuthResult.Success(null)
+            },
+            onFailure = { toResult(it) }
+        )
+    }
+
+    suspend fun unlinkGoogle(): AuthResult {
+        return runCatching {
+            val envelope = authApi.unlinkGoogle()
+            unwrap(envelope) { it }
+        }.fold(
+            onSuccess = { res ->
+                res.account?.let { _state.value = _state.value.copy(account = it) }
+                AuthResult.Success(null)
+            },
+            onFailure = { toResult(it) }
+        )
+    }
+
     suspend fun forgotPassword(email: String): AuthResult {
         return runCatching {
             val envelope = authApi.forgotPassword(ForgotPasswordRequest(email = email))
@@ -256,6 +317,13 @@ fun throwableToAuthFailure(throwable: Throwable): AuthResult.Failure {
 
 data class AuthSessionState(
     val user: AuthUser? = null,
+    /**
+     * Account/security state as the SERVER computed it (email, linked
+     * providers, pending email change, and whether unlinking is safe). Comes
+     * down on the same /api/auth/me call as [user], so this screen shows the
+     * same thing on Android and web wherever the player signs in.
+     */
+    val account: AccountState? = null,
     /** True once the first refreshMe() call has completed (success or failure). */
     val checked: Boolean = false
 )

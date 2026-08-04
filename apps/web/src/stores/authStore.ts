@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import { api, ApiError, type Me } from "../lib/api";
+import type { AccountState } from "../features/settings/AccountSecuritySection";
 
 /**
  * authStore — the logged-in user (from /api/auth/me) + auth actions. The whole
@@ -11,6 +12,8 @@ type Providers = { email: boolean; guest: boolean; google: boolean; facebook: bo
 
 export type AuthStore = {
   me: Me | null;
+  /** Server-derived account/security state (see AccountSecuritySection). */
+  account: AccountState | null;
   loading: boolean;
   ready: boolean; // bootstrap finished
   providers: Providers;
@@ -32,6 +35,7 @@ export type AuthStore = {
 
 export const useAuthStore = create<AuthStore>((set, get) => ({
   me: null,
+  account: null,
   loading: false,
   ready: false,
   providers: { email: true, guest: true, google: false, facebook: false, emailDelivery: false, diamondTopUp: false },
@@ -39,10 +43,10 @@ export const useAuthStore = create<AuthStore>((set, get) => ({
 
   bootstrap: async () => {
     try {
-      const { user } = await api.get<{ user: Me }>("/api/auth/me");
-      set({ me: user });
+      const { user, account } = await api.get<{ user: Me; account: AccountState | null }>("/api/auth/me");
+      set({ me: user, account: account ?? null });
     } catch {
-      set({ me: null });
+      set({ me: null, account: null });
     } finally {
       set({ ready: true });
     }

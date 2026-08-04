@@ -281,6 +281,160 @@ export async function requestPasswordReset(prisma: PrismaClient, email: string) 
   await sendEmail(user.email, "Reset your FilipinoDama Royal password", resetEmailHtml(user.username, link), link);
 }
 
+const EMAIL_CHANGE_TTL_MS = 60 * 60 * 1000;
+
+/**
+ * Everything the account screens need to render identically on web and Android.
+ *
+ * Derived on the SERVER and returned from /api/auth/me rather than assembled
+ * client-side: the requirement is that this state is the same wherever you sign
+ * in, and two clients each working out "can I unlink Google?" from their own
+ * cache is exactly how they drift apart.
+ */
+export async function accountState(prisma: PrismaClient, userId: string) {
+  const u = await prisma.user.findUniqueOrThrow({
+    where: { id: userId },
+    select: {
+      email: true, emailVerified: true, passwordHash: true, isGuest: true,
+      pendingEmail: true, pendingEmailExpires: true,
+      oauthAccounts: { select: { provider: true } },
+    },
+  });
+  const providers = u.oauthAccounts.map((a) => a.provider);
+  const hasPassword = !!u.passwordHash;
+  const pendingLive = !!u.pendingEmail && !!u.pendingEmailExpires && u.pendingEmailExpires > new Date();
+  return {
+    email: u.email,
+    emailVerified: !!u.emailVerified,
+    hasPassword,
+    linkedProviders: providers,
+    pendingEmail: pendingLive ? u.pendingEmail : null,
+    // The client must not offer an unlink that would lock the player out, and
+    // must not have to derive that rule itself.
+    canUnlink: providers.length > 1 || hasPassword,
+    canChangeEmail: !u.isGuest,
+  };
+}
+
+/**
+ * Stage an email change. The address is NOT applied here — see
+ * User.pendingEmail. Requires the current password when the account has one, so
+ * a stolen session alone cannot begin moving the account elsewhere.
+ */
+export async function requestEmailChange(
+  prisma: PrismaClient,
+  userId: string,
+  newEmailRaw: string,
+  currentPassword?: string,
+) {
+  const user = await prisma.user.findUniqueOrThrow({ where: { id: userId } });
+  if (user.isGuest) throw err.badRequest("GUEST_ACCOUNT", "Create an account before changing your email.");
+
+  // Re-authenticate. OAuth-only accounts have no password to check; for them the
+  // link sent to the NEW address is the only proof of ownership, which is why
+  // that link is what actually applies the change.
+  if (user.passwordHash) {
+    if (!currentPassword) throw err.badRequest("PASSWORD_REQUIRED", "Enter your current password to change your email.");
+    if (!(await verifyPassword(currentPassword, user.passwordHash)))
+      throw err.badRequest("BAD_PASSWORD", "That password is incorrect.");
+  }
+
+  const newEmail = newEmailRaw.trim().toLowerCase();
+  if (newEmail === user.email?.toLowerCase())
+    throw err.badRequest("SAME_EMAIL", "That is already your email address.");
+  // Same non-deletedAt-scoped check register() uses: the address stays
+  // unavailable while a soft-deleted account still holds it.
+  if (await prisma.user.findUnique({ where: { email: newEmail } }))
+    throw err.conflict("EMAIL_TAKEN", "That email is already in use.");
+
+  const pendingEmailToken = opaqueToken();
+  await prisma.user.update({
+    where: { id: userId },
+    data: { pendingEmail: newEmail, pendingEmailToken, pendingEmailExpires: new Date(Date.now() + EMAIL_CHANGE_TTL_MS) },
+  });
+  const link = `${env.WEB_ORIGIN}/verify-email-change?token=${pendingEmailToken}`;
+  // Sent to the NEW address ONLY — mailing the old one would prove nothing
+  // about who controls the new one.
+  await sendEmail(newEmail, "Confirm your new FilipinoDama Royal email", verifyEmailHtml(user.username, link), link);
+  return { pendingEmail: newEmail };
+}
+
+/** Apply a staged email change; the link's holder proves they own the address. */
+export async function confirmEmailChange(prisma: PrismaClient, token: string) {
+  const user = await prisma.user.findUnique({ where: { pendingEmailToken: token } });
+  if (!user || !user.pendingEmail || !user.pendingEmailExpires || user.pendingEmailExpires < new Date())
+    throw err.badRequest("BAD_TOKEN", "That confirmation link is invalid or has expired.");
+
+  // Re-check at APPLY time, not only at request time: someone else may have
+  // taken the address during the hour the link was valid.
+  const clash = await prisma.user.findUnique({ where: { email: user.pendingEmail } });
+  if (clash && clash.id !== user.id) {
+    await prisma.user.update({
+      where: { id: user.id },
+      data: { pendingEmail: null, pendingEmailToken: null, pendingEmailExpires: null },
+    });
+    throw err.conflict("EMAIL_TAKEN", "That email was claimed by another account. Try a different one.");
+  }
+
+  await prisma.user.update({
+    where: { id: user.id },
+    data: {
+      email: user.pendingEmail,
+      // Confirmed by clicking a link sent to it — that IS the verification.
+      emailVerified: new Date(),
+      pendingEmail: null,
+      pendingEmailToken: null,
+      pendingEmailExpires: null,
+    },
+  });
+  return { email: user.pendingEmail };
+}
+
+/**
+ * Attach a verified OAuth identity to the CURRENT account.
+ *
+ * The gap this closes: findOrCreateOAuthUser links only by MATCHING EMAIL, so a
+ * player whose Google address differs from their account email silently got a
+ * SECOND account — separate trophies and inventory, no wallet merge, and no
+ * sign anything had gone wrong. Linking from a signed-in session removes the
+ * guesswork.
+ */
+export async function linkOAuthAccount(
+  prisma: PrismaClient,
+  userId: string,
+  provider: string,
+  providerId: string,
+) {
+  const existing = await prisma.oAuthAccount.findUnique({
+    where: { provider_providerId: { provider, providerId } },
+    select: { userId: true },
+  });
+  if (existing) {
+    if (existing.userId === userId) return { linked: true, alreadyLinked: true };
+    // Never re-point someone else's Google identity at this account — that is
+    // account takeover, not linking.
+    throw err.conflict("PROVIDER_IN_USE", "That Google account is already linked to a different player.");
+  }
+  await prisma.oAuthAccount.create({ data: { provider, providerId, userId } });
+  return { linked: true, alreadyLinked: false };
+}
+
+/** Detach a provider, refusing anything that would leave no way back in. */
+export async function unlinkOAuthAccount(prisma: PrismaClient, userId: string, provider: string) {
+  const user = await prisma.user.findUniqueOrThrow({
+    where: { id: userId },
+    select: { passwordHash: true, oauthAccounts: { select: { provider: true } } },
+  });
+  const links = user.oauthAccounts.map((a) => a.provider);
+  if (!links.includes(provider)) throw err.badRequest("NOT_LINKED", "That account isn't connected.");
+  // The point of the guard: an OAuth-only player who unlinks their only provider
+  // has no password to fall back on and can never sign in again.
+  if (!user.passwordHash && links.length === 1)
+    throw err.badRequest("LAST_SIGN_IN_METHOD", "Set a password first — this is your only way to sign in.");
+  await prisma.oAuthAccount.deleteMany({ where: { userId, provider } });
+  return { unlinked: true };
+}
+
 export async function resetPassword(prisma: PrismaClient, token: string, password: string) {
   const user = await prisma.user.findUnique({ where: { resetToken: token } });
   if (!user || !user.resetExpires || user.resetExpires < new Date())

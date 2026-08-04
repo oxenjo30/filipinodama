@@ -2,6 +2,7 @@ package com.filipinodama.app.data
 
 import kotlinx.serialization.Serializable
 import retrofit2.http.Body
+import retrofit2.http.DELETE
 import retrofit2.http.GET
 import retrofit2.http.POST
 
@@ -50,6 +51,26 @@ interface AuthApi {
      * device that has already signed in on web with the same Google account
      * lands on the identical account here.
      */
+    /**
+     * Stage an email change. The address is NOT applied until the owner of the
+     * NEW mailbox clicks the emailed link — see the server's requestEmailChange.
+     * currentPassword is omitted for OAuth-only accounts (they have none); the
+     * server decides whether one is required.
+     */
+    @POST("api/auth/email/change")
+    suspend fun changeEmail(@Body body: EmailChangeRequest): ApiEnvelope<EmailChangeResponse>
+
+    /**
+     * Attach this Google identity to the CURRENT account, rather than the
+     * find-or-create that plain sign-in does. Without it, a player whose Google
+     * address differs from their account email silently gets a SECOND account.
+     */
+    @POST("api/auth/link/google")
+    suspend fun linkGoogle(@Body body: GoogleTokenRequest): ApiEnvelope<LinkResponse>
+
+    @DELETE("api/auth/link/google")
+    suspend fun unlinkGoogle(): ApiEnvelope<UnlinkResponse>
+
     @POST("api/auth/oauth/google/token")
     suspend fun googleToken(@Body request: GoogleTokenRequest): ApiEnvelope<AuthUserResponse>
 }
@@ -99,11 +120,42 @@ data class AuthUserResponse(
     val user: AuthUser
 )
 
-/** GET api/auth/me returns `{ user: AuthUser | null }` — never a 401. */
+/** GET api/auth/me returns `{ user, account }` — never a 401. */
 @Serializable
 data class MeResponse(
-    val user: AuthUser? = null
+    val user: AuthUser? = null,
+    /**
+     * Server-derived account/security state. Deliberately NOT computed on the
+     * client: web and Android must show the same thing wherever the player signs
+     * in, and `canUnlink` in particular encodes a rule (never remove your only
+     * way back in) that must not be duplicated in two places.
+     */
+    val account: AccountState? = null
 )
+
+@Serializable
+data class AccountState(
+    val email: String? = null,
+    val emailVerified: Boolean = false,
+    val hasPassword: Boolean = false,
+    val linkedProviders: List<String> = emptyList(),
+    /** New address awaiting confirmation, or null. */
+    val pendingEmail: String? = null,
+    val canUnlink: Boolean = false,
+    val canChangeEmail: Boolean = false,
+)
+
+@Serializable
+data class EmailChangeRequest(val newEmail: String, val currentPassword: String? = null)
+
+@Serializable
+data class EmailChangeResponse(val pendingEmail: String? = null)
+
+@Serializable
+data class LinkResponse(val linked: Boolean = false, val alreadyLinked: Boolean = false, val account: AccountState? = null)
+
+@Serializable
+data class UnlinkResponse(val unlinked: Boolean = false, val account: AccountState? = null)
 
 @Serializable
 data class ProvidersResponse(

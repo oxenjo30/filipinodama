@@ -36,12 +36,18 @@ const CALLBACK = (p: OAuthProvider) => `${env.OAUTH_CALLBACK_BASE}/api/auth/oaut
 // Each state carries the post-login `next` path the user was headed to. Redis
 // key TTL enforces the same ~10-minute expiry the Map's `exp` used (fail-closed:
 // once expired the key is gone, so the callback is rejected).
-type StateEntry = { next: string };
+type StateEntry = { next: string; linkUserId?: string };
 const STATE_KEY = (s: string) => `oauth:state:${s}`;
 const STATE_TTL_SEC = 10 * 60;
-export async function makeState(next = "/"): Promise<string> {
+/**
+ * [linkUserId] turns the redirect flow into a LINK instead of a sign-in: the
+ * callback attaches the returned Google identity to that already-signed-in user
+ * rather than running find-or-create. Carried in the server-side state entry
+ * (never a query param) so the browser cannot choose whose account gets linked.
+ */
+export async function makeState(next = "/", linkUserId?: string): Promise<string> {
   const s = randomBytes(16).toString("hex");
-  await redis.set(STATE_KEY(s), JSON.stringify({ next } satisfies StateEntry), "EX", STATE_TTL_SEC);
+  await redis.set(STATE_KEY(s), JSON.stringify({ next, linkUserId } satisfies StateEntry), "EX", STATE_TTL_SEC);
   return s;
 }
 // Atomic GET+DEL so a state can only ever be consumed once (single-use), even if
@@ -49,12 +55,12 @@ export async function makeState(next = "/"): Promise<string> {
 // rather than GETDEL so it works regardless of the ioredis client's typed method
 // surface.
 const CONSUME_STATE_LUA = `local v = redis.call('GET', KEYS[1]); if v then redis.call('DEL', KEYS[1]) end; return v`;
-/** Validate + consume a state; returns the stored `next` path, or null if invalid/expired. */
-export async function consumeState(s: string): Promise<string | null> {
+/** Validate + consume a state; returns the stored entry, or null if invalid/expired. */
+export async function consumeState(s: string): Promise<StateEntry | null> {
   const raw = (await redis.eval(CONSUME_STATE_LUA, 1, STATE_KEY(s))) as string | null;
   if (raw == null) return null; // missing or expired → fail-closed (login rejected)
   try {
-    return (JSON.parse(raw) as StateEntry).next;
+    return JSON.parse(raw) as StateEntry;
   } catch {
     return null;
   }
