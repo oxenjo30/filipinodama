@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { AccountSecuritySection } from "./AccountSecuritySection";
 import { useNavigate } from "react-router-dom";
 import { api, ApiError } from "../../lib/api";
 import { useAuthStore } from "../../stores/authStore";
@@ -91,6 +92,8 @@ export function SettingsPage() {
   const showToast = useAppStore((s) => s.showToast);
 
   const me = useAuthStore((s) => s.me);
+  const account = useAuthStore((s) => s.account);
+  const bootstrap = useAuthStore((s) => s.bootstrap);
   const logout = useAuthStore((s) => s.logout);
 
   const s = useSettingsStore();
@@ -337,6 +340,10 @@ export function SettingsPage() {
             Account
           </div>
           <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+            {/* Email + Google live above the data/legal rows: they are the ones
+                players actually come here to change. */}
+            <AccountSecuritySection account={account} onChanged={bootstrap} />
+
             <button
               type="button"
               onClick={exportData}

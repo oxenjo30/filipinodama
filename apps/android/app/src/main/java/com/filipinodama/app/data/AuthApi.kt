@@ -50,6 +50,15 @@ interface AuthApi {
      * device that has already signed in on web with the same Google account
      * lands on the identical account here.
      */
+    /**
+     * Stage an email change. The address is NOT applied until the owner of the
+     * NEW mailbox clicks the emailed link — see the server's requestEmailChange.
+     * currentPassword is omitted for OAuth-only accounts (they have none); the
+     * server decides whether one is required.
+     */
+    @POST("api/auth/email/change")
+    suspend fun changeEmail(@Body body: EmailChangeRequest): ApiEnvelope<EmailChangeResponse>
+
     @POST("api/auth/oauth/google/token")
     suspend fun googleToken(@Body request: GoogleTokenRequest): ApiEnvelope<AuthUserResponse>
 }
@@ -99,11 +108,34 @@ data class AuthUserResponse(
     val user: AuthUser
 )
 
-/** GET api/auth/me returns `{ user: AuthUser | null }` — never a 401. */
+/** GET api/auth/me returns `{ user, account }` — never a 401. */
 @Serializable
 data class MeResponse(
-    val user: AuthUser? = null
+    val user: AuthUser? = null,
+    /**
+     * Server-derived account/security state. Deliberately NOT computed on the
+     * client: web and Android must show the same thing wherever the player signs
+     * in, and `canUnlink` in particular encodes a rule (never remove your only
+     * way back in) that must not be duplicated in two places.
+     */
+    val account: AccountState? = null
 )
+
+@Serializable
+data class AccountState(
+    val email: String? = null,
+    val emailVerified: Boolean = false,
+    val hasPassword: Boolean = false,
+    /** New address awaiting confirmation, or null. */
+    val pendingEmail: String? = null,
+    val canChangeEmail: Boolean = false,
+)
+
+@Serializable
+data class EmailChangeRequest(val newEmail: String, val currentPassword: String? = null)
+
+@Serializable
+data class EmailChangeResponse(val pendingEmail: String? = null)
 
 @Serializable
 data class ProvidersResponse(

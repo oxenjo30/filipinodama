@@ -417,7 +417,13 @@ export async function userRoutes(app: FastifyInstance) {
       ]);
 
     // Strip secrets from the account record.
-    const { passwordHash, verifyToken, verifyExpires, resetToken, resetExpires, ...account } = user as any;
+    // pendingEmailToken is a live credential — whoever holds it can complete an
+    // email change — so it must be stripped here exactly like verifyToken and
+    // resetToken. The GDPR export is a file the user downloads and may share.
+    const {
+      passwordHash, verifyToken, verifyExpires, resetToken, resetExpires,
+      pendingEmailToken, pendingEmailExpires, ...account
+    } = user as any;
 
     return ok({
       exportedAt: new Date().toISOString(),
