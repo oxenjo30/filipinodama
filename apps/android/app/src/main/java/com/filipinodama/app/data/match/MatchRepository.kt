@@ -2,6 +2,7 @@ package com.filipinodama.app.data.match
 
 import com.filipinodama.app.data.ApiClient
 import com.filipinodama.app.data.SocketClient
+import com.filipinodama.app.data.system.NetworkStatus
 import com.filipinodama.app.data.engine.GameResult
 import com.filipinodama.app.data.engine.GameState
 import com.filipinodama.app.data.engine.MatchEndReasons
@@ -70,8 +71,37 @@ object MatchRepository {
      */
     private val JOIN_ACK_TIMEOUT_MS = 6_000L
 
-    private val JOIN_FAILED_MESSAGE =
-        "Couldn't reach the game server. Check your connection and try again."
+    /**
+     * Why a join failed, in the player's words.
+     *
+     * This used to be one fixed string — "Couldn't reach the game server. Check
+     * your connection and try again." — shown for every failure shape. That was
+     * wrong twice over. It told players with a perfectly good connection that
+     * their connection was at fault (owner report 2026-08-04: full signal, and
+     * the app's own REST calls were returning 200 either side of the failure),
+     * and it destroyed the only diagnostic signal anyone had, because a server
+     * problem and a real outage looked identical from the outside.
+     *
+     * The three states are genuinely different and the player can act on
+     * exactly one of them:
+     *  - offline: their problem, and worth telling them
+     *  - online but no realtime connection: ours, still recovering
+     *  - connected but unacknowledged: ours, and squarely a server fault
+     */
+    internal fun joinFailedMessage(online: Boolean, socketConnected: Boolean): String = when {
+        !online ->
+            "You're offline. Check your connection and try again."
+        !socketConnected ->
+            "Still connecting to the game server. Give it a moment and try again."
+        else ->
+            "The game server didn't respond. Please try again."
+    }
+
+    private fun joinFailedMessage(): String =
+        joinFailedMessage(
+            online = NetworkStatus.isOnline(),
+            socketConnected = socket?.connected() == true
+        )
 
     /**
      * How long to sit in a SEARCHING state before re-asking the server.
@@ -356,7 +386,7 @@ object MatchRepository {
             if (!emitPayload(EV.mmJoin, request)) {
                 lastQueueRequest = null
                 cancelSearchRetry()
-                _state.update { it.copy(status = MatchStatus.IDLE, error = JOIN_FAILED_MESSAGE) }
+                _state.update { it.copy(status = MatchStatus.IDLE, error = joinFailedMessage()) }
                 return
             }
             armJoinAckWatchdog(token)
@@ -403,7 +433,7 @@ object MatchRepository {
             // Only fires while STILL un-acknowledged: mm:searching and mm:found
             // both bump the token, and FOUND/PLAYING must never be torn down.
             if (_state.value.status != MatchStatus.SEARCHING) return@scheduler
-            _state.update { it.copy(status = MatchStatus.IDLE, error = JOIN_FAILED_MESSAGE) }
+            _state.update { it.copy(status = MatchStatus.IDLE, error = joinFailedMessage()) }
             runCatching { socket?.emit(EV.mmLeave) }
         }
     }
