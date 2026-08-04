@@ -429,6 +429,8 @@ fun BattleScreen(
                 progressLabel = if (nextTier != null) "${nextTier.min - trophies} to ${nextTier.label}" else "Top of the ladder",
                 sub = if (needsAccountForRanked) "Requires a free account" else null,
                 selected = armedMode == ArmedMode.RANKED,
+                budget = motionBudget,
+                entryIndex = 0,
                 onClick = {
                     loadout.setArmedMode(ArmedMode.RANKED)
                     sheetOpen = false
@@ -446,6 +448,8 @@ fun BattleScreen(
                 statIconRes = R.drawable.ic_trophy,
                 sub = "Casual online · no trophy risk",
                 selected = armedMode == ArmedMode.CASUAL,
+                budget = motionBudget,
+                entryIndex = 1,
                 onClick = {
                     loadout.setArmedMode(ArmedMode.CASUAL)
                     sheetOpen = false
@@ -466,6 +470,8 @@ fun BattleScreen(
                 statIconRes = R.drawable.ic_trophy,
                 sub = "Practice offline · ${difficultyLabel(aiDifficulty)}",
                 selected = armedMode == ArmedMode.AI,
+                budget = motionBudget,
+                entryIndex = 2,
                 onClick = {
                     loadout.setArmedMode(ArmedMode.AI)
                     sheetOpen = false
@@ -482,6 +488,8 @@ fun BattleScreen(
                 statIconRes = R.drawable.ic_trophy,
                 sub = "Host a room or join with a code",
                 selected = armedMode == ArmedMode.PRIVATE,
+                budget = motionBudget,
+                entryIndex = 3,
                 onClick = {
                     loadout.setArmedMode(ArmedMode.PRIVATE)
                     sheetOpen = false
@@ -502,7 +510,9 @@ fun BattleScreen(
                     onClick = {
                         sheetOpen = false
                         onWatchLive()
-                    }
+                    },
+                    budget = motionBudget,
+                    entryIndex = 4
                 )
             }
         }
