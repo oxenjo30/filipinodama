@@ -479,8 +479,8 @@ android {
         // no longer dies when a stray socket drops (PR #110), a missed mm:found
         // is recoverable (#111), and the resume is age-bounded so a stale match
         // can't trap a player (#117).
-        versionCode = 58
-        versionName = "0.1.58"
+        versionCode = 59
+        versionName = "0.1.59"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
