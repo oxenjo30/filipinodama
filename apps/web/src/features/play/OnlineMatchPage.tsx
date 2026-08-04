@@ -247,15 +247,62 @@ export function OnlineMatchPage() {
     if (freshlyFound && !enteringMatch) {
       setEnteringMatch(true);
       setLoaderMinElapsed(false);
-      const t = window.setTimeout(() => setLoaderMinElapsed(true), ONLINE_LOADER_MS);
-      return () => window.clearTimeout(t);
     }
   }, [status, spectateId, resuming, enteringMatch]);
+
+  // The minimum on-screen time owns its OWN effect, keyed only on enteringMatch.
+  //
+  // OWNER-REPORTED (2026-08-04): "Pairing You With a Rival" ran forever — every
+  // online match, both accounts, both browsers. It was never a matchmaking
+  // failure at all: the server paired the player correctly and mm:found DID
+  // arrive (that screen only renders once status === "found"). The loader simply
+  // never dismissed.
+  //
+  // The timer used to be started inside the effect above, which lists
+  // `enteringMatch` in its deps AND calls setEnteringMatch(true). Setting it
+  // re-ran that effect, whose cleanup then cleared its own pending timeout —
+  // before it could fire. On the re-run `!enteringMatch` was false, so no
+  // replacement timer was ever scheduled. loaderMinElapsed stayed false forever,
+  // so the dismiss condition below could never be satisfied and the board never
+  // appeared. This is also why old bot matches recorded moves=1 then "abandon":
+  // the bot opened, and the human was stuck behind this loader, unable to move.
+  //
+  // Keyed on `enteringMatch` alone, the timer starts exactly when the loader
+  // appears and is only cleared when it genuinely goes away.
+  useEffect(() => {
+    if (!enteringMatch) return;
+    const t = window.setTimeout(() => setLoaderMinElapsed(true), ONLINE_LOADER_MS);
+    return () => window.clearTimeout(t);
+  }, [enteringMatch]);
+
   // Dismiss the loader only once the board is ready AND the min time has passed —
   // so progress always completes to 100% before the board appears (no mid-jump).
   useEffect(() => {
     if (enteringMatch && state && loaderMinElapsed) setEnteringMatch(false);
   }, [enteringMatch, state, loaderMinElapsed]);
+
+  // Safety net: never let the pre-board loader become a dead end. If the board
+  // state has not arrived well past the loader's own runtime, re-ask for it
+  // (a dropped match:resync is recoverable), and give up gracefully rather than
+  // holding the player on an animation forever.
+  useEffect(() => {
+    if (!enteringMatch || state) return;
+    const retry = window.setTimeout(() => void resync(), ONLINE_LOADER_MS + 2000);
+    const bail = window.setTimeout(() => {
+      setEnteringMatch(false);
+      showToast("That match could not be loaded. Try again.");
+      navigate("/play");
+    }, ONLINE_LOADER_MS + 12000);
+    return () => {
+      window.clearTimeout(retry);
+      window.clearTimeout(bail);
+    };
+    // Deps are deliberately ONLY the two values that should restart these timers.
+    // Including resync/navigate/showToast would re-run this effect on any render
+    // where one of them has a new identity, clearing both timeouts before they
+    // fire — precisely the self-cancelling-timer bug this block exists to catch.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [enteringMatch, state]);
 
   const myTurn = !!state && !state.result && state.turn === myColor && status === "playing";
   const flip = myColor === "blue"; // blue player views from their side
