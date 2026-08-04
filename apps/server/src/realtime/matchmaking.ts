@@ -297,6 +297,7 @@ async function startBotMatch(io: IOServer, userId: string, mode: QueueMode, colo
   // bug the human-pairing path had).
   const socket = await currentSocketForUser(io, userId);
   if (!socket) {
+    console.warn(`[matchmaking] bot-fill skipped: no live socket for ${userId} (${mode})`);
     await leaveAllQueues(userId);
     return;
   }
@@ -313,7 +314,13 @@ async function startBotMatch(io: IOServer, userId: string, mode: QueueMode, colo
     where: { username: { in: BOT_USERNAMES } },
     select: { id: true, trophies: true },
   });
-  if (bots.length === 0) return; // no bots seeded → leave the player queued
+  if (bots.length === 0) {
+    // Nothing to fill with (bots not seeded / renamed). Leave the player queued
+    // rather than dropping them, but say so — this used to fail completely
+    // silently, which is exactly the state that made this bug undiagnosable.
+    console.error("[matchmaking] bot-fill impossible: no seeded bot users match BOT_USERNAMES");
+    return;
+  }
   const nearest = [...bots]
     .sort((a, b) => Math.abs(a.trophies - myTrophies) - Math.abs(b.trophies - myTrophies))
     .slice(0, 3);
@@ -385,7 +392,14 @@ export async function handleBotFill(io: IOServer, payload: Record<string, unknow
   const colorPref = payload.colorPref as ColorPref;
   // Re-check we're still the sole waiter for this mode before botting.
   const stillQueued = await getQueuedIn(userId);
-  if (stillQueued !== mode) return;
+  if (stillQueued !== mode) {
+    // The player left / was paired / was dequeued in the interim. Benign on its
+    // own, but log it: an unexplained run of these is the signature of the
+    // teardown bug this path just had (a stray socket dropping wiped the queue).
+    console.log(`[matchmaking] bot-fill stood down for ${userId}: queued=${stillQueued ?? "none"} expected=${mode}`);
+    return;
+  }
+  console.log(`[matchmaking] bot-fill firing for ${userId} (${mode})`);
   await startBotMatch(io, userId, mode, colorPref).catch((err) =>
     console.error("[matchmaking] startBotMatch failed", err),
   );
@@ -436,6 +450,29 @@ export function registerMatchmaking(io: IOServer, socket: Socket) {
   });
 
   socket.on("disconnect", () => {
-    void leaveAllQueues(userId);
+    // Only drop the queue entry when the user's LAST socket goes.
+    //
+    // OWNER-REPORTED (2026-08-04, web, RANKED): "no bot ever fills after the
+    // 7-20s wait". This handler used to call leaveAllQueues() unconditionally,
+    // keyed by userId — so ANY socket closing dequeued the player and cancelled
+    // their pending bot-fill job, even while they were still connected on
+    // another socket watching "Finding opponent". A user routinely holds more
+    // than one (a second tab, phone + web, or a reconnect whose predecessor has
+    // not timed out yet — the 2026-08-03 report found NINE on one account), and
+    // socket.io only prunes a dead member on its own timeout, which is far
+    // longer than the bot-fill window. Nothing re-arms the job and no
+    // mm:cancelled is emitted, so the player waits forever.
+    //
+    // This is the same multi-socket correctness bug the mmFound DELIVERY path
+    // had (see deliverToUser) — that fix addressed delivery and left teardown
+    // still single-socket, which is why the symptom survived it.
+    //
+    // By the time "disconnect" fires, socket.io has already removed this socket
+    // from its rooms, so the presence room holds exactly the user's OTHER live
+    // sockets: a non-null result here means they're still around.
+    void (async () => {
+      if (await currentSocketForUser(io, userId)) return; // still connected elsewhere
+      await leaveAllQueues(userId);
+    })().catch((e) => console.error("[matchmaking] disconnect cleanup failed", e));
   });
 }
