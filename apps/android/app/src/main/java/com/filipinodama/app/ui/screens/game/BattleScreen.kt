@@ -38,13 +38,19 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Shadow
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.em
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.filipinodama.app.R
 import com.filipinodama.app.data.AuthRepository
@@ -579,13 +585,12 @@ private fun RailButton(
             // control asking for attention rather than the art wobbling.
             .attentionBounce(active = attention, budget = budget)
             .size(50.dp)
-            .clip(RoundedCornerShape(15.dp))
-            .background(OUTLINE)
-            .padding(3.dp)
-            .clip(RoundedCornerShape(12.dp))
-            // Tile lifted from #3A2A5E→#241640 so the icon has something to sit
-            // on other than the dark room behind it.
+            .clip(RoundedCornerShape(14.dp))
+            // Lifted gradient + a gold hairline, per the approved mockup. The
+            // previous 3dp OUTLINE ring read as a heavy black border that
+            // fought the icon it was framing.
             .background(Brush.verticalGradient(listOf(Color(0xFF4E3A82), Color(0xFF2B1A52))))
+            .border(1.dp, TILE_EDGE, RoundedCornerShape(14.dp))
             .clickable(onClick = onClick),
         contentAlignment = Alignment.Center
     ) {
@@ -635,11 +640,9 @@ private fun DockSlot(
         Box(
             modifier = Modifier
                 .size(64.dp)
-                .clip(RoundedCornerShape(18.dp))
-                .background(OUTLINE)
-                .padding(3.dp)
-                .clip(RoundedCornerShape(15.dp))
-                .background(Brush.verticalGradient(listOf(Color(0xFF3A2A5E), Color(0xFF241640))))
+                .clip(RoundedCornerShape(17.dp))
+                .background(Brush.verticalGradient(listOf(Color(0xFF4E3A82), Color(0xFF2B1A52))))
+                .border(1.dp, TILE_EDGE, RoundedCornerShape(17.dp))
                 .clickable(onClick = onClick),
             contentAlignment = Alignment.Center
         ) { content() }
@@ -684,12 +687,7 @@ private fun BattleButton(word: String, sub: String, onClick: () -> Unit, modifie
         contentAlignment = Alignment.Center
     ) {
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            Text(
-                word.uppercase(),
-                color = Color(0xFF3A2405),
-                style = MaterialTheme.typography.headlineSmall,
-                maxLines = 1
-            )
+            BattleWord(word.uppercase())
             Text(
                 sub.uppercase(),
                 color = Color(0xFF6A4A0C),
@@ -701,6 +699,75 @@ private fun BattleButton(word: String, sub: String, onClick: () -> Unit, modifie
         }
     }
 }
+
+/**
+ * The BATTLE button's headline word, shrunk to fit rather than clipped.
+ *
+ * The word is not always "BATTLE": arming Private Room makes it "CREATE ROOM",
+ * which does not fit at headlineSmall on a narrow phone or at a raised font
+ * scale. It was declared `maxLines = 1` with no [TextAlign] and the default
+ * [TextOverflow.Clip], so when it did not fit the Text expanded to the full
+ * width, drew from the START, and clipped the tail — rendering as a
+ * left-of-centre "CREATE" with the second word missing, while the subtitle
+ * below stayed centred because it sets textAlign explicitly. Owner report
+ * 2026-08-04; reproduced at font scale 1.3.
+ *
+ * Shrinking is preferred over wrapping so the primary CTA keeps its single-line
+ * proportion. The step-down is bounded by [MIN_BATTLE_WORD_SP], and the state is
+ * keyed on the word and the font scale so a mode change or an accessibility
+ * change re-measures from full size instead of staying stuck small.
+ */
+@Composable
+private fun BattleWord(word: String) {
+    // The primary CTA earns the heaviest weight in the family. headlineSmall is
+    // Cinzel SemiBold, which reads as a heading rather than as a button; Cinzel
+    // Black with a little tracking reads as struck metal. Both weights already
+    // ship inside cinzel_variable.ttf, so this costs no new asset. The pale
+    // shadow sits BELOW the dark letters, which on the gold face reads as
+    // engraving rather than as a drop shadow.
+    val base = MaterialTheme.typography.headlineSmall.copy(
+        fontWeight = FontWeight.Black,
+        letterSpacing = 0.05.em,
+        shadow = Shadow(
+            color = Color(0x59FFF3CE),
+            offset = Offset(0f, 1.6f),
+            blurRadius = 0.5f
+        )
+    )
+    val fontScale = LocalDensity.current.fontScale
+    var size by remember(word, fontScale) { mutableStateOf(base.fontSize) }
+    var settled by remember(word, fontScale) { mutableStateOf(false) }
+
+    Text(
+        word,
+        color = Color(0xFF3A2405),
+        style = base,
+        fontSize = size,
+        maxLines = 1,
+        softWrap = false,
+        textAlign = TextAlign.Center,
+        // Ellipsis only as a floor guard — the shrink loop should always win
+        // first, but a truncated word must never masquerade as a whole one.
+        overflow = TextOverflow.Ellipsis,
+        modifier = Modifier.fillMaxWidth(),
+        onTextLayout = { result ->
+            // hasVisualOverflow, NOT didOverflowWidth: with Ellipsis the
+            // paragraph is truncated to fit, so didOverflowWidth reads false and
+            // the shrink below would never run — the word would just ellipsise.
+            if (!settled && result.hasVisualOverflow && size.value > MIN_BATTLE_WORD_SP) {
+                size = size * 0.94f
+            } else {
+                settled = true
+            }
+        }
+    )
+}
+
+/** Floor for [BattleWord]'s shrink-to-fit, below which the CTA stops reading as one. */
+private const val MIN_BATTLE_WORD_SP = 15f
+
+/** Gold hairline on the icon tiles — the mockup's edge, replacing a 3dp black ring. */
+private val TILE_EDGE = Color(0x8CF5D783)
 
 @Composable
 private fun DifficultyChip(
