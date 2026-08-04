@@ -111,22 +111,17 @@ async function deliverToUser(io: IOServer, userId: string, matchId: string, even
   await io.in(room).socketsJoin(matchId);
   io.to(room).emit(event, payload);
 
-  // DECISIVE INSTRUMENTATION (2026-08-04). Three fixes in, the server logs prove
-  // the match is created and this emit runs, yet the player still sees nothing —
-  // and we have been inferring the reason instead of measuring it. Recording the
-  // recipient count here settles it in one retry:
-  //   sockets=0  → the event went nowhere; this is a DELIVERY gap (the player's
-  //                socket was mid-reconnect, or never joined presence:<id>)
-  //   sockets=N  → it reached N live sockets and the CLIENT dropped it, which
-  //                moves the investigation entirely to the web/Android handler
-  // Cheap (one room lookup on a rare path) and worth keeping: it is the one
-  // measurement that distinguishes the two halves of this whole class of bug.
+  // Alarm on a delivery that reached NOBODY. During the 2026-08-04
+  // investigation this logged on every delivery to establish whether mm:found
+  // was reaching the client at all (it was — the bug turned out to be a web
+  // loader that never dismissed). The success case is now proven and would log
+  // on every match, so only the actionable case is kept: a match was created and
+  // the player was told nothing, which always warrants a look.
   try {
     const recipients = await io.in(room).fetchSockets();
-    console.log(
-      `[matchmaking] delivered ${event} for ${matchId} to ${recipients.length} socket(s) of ${userId}` +
-        (recipients.length ? ` [${recipients.map((s) => s.id).join(",")}]` : " — NOBODY RECEIVED IT"),
-    );
+    if (recipients.length === 0) {
+      console.warn(`[matchmaking] ${event} for ${matchId} reached NO sockets of ${userId} — player was not told`);
+    }
   } catch {
     /* logging must never break delivery */
   }
@@ -302,15 +297,31 @@ async function requeueFront(mode: QueueMode, w: QueueEntry): Promise<void> {
   await setQueuedIn(w.userId, mode);
 }
 
+/** How old a live match may be and still be offered back to a player as "you're
+ *  already in a game". Mirrors STALE_MS in modules/matches.ts. */
+const RESUMABLE_MAX_AGE_MS = 6 * 60 * 60 * 1000;
+
 /**
  * The user's current LIVE match (authoritative Redis state, result not yet
  * decided), or null. Settled matches are removed from Redis by settleMatch and
  * abandoned ones by the abandon sweeper, so anything still here is in progress.
  */
 export async function liveMatchForUser(userId: string): Promise<StoredMatch | null> {
+  const now = Date.now();
   for (const id of await matchIdsForUser(userId)) {
     const lm = await getMatch(id);
-    if (lm && !lm.state.result) return lm;
+    if (!lm || lm.state.result) continue;
+    // Refuse to resume an ANCIENT match. Redis holds a live match for RT_TTL
+    // (24h), so without a bound a long-orphaned game would be resolved here on
+    // every single mm:join — and if the client could not render it, the player
+    // would be handed back into it forever, unable to start anything new. That
+    // is exactly what happened on 2026-08-04 while the pre-board loader bug was
+    // live. 6h matches the STALE_MS the REST layer already uses to decide a
+    // match is orphaned (modules/matches.ts), so the two agree on "too old".
+    // A match seeded before startedAt existed has no timestamp — treat it as
+    // resumable so deploying this never strands a genuinely in-flight game.
+    if (lm.startedAt != null && now - lm.startedAt > RESUMABLE_MAX_AGE_MS) continue;
+    return lm;
   }
   return null;
 }

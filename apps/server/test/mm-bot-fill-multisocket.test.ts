@@ -241,6 +241,50 @@ describe("matchmaking bot-fill survives a multi-socket user", () => {
     expect(await liveMatchForUser(userId)).toBeNull();
   }, 15000);
 
+  // A live match sits in Redis for RT_TTL (24h). Without an age bound, a
+  // long-orphaned one would be resolved on EVERY mm:join, handing the player
+  // back into a game they can't finish and blocking every new search — the trap
+  // the owner hit on 2026-08-04. Anything past the resumable window is ignored
+  // so they queue normally instead.
+  it("liveMatchForUser ignores a match older than the resumable window", async () => {
+    const userId = `u_old_${process.pid}`;
+    const matchId = `m_old_${process.pid}`;
+    await createMatch({
+      matchId,
+      redId: userId,
+      blueId: null,
+      mode: "CASUAL",
+      state: createInitialState(DEFAULT_SETTINGS, matchId),
+      startedAt: Date.now() - 7 * 60 * 60 * 1000, // 7h old, past the 6h bound
+    });
+    expect(await liveMatchForUser(userId)).toBeNull();
+  }, 15000);
+
+  it("liveMatchForUser still resumes a RECENT match, and one with no timestamp", async () => {
+    const recentUser = `u_recent_${process.pid}`;
+    await createMatch({
+      matchId: `m_recent_${process.pid}`,
+      redId: recentUser,
+      blueId: null,
+      mode: "CASUAL",
+      state: createInitialState(DEFAULT_SETTINGS, `m_recent_${process.pid}`),
+      startedAt: Date.now() - 60_000,
+    });
+    expect(await liveMatchForUser(recentUser)).not.toBeNull();
+
+    // Seeded before startedAt existed → must stay resumable, so deploying the
+    // age bound never strands a game that is genuinely in flight.
+    const legacyUser = `u_legacy_${process.pid}`;
+    await createMatch({
+      matchId: `m_legacy_${process.pid}`,
+      redId: legacyUser,
+      blueId: null,
+      mode: "CASUAL",
+      state: createInitialState(DEFAULT_SETTINGS, `m_legacy_${process.pid}`),
+    });
+    expect(await liveMatchForUser(legacyUser)).not.toBeNull();
+  }, 15000);
+
   it("still dequeues + cancels bot-fill when the player's LAST socket drops", async () => {
     const server = await startRealtimeServer();
     servers.push(server);
