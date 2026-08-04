@@ -39,8 +39,12 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shadow
@@ -79,7 +83,7 @@ import com.filipinodama.app.ui.components.idlePulse
 import com.filipinodama.app.ui.components.rememberMotionBudget
 import com.filipinodama.app.ui.screens.profile.AvatarView
 import com.filipinodama.app.ui.theme.Ink2
-import com.filipinodama.app.ui.theme.LilitaFontFamily
+import com.filipinodama.app.ui.theme.AlfaSlabFontFamily
 
 /**
  * The Play tab, rebuilt as a Battle screen (owner-approved, this replaces
@@ -555,8 +559,15 @@ private fun winLoss(r: ModeRecordDto): String =
 private fun difficultyLabel(key: String): String =
     DIFFICULTIES.firstOrNull { it.key == key }?.label ?: "Normal"
 
+/**
+ * The CTA headline. Both words are six letters on purpose: the button then keeps
+ * identical width and weight whichever mode is armed, and never has to shrink to
+ * fit. "Create Room" was trimmed to "Create" for that reason and because the
+ * subtitle directly beneath already reads "Private - share a code", so "Room"
+ * was saying the same thing twice.
+ */
 private fun battleWord(mode: String): String = when (mode) {
-    ArmedMode.PRIVATE -> "Create Room"
+    ArmedMode.PRIVATE -> "Create"
     else -> "Battle"
 }
 
@@ -673,28 +684,56 @@ private fun DockSlot(
 
 @Composable
 private fun BattleButton(word: String, sub: String, onClick: () -> Unit, modifier: Modifier = Modifier) {
+    // Owner-approved treatment: a rounded RECTANGLE in near-flat amber with a lit
+    // top edge, a darker bottom lip and a hard offset shadow, so it reads as a
+    // physical key seated on the dock. Deliberately geometry + colour rather than
+    // a bitmap: it scales to any width, cannot distort, and costs no asset. A
+    // pill was tried and rejected — its curved ends steal the width the subtitle
+    // needs, forcing that line down to an unreadable size.
+    val shape = RoundedCornerShape(18.dp)
     Box(
         modifier = modifier
-            .clip(RoundedCornerShape(18.dp))
-            .background(OUTLINE)
-            .padding(3.dp)
-            .clip(RoundedCornerShape(15.dp))
+            .drawBehind {
+                // Seated shadow. Drawn behind and BEFORE the clip below, so it is
+                // free to sit under the button's lower edge.
+                drawRoundRect(
+                    color = Color(0xA67A4408),
+                    topLeft = Offset(0f, 4.dp.toPx()),
+                    size = size,
+                    cornerRadius = CornerRadius(18.dp.toPx())
+                )
+            }
+            .clip(shape)
             .background(
                 Brush.verticalGradient(
-                    0f to Color(0xFFF7E2A0),
-                    0.38f to Color(0xFFF0CF72),
-                    1f to Color(0xFFC99A2E)
+                    0f to Color(0xFFFFCB45),
+                    0.46f to Color(0xFFFDB827),
+                    1f to Color(0xFFF29C13)
                 )
             )
+            .drawWithContent {
+                drawContent()
+                // Lit top edge and shaded bottom lip: the whole sense of depth
+                // comes from these two bands, not from a gradient sweep.
+                drawRect(
+                    color = Color(0x80FFFFFF),
+                    size = Size(size.width, 2.dp.toPx())
+                )
+                drawRect(
+                    color = Color(0x8CB76808),
+                    topLeft = Offset(0f, size.height - 5.dp.toPx()),
+                    size = Size(size.width, 5.dp.toPx())
+                )
+            }
             .clickable(onClick = onClick)
-            .padding(vertical = 13.dp, horizontal = 8.dp),
+            .padding(vertical = 13.dp, horizontal = 10.dp),
         contentAlignment = Alignment.Center
     ) {
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
             BattleWord(word.uppercase())
             Text(
                 sub.uppercase(),
-                color = Color(0xFF6A4A0C),
+                color = Color(0xFF7A4408),
                 style = MaterialTheme.typography.labelSmall,
                 textAlign = TextAlign.Center,
                 maxLines = 2,
@@ -729,8 +768,8 @@ private fun BattleWord(word: String) {
     // same family, size, tracking, alignment and width or the two passes drift
     // apart and the outline shows as a ghost.
     val base = MaterialTheme.typography.headlineSmall.copy(
-        fontFamily = LilitaFontFamily,
-        fontWeight = FontWeight.Normal, // Lilita One ships one weight; it is already heavy
+        fontFamily = AlfaSlabFontFamily,
+        fontWeight = FontWeight.Normal, // Alfa Slab One ships one weight; it is already heavy
         letterSpacing = 0.03.em
     )
     val density = LocalDensity.current
@@ -741,7 +780,10 @@ private fun BattleWord(word: String) {
     // Stroke is centred on the glyph outline, so half of it eats into the fill.
     // Scaling off the rendered size keeps the outline proportional at every font
     // scale instead of turning spindly on large text.
-    val strokePx = with(density) { size.toPx() } * 0.17f
+    // 0.115 matches the approved 3px stroke against a ~26px word in the mockup.
+    // Scaling off the rendered size keeps it proportional at every font scale
+    // rather than turning spindly on large text.
+    val strokePx = with(density) { size.toPx() } * 0.115f
 
     Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
         Text(

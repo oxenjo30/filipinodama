@@ -45,17 +45,19 @@ private fun jetBrainsMonoWeight(weight: FontWeight) = Font(
 )
 
 /**
- * Lilita One — display face for the Play screen's primary CTA only.
+ * Alfa Slab One — display face for the Play screen's primary CTA only.
  *
- * One static weight, so no variation axis: it is heavy by design. Deliberately
- * NOT wired into [Typography]. Cinzel stays the app's display face everywhere
- * else; this exists so the BATTLE / CREATE ROOM button can carry a chunky
- * arcade face under a white-fill / black-outline treatment, which a serif's
- * thin strokes and serifs cannot survive.
+ * A heavy slab serif, chosen over an arcade sans so the button still lives in
+ * Cinzel's classical world while surviving a white-fill / black-outline
+ * treatment that a high-contrast serif cannot: Cinzel's thin strokes fill in
+ * under a stroke of any weight.
  *
- * SIL Open Font License 1.1 — see docs/licenses/LilitaOne-OFL.txt.
+ * One static weight, so no variation axis. Deliberately NOT wired into
+ * [Typography] — Cinzel stays the app's display face everywhere else.
+ *
+ * SIL Open Font License 1.1 — see docs/licenses/AlfaSlabOne-OFL.txt.
  */
-val LilitaFontFamily = FontFamily(Font(resId = R.font.lilita_one))
+val AlfaSlabFontFamily = FontFamily(Font(resId = R.font.alfa_slab_one))
 
 val CinzelFontFamily = FontFamily(
     cinzelWeight(FontWeight.Medium),
