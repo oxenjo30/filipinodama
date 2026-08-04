@@ -547,6 +547,11 @@ export function registerMatchmaking(io: IOServer, socket: Socket) {
 
   socket.on(EV.mmLeave, async () => {
     const was = await leaveAllQueues(userId);
+    // Logged even when the player was NOT queued. That case is not noise — it is
+    // the signature of Android's join-ack watchdog giving up (it emits mm:leave
+    // on timeout) after the recovery path had already dequeued them, and the
+    // `if (was)` guard was hiding exactly the event worth seeing.
+    if (!was) console.log(`[matchmaking] mm:leave from ${userId} (was NOT queued — client-side timeout?)`);
     if (was) {
       // Logged because an UNEXPECTED leave is indistinguishable, from the
       // player's side, from the bug we've been chasing: OnlineMatchPage renders
