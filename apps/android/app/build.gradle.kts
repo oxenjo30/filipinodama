@@ -461,8 +461,26 @@ android {
         // gameplay commit (7bf5eda). It is a latent race that only bites when
         // the socket is not connected at the moment the player taps Play, which
         // is why it could appear to have worked before.
-        versionCode = 57
-        versionName = "0.1.57"
+        // 58 — matchmaking: close the silent-forever search path (PR #118).
+        //
+        // Android could sit on "Finding an opponent" indefinitely with no error,
+        // no timeout and nothing logged on the device OR the server: the join-ack
+        // watchdog added in 57 only covers the window BEFORE mm:searching (which
+        // disarms it permanently), after which the client had no timer at all, so
+        // an undecodable mm:found 7-20s later was dropped by
+        // `decode(...) ?: return@on` and left SEARCHING in place forever.
+        //
+        // 58 adds a 25s re-join while searching (the server answers "you're
+        // already in a game" first, so it costs the queue nothing), self-heals an
+        // involuntary mm:cancelled instead of dropping to a state the screen
+        // never surfaces, and logs decode failures to logcat.
+        //
+        // Ships alongside server-side fixes that need no app release: the queue
+        // no longer dies when a stray socket drops (PR #110), a missed mm:found
+        // is recoverable (#111), and the resume is age-bounded so a stale match
+        // can't trap a player (#117).
+        versionCode = 58
+        versionName = "0.1.58"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
