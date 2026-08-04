@@ -41,7 +41,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.IntOffset
@@ -50,6 +49,8 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.filipinodama.app.R
 import com.filipinodama.app.data.AuthRepository
 import com.filipinodama.app.data.config.ConfigRepository
+import com.filipinodama.app.data.economy.EconomyRepository
+import com.filipinodama.app.data.economy.EconomyResult
 import com.filipinodama.app.data.engine.AiDifficulties
 import com.filipinodama.app.data.engine.RankTiers
 import com.filipinodama.app.data.play.ArmedMode
@@ -59,6 +60,14 @@ import com.filipinodama.app.data.profile.MatchRecordsResponse
 import com.filipinodama.app.data.profile.ModeRecordDto
 import com.filipinodama.app.data.profile.ProfileRepository
 import com.filipinodama.app.data.profile.ProfileResult
+import com.filipinodama.app.ui.components.MotionBudget
+import com.filipinodama.app.ui.components.ThroneArt
+import com.filipinodama.app.ui.components.ThroneBackdrop
+import com.filipinodama.app.ui.components.attentionBounce
+import com.filipinodama.app.ui.components.brightIconFilter
+import com.filipinodama.app.ui.components.iconGlow
+import com.filipinodama.app.ui.components.idlePulse
+import com.filipinodama.app.ui.components.rememberMotionBudget
 import com.filipinodama.app.ui.screens.profile.AvatarView
 import com.filipinodama.app.ui.theme.Ink2
 
@@ -125,6 +134,22 @@ fun BattleScreen(
         }
     }
 
+    // How much ambient motion this device should run. Re-read on every resume so
+    // flipping battery saver in the shade takes effect without a cold start.
+    val motionBudget = rememberMotionBudget()
+
+    // Whether the daily reward is actually waiting. The rail button only bounces
+    // on real state — a bounce that fires regardless trains players to ignore it.
+    // Null while unknown, so nothing animates on a guess.
+    var dailyClaimable by remember { mutableStateOf<Boolean?>(null) }
+    LaunchedEffect(me?.id) {
+        if (me == null) { dailyClaimable = null; return@LaunchedEffect }
+        dailyClaimable = when (val r = EconomyRepository.dailyLoginStatus()) {
+            is EconomyResult.Success -> !r.data.claimedToday
+            is EconomyResult.Failure -> null
+        }
+    }
+
     val trophies = me?.trophies ?: 0
     val tier = RankTiers.forTrophies(trophies)
     val nextTier = RankTiers.next(tier)
@@ -136,11 +161,14 @@ fun BattleScreen(
     }
 
     Box(modifier = Modifier.fillMaxSize().background(Color(0xFF160B28))) {
-        // ── backdrop: the throne art, tinted by the tier you are on ──
-        Image(
-            painter = painterResource(id = R.drawable.loading_throne_portrait),
-            contentDescription = null,
-            contentScale = ContentScale.Crop,
+        // ── backdrop: the throne art plus its animated light, tinted by tier ──
+        // The light is drawn INSIDE the backdrop, so it lands under both scrims
+        // below and reads as part of the room rather than sitting over the UI.
+        // ThroneArt.Baked is the shipped single-WebP art; switching to
+        // ThroneArt.Layered is the only change needed once a clean plate exists.
+        ThroneBackdrop(
+            budget = motionBudget,
+            art = ThroneArt.Baked,
             modifier = Modifier.fillMaxSize()
         )
         Box(
@@ -243,6 +271,7 @@ fun BattleScreen(
                 Image(
                     painter = painterResource(id = R.drawable.ic_trophy),
                     contentDescription = null,
+                    colorFilter = brightIconFilter(),
                     modifier = Modifier.size(19.dp)
                 )
                 Text(
@@ -321,7 +350,8 @@ fun BattleScreen(
                     Image(
                         painter = painterResource(id = R.drawable.ic_loadout),
                         contentDescription = "Your Loadout",
-                        modifier = Modifier.size(40.dp)
+                        colorFilter = brightIconFilter(),
+                        modifier = Modifier.size(40.dp).iconGlow(alpha = 0.28f)
                     )
                 }
 
@@ -347,7 +377,8 @@ fun BattleScreen(
                     Image(
                         painter = painterResource(id = R.drawable.ic_trophy),
                         contentDescription = "Game Modes",
-                        modifier = Modifier.size(40.dp)
+                        colorFilter = brightIconFilter(),
+                        modifier = Modifier.size(40.dp).iconGlow(alpha = 0.28f)
                     )
                 }
             }
@@ -365,9 +396,21 @@ fun BattleScreen(
                 .statusBarsPadding()
                 .padding(start = 16.dp, top = 116.dp)
         ) {
-            RailButton(R.drawable.ic_trophy, "Tournaments", onTournaments)
-            RailButton(R.drawable.me_crown, "Daily quests", onQuests)
-            RailButton(R.drawable.ic_chest, "Daily reward", onDailyReward)
+            // Staggered pulse delays: a column of icons breathing in unison
+            // reads as a rendering glitch, not as life.
+            RailButton(
+                R.drawable.ic_trophy, "Tournaments", onTournaments,
+                budget = motionBudget, pulseDelayMillis = 0
+            )
+            RailButton(
+                R.drawable.me_crown, "Daily quests", onQuests,
+                budget = motionBudget, pulseDelayMillis = 260
+            )
+            RailButton(
+                R.drawable.ic_chest, "Daily reward", onDailyReward,
+                budget = motionBudget, pulseDelayMillis = 520,
+                attention = dailyClaimable == true
+            )
         }
 
         // ── the drawer ──
@@ -512,22 +555,40 @@ private fun battleSub(mode: String, difficulty: String): String = when (mode) {
  * rather than faked.
  */
 @Composable
-private fun RailButton(iconRes: Int, contentDescription: String, onClick: () -> Unit) {
+private fun RailButton(
+    iconRes: Int,
+    contentDescription: String,
+    onClick: () -> Unit,
+    budget: MotionBudget,
+    pulseDelayMillis: Int = 0,
+    attention: Boolean = false
+) {
     Box(
         modifier = Modifier
+            // Bounce the whole tile, not just the icon, so it reads as the
+            // control asking for attention rather than the art wobbling.
+            .attentionBounce(active = attention, budget = budget)
             .size(50.dp)
             .clip(RoundedCornerShape(15.dp))
             .background(OUTLINE)
             .padding(3.dp)
             .clip(RoundedCornerShape(12.dp))
-            .background(Brush.verticalGradient(listOf(Color(0xFF3A2A5E), Color(0xFF241640))))
+            // Tile lifted from #3A2A5E→#241640 so the icon has something to sit
+            // on other than the dark room behind it.
+            .background(Brush.verticalGradient(listOf(Color(0xFF4E3A82), Color(0xFF2B1A52))))
             .clickable(onClick = onClick),
         contentAlignment = Alignment.Center
     ) {
         Image(
             painter = painterResource(id = iconRes),
             contentDescription = contentDescription,
-            modifier = Modifier.size(28.dp)
+            colorFilter = brightIconFilter(),
+            // idlePulse before iconGlow so the glow scales with the icon; the
+            // other order leaves a static halo around a breathing icon.
+            modifier = Modifier
+                .size(28.dp)
+                .idlePulse(budget = budget, delayMillis = pulseDelayMillis)
+                .iconGlow()
         )
     }
 }
@@ -543,7 +604,12 @@ private fun CurrencyPill(iconRes: Int, value: String, modifier: Modifier = Modif
             .border(1.dp, Color(0x47E8B84B), RoundedCornerShape(100.dp))
             .padding(horizontal = 11.dp, vertical = 5.dp)
     ) {
-        Image(painter = painterResource(id = iconRes), contentDescription = null, modifier = Modifier.size(16.dp))
+        Image(
+            painter = painterResource(id = iconRes),
+            contentDescription = null,
+            colorFilter = brightIconFilter(),
+            modifier = Modifier.size(16.dp)
+        )
         Text(value, color = Color(0xFFF5D783), style = MaterialTheme.typography.labelLarge, maxLines = 1)
     }
 }
