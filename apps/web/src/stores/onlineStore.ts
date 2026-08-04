@@ -227,9 +227,29 @@ export const useOnlineStore = create<OnlineStore>((set, get) => {
     });
 
     s.on(EV.mmCancelled, (p: { reason?: string }) => {
-      searchingIn = null; // no longer queued — don't re-join on the next reconnect
-      stopSearchRetry();
-      set({ status: "idle", error: p?.reason === "left" ? null : p?.reason ?? "cancelled" });
+      // Only "left" is US choosing to stop (mm:leave). Every other reason —
+      // "dropped", "server-error", "invalid-mode" — is the server cancelling a
+      // search we still believe we're in, and it is INVISIBLE to the player:
+      // OnlineMatchPage renders the "Finding opponent" screen for `idle` with no
+      // board too (`status === "idle" && !state`), so the spinner and the music
+      // keep running over a queue we are no longer in. That is indistinguishable
+      // from the bug we've been chasing.
+      //
+      // So: on a user-initiated cancel, stand down. On an involuntary one, keep
+      // `searchingIn` and leave the watchdog armed so it re-joins within
+      // SEARCH_RETRY_MS instead of stranding us on a spinner that means nothing.
+      // `searchingIn` is the honest record of whether we still want a match; if
+      // it's null we weren't searching (e.g. a stray cancel while in a game) and
+      // there is nothing to recover.
+      const recoverable = p?.reason !== "left" && searchingIn !== null;
+      if (!recoverable) {
+        searchingIn = null;
+        stopSearchRetry();
+        set({ status: "idle", error: p?.reason === "left" ? null : p?.reason ?? "cancelled" });
+        return;
+      }
+      startSearchRetry(); // re-arm in case it had been stopped
+      set({ status: "searching", error: null });
     });
 
     s.on(EV.matchState, (p: { matchId: string; state: GameState; yourColor: PieceColor | null }) => {

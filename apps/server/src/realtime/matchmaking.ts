@@ -547,7 +547,15 @@ export function registerMatchmaking(io: IOServer, socket: Socket) {
 
   socket.on(EV.mmLeave, async () => {
     const was = await leaveAllQueues(userId);
-    if (was) socket.emit(EV.mmCancelled, { reason: "left" });
+    if (was) {
+      // Logged because an UNEXPECTED leave is indistinguishable, from the
+      // player's side, from the bug we've been chasing: OnlineMatchPage renders
+      // the "Finding opponent" screen for an idle store too, so a stray dequeue
+      // leaves them on a spinner over an empty queue. If these appear without
+      // the player pressing Cancel, the page is unmounting under them.
+      console.log(`[matchmaking] mm:leave dequeued ${userId}`);
+      socket.emit(EV.mmCancelled, { reason: "left" });
+    }
   });
 
   socket.on("disconnect", () => {
