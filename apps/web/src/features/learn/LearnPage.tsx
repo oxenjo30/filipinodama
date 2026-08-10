@@ -315,8 +315,8 @@ export function LearnPage() {
       }}
     >
       <SiteHead
-        title="Dama Rules — How to Play Filipino Checkers (Complete Guide)"
-        description="Learn the official rules of Filipino Dama (dama / Filipino checkers): board setup, mandatory captures, the maximum-capture rule, the flying dama (king), and how to win — with FAQ and interactive lessons."
+        title="Filipino Dama Rules: How to Play (Complete Guide)"
+        description="Learn Filipino Dama rules: board setup, mandatory maximum captures, backward captures for men, flying kings, and how to win — with FAQ and interactive lessons."
         path="/learn"
         alternates={[
           { hrefLang: "en-PH", path: "/learn" },
@@ -601,7 +601,7 @@ export function LearnPage() {
               color: "var(--gold-lt)",
             }}
           >
-            Learn the Rules and
+            Learn Filipino Dama Rules and
             <br />
             Master the Strategy
           </h1>

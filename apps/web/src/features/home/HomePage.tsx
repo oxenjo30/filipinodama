@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode, type CSSProperties } from "react";
-import { useNavigate } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { createInitialState, legalMoves, applyMove } from "@dama/game-engine";
 import { DEFAULT_SETTINGS } from "@dama/shared";
 import { Board, CurrencyPill } from "../../components";
@@ -392,10 +392,24 @@ export function HomePage() {
           ))}
         </div>
 
-        {/* TOURNAMENTS — real open/live Cups from GET /api/tournaments (default
-            OPEN+RUNNING). A deliberate addition beyond the mockup: renders only
-            when the API returns at least one Cup, so it never shows an empty
-            frame or fabricated tournaments. Gold-only (entry fee + prize pool). */}
+        <section className="frame fd-card-m" style={{ padding: 20 }} aria-labelledby="popular-dama-guides">
+          <div id="popular-dama-guides" style={{ font: "700 16px Cinzel,serif", color: "var(--gold-lt)", marginBottom: 8 }}>
+            Popular Dama Guides
+          </div>
+          <p style={{ margin: "0 0 12px", font: "400 13px/1.5 Inter", color: "var(--ink)" }}>
+            Learn the rules, understand the differences, then put your first moves into practice.
+          </p>
+          <nav aria-label="Popular Dama guides" style={{ display: "flex", flexWrap: "wrap", gap: "8px 14px" }}>
+            <Link to="/blog/2026-06-20-dama-vs-checkers-what-is-the-difference" style={{ color: "var(--gold)" }}>Dama vs Checkers</Link>
+            <Link to="/blog/2026-06-19-how-to-play-filipino-dama-a-complete-beginner-guide" style={{ color: "var(--gold)" }}>Beginner Guide</Link>
+            <Link to="/learn" style={{ color: "var(--gold)" }}>Filipino Dama Rules</Link>
+            <Link to="/blog/2026-07-06-dama-notation-how-to-read-and-record-moves" style={{ color: "var(--gold)" }}>Board Numbering</Link>
+            <Link to="/play" style={{ color: "var(--gold)" }}>Play Online</Link>
+          </nav>
+        </section>
+
+        {/* Tournaments — real open/live Cups from GET /api/tournaments render
+            only when the API returns at least one result. */}
         {tournaments.length > 0 && (
           <>
             <div className="divider"><i /><span>✦ Tournaments ✦</span><i /></div>

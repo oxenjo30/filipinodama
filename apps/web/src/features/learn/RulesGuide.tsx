@@ -274,6 +274,18 @@ export function RulesGuide() {
           checkers.
         </p>
 
+        <section aria-labelledby="dama-guide-next-steps" style={{ margin: "22px 0", padding: "18px 20px", border: "1px solid rgba(232,184,75,.2)", borderRadius: 10 }}>
+          <h2 id="dama-guide-next-steps" style={{ ...H2, marginTop: 0 }}>Keep Learning Filipino Dama</h2>
+          <p style={P}>Use these focused guides to turn the rules into confident play.</p>
+          <ul style={{ paddingLeft: 22, margin: 0 }}>
+            <li style={LI}><Link to="/blog/2026-06-20-dama-vs-checkers-what-is-the-difference" style={{ color: "var(--gold)" }}>See how Dama differs from American checkers</Link>.</li>
+            <li style={LI}><Link to="/blog/2026-06-19-how-to-play-filipino-dama-a-complete-beginner-guide" style={{ color: "var(--gold)" }}>Read the complete beginner guide</Link> and learn the setup.</li>
+            <li style={LI}><Link to="/blog/2026-07-09-how-many-pieces-are-in-dama" style={{ color: "var(--gold)" }}>Review the 12-pieces-per-player setup</Link>.</li>
+            <li style={LI}><Link to="/blog/2026-07-06-dama-notation-how-to-read-and-record-moves" style={{ color: "var(--gold)" }}>Learn board numbering and notation</Link>.</li>
+            <li style={LI}><Link to="/play" style={{ color: "var(--gold)" }}>Practice the rules in an online game</Link>.</li>
+          </ul>
+        </section>
+
         <h2 style={H2}>Frequently Asked Questions</h2>
         {RULES_FAQ.map((f) => (
           <div key={f.q}>

@@ -99,6 +99,12 @@ async function main() {
   ];
   const serveConfig = {
     directoryListing: false,
+    // Enable directory-index resolution only for the routes we prerender. A
+    // global `true` also strips `.html` before custom redirects run, turning a
+    // legacy /blog/posts/<slug>.html request into two hops. Enumerating the
+    // modern routes preserves their extensionless URLs while legacy `.html`
+    // requests reach the direct redirect rules below unchanged.
+    cleanUrls: routes.flatMap((route) => route === "/" ? [route] : [route, `${route}/`]),
     // The old prototype's blog lived at /blog/posts/<slug> and Google indexed at
     // least one of those URLs. 301 them to the current /blog/<slug> so the earned
     // equity transfers instead of dying on a 404 (a slug with no current article
