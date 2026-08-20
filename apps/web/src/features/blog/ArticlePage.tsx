@@ -92,19 +92,36 @@ const PROSE_CSS = `
 /**
  * Rewrite the article body's internal links at render time.
  *
- * The authored HTML links to flat filenames (e.g. href="some-slug.html"), but
- * the SPA route is /blog/:slug — so every bare *.html link would 404. Strip the
- * ".html" and prefix "/blog/". We only touch *relative* *.html hrefs: any href
- * that is already absolute (starts with http, //, or /) or is an anchor/mailto
- * is left alone, so "/play/" style links and external links are untouched here.
+ * Canonical blog routes are /blog/:slug. Historical article bodies use several
+ * legacy equivalents, including bare `slug.html`, `/blog/posts/slug(.html)`,
+ * `/blog/slug.html`, and same-origin absolute URLs. Normalize only those forms;
+ * leave external, mailto, anchor, and unrelated .html links untouched.
  */
 function rewriteBodyLinks(html: string): string {
-  return html.replace(/href="([^"]+?)\.html"/g, (match, path: string) => {
-    // Leave absolute/protocol/anchor/mailto links alone — only rewrite bare slugs.
-    if (/^([a-z][\w+.-]*:|\/\/|\/|#)/i.test(path)) return match;
-    // Strip any leading "./" and a trailing slash from the slug, if present.
-    const slug = path.replace(/^\.\//, "");
-    return `href="/blog/${slug}"`;
+  return html.replace(/href=(["'])([^"']*)\1/gi, (match, quote: string, href: string) => {
+    let path = href;
+    let suffix = "";
+
+    if (/^https:\/\/filipinodama\.com(?:\/|$)/i.test(href)) {
+      const url = new URL(href);
+      path = url.pathname;
+      suffix = url.search + url.hash;
+    } else if (href.startsWith("/") || !/^[a-z][\w+.-]*:/i.test(href)) {
+      const suffixIndex = href.search(/[?#]/);
+      if (suffixIndex >= 0) {
+        path = href.slice(0, suffixIndex);
+        suffix = href.slice(suffixIndex);
+      }
+    } else {
+      return match;
+    }
+
+    const bareSlug = path.match(/^(?:\.\/)?([^/?#]+)\.html$/i);
+    const legacyBlogSlug = path.match(/^\/blog\/posts\/([^/?#]+?)(?:\.html)?$/i);
+    const htmlBlogSlug = path.match(/^\/blog\/([^/?#]+)\.html$/i);
+    const slug = bareSlug?.[1] ?? legacyBlogSlug?.[1] ?? htmlBlogSlug?.[1];
+
+    return slug ? `href=${quote}/blog/${slug}${suffix}${quote}` : match;
   });
 }
 

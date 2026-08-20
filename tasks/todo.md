@@ -1,3 +1,14 @@
+# SEO comparison and legacy consolidation (2026-08-20)
+
+Branch/worktree: `codex/seo-weekly-actions-deploy` at `D:/AI Projects/fd-seo-deploy`
+
+- [x] Reconcile the clean worktree with `origin/main` and review prior SEO lessons.
+- [x] Establish the current web build and generated-route baseline.
+- [x] Improve the Dama-vs-checkers search title, snippet, answer structure, and internal anchors.
+- [x] Enforce canonical modern blog links and prevent legacy paths from leaking into sitemap/rendered HTML.
+- [x] Verify generated metadata, sitemap, redirects, canonicals, internal links, and web build.
+- [x] Commit, push/deploy through the existing release path, and verify production.
+
 # Account purge - 30-day hard delete
 
 Branch: `feat/account-purge-job` - worktree `D:/AI Projects/fd-purge`

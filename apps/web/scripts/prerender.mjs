@@ -68,6 +68,7 @@ async function main() {
     // only; the home/blog shells have no such links.
     const deLinked = deLinkFutureTargets(html, liveSlugs);
     const page = injectIntoTemplate(cleanTemplate, deLinked, head);
+    assertNoLegacyBlogLinks(page, route);
     await writeRoute(route, page);
     written++;
   }
@@ -164,6 +165,15 @@ function deLinkFutureTargets(html, liveSlugs) {
   );
 }
 
+/** Fail closed if an authored link bypasses the canonical blog-link rewrite. */
+function assertNoLegacyBlogLinks(html, route) {
+  const legacyPosts = /href=(["'])(?:https:\/\/filipinodama\.com)?\/blog\/posts\/[^"']*\1/i;
+  const legacyHtml = /href=(["'])(?:https:\/\/filipinodama\.com)?\/blog\/[^/"?#]+\.html(?:[?#][^"']*)?\1/i;
+  if (legacyPosts.test(html) || legacyHtml.test(html)) {
+    throw new Error(`[prerender] legacy same-origin blog link leaked into ${route}`);
+  }
+}
+
 /** Inject rendered body + head into the built index.html template. */
 function injectIntoTemplate(template, bodyHtml, headHtml) {
   let out = template.replace(
@@ -230,6 +240,10 @@ async function writeSitemap(live) {
     `        xmlns:xhtml="http://www.w3.org/1999/xhtml">\n` +
     urls.join("\n") +
     `\n</urlset>\n`;
+
+  if (/<loc>[^<]*\/blog\/posts\//i.test(xml) || /<loc>[^<]*\.html[^<]*<\/loc>/i.test(xml)) {
+    throw new Error("[prerender] legacy blog URL leaked into sitemap.xml");
+  }
 
   await writeFile(join(DIST, "sitemap.xml"), xml, "utf8");
 }
