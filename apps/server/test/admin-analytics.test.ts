@@ -65,6 +65,7 @@ describe("admin-analytics RBAC", () => {
     expect(data).toHaveProperty("gold");
     expect(data).toHaveProperty("matchesByMode");
     expect(data).toHaveProperty("matchOutcomes");
+    expect(data).toHaveProperty("humanMatchmaking");
     expect(data).toHaveProperty("rankTiers");
     expect(data).toHaveProperty("topItems");
     // New real-data panels (regions, funnel, gold-by-category, retention).
@@ -240,6 +241,50 @@ describe("admin-analytics metrics", () => {
     expect(data.matchOutcomes.unfinished).toBe(1);
     expect(data.matchOutcomes.total).toBe(4);
     expect(data.matchOutcomes.redWins + data.matchOutcomes.blueWins + data.matchOutcomes.draws + data.matchOutcomes.unfinished).toBe(data.matchOutcomes.total);
+    await app.close();
+  });
+
+  it("humanMatchmaking: isolates real H2H starts/completions and bot fills by matchmaking mode", async () => {
+    const app = await buildTestApp();
+    const admin = await seedUser({ adminRole: "ECONOMY" });
+    const human1 = await seedUser();
+    const human2 = await seedUser();
+    const bot1 = await seedUser({ isBot: true });
+    const bot2 = await seedUser({ isBot: true });
+    const endedAt = new Date();
+
+    // Casual: two H2H starts, one completed, and one human-vs-bot fill.
+    await prisma.match.create({ data: { mode: "CASUAL", origin: "MATCHMAKING", redId: human1.id, blueId: human2.id, settings: {}, moves: [], winner: "red", endedAt } });
+    await prisma.match.create({ data: { mode: "CASUAL", origin: "MATCHMAKING", redId: human2.id, blueId: human1.id, settings: {}, moves: [] } });
+    await prisma.match.create({ data: { mode: "CASUAL", origin: "MATCHMAKING", redId: human1.id, blueId: bot1.id, settings: {}, moves: [] } });
+    // Ranked: one completed H2H and one bot fill with the bot on the red side.
+    await prisma.match.create({ data: { mode: "RANKED", origin: "MATCHMAKING", redId: human1.id, blueId: human2.id, settings: {}, moves: [], winner: "draw", endedAt } });
+    await prisma.match.create({ data: { mode: "RANKED", origin: "MATCHMAKING", redId: bot1.id, blueId: human2.id, settings: {}, moves: [] } });
+
+    // These must not enter any human-matchmaking bucket.
+    await prisma.match.create({ data: { mode: "AI", origin: "LOCAL", redId: human1.id, blueId: bot1.id, settings: {}, moves: [], endedAt } });
+    await prisma.match.create({ data: { mode: "CASUAL", origin: "MATCHMAKING", redId: bot1.id, blueId: bot2.id, settings: {}, moves: [] } });
+    await prisma.match.create({ data: { mode: "CASUAL", origin: "MATCHMAKING", redId: human1.id, settings: {}, moves: [] } });
+    // Same modes and human seats, but non-queue origins must never be counted.
+    await prisma.match.create({ data: { mode: "RANKED", origin: "ROOM", redId: human1.id, blueId: human2.id, settings: {}, moves: [], endedAt } });
+    await prisma.match.create({ data: { mode: "CASUAL", origin: "TOURNAMENT", redId: human1.id, blueId: human2.id, settings: {}, moves: [], endedAt } });
+    await prisma.match.create({ data: { mode: "RANKED", origin: "REMATCH", redId: human1.id, blueId: human2.id, settings: {}, moves: [], endedAt } });
+    await prisma.match.create({ data: { mode: "CASUAL", redId: human1.id, blueId: human2.id, settings: {}, moves: [], endedAt } });
+    const oldH2H = await prisma.match.create({ data: { mode: "RANKED", origin: "MATCHMAKING", redId: human1.id, blueId: human2.id, settings: {}, moves: [], endedAt } });
+    await prisma.$executeRawUnsafe(`UPDATE "Match" SET "startedAt" = $1 WHERE id = $2`, new Date(Date.now() - 40 * DAY), oldH2H.id);
+
+    const res = await app.inject({ method: "GET", url: "/api/admin/analytics?window=30d", headers: { cookie: authFor({ sub: admin.id, adminRole: "ECONOMY" }) } });
+    expect(res.statusCode).toBe(200);
+    const m = res.json().data.humanMatchmaking;
+    expect(m.humanVsHumanStarted).toBe(3);
+    expect(m.humanVsHumanCompleted).toBe(2);
+    expect(m.humanVsBotStarted).toBe(2);
+    expect(m.completionRate).toBeCloseTo(2 / 3);
+    expect(m.definition).toContain("started in the selected window");
+    expect(m.byMode).toEqual([
+      { mode: "CASUAL", humanVsHumanStarted: 2, humanVsHumanCompleted: 1, humanVsBotStarted: 1, completionRate: 0.5 },
+      { mode: "RANKED", humanVsHumanStarted: 1, humanVsHumanCompleted: 1, humanVsBotStarted: 1, completionRate: 1 },
+    ]);
     await app.close();
   });
 

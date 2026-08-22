@@ -245,6 +245,7 @@ async function tryMatch(io: IOServer, mode: QueueMode): Promise<void> {
       const match = await prisma.match.create({
         data: {
           mode: prismaMode,
+          origin: "MATCHMAKING",
           redId,
           blueId,
           settings: settings as unknown as object,
@@ -436,6 +437,7 @@ async function startBotMatch(io: IOServer, userId: string, mode: QueueMode, colo
     const match = await prisma.match.create({
       data: {
         mode: prismaMode,
+        origin: "MATCHMAKING",
         redId,
         blueId,
         settings: settings as unknown as object,

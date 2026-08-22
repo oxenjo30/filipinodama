@@ -584,6 +584,7 @@ export function registerRooms(io: IOServer, socket: Socket) {
         const match = await prisma.match.create({
           data: {
             mode: room.mode,
+            origin: "ROOM",
             redId: room.hostId,
             blueId: room.guest.userId,
             settings: room.settings as unknown as object,

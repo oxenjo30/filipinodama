@@ -276,9 +276,19 @@ enum MatchMode {
   DAMATH
 }
 
+enum MatchOrigin {
+  LEGACY
+  MATCHMAKING
+  ROOM
+  TOURNAMENT
+  REMATCH
+  LOCAL
+}
+
 model Match {
   id              String    @id @default(cuid())
   mode            MatchMode
+  origin          MatchOrigin @default(LEGACY)
   redId           String?
   red             User?     @relation("red", fields: [redId], references: [id])
   blueId          String?
@@ -299,6 +309,7 @@ model Match {
   @@index([redId])
   @@index([blueId])
   @@index([mode, endedAt])
+  @@index([origin, startedAt])
 }
 
 /// Anti-cheat: one row per (match, player) holding the ENGINE AGREEMENT result

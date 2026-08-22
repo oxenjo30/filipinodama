@@ -351,6 +351,7 @@ export async function matchRoutes(app: FastifyInstance) {
     const match = await prisma.match.create({
       data: {
         mode: input.mode,
+        origin: "LOCAL",
         redId: userId, // the local player owns the record; opponent is offline
         blueId: null,
         settings: {

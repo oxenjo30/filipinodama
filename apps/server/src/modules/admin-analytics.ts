@@ -1,4 +1,5 @@
 import type { FastifyInstance } from "fastify";
+import type { Prisma } from "@prisma/client";
 import { z } from "zod";
 import { prisma } from "../db/client.js";
 import { ok } from "../lib/errors.js";
@@ -60,6 +61,22 @@ export async function adminAnalyticsRoutes(app: FastifyInstance) {
     const days = WINDOW_DAYS[window];
     const now = new Date();
     const since = new Date(now.getTime() - days * DAY_MS);
+    const matchmakingBase = {
+      origin: "MATCHMAKING",
+      startedAt: { gte: since },
+    } satisfies Prisma.MatchWhereInput;
+    const humanVsHuman = {
+      ...matchmakingBase,
+      red: { is: { isBot: false } },
+      blue: { is: { isBot: false } },
+    } satisfies Prisma.MatchWhereInput;
+    const humanVsBot = {
+      ...matchmakingBase,
+      OR: [
+        { red: { is: { isBot: false } }, blue: { is: { isBot: true } } },
+        { red: { is: { isBot: true } }, blue: { is: { isBot: false } } },
+      ],
+    } satisfies Prisma.MatchWhereInput;
 
     const [
       totalPlayers,
@@ -83,6 +100,7 @@ export async function adminAnalyticsRoutes(app: FastifyInstance) {
       funnelPurchasers,
       funnelRetained,
       purchaseRows,
+      matchmakingCounts,
     ] = await Promise.all([
       prisma.user.count({ where: { isBot: false, isGuest: false, deletedAt: null } }),
       prisma.user.count({ where: { isBot: false, isGuest: false, deletedAt: null, createdAt: { gte: since } } }),
@@ -167,6 +185,19 @@ export async function adminAnalyticsRoutes(app: FastifyInstance) {
         where: { currency: "GOLD", reason: "purchase", refType: "item", createdAt: { gte: since } },
         select: { amount: true, refId: true },
       }),
+      // Fixed-size database aggregates. Match.origin is required because rooms,
+      // tournaments, and rematches can reuse CASUAL/RANKED modes.
+      Promise.all([
+        prisma.match.count({ where: humanVsHuman }),
+        prisma.match.count({ where: { ...humanVsHuman, endedAt: { not: null } } }),
+        prisma.match.count({ where: humanVsBot }),
+        prisma.match.count({ where: { ...humanVsHuman, mode: "CASUAL" } }),
+        prisma.match.count({ where: { ...humanVsHuman, mode: "CASUAL", endedAt: { not: null } } }),
+        prisma.match.count({ where: { ...humanVsBot, mode: "CASUAL" } }),
+        prisma.match.count({ where: { ...humanVsHuman, mode: "RANKED" } }),
+        prisma.match.count({ where: { ...humanVsHuman, mode: "RANKED", endedAt: { not: null } } }),
+        prisma.match.count({ where: { ...humanVsBot, mode: "RANKED" } }),
+      ]),
     ]);
 
     // ── §3 newPlayersPerDay ────────────────────────────────────────────────
@@ -216,6 +247,46 @@ export async function adminAnalyticsRoutes(app: FastifyInstance) {
     const [total, redWins, blueWins, draws] = matchOutcomeCounts;
     const unfinished = total - redWins - blueWins - draws;
     const matchOutcomes = { redWins, blueWins, draws, unfinished, total };
+
+    // ── §7b real-human matchmaking ──────────────────────────────────────────
+    // Completed is the ended subset of the same started-in-window cohort. This
+    // keeps the completion rate bounded and makes the selected-window label
+    // unambiguous. Null seats after account purge cannot be classified safely.
+    const [
+      humanVsHumanStarted,
+      humanVsHumanCompleted,
+      humanVsBotStarted,
+      casualH2HStarted,
+      casualH2HCompleted,
+      casualHumanVsBot,
+      rankedH2HStarted,
+      rankedH2HCompleted,
+      rankedHumanVsBot,
+    ] = matchmakingCounts;
+    const byMode = [
+      {
+        mode: "CASUAL" as const,
+        humanVsHumanStarted: casualH2HStarted,
+        humanVsHumanCompleted: casualH2HCompleted,
+        humanVsBotStarted: casualHumanVsBot,
+        completionRate: casualH2HStarted > 0 ? casualH2HCompleted / casualH2HStarted : 0,
+      },
+      {
+        mode: "RANKED" as const,
+        humanVsHumanStarted: rankedH2HStarted,
+        humanVsHumanCompleted: rankedH2HCompleted,
+        humanVsBotStarted: rankedHumanVsBot,
+        completionRate: rankedH2HStarted > 0 ? rankedH2HCompleted / rankedH2HStarted : 0,
+      },
+    ];
+    const humanMatchmaking = {
+      humanVsHumanStarted,
+      humanVsHumanCompleted,
+      humanVsBotStarted,
+      completionRate: humanVsHumanStarted > 0 ? humanVsHumanCompleted / humanVsHumanStarted : 0,
+      byMode,
+      definition: "Queue-created Casual/Ranked matches started in the selected window; completed is the ended subset of that cohort. Legacy matches from before origin tracking are excluded.",
+    };
 
     // ── §8 rankTiers (all-time, canonical order) ────────────────────────────
     const rankCounts = new Map(rankGroups.map((g) => [g.rankTier, g._count._all]));
@@ -335,6 +406,7 @@ export async function adminAnalyticsRoutes(app: FastifyInstance) {
       gold: { faucet, sink, faucetPct, byReason: topReasons },
       matchesByMode,
       matchOutcomes,
+      humanMatchmaking,
       rankTiers,
       topItems,
       topRegions,

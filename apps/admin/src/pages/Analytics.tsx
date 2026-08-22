@@ -30,6 +30,20 @@ type RegionRow = { code: string; count: number; pct: number };
 type FunnelRow = { stage: string; count: number; pct: number };
 type GoldCatRow = { category: string; gold: number; pct: number };
 type RetentionRow = { day: number; eligible: number; retained: number; pct: number };
+type HumanMatchmakingModeRow = {
+  mode: "CASUAL" | "RANKED";
+  humanVsHumanStarted: number;
+  humanVsHumanCompleted: number;
+  humanVsBotStarted: number;
+  completionRate: number;
+};
+type HumanMatchmaking = {
+  humanVsHumanStarted: number;
+  humanVsHumanCompleted: number;
+  humanVsBotStarted: number;
+  completionRate: number;
+  byMode: HumanMatchmakingModeRow[];
+};
 
 type AnalyticsData = {
   window: Window;
@@ -48,6 +62,7 @@ type AnalyticsData = {
   goldByCategory: GoldCatRow[];
   retention: RetentionRow[];
   retentionTracked: boolean;
+  humanMatchmaking?: HumanMatchmaking;
 };
 
 const WINDOWS: Window[] = ["7d", "30d", "90d"];
@@ -106,6 +121,18 @@ export function Analytics() {
 }
 
 function AnalyticsBody({ d }: { d: AnalyticsData }) {
+  // Keep the page usable during a rolling deployment where the new admin bundle
+  // may briefly reach an older server instance without this response field.
+  const humanMatchmaking = d.humanMatchmaking ?? {
+    humanVsHumanStarted: 0,
+    humanVsHumanCompleted: 0,
+    humanVsBotStarted: 0,
+    completionRate: 0,
+    byMode: [
+      { mode: "CASUAL", humanVsHumanStarted: 0, humanVsHumanCompleted: 0, humanVsBotStarted: 0, completionRate: 0 },
+      { mode: "RANKED", humanVsHumanStarted: 0, humanVsHumanCompleted: 0, humanVsBotStarted: 0, completionRate: 0 },
+    ],
+  } satisfies HumanMatchmaking;
   const maxNew = Math.max(1, ...d.newPlayersPerDay.map((b) => b.count));
   const maxActive = Math.max(1, ...d.activePerDay.map((b) => b.count));
   const maxMode = Math.max(1, ...d.matchesByMode.map((m) => m.count));
@@ -223,6 +250,36 @@ function AnalyticsBody({ d }: { d: AnalyticsData }) {
           </div>
         </Panel>
       </div>
+
+      <Panel title="Human matchmaking" meta={d.window}>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(4,minmax(0,1fr))", gap: 12, marginTop: 18 }} className="ov-2col">
+          <Card label="Human vs human started" value={humanMatchmaking.humanVsHumanStarted.toLocaleString()} sub="successful pairings" />
+          <Card label="Human vs human completed" value={humanMatchmaking.humanVsHumanCompleted.toLocaleString()} sub="matches with an end" />
+          <Card label="Human vs bot started" value={humanMatchmaking.humanVsBotStarted.toLocaleString()} sub="successful pairings" />
+          <Card label="Human match completion" value={`${Math.round(humanMatchmaking.completionRate * 100)}%`} sub="human vs human starts" />
+        </div>
+        <div style={{ overflowX: "auto", marginTop: 18 }}>
+          <table className="tbl" style={{ width: "100%", minWidth: 620 }}>
+            <thead>
+              <tr><th>Mode</th><th className="num">H2H started</th><th className="num">H2H completed</th><th className="num">Human vs bot</th><th className="num">Completion</th></tr>
+            </thead>
+            <tbody>
+              {humanMatchmaking.byMode.map((m) => (
+                <tr key={m.mode} className="arow">
+                  <td>{m.mode === "CASUAL" ? "Casual" : "Ranked"}</td>
+                  <td className="num mono">{m.humanVsHumanStarted.toLocaleString()}</td>
+                  <td className="num mono">{m.humanVsHumanCompleted.toLocaleString()}</td>
+                  <td className="num mono">{m.humanVsBotStarted.toLocaleString()}</td>
+                  <td className="num mono">{Math.round(m.completionRate * 100)}%</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        <div className="dim" style={{ font: "500 10.5px var(--sans)", marginTop: 14, lineHeight: 1.55 }}>
+          Started = a successful queue pairing created in this window. Completed = that human-vs-human match recorded an end; bot accounts are excluded from H2H. Legacy matches from before origin tracking are excluded.
+        </div>
+      </Panel>
 
       {/* Retention + Top regions. align-start so the compact 3-cell retention
           panel keeps its natural height instead of stretching to match the

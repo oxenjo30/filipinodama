@@ -1023,6 +1023,7 @@ export function registerMatch(io: IOServer, socket: Socket) {
         const match = await prisma.match.create({
           data: {
             mode: offer.mode,
+            origin: "REMATCH",
             redId: newRed,
             blueId: newBlue,
             settings: offer.settings as unknown as object,

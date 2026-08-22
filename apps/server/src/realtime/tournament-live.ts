@@ -308,6 +308,7 @@ async function autoStartMatch(io: IOServer, tmId: string): Promise<void> {
   const match = await prisma.match.create({
     data: {
       mode: tournament.matchMode,
+      origin: "TOURNAMENT",
       redId: redUserId,
       blueId: blueUserId,
       settings: TOURNAMENT_SETTINGS as unknown as object,
