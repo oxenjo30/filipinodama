@@ -53,6 +53,7 @@ import com.filipinodama.app.data.match.ActiveMatchStore
 import com.filipinodama.app.data.match.PublicUserDto
 import com.filipinodama.app.data.rooms.RoomRepository
 import com.filipinodama.app.data.system.ConnectivityObserver
+import com.filipinodama.app.data.system.NetworkStatus
 import com.filipinodama.app.data.system.offlineBannerVisible
 import com.filipinodama.app.ui.screens.HomeScreen
 import com.filipinodama.app.ui.screens.OnboardingScreen
@@ -376,7 +377,13 @@ fun AppNavHost() {
             // flash caused by Android's network-validation lag on app open, while
             // still surfacing a real, sustained outage and clearing instantly on
             // reconnect. See ConnectivityObserver.observeOnline.
-            ConnectivityObserver.observeOnline(context).collect { online -> isOnline = online }
+            ConnectivityObserver.observeOnline(context).collect { online ->
+                isOnline = online
+                // Publish for non-UI callers. Matchmaking needs this to tell a
+                // real outage apart from a game-server problem instead of
+                // blaming the player's connection for both.
+                NetworkStatus.set(online)
+            }
         }
         onDispose { job?.cancel() }
     }

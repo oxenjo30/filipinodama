@@ -38,18 +38,32 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.graphics.Shadow
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.StrokeJoin
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.em
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.filipinodama.app.R
 import com.filipinodama.app.data.AuthRepository
 import com.filipinodama.app.data.config.ConfigRepository
+import com.filipinodama.app.data.economy.EconomyRepository
+import com.filipinodama.app.data.economy.EconomyResult
 import com.filipinodama.app.data.engine.AiDifficulties
 import com.filipinodama.app.data.engine.RankTiers
 import com.filipinodama.app.data.play.ArmedMode
@@ -59,8 +73,17 @@ import com.filipinodama.app.data.profile.MatchRecordsResponse
 import com.filipinodama.app.data.profile.ModeRecordDto
 import com.filipinodama.app.data.profile.ProfileRepository
 import com.filipinodama.app.data.profile.ProfileResult
+import com.filipinodama.app.ui.components.MotionBudget
+import com.filipinodama.app.ui.components.ThroneArt
+import com.filipinodama.app.ui.components.ThroneBackdrop
+import com.filipinodama.app.ui.components.attentionBounce
+import com.filipinodama.app.ui.components.brightIconFilter
+import com.filipinodama.app.ui.components.iconGlow
+import com.filipinodama.app.ui.components.idlePulse
+import com.filipinodama.app.ui.components.rememberMotionBudget
 import com.filipinodama.app.ui.screens.profile.AvatarView
 import com.filipinodama.app.ui.theme.Ink2
+import com.filipinodama.app.ui.theme.AlfaSlabFontFamily
 
 /**
  * The Play tab, rebuilt as a Battle screen (owner-approved, this replaces
@@ -125,6 +148,22 @@ fun BattleScreen(
         }
     }
 
+    // How much ambient motion this device should run. Re-read on every resume so
+    // flipping battery saver in the shade takes effect without a cold start.
+    val motionBudget = rememberMotionBudget()
+
+    // Whether the daily reward is actually waiting. The rail button only bounces
+    // on real state — a bounce that fires regardless trains players to ignore it.
+    // Null while unknown, so nothing animates on a guess.
+    var dailyClaimable by remember { mutableStateOf<Boolean?>(null) }
+    LaunchedEffect(me?.id) {
+        if (me == null) { dailyClaimable = null; return@LaunchedEffect }
+        dailyClaimable = when (val r = EconomyRepository.dailyLoginStatus()) {
+            is EconomyResult.Success -> !r.data.claimedToday
+            is EconomyResult.Failure -> null
+        }
+    }
+
     val trophies = me?.trophies ?: 0
     val tier = RankTiers.forTrophies(trophies)
     val nextTier = RankTiers.next(tier)
@@ -136,11 +175,14 @@ fun BattleScreen(
     }
 
     Box(modifier = Modifier.fillMaxSize().background(Color(0xFF160B28))) {
-        // ── backdrop: the throne art, tinted by the tier you are on ──
-        Image(
-            painter = painterResource(id = R.drawable.loading_throne_portrait),
-            contentDescription = null,
-            contentScale = ContentScale.Crop,
+        // ── backdrop: the throne art plus its animated light, tinted by tier ──
+        // The light is drawn INSIDE the backdrop, so it lands under both scrims
+        // below and reads as part of the room rather than sitting over the UI.
+        // ThroneArt.Baked is the shipped single-WebP art; switching to
+        // ThroneArt.Layered is the only change needed once a clean plate exists.
+        ThroneBackdrop(
+            budget = motionBudget,
+            art = ThroneArt.Baked,
             modifier = Modifier.fillMaxSize()
         )
         Box(
@@ -243,6 +285,7 @@ fun BattleScreen(
                 Image(
                     painter = painterResource(id = R.drawable.ic_trophy),
                     contentDescription = null,
+                    colorFilter = brightIconFilter(),
                     modifier = Modifier.size(19.dp)
                 )
                 Text(
@@ -321,7 +364,8 @@ fun BattleScreen(
                     Image(
                         painter = painterResource(id = R.drawable.ic_loadout),
                         contentDescription = "Your Loadout",
-                        modifier = Modifier.size(40.dp)
+                        colorFilter = brightIconFilter(),
+                        modifier = Modifier.size(40.dp).iconGlow(alpha = 0.28f)
                     )
                 }
 
@@ -347,7 +391,8 @@ fun BattleScreen(
                     Image(
                         painter = painterResource(id = R.drawable.ic_trophy),
                         contentDescription = "Game Modes",
-                        modifier = Modifier.size(40.dp)
+                        colorFilter = brightIconFilter(),
+                        modifier = Modifier.size(40.dp).iconGlow(alpha = 0.28f)
                     )
                 }
             }
@@ -365,9 +410,21 @@ fun BattleScreen(
                 .statusBarsPadding()
                 .padding(start = 16.dp, top = 116.dp)
         ) {
-            RailButton(R.drawable.ic_trophy, "Tournaments", onTournaments)
-            RailButton(R.drawable.me_crown, "Daily quests", onQuests)
-            RailButton(R.drawable.ic_chest, "Daily reward", onDailyReward)
+            // Staggered pulse delays: a column of icons breathing in unison
+            // reads as a rendering glitch, not as life.
+            RailButton(
+                R.drawable.ic_trophy, "Tournaments", onTournaments,
+                budget = motionBudget, pulseDelayMillis = 0
+            )
+            RailButton(
+                R.drawable.me_crown, "Daily quests", onQuests,
+                budget = motionBudget, pulseDelayMillis = 260
+            )
+            RailButton(
+                R.drawable.ic_chest, "Daily reward", onDailyReward,
+                budget = motionBudget, pulseDelayMillis = 520,
+                attention = dailyClaimable == true
+            )
         }
 
         // ── the drawer ──
@@ -386,6 +443,8 @@ fun BattleScreen(
                 progressLabel = if (nextTier != null) "${nextTier.min - trophies} to ${nextTier.label}" else "Top of the ladder",
                 sub = if (needsAccountForRanked) "Requires a free account" else null,
                 selected = armedMode == ArmedMode.RANKED,
+                budget = motionBudget,
+                entryIndex = 0,
                 onClick = {
                     loadout.setArmedMode(ArmedMode.RANKED)
                     sheetOpen = false
@@ -403,6 +462,8 @@ fun BattleScreen(
                 statIconRes = R.drawable.ic_trophy,
                 sub = "Casual online · no trophy risk",
                 selected = armedMode == ArmedMode.CASUAL,
+                budget = motionBudget,
+                entryIndex = 1,
                 onClick = {
                     loadout.setArmedMode(ArmedMode.CASUAL)
                     sheetOpen = false
@@ -423,6 +484,8 @@ fun BattleScreen(
                 statIconRes = R.drawable.ic_trophy,
                 sub = "Practice offline · ${difficultyLabel(aiDifficulty)}",
                 selected = armedMode == ArmedMode.AI,
+                budget = motionBudget,
+                entryIndex = 2,
                 onClick = {
                     loadout.setArmedMode(ArmedMode.AI)
                     sheetOpen = false
@@ -439,6 +502,8 @@ fun BattleScreen(
                 statIconRes = R.drawable.ic_trophy,
                 sub = "Host a room or join with a code",
                 selected = armedMode == ArmedMode.PRIVATE,
+                budget = motionBudget,
+                entryIndex = 3,
                 onClick = {
                     loadout.setArmedMode(ArmedMode.PRIVATE)
                     sheetOpen = false
@@ -459,7 +524,9 @@ fun BattleScreen(
                     onClick = {
                         sheetOpen = false
                         onWatchLive()
-                    }
+                    },
+                    budget = motionBudget,
+                    entryIndex = 4
                 )
             }
         }
@@ -492,8 +559,15 @@ private fun winLoss(r: ModeRecordDto): String =
 private fun difficultyLabel(key: String): String =
     DIFFICULTIES.firstOrNull { it.key == key }?.label ?: "Normal"
 
+/**
+ * The CTA headline. Both words are six letters on purpose: the button then keeps
+ * identical width and weight whichever mode is armed, and never has to shrink to
+ * fit. "Create Room" was trimmed to "Create" for that reason and because the
+ * subtitle directly beneath already reads "Private - share a code", so "Room"
+ * was saying the same thing twice.
+ */
 private fun battleWord(mode: String): String = when (mode) {
-    ArmedMode.PRIVATE -> "Create Room"
+    ArmedMode.PRIVATE -> "Create"
     else -> "Battle"
 }
 
@@ -512,22 +586,39 @@ private fun battleSub(mode: String, difficulty: String): String = when (mode) {
  * rather than faked.
  */
 @Composable
-private fun RailButton(iconRes: Int, contentDescription: String, onClick: () -> Unit) {
+private fun RailButton(
+    iconRes: Int,
+    contentDescription: String,
+    onClick: () -> Unit,
+    budget: MotionBudget,
+    pulseDelayMillis: Int = 0,
+    attention: Boolean = false
+) {
     Box(
         modifier = Modifier
+            // Bounce the whole tile, not just the icon, so it reads as the
+            // control asking for attention rather than the art wobbling.
+            .attentionBounce(active = attention, budget = budget)
             .size(50.dp)
-            .clip(RoundedCornerShape(15.dp))
-            .background(OUTLINE)
-            .padding(3.dp)
-            .clip(RoundedCornerShape(12.dp))
-            .background(Brush.verticalGradient(listOf(Color(0xFF3A2A5E), Color(0xFF241640))))
+            .clip(RoundedCornerShape(14.dp))
+            // Lifted gradient + a gold hairline, per the approved mockup. The
+            // previous 3dp OUTLINE ring read as a heavy black border that
+            // fought the icon it was framing.
+            .background(Brush.verticalGradient(listOf(Color(0xFF4E3A82), Color(0xFF2B1A52))))
+            .border(1.dp, TILE_EDGE, RoundedCornerShape(14.dp))
             .clickable(onClick = onClick),
         contentAlignment = Alignment.Center
     ) {
         Image(
             painter = painterResource(id = iconRes),
             contentDescription = contentDescription,
-            modifier = Modifier.size(28.dp)
+            colorFilter = brightIconFilter(),
+            // idlePulse before iconGlow so the glow scales with the icon; the
+            // other order leaves a static halo around a breathing icon.
+            modifier = Modifier
+                .size(28.dp)
+                .idlePulse(budget = budget, delayMillis = pulseDelayMillis)
+                .iconGlow()
         )
     }
 }
@@ -543,7 +634,12 @@ private fun CurrencyPill(iconRes: Int, value: String, modifier: Modifier = Modif
             .border(1.dp, Color(0x47E8B84B), RoundedCornerShape(100.dp))
             .padding(horizontal = 11.dp, vertical = 5.dp)
     ) {
-        Image(painter = painterResource(id = iconRes), contentDescription = null, modifier = Modifier.size(16.dp))
+        Image(
+            painter = painterResource(id = iconRes),
+            contentDescription = null,
+            colorFilter = brightIconFilter(),
+            modifier = Modifier.size(16.dp)
+        )
         Text(value, color = Color(0xFFF5D783), style = MaterialTheme.typography.labelLarge, maxLines = 1)
     }
 }
@@ -559,11 +655,9 @@ private fun DockSlot(
         Box(
             modifier = Modifier
                 .size(64.dp)
-                .clip(RoundedCornerShape(18.dp))
-                .background(OUTLINE)
-                .padding(3.dp)
-                .clip(RoundedCornerShape(15.dp))
-                .background(Brush.verticalGradient(listOf(Color(0xFF3A2A5E), Color(0xFF241640))))
+                .clip(RoundedCornerShape(17.dp))
+                .background(Brush.verticalGradient(listOf(Color(0xFF4E3A82), Color(0xFF2B1A52))))
+                .border(1.dp, TILE_EDGE, RoundedCornerShape(17.dp))
                 .clickable(onClick = onClick),
             contentAlignment = Alignment.Center
         ) { content() }
@@ -590,33 +684,56 @@ private fun DockSlot(
 
 @Composable
 private fun BattleButton(word: String, sub: String, onClick: () -> Unit, modifier: Modifier = Modifier) {
+    // Owner-approved treatment: a rounded RECTANGLE in near-flat amber with a lit
+    // top edge, a darker bottom lip and a hard offset shadow, so it reads as a
+    // physical key seated on the dock. Deliberately geometry + colour rather than
+    // a bitmap: it scales to any width, cannot distort, and costs no asset. A
+    // pill was tried and rejected — its curved ends steal the width the subtitle
+    // needs, forcing that line down to an unreadable size.
+    val shape = RoundedCornerShape(18.dp)
     Box(
         modifier = modifier
-            .clip(RoundedCornerShape(18.dp))
-            .background(OUTLINE)
-            .padding(3.dp)
-            .clip(RoundedCornerShape(15.dp))
+            .drawBehind {
+                // Seated shadow. Drawn behind and BEFORE the clip below, so it is
+                // free to sit under the button's lower edge.
+                drawRoundRect(
+                    color = Color(0xA67A4408),
+                    topLeft = Offset(0f, 4.dp.toPx()),
+                    size = size,
+                    cornerRadius = CornerRadius(18.dp.toPx())
+                )
+            }
+            .clip(shape)
             .background(
                 Brush.verticalGradient(
-                    0f to Color(0xFFF7E2A0),
-                    0.38f to Color(0xFFF0CF72),
-                    1f to Color(0xFFC99A2E)
+                    0f to Color(0xFFFFCB45),
+                    0.46f to Color(0xFFFDB827),
+                    1f to Color(0xFFF29C13)
                 )
             )
+            .drawWithContent {
+                drawContent()
+                // Lit top edge and shaded bottom lip: the whole sense of depth
+                // comes from these two bands, not from a gradient sweep.
+                drawRect(
+                    color = Color(0x80FFFFFF),
+                    size = Size(size.width, 2.dp.toPx())
+                )
+                drawRect(
+                    color = Color(0x8CB76808),
+                    topLeft = Offset(0f, size.height - 5.dp.toPx()),
+                    size = Size(size.width, 5.dp.toPx())
+                )
+            }
             .clickable(onClick = onClick)
-            .padding(vertical = 13.dp, horizontal = 8.dp),
+            .padding(vertical = 13.dp, horizontal = 10.dp),
         contentAlignment = Alignment.Center
     ) {
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            Text(
-                word.uppercase(),
-                color = Color(0xFF3A2405),
-                style = MaterialTheme.typography.headlineSmall,
-                maxLines = 1
-            )
+            BattleWord(word.uppercase())
             Text(
                 sub.uppercase(),
-                color = Color(0xFF6A4A0C),
+                color = Color(0xFF7A4408),
                 style = MaterialTheme.typography.labelSmall,
                 textAlign = TextAlign.Center,
                 maxLines = 2,
@@ -625,6 +742,96 @@ private fun BattleButton(word: String, sub: String, onClick: () -> Unit, modifie
         }
     }
 }
+
+/**
+ * The BATTLE button's headline word, shrunk to fit rather than clipped.
+ *
+ * The word is not always "BATTLE": arming Private Room makes it "CREATE ROOM",
+ * which does not fit at headlineSmall on a narrow phone or at a raised font
+ * scale. It was declared `maxLines = 1` with no [TextAlign] and the default
+ * [TextOverflow.Clip], so when it did not fit the Text expanded to the full
+ * width, drew from the START, and clipped the tail — rendering as a
+ * left-of-centre "CREATE" with the second word missing, while the subtitle
+ * below stayed centred because it sets textAlign explicitly. Owner report
+ * 2026-08-04; reproduced at font scale 1.3.
+ *
+ * Shrinking is preferred over wrapping so the primary CTA keeps its single-line
+ * proportion. The step-down is bounded by [MIN_BATTLE_WORD_SP], and the state is
+ * keyed on the word and the font scale so a mode change or an accessibility
+ * change re-measures from full size instead of staying stuck small.
+ */
+@Composable
+private fun BattleWord(word: String) {
+    // White fill over a heavy black outline — the arcade CTA treatment. Compose
+    // has no text stroke, so the word is drawn TWICE at identical layout: a
+    // stroked pass underneath, then the filled pass on top. Both must share the
+    // same family, size, tracking, alignment and width or the two passes drift
+    // apart and the outline shows as a ghost.
+    val base = MaterialTheme.typography.headlineSmall.copy(
+        fontFamily = AlfaSlabFontFamily,
+        fontWeight = FontWeight.Normal, // Alfa Slab One ships one weight; it is already heavy
+        letterSpacing = 0.03.em
+    )
+    val density = LocalDensity.current
+    val fontScale = density.fontScale
+    var size by remember(word, fontScale) { mutableStateOf(base.fontSize) }
+    var settled by remember(word, fontScale) { mutableStateOf(false) }
+
+    // Stroke is centred on the glyph outline, so half of it eats into the fill.
+    // Scaling off the rendered size keeps the outline proportional at every font
+    // scale instead of turning spindly on large text.
+    // 0.115 matches the approved 3px stroke against a ~26px word in the mockup.
+    // Scaling off the rendered size keeps it proportional at every font scale
+    // rather than turning spindly on large text.
+    val strokePx = with(density) { size.toPx() } * 0.115f
+
+    Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
+        Text(
+            word,
+            color = Color(0xFF1A0E04),
+            style = base.copy(
+                drawStyle = Stroke(width = strokePx, join = StrokeJoin.Round, cap = StrokeCap.Round),
+                // Drop shadow lives on the stroke pass so it sits behind
+                // everything, rather than between the outline and the fill.
+                shadow = Shadow(color = Color(0x73000000), offset = Offset(0f, 3f), blurRadius = 3f)
+            ),
+            fontSize = size,
+            maxLines = 1,
+            softWrap = false,
+            textAlign = TextAlign.Center,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.fillMaxWidth()
+        )
+        Text(
+            word,
+            color = Color.White,
+            style = base,
+            fontSize = size,
+            maxLines = 1,
+            softWrap = false,
+            textAlign = TextAlign.Center,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.fillMaxWidth(),
+            onTextLayout = { result ->
+                // hasVisualOverflow, NOT didOverflowWidth: with Ellipsis the
+                // paragraph is truncated to fit, so didOverflowWidth reads false
+                // and the shrink below would never run — the word would just
+                // ellipsise ("CREATE RO...") instead of scaling down.
+                if (!settled && result.hasVisualOverflow && size.value > MIN_BATTLE_WORD_SP) {
+                    size = size * 0.94f
+                } else {
+                    settled = true
+                }
+            }
+        )
+    }
+}
+
+/** Floor for [BattleWord]'s shrink-to-fit, below which the CTA stops reading as one. */
+private const val MIN_BATTLE_WORD_SP = 15f
+
+/** Gold hairline on the icon tiles — the mockup's edge, replacing a 3dp black ring. */
+private val TILE_EDGE = Color(0x8CF5D783)
 
 @Composable
 private fun DifficultyChip(

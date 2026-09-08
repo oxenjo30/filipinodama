@@ -29,6 +29,10 @@ import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.NavHostController
 import androidx.navigation.compose.currentBackStackEntryAsState
 import com.filipinodama.app.R
+import com.filipinodama.app.ui.components.brightIconFilter
+import com.filipinodama.app.ui.components.iconGlow
+import com.filipinodama.app.ui.components.idlePulse
+import com.filipinodama.app.ui.components.rememberMotionBudget
 import com.filipinodama.app.ui.theme.TabActiveGold
 import com.filipinodama.app.ui.theme.TabInactiveViolet
 
@@ -65,6 +69,8 @@ private val tabItems = listOf(
 fun BottomTabBar(navController: NavHostController) {
     val navBackStackEntry by navController.currentBackStackEntryAsState()
     val currentDestination = navBackStackEntry?.destination
+    // Same motion policy the Play screen uses, so the whole app backs off together.
+    val budget = rememberMotionBudget()
 
     Row(
         modifier = Modifier
@@ -101,17 +107,26 @@ fun BottomTabBar(navController: NavHostController) {
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.spacedBy(4.dp)
             ) {
-                // Inactive, non-center icons: opacity .5 + grayscale(.4), mirroring
-                // the mockup's iconStyle exactly (script line 4092). The center
-                // Play icon never grayscales/dims regardless of active state.
+                // Inactive, non-center icons were opacity .5 + grayscale(.4), a 1:1
+                // port of the mockup's iconStyle (script line 4092). Owner
+                // directive 2026-08-04 supersedes that row: on device they read as
+                // disabled controls. They are LIFTED, not equalised — .78/.15
+                // instead of .5/.4 — so the bar still reads as a tab bar, and the
+                // selected tab keeps its gold tint plus a glow and a slow pulse.
                 val dimInactive = !selected && !isPlayTab
                 Image(
                     painter = painterResource(id = item.icon),
                     contentDescription = item.label,
-                    colorFilter = if (dimInactive) ColorFilter.colorMatrix(partialGrayscale(0.4f)) else null,
+                    colorFilter = if (dimInactive) {
+                        ColorFilter.colorMatrix(partialGrayscale(0.15f))
+                    } else {
+                        brightIconFilter()
+                    },
                     modifier = Modifier
                         .size(26.dp)
-                        .alpha(if (dimInactive) 0.5f else 1f)
+                        .then(if (selected) Modifier.idlePulse(budget, peak = 1.05f) else Modifier)
+                        .then(if (selected) Modifier.iconGlow(alpha = 0.4f) else Modifier)
+                        .alpha(if (dimInactive) 0.78f else 1f)
                 )
                 Text(item.label, color = tint, style = MaterialTheme.typography.labelSmall)
             }

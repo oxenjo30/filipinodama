@@ -44,6 +44,21 @@ private fun jetBrainsMonoWeight(weight: FontWeight) = Font(
     variationSettings = FontVariation.Settings(FontVariation.weight(weight.weight))
 )
 
+/**
+ * Alfa Slab One — display face for the Play screen's primary CTA only.
+ *
+ * A heavy slab serif, chosen over an arcade sans so the button still lives in
+ * Cinzel's classical world while surviving a white-fill / black-outline
+ * treatment that a high-contrast serif cannot: Cinzel's thin strokes fill in
+ * under a stroke of any weight.
+ *
+ * One static weight, so no variation axis. Deliberately NOT wired into
+ * [Typography] — Cinzel stays the app's display face everywhere else.
+ *
+ * SIL Open Font License 1.1 — see docs/licenses/AlfaSlabOne-OFL.txt.
+ */
+val AlfaSlabFontFamily = FontFamily(Font(resId = R.font.alfa_slab_one))
+
 val CinzelFontFamily = FontFamily(
     cinzelWeight(FontWeight.Medium),
     cinzelWeight(FontWeight.SemiBold),
