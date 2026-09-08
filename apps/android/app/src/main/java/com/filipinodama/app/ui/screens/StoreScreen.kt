@@ -136,7 +136,8 @@ fun StoreScreen(
 
     var items by remember { mutableStateOf<List<StoreItemDto>?>(null) } // null = loading
     var loadError by remember { mutableStateOf(false) }
-    var owned by remember { mutableStateOf<Set<String>>(emptySet()) }
+    var ownership by remember { mutableStateOf(StoreOwnershipState()) }
+    val owned = if (ownership.accountId == me?.id) ownership.itemIds else emptySet()
     var tab by remember { mutableStateOf("All") }
     var buyFlow by remember { mutableStateOf<BuyFlowState>(BuyFlowState.Idle) }
     // Phase 7 retry affordance: bump to re-run the catalog load below.
@@ -171,6 +172,25 @@ fun StoreScreen(
     // needs the same flag the header's diamond pill already reads.
     val diamondTopUpEnabled by com.filipinodama.app.data.config.ConfigRepository.diamondTopUpEnabled.collectAsStateWithLifecycle()
 
+    // This must remain composed while CheckoutScreen is visible: otherwise a
+    // session switch can leave the previous account's cart/ownership on screen
+    // until navigation returns to StoreScreen.
+    LaunchedEffect(me?.id) {
+        val accountId = me?.id
+        val accountChanged = ownership.accountId != accountId
+        ownership = ownership.forAccount(accountId)
+        if (accountChanged) {
+            buyFlow = BuyFlow.dismiss()
+            cart = emptyList()
+            showCheckout = false
+        }
+        if (accountId == null) return@LaunchedEffect
+        when (val result = EconomyRepository.ownedInventory()) {
+            is EconomyResult.Success -> ownership = ownership.withInventory(accountId, result.data.inventory.map { it.itemId }.toSet())
+            is EconomyResult.Failure -> ownership = ownership.withInventoryFailure(accountId)
+        }
+    }
+
     if (showCheckout) {
         CheckoutScreen(
             cart = cart,
@@ -190,9 +210,11 @@ fun StoreScreen(
             // do not wire a web/PayMongo top-up here.
             onOpenTopUp = { /* no-op — see comment above; Play Billing only if ever enabled */ },
             onOrderPlaced = { purchasedIds ->
-                owned = owned + purchasedIds
-                cart = cart.filter { it.id !in purchasedIds }
-                if (cart.isEmpty()) showCheckout = false
+                if (ownership.accountId == me?.id) {
+                    ownership = ownership.withPurchasedItems(me?.id, purchasedIds)
+                    cart = cart.filter { it.id !in purchasedIds }
+                    if (cart.isEmpty()) showCheckout = false
+                }
             },
             onRequireSignIn = {
                 showCheckout = false
@@ -223,21 +245,6 @@ fun StoreScreen(
         loadCatalog(clearFirst = true)
     }
 
-    // Real ownership: the export's InventoryItem rows keyed by itemId (the
-    // same source web's StorePage uses) — INCLUDES granted starter items that
-    // have no Order rows. Reloaded when the account changes; on failure owned
-    // stays empty so nothing is falsely marked owned.
-    LaunchedEffect(me?.id) {
-        if (me == null) {
-            owned = emptySet()
-            return@LaunchedEffect
-        }
-        when (val result = EconomyRepository.ownedInventory()) {
-            is EconomyResult.Success -> owned = result.data.inventory.map { it.itemId }.toSet()
-            is EconomyResult.Failure -> { /* leave owned as-is — never falsely mark owned */ }
-        }
-    }
-
     // The browsable catalog with the free default frame ("laurel") removed, so
     // it never shows as a store item and can't leave an all-laurel FRAME tab
     // empty. Everything the UI displays (tabs, grid, deals) derives from this.
@@ -263,14 +270,17 @@ fun StoreScreen(
             signInPromptAction = "claim this item"
             return
         }
+        val purchaseAccountId = me?.id ?: return
         buyFlow = BuyFlow.confirm(buyFlow)
         scope.launch {
             when (val result = EconomyRepository.purchase(item.id)) {
                 is EconomyResult.Success -> {
-                    owned = owned + item.id
+                    if (ownership.accountId != purchaseAccountId) return@launch
+                    ownership = ownership.withPurchasedItems(me?.id, setOf(item.id))
                     buyFlow = BuyFlow.succeed(buyFlow)
                 }
                 is EconomyResult.Failure -> {
+                    if (ownership.accountId != purchaseAccountId) return@launch
                     // Safety net: if the failure is actually an auth error (e.g.
                     // the session expired between load and buy), show the guided
                     // sign-in modal, NOT the generic error overlay.

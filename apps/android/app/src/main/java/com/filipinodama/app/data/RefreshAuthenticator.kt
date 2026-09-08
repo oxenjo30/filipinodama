@@ -2,7 +2,6 @@ package com.filipinodama.app.data
 
 import kotlinx.serialization.json.Json
 import okhttp3.Authenticator
-import okhttp3.CookieJar
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -29,7 +28,9 @@ import java.util.concurrent.TimeUnit
  */
 class RefreshAuthenticator(
     private val baseUrl: String,
-    private val cookieJar: CookieJar
+    private val cookieJar: ClearableCookieJar,
+    /** Test-only seam that pauses after the request snapshots its auth epoch. */
+    private val afterAuthSnapshot: (() -> Unit)? = null
 ) : Authenticator {
 
     private val json = Json { ignoreUnknownKeys = true; isLenient = true }
@@ -53,7 +54,32 @@ class RefreshAuthenticator(
     // happened *after it started waiting* and just retry with the fresh cookie
     // instead of firing a redundant one.
     private val refreshLock = Any()
-    @Volatile private var refreshGen = 0L
+    private var refreshGen = 0L
+    private var logoutInProgress = false
+    private var invalidationEpoch = 0L
+
+    /**
+     * Starts a two-phase logout barrier. This waits for any active refresh to
+     * finish persisting cookies, then makes later 401s fail closed.
+     */
+    fun beginLogout() {
+        synchronized(refreshLock) {
+            logoutInProgress = true
+            invalidationEpoch++
+        }
+    }
+
+    /**
+     * Clears the cookie jar while refresh remains barred, then permits a later,
+     * independently authenticated session to refresh. Lock order is always
+     * refreshLock followed by the cookie-jar monitor.
+     */
+    fun finishLogout() {
+        synchronized(refreshLock) {
+            cookieJar.clearAll()
+            logoutInProgress = false
+        }
+    }
 
     override fun authenticate(route: Route?, response: Response): Request? {
         // Never try to refresh auth endpoints themselves (matches the web
@@ -73,9 +99,15 @@ class RefreshAuthenticator(
         // should just retry (the cookie is already fresh) rather than refresh
         // again. The snapshot read and the refresh decision are a single
         // critical section so the compare is race-free.
-        val genBefore = refreshGen // volatile-ish read; re-checked under the lock
+        val snapshot = synchronized(refreshLock) {
+            if (logoutInProgress) return null
+            AuthSnapshot(invalidationEpoch, refreshGen)
+        }
+        afterAuthSnapshot?.invoke()
         val refreshed = synchronized(refreshLock) {
-            if (refreshGen != genBefore) {
+            if (logoutInProgress || invalidationEpoch != snapshot.invalidationEpoch) {
+                false
+            } else if (refreshGen != snapshot.refreshGeneration) {
                 // A refresh completed while we were waiting for the lock — reuse it.
                 true
             } else {
@@ -112,4 +144,9 @@ class RefreshAuthenticator(
         }
         return count
     }
+
+    private data class AuthSnapshot(
+        val invalidationEpoch: Long,
+        val refreshGeneration: Long
+    )
 }

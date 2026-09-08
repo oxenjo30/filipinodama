@@ -40,6 +40,7 @@ import com.filipinodama.app.data.social.NotificationsRepository
 import com.filipinodama.app.data.social.SocialResult
 import com.filipinodama.app.data.social.notifIsFriendType
 import com.filipinodama.app.data.social.notifIsPending
+import com.filipinodama.app.data.social.notifShouldShowInInbox
 import com.filipinodama.app.data.social.notifStatus
 import com.filipinodama.app.ui.theme.Gold
 import com.filipinodama.app.ui.theme.GoldLt
@@ -143,7 +144,7 @@ fun NotificationsScreen(onBack: () -> Unit) {
                 modifier = Modifier.fillMaxSize(),
                 contentPadding = screenContentPadding()
             ) {
-                val groups = listOf("Today" to data.groups.today, "Yesterday" to data.groups.yesterday, "Earlier" to data.groups.earlier)
+                val groups = listOf("Today" to data.groups.today.filter(::notifShouldShowInInbox), "Yesterday" to data.groups.yesterday.filter(::notifShouldShowInInbox), "Earlier" to data.groups.earlier.filter(::notifShouldShowInInbox))
                 groups.forEach { (label, items) ->
                     if (items.isNotEmpty()) {
                         item {

@@ -76,6 +76,7 @@ import kotlinx.coroutines.launch
 @Composable
 fun DiscoverGuildsScreen(onBack: () -> Unit, onRequireSignIn: () -> Unit = {}) {
     val me = AuthRepository.state.collectAsStateWithLifecycle().value.user
+    val hasRealAccount = isRealGuildAccount(me)
     val scope = rememberCoroutineScope()
 
     var query by remember { mutableStateOf("") }
@@ -232,7 +233,7 @@ fun DiscoverGuildsScreen(onBack: () -> Unit, onRequireSignIn: () -> Unit = {}) {
                             requested = requestedIds.contains(card.id),
                             onOpenPreview = { previewGuildId = card.id },
                             onJoin = {
-                                if (me == null) {
+                                if (!hasRealAccount) {
                                     // Anonymous — prompt sign-in (join needs an account).
                                     onRequireSignIn()
                                 } else {
@@ -266,7 +267,7 @@ fun DiscoverGuildsScreen(onBack: () -> Unit, onRequireSignIn: () -> Unit = {}) {
                     // Creating a guild needs an account — an anonymous user is
                     // prompted to sign in instead of opening a dialog that would
                     // fail on submit.
-                    .clickable { if (me == null) onRequireSignIn() else createOpen = true }
+                    .clickable { if (!hasRealAccount) onRequireSignIn() else createOpen = true }
                     .background(Color(0x0DE8B84B), RoundedCornerShape(14.dp))
                     .border(1.dp, Color(0x57E8B84B), RoundedCornerShape(14.dp))
                     .padding(14.dp),
@@ -285,6 +286,7 @@ fun DiscoverGuildsScreen(onBack: () -> Unit, onRequireSignIn: () -> Unit = {}) {
         if (createOpen) {
             GuildCreateDialog(
                 onClose = { createOpen = false },
+                onRequireSignIn = onRequireSignIn,
                 onCreated = {
                     createOpen = false
                     loadBrowse(query)
@@ -295,8 +297,9 @@ fun DiscoverGuildsScreen(onBack: () -> Unit, onRequireSignIn: () -> Unit = {}) {
         if (previewGuildId != null) {
             GuildPreviewSheet(
                 guildId = previewGuildId!!,
-                signedIn = me != null,
+                signedIn = hasRealAccount,
                 onClose = { previewGuildId = null },
+                onRequireSignIn = onRequireSignIn,
                 onJoined = { loadBrowse(query) }
             )
         }
@@ -331,7 +334,7 @@ private fun Spacer() {
  * an honest "—" rather than fabricated demo values.
  */
 @Composable
-fun GuildPreviewSheet(guildId: String, signedIn: Boolean, onClose: () -> Unit, onJoined: () -> Unit) {
+fun GuildPreviewSheet(guildId: String, signedIn: Boolean, onClose: () -> Unit, onRequireSignIn: () -> Unit = {}, onJoined: () -> Unit) {
     val scope = rememberCoroutineScope()
     val snackbar = com.filipinodama.app.ui.components.LocalSnackbar.current
     var detail by remember(guildId) { mutableStateOf<GuildDetailResponse?>(null) }
@@ -477,27 +480,30 @@ fun GuildPreviewSheet(guildId: String, signedIn: Boolean, onClose: () -> Unit, o
                         // guild is "Request to Join", never an instant "Join".
                         else -> "Request to Join"
                     }
-                    val joinEnabled = !busy && !joined && !requested &&
-                        effectiveState !in setOf("member", "in-other-guild", "invite-only", "requested") &&
-                        signedIn
+                    val joinHandoff = guildPreviewJoinHandoff(signedIn, busy, joined, requested, effectiveState)
+                    val joinEnabled = joinHandoff != GuildPreviewJoinHandoff.Unavailable
 
                     Box(
                         modifier = Modifier
                             .fillMaxWidth()
                             .padding(top = 14.dp)
                             .clickable(enabled = joinEnabled) {
-                                busy = true
-                                scope.launch {
-                                    when (val res = GuildsRepository.join(guildId)) {
-                                        is SocialResult.Success -> {
-                                            if (res.data.status == "joined") joined = true else requested = true
-                                            onJoined()
+                                when (joinHandoff) {
+                                    GuildPreviewJoinHandoff.RequireSignIn -> onRequireSignIn()
+                                    GuildPreviewJoinHandoff.SubmitJoin -> {
+                                        busy = true
+                                        scope.launch {
+                                            when (val res = GuildsRepository.join(guildId)) {
+                                                is SocialResult.Success -> {
+                                                    if (res.data.status == "joined") joined = true else requested = true
+                                                    onJoined()
+                                                }
+                                                is SocialResult.Failure -> if (com.filipinodama.app.ui.components.isAuthError(res.code)) onRequireSignIn() else snackbar.show(res.message)
+                                            }
+                                            busy = false
                                         }
-                                        is SocialResult.Failure ->
-                                            if (com.filipinodama.app.ui.components.isAuthError(res.code)) onClose()
-                                            else snackbar.show(res.message)
                                     }
-                                    busy = false
+                                    GuildPreviewJoinHandoff.Unavailable -> Unit
                                 }
                             }
                             .background(

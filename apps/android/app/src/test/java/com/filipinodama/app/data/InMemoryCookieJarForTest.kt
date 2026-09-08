@@ -11,7 +11,7 @@ import okhttp3.HttpUrl
  * only depends on the plain OkHttp [CookieJar] contract, so this is a
  * faithful substitute for exercising its refresh-once-on-401 behavior.
  */
-class InMemoryCookieJarForTest : CookieJar {
+class InMemoryCookieJarForTest : ClearableCookieJar {
     private val store = mutableMapOf<String, List<Cookie>>()
 
     override fun saveFromResponse(url: HttpUrl, cookies: List<Cookie>) {
@@ -19,4 +19,8 @@ class InMemoryCookieJarForTest : CookieJar {
     }
 
     override fun loadForRequest(url: HttpUrl): List<Cookie> = store[url.host] ?: emptyList()
+
+    override fun clearAll() {
+        store.clear()
+    }
 }

@@ -68,17 +68,15 @@ object ProfileRepository {
         call { api.profileExtras(userId) }
 
     suspend fun updateProfile(request: UpdateProfileRequest): ProfileResult<UpdateProfileResponse> {
+        val sessionKey = AuthRepository.currentSessionKey()
         val result = call { api.updateProfile(request) }
         if (result is ProfileResult.Success) {
-            val current = AuthRepository.state.value.user
-            if (current != null) {
-                val u = result.data.user
-                AuthRepository.patchUser(
-                    current.copy(
+            val u = result.data.user
+            AuthRepository.patchUser(sessionKey) { current ->
+                current.copy(
                         displayName = u.displayName,
                         avatarUrl = u.avatarUrl,
                         frameId = u.frameId
-                    )
                 )
             }
         }

@@ -25,6 +25,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -87,7 +88,7 @@ import kotlinx.coroutines.launch
 @Composable
 fun AvatarPickerDialog(onClose: () -> Unit) {
     val scope = rememberCoroutineScope()
-    val me = AuthRepository.state.value.user
+    val me = AuthRepository.state.collectAsStateWithLifecycle().value.user
 
     var ownedAvatars by remember { mutableStateOf<List<StoreItemDto>?>(null) }
     var ownedFrames by remember { mutableStateOf<List<StoreItemDto>?>(null) }

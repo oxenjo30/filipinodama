@@ -38,6 +38,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.filipinodama.app.data.economy.EconomyRepository
+import com.filipinodama.app.data.AuthRepository
 import com.filipinodama.app.data.economy.EconomyResult
 import com.filipinodama.app.data.economy.STORE_TYPE_META
 import com.filipinodama.app.data.economy.StoreItemDto
@@ -67,6 +68,12 @@ import kotlinx.coroutines.launch
  */
 
 private enum class PlaceOrderState { IDLE, PLACING, ERROR }
+
+/** A checkout batch must never issue its next purchase for a newer session. */
+internal fun checkoutSessionIsCurrent(
+    captured: com.filipinodama.app.data.AuthSessionKey,
+    current: com.filipinodama.app.data.AuthSessionKey
+): Boolean = captured == current
 
 @Composable
 fun CheckoutScreen(
@@ -105,14 +112,20 @@ fun CheckoutScreen(
         if (cartEmpty || hasShortfall || placeState == PlaceOrderState.PLACING) return
         placeState = PlaceOrderState.PLACING
         errorMessage = ""
+        val sessionKey = AuthRepository.currentSessionKey()
         scope.launch {
             val purchased = mutableSetOf<String>()
             var failMessage: String? = null
             var authFailed = false
             for (item in cart) {
+                if (!checkoutSessionIsCurrent(sessionKey, AuthRepository.currentSessionKey())) return@launch
                 when (val result = EconomyRepository.purchase(item.id)) {
-                    is EconomyResult.Success -> purchased += item.id
+                    is EconomyResult.Success -> {
+                        if (!checkoutSessionIsCurrent(sessionKey, AuthRepository.currentSessionKey())) return@launch
+                        purchased += item.id
+                    }
                     is EconomyResult.Failure -> {
+                        if (!checkoutSessionIsCurrent(sessionKey, AuthRepository.currentSessionKey())) return@launch
                         if (com.filipinodama.app.ui.components.isAuthError(result.code)) {
                             authFailed = true
                         } else {

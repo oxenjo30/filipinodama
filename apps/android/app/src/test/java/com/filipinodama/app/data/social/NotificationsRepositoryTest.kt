@@ -108,4 +108,52 @@ class NotificationsRepositoryTest {
         assertTrue(!notifIsPending(resolved))
         assertTrue(!notifIsPending(nonFriend))
     }
+
+    @Test
+    fun `resolved friend notifications are excluded from the active inbox`() {
+        val resolved = NotificationDto(
+            id = "resolved",
+            type = "friend_request",
+            title = "New friend request",
+            body = null,
+            data = kotlinx.serialization.json.Json.parseToJsonElement("""{"requestId":"r1","status":"accepted"}"""),
+            readAt = "2026-07-11T00:00:00.000Z",
+            createdAt = "2026-07-10T00:00:00.000Z"
+        )
+        val pending = resolved.copy(id = "pending", data = kotlinx.serialization.json.Json.parseToJsonElement("""{"requestId":"r2"}"""))
+        assertTrue(!notifShouldShowInInbox(resolved))
+        assertTrue(notifShouldShowInInbox(pending))
+    }
+
+    @Test
+    fun `pending request reconciliation removes stale rows and unread count`() {
+        val stale = NotificationDto(
+            id = "stale",
+            type = "friend_request",
+            title = "New friend request",
+            data = kotlinx.serialization.json.Json.parseToJsonElement("""{"requestId":"old-request"}"""),
+            createdAt = "2026-08-11T00:00:00.000Z"
+        )
+        val pending = stale.copy(
+            id = "pending",
+            data = kotlinx.serialization.json.Json.parseToJsonElement("""{"requestId":"live-request"}""")
+        )
+        val other = NotificationDto(
+            id = "other",
+            type = "achievement",
+            title = "Welcome",
+            createdAt = "2026-08-11T00:00:00.000Z"
+        )
+        val response = NotificationsResponse(
+            notifications = listOf(stale, pending, other),
+            groups = NotificationGroupsDto(today = listOf(stale, pending, other)),
+            unreadCount = 3
+        )
+
+        val filtered = filterResolvedFriendRequests(response, setOf("live-request"))
+
+        assertEquals(listOf("pending", "other"), filtered.notifications.map { it.id })
+        assertEquals(listOf("pending", "other"), filtered.groups.today.map { it.id })
+        assertEquals(2, filtered.unreadCount)
+    }
 }

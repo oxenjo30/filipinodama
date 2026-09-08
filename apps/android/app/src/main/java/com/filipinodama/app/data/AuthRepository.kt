@@ -3,6 +3,9 @@ package com.filipinodama.app.data
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 
 /**
  * Session state holder for the auth shell. Matches the scaffold's existing
@@ -24,14 +27,14 @@ import kotlinx.coroutines.flow.asStateFlow
  *  - own the onboarded flag, persisted in [SecureStore] as the native
  *    equivalent of the web client's localStorage `fdr.onboarded` marker.
  *
- * Not thread-unsafe-by-accident: all mutation happens via [MutableStateFlow]
- * updates from the caller's own coroutine (typically viewModelScope-less
- * `rememberCoroutineScope()` in a composable), matching how AuthApi's
- * suspend functions are already meant to be called directly from Compose.
+ * Identity-changing operations are serialized by [authMutationMutex]; every
+ * unrelated late response is additionally keyed to the captured session
+ * generation before it may mutate [state].
  */
 object AuthRepository {
 
     private val authApi: AuthApi by lazy { ApiClient.create<AuthApi>() }
+    private val authMutationMutex = Mutex()
 
     private val _state = MutableStateFlow(AuthSessionState())
     val state: StateFlow<AuthSessionState> = _state.asStateFlow()
@@ -56,9 +59,16 @@ object AuthRepository {
      * no-op when nobody is signed in, so a stray call after logout can't
      * resurrect a session.
      */
-    fun patchUser(user: AuthUser) {
-        if (_state.value.user == null) return
-        _state.value = _state.value.copy(user = user)
+    /** Captures the active identity *before* an unrelated request begins. */
+    fun currentSessionKey(): AuthSessionKey = authSessionKey(_state.value)
+
+    /**
+     * Applies a server-confirmed partial update only to the session that made
+     * the request. The patch receives the latest current user, so concurrent
+     * valid patches cannot overwrite fields they did not change.
+     */
+    fun patchUser(sessionKey: AuthSessionKey, patch: (AuthUser) -> AuthUser) {
+        _state.update { state -> applyUserPatchForSession(state, sessionKey, patch) }
     }
 
     fun setOnboarded() {
@@ -81,7 +91,16 @@ object AuthRepository {
      * then retry /me ONCE. Only a failed refresh + still-null /me means the user
      * is genuinely signed out.
      */
-    suspend fun refreshMe(): AuthUser? {
+    suspend fun refreshMe(): AuthUser? = authMutationMutex.withLock {
+        refreshMeUnlocked(currentSessionKey())
+    }
+
+    /** Uses a caller-captured key when a response belongs to another workflow. */
+    suspend fun refreshMe(sessionKey: AuthSessionKey): AuthUser? = authMutationMutex.withLock {
+        refreshMeUnlocked(sessionKey)
+    }
+
+    private suspend fun refreshMeUnlocked(sessionKey: AuthSessionKey): AuthUser? {
         return try {
             var me = authApi.me().let { if (it.ok) it.data else null }
             var user = me?.user
@@ -95,10 +114,16 @@ object AuthRepository {
                     user = me?.user
                 }
             }
-            _state.value = _state.value.copy(user = user, account = me?.account, checked = true)
-            user
+            // Capture validity before applying: a valid anonymous cold-start
+            // response intentionally creates a new generation below, so the
+            // request key will no longer match after the state transition.
+            val accepted = acceptsMeRefreshForSession(_state.value, sessionKey)
+            _state.update { state ->
+                applyMeRefreshForSession(state, sessionKey, user, me?.account)
+            }
+            if (accepted) user else null
         } catch (e: Exception) {
-            _state.value = _state.value.copy(user = null, account = null, checked = true)
+            _state.update { state -> applyMeRefreshFailureForSession(state, sessionKey) }
             null
         }
     }
@@ -107,31 +132,37 @@ object AuthRepository {
      * Re-read only the `account` block. Never touches `user`: this runs straight
      * after a successful sign-in, and a transient failure here must not undo it.
      */
-    private suspend fun refreshAccountOnly() {
+    private suspend fun refreshAccountOnlyUnlocked(sessionKey: AuthSessionKey) {
         runCatching { authApi.me() }
-            .onSuccess { env -> if (env.ok) env.data?.account?.let { _state.value = _state.value.copy(account = it) } }
+            .onSuccess { env ->
+                if (env.ok) {
+                    _state.update { state ->
+                        applyAccountRefreshForSession(state, sessionKey, env.data?.account)
+                    }
+                }
+            }
     }
 
-    suspend fun login(email: String, password: String): AuthResult {
-        return runCatching {
+    suspend fun login(email: String, password: String): AuthResult = authMutationMutex.withLock {
+        runCatching {
             val envelope = authApi.login(LoginRequest(email = email, password = password))
             unwrap(envelope) { it.user }
         }.fold(
             onSuccess = { user ->
-                _state.value = _state.value.copy(user = user, checked = true)
+                _state.update { state -> establishAuthSession(state, user) }
                 // `account` is only returned by /me. Fetch JUST that — calling
                 // refreshMe() here was a regression: its catch sets
                 // user = null, so one flaky request right after a successful
                 // login signed the player straight back out.
-                refreshAccountOnly()
+                refreshAccountOnlyUnlocked(currentSessionKey())
                 AuthResult.Success(user)
             },
             onFailure = { toResult(it) }
         )
     }
 
-    suspend fun register(email: String, password: String, username: String): AuthResult {
-        return runCatching {
+    suspend fun register(email: String, password: String, username: String): AuthResult = authMutationMutex.withLock {
+        runCatching {
             val envelope = authApi.register(
                 RegisterRequest(email = email, password = password, username = username)
             )
@@ -139,31 +170,31 @@ object AuthRepository {
         }.fold(
             onSuccess = { user ->
                 justRegistered = true
-                _state.value = _state.value.copy(user = user, checked = true)
+                _state.update { state -> establishAuthSession(state, user) }
                 // `account` is only returned by /me. Fetch JUST that — calling
                 // refreshMe() here was a regression: its catch sets
                 // user = null, so one flaky request right after a successful
                 // login signed the player straight back out.
-                refreshAccountOnly()
+                refreshAccountOnlyUnlocked(currentSessionKey())
                 AuthResult.Success(user)
             },
             onFailure = { toResult(it) }
         )
     }
 
-    suspend fun guest(): AuthResult {
-        return runCatching {
+    suspend fun guest(): AuthResult = authMutationMutex.withLock {
+        runCatching {
             val envelope = authApi.guest()
             unwrap(envelope) { it.user }
         }.fold(
             onSuccess = { user ->
                 ApiClient.secureStore.putBoolean(SecureStore.KEY_IS_GUEST, true)
-                _state.value = _state.value.copy(user = user, checked = true)
+                _state.update { state -> establishAuthSession(state, user) }
                 // `account` is only returned by /me. Fetch JUST that — calling
                 // refreshMe() here was a regression: its catch sets
                 // user = null, so one flaky request right after a successful
                 // login signed the player straight back out.
-                refreshAccountOnly()
+                refreshAccountOnlyUnlocked(currentSessionKey())
                 AuthResult.Success(user)
             },
             onFailure = { toResult(it) }
@@ -194,18 +225,18 @@ object AuthRepository {
      * always routes like a normal login, never triggers the onboarding tour.
      * See apps/web/src/stores/authStore.ts / OnboardingFlow.tsx.
      */
-    suspend fun googleSignIn(idToken: String): AuthResult {
-        return runCatching {
+    suspend fun googleSignIn(idToken: String): AuthResult = authMutationMutex.withLock {
+        runCatching {
             val envelope = authApi.googleToken(GoogleTokenRequest(idToken = idToken))
             unwrap(envelope) { it.user }
         }.fold(
             onSuccess = { user ->
-                _state.value = _state.value.copy(user = user, checked = true)
+                _state.update { state -> establishAuthSession(state, user) }
                 // `account` is only returned by /me. Fetch JUST that — calling
                 // refreshMe() here was a regression: its catch sets
                 // user = null, so one flaky request right after a successful
                 // login signed the player straight back out.
-                refreshAccountOnly()
+                refreshAccountOnlyUnlocked(currentSessionKey())
                 AuthResult.Success(user)
             },
             onFailure = { toResult(it) }
@@ -218,8 +249,9 @@ object AuthRepository {
      * not "your email changed". [currentPassword] is null for OAuth-only
      * accounts; the server decides whether one is required.
      */
-    suspend fun requestEmailChange(newEmail: String, currentPassword: String?): AuthResult {
-        return runCatching {
+    suspend fun requestEmailChange(newEmail: String, currentPassword: String?): AuthResult = authMutationMutex.withLock {
+        val sessionKey = currentSessionKey()
+        runCatching {
             val envelope = authApi.changeEmail(EmailChangeRequest(newEmail = newEmail, currentPassword = currentPassword))
             unwrap(envelope) { it }
             Unit
@@ -228,7 +260,7 @@ object AuthRepository {
                 // account-only re-read. refreshMe() here was a live bug: its
                 // catch sets user = null, so one flaky request right after a
                 // successful email-change request signed the player out.
-                refreshAccountOnly()
+                refreshAccountOnlyUnlocked(sessionKey)
                 AuthResult.Success(null)
             },
             onFailure = { toResult(it) }
@@ -252,13 +284,17 @@ object AuthRepository {
      * device), then always clears local session state regardless of whether
      * the network call succeeded.
      */
-    suspend fun logout() {
-        runCatching { authApi.logout() }
-        ApiClient.cookieJar.clearAll()
-        ApiClient.secureStore.remove(SecureStore.KEY_IS_GUEST)
-        ApiClient.secureStore.remove(SecureStore.KEY_ONBOARDED)
-        justRegistered = false
-        _state.value = AuthSessionState(checked = true)
+    suspend fun logout() = authMutationMutex.withLock {
+        ApiClient.beginLogoutBarrier()
+        try {
+            runCatching { authApi.logout() }
+        } finally {
+            ApiClient.finishLogoutBarrier()
+            ApiClient.secureStore.remove(SecureStore.KEY_IS_GUEST)
+            ApiClient.secureStore.remove(SecureStore.KEY_ONBOARDED)
+            justRegistered = false
+            _state.update(::clearAuthSession)
+        }
     }
 
     private fun <T, R> unwrap(envelope: ApiEnvelope<T>, map: (T) -> R): R = unwrapEnvelope(envelope, map)
@@ -318,8 +354,79 @@ data class AuthSessionState(
      */
     val account: AccountState? = null,
     /** True once the first refreshMe() call has completed (success or failure). */
-    val checked: Boolean = false
+    val checked: Boolean = false,
+    /** Increments at every login and logout boundary, including same-user re-login. */
+    val generation: Long = 0L
 )
+
+/** A request-scoped identity token that prevents late responses crossing sessions. */
+data class AuthSessionKey(val userId: String?, val generation: Long)
+
+fun authSessionKey(state: AuthSessionState): AuthSessionKey =
+    AuthSessionKey(userId = state.user?.id, generation = state.generation)
+
+fun isCurrentAuthSession(state: AuthSessionState, sessionKey: AuthSessionKey): Boolean =
+    state.generation == sessionKey.generation && state.user?.id == sessionKey.userId
+
+/** Whether a `/me` response still belongs to the session that started it. */
+fun acceptsMeRefreshForSession(state: AuthSessionState, sessionKey: AuthSessionKey): Boolean =
+    isCurrentAuthSession(state, sessionKey)
+
+/**
+ * Starts a server-authenticated session without carrying account security data
+ * across identities. The `/me` account refresh happens after this transition,
+ * so a failed refresh has no previous player's email data to display.
+ */
+fun establishAuthSession(previous: AuthSessionState, user: AuthUser): AuthSessionState =
+    previous.copy(user = user, account = null, checked = true, generation = previous.generation + 1)
+
+/** Ends the identity boundary before any late response can update shared state. */
+fun clearAuthSession(previous: AuthSessionState): AuthSessionState =
+    previous.copy(user = null, account = null, checked = true, generation = previous.generation + 1)
+
+/** Applies an authoritative `/me` result only when it belongs to its requester. */
+fun applyMeRefreshForSession(
+    state: AuthSessionState,
+    sessionKey: AuthSessionKey,
+    user: AuthUser?,
+    account: AccountState?
+): AuthSessionState =
+    if (!acceptsMeRefreshForSession(state, sessionKey)) state
+    else if (state.user?.id != user?.id) {
+        state.copy(user = user, account = account, checked = true, generation = state.generation + 1)
+    } else {
+        state.copy(user = user, account = account, checked = true)
+    }
+
+/** A current `/me` failure means signed out; a late one must leave newer state alone. */
+fun applyMeRefreshFailureForSession(
+    state: AuthSessionState,
+    sessionKey: AuthSessionKey
+): AuthSessionState =
+    if (!acceptsMeRefreshForSession(state, sessionKey)) state
+    else if (state.user != null) clearAuthSession(state)
+    else state.copy(account = null, checked = true)
+
+/**
+ * A sign-in can replace the user while an older `/me` request is in flight.
+ * Accept an account response only when it belongs to the still-active session.
+ */
+fun applyAccountRefreshForSession(
+    state: AuthSessionState,
+    sessionKey: AuthSessionKey,
+    account: AccountState?
+): AuthSessionState =
+    if (isCurrentAuthSession(state, sessionKey)) state.copy(account = account) else state
+
+/** Merges a valid response into the latest user rather than a stale snapshot. */
+fun applyUserPatchForSession(
+    state: AuthSessionState,
+    sessionKey: AuthSessionKey,
+    patch: (AuthUser) -> AuthUser
+): AuthSessionState {
+    val current = state.user ?: return state
+    return if (isCurrentAuthSession(state, sessionKey)) state.copy(user = patch(current)) else state
+}
 
 /** Thrown internally when the server envelope is `{ ok: false, error }`. */
 class AuthApiException(val code: String, override val message: String) : Exception(message)

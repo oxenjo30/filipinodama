@@ -1,6 +1,7 @@
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { prisma } from "../db/client.js";
+import type { Prisma } from "@prisma/client";
 import { ok, err } from "../lib/errors.js";
 import { requireAuth } from "../auth/guards.js";
 
@@ -35,6 +36,12 @@ function groupFor(date: Date, now: Date): "today" | "yesterday" | "earlier" {
   return "earlier";
 }
 
+function friendRequestId(data: Prisma.JsonValue | null): string | null {
+  if (!data || typeof data !== "object" || Array.isArray(data)) return null;
+  const requestId = data.requestId;
+  return typeof requestId === "string" ? requestId : null;
+}
+
 export async function notificationRoutes(app: FastifyInstance) {
   // GET /api/notifications — grouped + paginated (cursor over createdAt/id)
   app.get<{ Querystring: Record<string, string> }>(
@@ -44,7 +51,10 @@ export async function notificationRoutes(app: FastifyInstance) {
       const me = req.userId!;
       const { cursor, limit, unread } = listQuerySchema.parse(req.query);
 
-      const rows = await prisma.notification.findMany({
+      // Bound reconciliation to the requested raw page. A user can have years
+      // of resolved requests; scanning them all on every bell refresh is both
+      // unbounded work and unnecessary for notifications outside this page.
+      const rawRows = await prisma.notification.findMany({
         // Dismissed rows are hidden everywhere; internal markers never surface.
         where: {
           userId: me,
@@ -57,9 +67,38 @@ export async function notificationRoutes(app: FastifyInstance) {
         ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
       });
 
-      const hasMore = rows.length > limit;
-      const page = hasMore ? rows.slice(0, limit) : rows;
-      const nextCursor = hasMore ? page[page.length - 1]!.id : null;
+      const hasMore = rawRows.length > limit;
+      const rawPage = hasMore ? rawRows.slice(0, limit) : rawRows;
+      const nextCursor = hasMore ? rawPage[rawPage.length - 1]!.id : null;
+      const requestIds = [...new Set(rawRows
+        .filter((n) => n.type === "friend_request")
+        .map((n) => friendRequestId(n.data))
+        .filter((id): id is string => id !== null))];
+      const resolvedRequests = requestIds.length === 0
+        ? []
+        : await prisma.friendRequest.findMany({
+            where: {
+              toId: me,
+              id: { in: requestIds },
+              status: { in: ["accepted", "declined"] },
+            },
+            select: { id: true },
+          });
+      const resolvedRequestIds = new Set(resolvedRequests.map(({ id }) => id));
+      const resolvedNotificationIds = rawRows
+        .filter((n) => n.type === "friend_request" && resolvedRequestIds.has(friendRequestId(n.data) ?? ""))
+        .map((n) => n.id);
+      if (resolvedNotificationIds.length > 0) {
+        await prisma.notification.updateMany({
+          where: { id: { in: resolvedNotificationIds }, userId: me, type: "friend_request", dismissedAt: null },
+          data: { dismissedAt: new Date() },
+        });
+      }
+      // Keep cursor semantics based on raw rows: a resolved first item can make
+      // this response shorter, but must never make the next raw row unreachable.
+      const page = rawPage.filter(
+        (n) => n.type !== "friend_request" || !resolvedRequestIds.has(friendRequestId(n.data) ?? ""),
+      );
 
       const now = new Date();
       const groups: Record<"today" | "yesterday" | "earlier", typeof page> = {

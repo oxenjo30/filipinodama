@@ -18,6 +18,147 @@ import kotlinx.coroutines.flow.update
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 
+/** Explicit command protocol: every leave creates one barrier, and joins wait behind it. */
+internal sealed interface QueueOperationCommand {
+    data class Join(val request: MmJoinRequest) : QueueOperationCommand
+    data class Leave(val token: Int) : QueueOperationCommand
+}
+
+internal class MatchmakingQueueOperation {
+    private var nextToken = 0
+    private var barrierToken: Int? = null
+    private var desired: MmJoinRequest? = null
+    private var lateAckTokens = mutableSetOf<Int>()
+    var lastLeaveAcknowledgementConsumed = false
+        private set
+    var status: MatchStatus = MatchStatus.IDLE
+        private set
+
+    fun begin(request: MmJoinRequest): List<QueueOperationCommand> {
+        desired = request
+        if (barrierToken != null) return emptyList()
+        return dispatchDesired()
+    }
+
+    fun replace(request: MmJoinRequest): List<QueueOperationCommand> {
+        desired = request
+        if (barrierToken != null) return emptyList()
+        if (status != MatchStatus.SEARCHING) return dispatchDesired()
+        return openBarrier()
+    }
+
+    fun cancel(): List<QueueOperationCommand> {
+        desired = null
+        if (barrierToken != null) return emptyList()
+        return if (status == MatchStatus.SEARCHING) openBarrier() else emptyList()
+    }
+
+    fun watchdogFailure(): List<QueueOperationCommand> = cancel()
+
+    /** No join reached the transport, so retry needs no leave acknowledgement. */
+    fun onJoinDispatchFailed() {
+        if (status != MatchStatus.SEARCHING || barrierToken != null) return
+        desired = null
+        status = MatchStatus.IDLE
+    }
+
+    /** Account/session boundary: no queue work or late server signal may survive it. */
+    fun hardReset() {
+        // Keep this monotonic: a late token-aware ACK from the old account must
+        // never become eligible for a new account's first leave barrier.
+        barrierToken = null
+        desired = null
+        lateAckTokens.clear()
+        lastLeaveAcknowledgementConsumed = false
+        status = MatchStatus.IDLE
+    }
+
+    /** Reset releases a completed match, but intentionally never clears a leave barrier or desired join. */
+    fun onUiReset() {
+        if (status == MatchStatus.FOUND || status == MatchStatus.PLAYING) status = MatchStatus.IDLE
+    }
+
+    fun onLeaveAcknowledged(token: Int): List<QueueOperationCommand> {
+        lastLeaveAcknowledgementConsumed = false
+        if (barrierToken == token) {
+            barrierToken = null
+            lastLeaveAcknowledgementConsumed = true
+            return dispatchDesired()
+        }
+        lastLeaveAcknowledgementConsumed = lateAckTokens.remove(token)
+        return emptyList()
+    }
+
+    /** Server cancellation carries no token; retire timed-out barriers before touching a newer one. */
+    fun onUnidentifiedLeaveAcknowledgement(currentToken: Int): List<QueueOperationCommand> {
+        if (lateAckTokens.isNotEmpty()) {
+            lateAckTokens.remove(lateAckTokens.first())
+            lastLeaveAcknowledgementConsumed = true
+            return emptyList()
+        }
+        return onLeaveAcknowledged(currentToken)
+    }
+
+    fun onBarrierTimeout(token: Int): List<QueueOperationCommand> {
+        if (barrierToken != token) return emptyList()
+        barrierToken = null
+        lateAckTokens += token
+        return dispatchDesired()
+    }
+
+    fun onFound() {
+        desired = null
+        status = MatchStatus.FOUND
+    }
+
+    private fun openBarrier(): List<QueueOperationCommand> {
+        val token = ++nextToken
+        barrierToken = token
+        status = MatchStatus.IDLE
+        return listOf(QueueOperationCommand.Leave(token))
+    }
+
+    private fun dispatchDesired(): List<QueueOperationCommand> {
+        if (status == MatchStatus.FOUND || status == MatchStatus.PLAYING) {
+            desired = null
+            return emptyList()
+        }
+        val request = desired ?: run { status = MatchStatus.IDLE; return emptyList() }
+        desired = null
+        status = MatchStatus.SEARCHING
+        return listOf(QueueOperationCommand.Join(request))
+    }
+}
+
+/**
+ * Repository-owned reentrant monitor for the queue protocol. A transition is
+ * not complete until its commands and visible queue state have been published.
+ */
+internal class QueueTransitionLock {
+    private val monitor = Any()
+
+    fun <T> run(block: () -> T): T = synchronized(monitor, block)
+}
+
+/** Observable generations used to invalidate queue-owned Handler work at a session boundary. */
+internal class QueueTimerGenerations {
+    private var joinAck = 0
+    private var searchRetry = 0
+
+    fun nextJoinAck(): Int = ++joinAck
+    fun invalidateJoinAck(): Int = ++joinAck
+    fun isJoinAckCurrent(token: Int): Boolean = token == joinAck
+
+    fun nextSearchRetry(): Int = ++searchRetry
+    fun invalidateSearchRetry(): Int = ++searchRetry
+    fun isSearchRetryCurrent(token: Int): Boolean = token == searchRetry
+
+    fun invalidateAll() {
+        invalidateJoinAck()
+        invalidateSearchRetry()
+    }
+}
+
 /**
  * MatchRepository — Android's server-authoritative online-match client,
  * mirroring apps/web/src/stores/onlineStore.ts EXACTLY: same event wiring,
@@ -55,7 +196,7 @@ object MatchRepository {
      * Bumped on every join / leave / found so a join-ack watchdog can tell
      * whether it is still the CURRENT search before it tears anything down.
      */
-    private var joinAckToken: Int = 0
+    private val queueTimerGenerations = QueueTimerGenerations()
 
     /** Injectable delay hook so tests can run the mmFound -> resync timer
      *  synchronously instead of waiting 1.8 real seconds or needing a Looper. */
@@ -72,21 +213,8 @@ object MatchRepository {
     private val JOIN_ACK_TIMEOUT_MS = 6_000L
 
     /**
-     * Why a join failed, in the player's words.
-     *
-     * This used to be one fixed string — "Couldn't reach the game server. Check
-     * your connection and try again." — shown for every failure shape. That was
-     * wrong twice over. It told players with a perfectly good connection that
-     * their connection was at fault (owner report 2026-08-04: full signal, and
-     * the app's own REST calls were returning 200 either side of the failure),
-     * and it destroyed the only diagnostic signal anyone had, because a server
-     * problem and a real outage looked identical from the outside.
-     *
-     * The three states are genuinely different and the player can act on
-     * exactly one of them:
-     *  - offline: their problem, and worth telling them
-     *  - online but no realtime connection: ours, still recovering
-     *  - connected but unacknowledged: ours, and squarely a server fault
+     * Keeps actionable offline guidance separate from a realtime or server
+     * failure, so an online player is not told to repair their connection.
      */
     internal fun joinFailedMessage(online: Boolean, socketConnected: Boolean): String = when {
         !online ->
@@ -128,10 +256,15 @@ object MatchRepository {
      * scheduler would spin forever.
      */
     private val SEARCH_RETRY_MS = 25_000L
-    private var searchRetryToken: Int = 0
-
     /** The queue we last asked for, so a retry can re-send the same request. */
     private var lastQueueRequest: MmJoinRequest? = null
+    private val queueOperation = MatchmakingQueueOperation()
+    private val queueTransitionLock = QueueTransitionLock()
+
+    private fun <T> queueAtomic(block: () -> T): T = queueTransitionLock.run(block)
+
+    /** Short fallback for a lost leave acknowledgement; generation guard makes it single-shot. */
+    private val REPLACEMENT_LEAVE_TIMEOUT_MS = 1_200L
 
     // ---- event names (packages/shared/src/events.ts, verified verbatim) ----
     private object EV {
@@ -191,16 +324,20 @@ object MatchRepository {
         s.on(EV.mmSearching) {
             // The server ACK. Invalidating the token here is what distinguishes a
             // real search from the optimistic one that stranded players in v55.
-            joinAckToken += 1
+            queueAtomic {
+            queueTimerGenerations.invalidateJoinAck()
             // ...but that also disarms the only timer we had. Arm the search
             // retry so a later lost/undecodable mm:found can't strand us silently.
             armSearchRetry()
             _state.update { it.copy(status = MatchStatus.SEARCHING, error = null) }
+            }
         }
 
         s.on(EV.mmFound) { args ->
             val payload = decode<MmFoundDto>(args) ?: return@on
-            joinAckToken += 1 // matched — no watchdog may fire after this
+            queueAtomic {
+            queueOperation.onFound()
+            queueTimerGenerations.invalidateJoinAck() // matched — no watchdog may fire after this
             cancelSearchRetry()
             _state.update {
                 it.copy(
@@ -215,6 +352,7 @@ object MatchRepository {
                     rematchDeclined = false
                 )
             }
+            }
             scheduler(MATCH_FOUND_REVEAL_MS) {
                 if (_state.value.matchId == payload.matchId) {
                     emitPayload(EV.matchResync, MatchIdRequest(payload.matchId))
@@ -224,19 +362,37 @@ object MatchRepository {
 
         s.on(EV.mmCancelled) { args ->
             val payload = decode<MmCancelledDto>(args)
+            if (payload?.reason == "left") {
+                val handled = queueAtomic {
+                    // Server events have no operation id; the active barrier token is the
+                    // only leave eligible to release a deferred desired join.
+                    val commands = queueOperation.onUnidentifiedLeaveAcknowledgement(currentBarrierToken)
+                    if (queueOperation.lastLeaveAcknowledgementConsumed || _state.value.status == MatchStatus.FOUND || _state.value.status == MatchStatus.PLAYING) {
+                        dispatchQueueCommandsLocked(commands)
+                        true
+                    } else {
+                        cancelSearchRetry()
+                        _state.update { it.copy(status = MatchStatus.IDLE, error = null) }
+                        true
+                    }
+                }
+                if (handled) return@on
+            }
             // Only "left" is the player choosing to stop. Any other reason is the
             // server cancelling a search we still believe we're in, so keep the
             // retry armed and let it re-join rather than dropping to IDLE with a
             // reason string the matchmaking screen doesn't surface. Mirrors the
             // web client's mmCancelled handling.
-            val recoverable = payload?.reason != "left" && lastQueueRequest != null
-            if (recoverable) {
-                armSearchRetry()
-                _state.update { it.copy(status = MatchStatus.SEARCHING, error = null) }
-            } else {
-                cancelSearchRetry()
-                _state.update {
-                    it.copy(status = MatchStatus.IDLE, error = if (payload?.reason == "left") null else payload?.reason)
+            queueAtomic {
+                val recoverable = payload?.reason != "left" && lastQueueRequest != null
+                if (recoverable) {
+                    armSearchRetry()
+                    _state.update { it.copy(status = MatchStatus.SEARCHING, error = null) }
+                } else {
+                    cancelSearchRetry()
+                    _state.update {
+                        it.copy(status = MatchStatus.IDLE, error = if (payload?.reason == "left") null else payload?.reason)
+                    }
                 }
             }
         }
@@ -375,15 +531,42 @@ object MatchRepository {
      * matching sendMove and resign — this call site was missed when those were
      * given the same treatment in versionCode 53.
      */
+    private var currentBarrierToken = 0
+
     fun joinQueue(mode: String, colorPref: String = "either") {
+        queueAtomic {
+            dispatchQueueCommandsLocked(queueOperation.begin(MmJoinRequest(mode, colorPref)))
+        }
+    }
+
+    /** Must run inside [queueTransitionLock]; command dispatch is part of the transition. */
+    private fun dispatchQueueCommandsLocked(commands: List<QueueOperationCommand>) {
+        commands.forEach { command -> when (command) {
+            is QueueOperationCommand.Join -> emitQueueJoinLocked(command.request)
+            is QueueOperationCommand.Leave -> {
+                currentBarrierToken = command.token
+                queueTimerGenerations.invalidateJoinAck()
+                cancelSearchRetry()
+                lastQueueRequest = null
+                runCatching { socket?.emit(EV.mmLeave) }
+                scheduler(REPLACEMENT_LEAVE_TIMEOUT_MS) {
+                    queueAtomic {
+                        dispatchQueueCommandsLocked(queueOperation.onBarrierTimeout(command.token))
+                    }
+                }
+            }
+        } }
+    }
+
+    /** Must run inside [queueTransitionLock]. */
+    private fun emitQueueJoinLocked(request: MmJoinRequest) {
         _state.update { it.copy(status = MatchStatus.SEARCHING, error = null, end = null) }
-        joinAckToken += 1
-        val token = joinAckToken
-        val request = MmJoinRequest(mode, colorPref)
+        val token = queueTimerGenerations.nextJoinAck()
         lastQueueRequest = request // so a search retry can re-send the same ask
         try {
             ensureConnected()
             if (!emitPayload(EV.mmJoin, request)) {
+                queueOperation.onJoinDispatchFailed()
                 lastQueueRequest = null
                 cancelSearchRetry()
                 _state.update { it.copy(status = MatchStatus.IDLE, error = joinFailedMessage()) }
@@ -391,9 +574,17 @@ object MatchRepository {
             }
             armJoinAckWatchdog(token)
         } catch (e: Exception) {
+            queueOperation.onJoinDispatchFailed()
             lastQueueRequest = null
             cancelSearchRetry()
             _state.update { it.copy(status = MatchStatus.IDLE, error = "Could not connect. Are you logged in?") }
+        }
+    }
+
+    /** Replacement is command-driven: while a leave barrier is open only desired state changes. */
+    fun replaceQueue(mode: String, colorPref: String) {
+        queueAtomic {
+            dispatchQueueCommandsLocked(queueOperation.replace(MmJoinRequest(mode, colorPref)))
         }
     }
 
@@ -405,19 +596,20 @@ object MatchRepository {
      * re-join, so a stale timer can never re-queue a player who has moved on.
      */
     private fun armSearchRetry() {
-        searchRetryToken += 1
-        val token = searchRetryToken
+        val token = queueTimerGenerations.nextSearchRetry()
         scheduler(SEARCH_RETRY_MS) {
-            if (token != searchRetryToken) return@scheduler
-            if (_state.value.status != MatchStatus.SEARCHING) return@scheduler
-            val request = lastQueueRequest ?: return@scheduler
-            emitPayload(EV.mmJoin, request)
+            queueAtomic {
+                if (!queueTimerGenerations.isSearchRetryCurrent(token)) return@queueAtomic
+                if (_state.value.status != MatchStatus.SEARCHING) return@queueAtomic
+                val request = lastQueueRequest ?: return@queueAtomic
+                emitPayload(EV.mmJoin, request)
+            }
         }
     }
 
     /** Invalidate any pending search retry (matched, cancelled, or left). */
     private fun cancelSearchRetry() {
-        searchRetryToken += 1
+        queueTimerGenerations.invalidateSearchRetry()
     }
 
     /**
@@ -429,21 +621,25 @@ object MatchRepository {
      */
     private fun armJoinAckWatchdog(token: Int) {
         scheduler(JOIN_ACK_TIMEOUT_MS) {
-            if (token != joinAckToken) return@scheduler
+            queueAtomic {
+            if (!queueTimerGenerations.isJoinAckCurrent(token)) return@queueAtomic
             // Only fires while STILL un-acknowledged: mm:searching and mm:found
             // both bump the token, and FOUND/PLAYING must never be torn down.
-            if (_state.value.status != MatchStatus.SEARCHING) return@scheduler
+            if (_state.value.status != MatchStatus.SEARCHING) return@queueAtomic
             _state.update { it.copy(status = MatchStatus.IDLE, error = joinFailedMessage()) }
-            runCatching { socket?.emit(EV.mmLeave) }
+            dispatchQueueCommandsLocked(queueOperation.watchdogFailure())
+            }
         }
     }
 
     fun leaveQueue() {
-        joinAckToken += 1 // cancelled by the player — the watchdog must not fire
+        queueAtomic {
+        dispatchQueueCommandsLocked(queueOperation.cancel())
+        queueTimerGenerations.invalidateJoinAck() // cancelled by the player — the watchdog must not fire
         cancelSearchRetry()
         lastQueueRequest = null
-        runCatching { socket?.emit(EV.mmLeave) }
         _state.update { it.copy(status = MatchStatus.IDLE) }
+        }
     }
 
     fun resync() {
@@ -585,11 +781,13 @@ object MatchRepository {
     }
 
     fun reset() {
-        val cur = _state.value
+        val cur = queueAtomic {
+            queueOperation.onUiReset()
+            _state.value.also { _state.value = MatchUiState() }
+        }
         if (cur.matchId != null && cur.myColor == null) {
             runCatching { emitPayload(EV.spectateLeave, MatchIdRequest(cur.matchId)) }
         }
-        _state.value = MatchUiState()
     }
 
     /**
@@ -709,9 +907,15 @@ object MatchRepository {
      * previous user's cached match state and socket wiring.
      */
     fun hardReset() {
-        wiredSocket = null
-        socket = null
-        _state.value = MatchUiState()
+        queueAtomic {
+            queueOperation.hardReset()
+            queueTimerGenerations.invalidateAll()
+            currentBarrierToken = 0
+            lastQueueRequest = null
+            _state.value = MatchUiState()
+            wiredSocket = null
+            socket = null
+        }
     }
 
     // ---- internals ----

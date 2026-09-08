@@ -83,7 +83,18 @@ object NotificationsRepository {
         try {
             val envelope = api.list()
             if (envelope.ok && envelope.data != null) {
-                _state.update { it.copy(data = envelope.data, error = false) }
+                var data = envelope.data
+                // Older servers may still return a friend_request notification
+                // after the request was accepted from the Friends screen. The
+                // pending-requests endpoint is the client-side authority until
+                // the server's notification reconciliation is deployed.
+                when (val requests = FriendsRepository.requests()) {
+                    is SocialResult.Success -> {
+                        data = filterResolvedFriendRequests(data, requests.data.incoming.map { it.id }.toSet())
+                    }
+                    is SocialResult.Failure -> Unit
+                }
+                _state.update { it.copy(data = data, error = false) }
             } else {
                 _state.update { it.copy(error = true) }
             }
@@ -198,6 +209,40 @@ fun notifIsFriendType(type: String): Boolean = type.contains("friend")
 
 fun notifIsPending(n: NotificationDto): Boolean =
     notifIsFriendType(n.type) && notifRequestId(n) != null && notifStatus(n) == null
+
+/** Resolved friend decisions are history, not actionable inbox items. */
+fun notifShouldShowInInbox(n: NotificationDto): Boolean =
+    !notifIsFriendType(n.type) || notifStatus(n) == null
+
+/**
+ * Removes friend-request rows whose request is no longer pending. This keeps
+ * the inbox correct against an older backend while retaining unrelated friend
+ * history such as "friend accepted" notifications.
+ */
+fun filterResolvedFriendRequests(
+    current: NotificationsResponse,
+    pendingRequestIds: Set<String>
+): NotificationsResponse {
+    fun keep(n: NotificationDto): Boolean {
+        if (!notifShouldShowInInbox(n)) return false
+        if (n.type != "friend_request") return true
+        val requestId = notifRequestId(n) ?: return true
+        return requestId in pendingRequestIds
+    }
+    fun filter(list: List<NotificationDto>) = list.filter(::keep)
+    val notifications = filter(current.notifications)
+    val groups = current.groups.copy(
+        today = filter(current.groups.today),
+        yesterday = filter(current.groups.yesterday),
+        earlier = filter(current.groups.earlier)
+    )
+    val removedUnread = current.notifications.count { !keep(it) && it.readAt == null }
+    return current.copy(
+        notifications = notifications,
+        groups = groups,
+        unreadCount = (current.unreadCount - removedUnread).coerceAtLeast(0)
+    )
+}
 
 // ── pure state-transition helpers (unit-testable without a live repository) ──
 

@@ -40,9 +40,10 @@ object EconomyRepository {
         call { api.storeItems() }
 
     suspend fun purchase(itemId: String): EconomyResult<PurchaseResponse> {
+        val sessionKey = AuthRepository.currentSessionKey()
         val result = call { api.purchase(PurchaseRequest(itemId)) }
         if (result is EconomyResult.Success) {
-            patchBalances(gold = result.data.balances.gold, diamonds = result.data.balances.diamonds)
+            patchBalances(sessionKey, gold = result.data.balances.gold, diamonds = result.data.balances.diamonds)
         }
         return result
     }
@@ -57,18 +58,16 @@ object EconomyRepository {
      * the auth store with the returned equipped ids.
      */
     suspend fun equip(request: EquipRequest): EconomyResult<EquipResponse> {
+        val sessionKey = AuthRepository.currentSessionKey()
         val result = call { api.equip(request) }
         if (result is EconomyResult.Success) {
-            val current = AuthRepository.state.value.user
-            if (current != null) {
-                val u = result.data.user
-                AuthRepository.patchUser(
-                    current.copy(
+            val u = result.data.user
+            AuthRepository.patchUser(sessionKey) { current ->
+                current.copy(
                         equippedBoard = u.equippedBoard,
                         equippedSkin = u.equippedSkin,
                         frameId = u.frameId,
                         avatarUrl = u.avatarUrl
-                    )
                 )
             }
         }
@@ -99,10 +98,11 @@ object EconomyRepository {
         call { api.dailyLoginStatus() }
 
     suspend fun claimDailyLogin(): EconomyResult<DailyLoginClaimResponse> {
+        val sessionKey = AuthRepository.currentSessionKey()
         val result = call { api.claimDailyLogin() }
         if (result is EconomyResult.Success) {
             val gems = result.data.gemsBalance
-            patchBalances(gold = result.data.goldBalance, diamonds = gems)
+            patchBalances(sessionKey, gold = result.data.goldBalance, diamonds = gems)
         }
         return result
     }
@@ -113,9 +113,10 @@ object EconomyRepository {
         call { api.quests() }
 
     suspend fun claimQuest(id: String): EconomyResult<QuestClaimResponse> {
+        val sessionKey = AuthRepository.currentSessionKey()
         val result = call { api.claimQuest(id) }
         if (result is EconomyResult.Success) {
-            patchBalances(gold = result.data.goldBalance, diamonds = null)
+            patchBalances(sessionKey, gold = result.data.goldBalance, diamonds = null)
         }
         return result
     }
@@ -129,11 +130,12 @@ object EconomyRepository {
         call { api.claimSeasonTier(SeasonClaimRequest(tier)) }
 
     suspend fun buySeasonPass(): EconomyResult<SeasonPassResponse> {
+        val sessionKey = AuthRepository.currentSessionKey()
         val result = call { api.buySeasonPass() }
         if (result is EconomyResult.Success) {
             val data = result.data
-            if (data.currency == "DIAMONDS") patchBalances(gold = null, diamonds = data.balance)
-            else patchBalances(gold = data.balance, diamonds = null)
+            if (data.currency == "DIAMONDS") patchBalances(sessionKey, gold = null, diamonds = data.balance)
+            else patchBalances(sessionKey, gold = data.balance, diamonds = null)
         }
         return result
     }
@@ -142,6 +144,7 @@ object EconomyRepository {
         call { api.seasonEndStatus() }
 
     suspend fun claimSeasonEnd(): EconomyResult<SeasonEndClaimResponse> {
+        val sessionKey = AuthRepository.currentSessionKey()
         val result = call { api.claimSeasonEnd() }
         if (result is EconomyResult.Success) {
             // Reflect the season-end payout into the cached balances. The server
@@ -154,6 +157,7 @@ object EconomyRepository {
             // as "leave unchanged" (same convention as claimQuest).
             val reward = result.data.reward
             patchBalances(
+                sessionKey,
                 gold = if ((reward?.gold ?: 0) > 0) result.data.goldBalance else null,
                 diamonds = if ((reward?.diamonds ?: 0) > 0) result.data.diamondBalance else null
             )
@@ -174,13 +178,17 @@ object EconomyRepository {
     // ---- internals ----
 
     /** Reflects a fresh server balance into AuthRepository's cached session user (nullable = leave unchanged). */
-    private fun patchBalances(gold: Int?, diamonds: Int?) {
-        val current = AuthRepository.state.value.user ?: return
-        val updated = current.copy(
+    private fun patchBalances(
+        sessionKey: com.filipinodama.app.data.AuthSessionKey,
+        gold: Int?,
+        diamonds: Int?
+    ) {
+        AuthRepository.patchUser(sessionKey) { current ->
+            current.copy(
             gold = gold ?: current.gold,
             diamonds = diamonds ?: current.diamonds
         )
-        AuthRepository.patchUser(updated)
+        }
     }
 
     private suspend fun <T> call(block: suspend () -> ApiEnvelope<T>): EconomyResult<T> {

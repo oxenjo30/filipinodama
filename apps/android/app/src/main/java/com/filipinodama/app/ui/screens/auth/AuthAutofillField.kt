@@ -26,6 +26,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -49,6 +50,16 @@ enum class AuthFieldKind { LOGIN_ID, EMAIL, PASSWORD, NEW_PASSWORD }
  *    no imeOptions/editor-action listener never dismisses the IME on Enter.
  */
 enum class AuthImeAction { NEXT, DONE }
+
+internal fun dispatchAuthFieldTextChange(currentModelValue: String, incomingValue: String, onValueChange: (String) -> Unit): Boolean {
+    if (incomingValue == currentModelValue) return false
+    onValueChange(incomingValue)
+    return true
+}
+
+internal data class PasswordInputTypeUpdate(val shouldAssignInputType: Boolean, val selectionStart: Int, val selectionEnd: Int)
+internal fun passwordInputTypeUpdate(currentType: Int, desiredType: Int, selectionStart: Int, selectionEnd: Int, textLength: Int) =
+    PasswordInputTypeUpdate(currentType != desiredType, selectionStart.coerceIn(0, textLength), selectionEnd.coerceIn(0, textLength))
 
 /**
  * An auth credential field backed by a real Android [EditText] (via AndroidView)
@@ -82,6 +93,10 @@ fun AuthAutofillField(
 ) {
     var visible by remember { mutableStateOf(false) }
     val isPassword = kind == AuthFieldKind.PASSWORD || kind == AuthFieldKind.NEW_PASSWORD
+    // AndroidView listeners live longer than a composition pass. Read current
+    // callbacks/model values rather than capturing the first composition.
+    val currentValue = rememberUpdatedState(value)
+    val currentOnValueChange = rememberUpdatedState(onValueChange)
     // Keep the latest onImeAction without re-running the AndroidView factory (the
     // editor-action listener is installed once in factory but reads this holder).
     val imeActionState = androidx.compose.runtime.rememberUpdatedState(onImeAction)
@@ -165,7 +180,7 @@ fun AuthAutofillField(
                             override fun onTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {}
                             override fun afterTextChanged(s: android.text.Editable?) {
                                 val t = s?.toString() ?: ""
-                                if (t != value) onValueChange(t)
+                                dispatchAuthFieldTextChange(currentValue.value, t, currentOnValueChange.value)
                             }
                         })
                         layoutParams = ViewGroup.LayoutParams(
@@ -182,21 +197,25 @@ fun AuthAutofillField(
                     // recompose, to preserve the cursor position while typing.
                     if (et.text.toString() != value) {
                         et.setText(value)
-                        et.setSelection(value.length)
+                        et.setSelection(value.length.coerceIn(0, et.text.length))
                     }
                     // Toggle password masking without losing autofill identity.
                     if (isPassword) {
                         val base = InputType.TYPE_CLASS_TEXT
-                        et.inputType = if (visible) base or InputType.TYPE_TEXT_VARIATION_VISIBLE_PASSWORD
+                        val desiredType = if (visible) base or InputType.TYPE_TEXT_VARIATION_VISIBLE_PASSWORD
                         else base or InputType.TYPE_TEXT_VARIATION_PASSWORD
                         // setInputType RESETS imeOptions to the default, which would
                         // silently undo the DONE action and bring the keyboard-stuck
                         // bug right back on the password field — re-apply it here.
-                        et.imeOptions = when (imeAction) {
-                            AuthImeAction.NEXT -> EditorInfo.IME_ACTION_NEXT
-                            AuthImeAction.DONE -> EditorInfo.IME_ACTION_DONE
+                        val typeUpdate = passwordInputTypeUpdate(et.inputType, desiredType, et.selectionStart, et.selectionEnd, et.text.length)
+                        if (typeUpdate.shouldAssignInputType) {
+                            et.inputType = desiredType
+                            et.imeOptions = when (imeAction) {
+                                AuthImeAction.NEXT -> EditorInfo.IME_ACTION_NEXT
+                                AuthImeAction.DONE -> EditorInfo.IME_ACTION_DONE
+                            }
+                            et.setSelection(typeUpdate.selectionStart, typeUpdate.selectionEnd)
                         }
-                        et.setSelection(et.text.length)
                     }
                 },
             )

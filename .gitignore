@@ -36,3 +36,10 @@ _asset-previews/
 /play-store-assets/
 /handoffv3/
 /.backups/
+
+# Local implementation and verification worktrees
+/.worktrees/
+/output/
+
+# Kotlin incremental compiler cache
+/apps/android/.kotlin/

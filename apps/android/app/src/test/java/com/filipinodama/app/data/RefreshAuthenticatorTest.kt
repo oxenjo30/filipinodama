@@ -7,12 +7,18 @@ import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.mockwebserver.MockResponse
 import okhttp3.mockwebserver.MockWebServer
+import okhttp3.mockwebserver.Dispatcher
+import okhttp3.mockwebserver.RecordedRequest
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 import retrofit2.Retrofit
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 
 /**
@@ -168,4 +174,114 @@ class RefreshAuthenticatorTest {
         // rather than refreshing again (infinite-loop guard).
         assertEquals(3, server.requestCount)
     }
+
+    @Test
+    fun `begin logout waits for an in-flight refresh and finish leaves the jar empty`() {
+        val cookieJar = InMemoryCookieJarForTest()
+        val authenticator = RefreshAuthenticator(server.url("/").toString().removeSuffix("/"), cookieJar)
+        val client = OkHttpClient.Builder()
+            .cookieJar(cookieJar)
+            .authenticator(authenticator)
+            .build()
+        val refreshStarted = CountDownLatch(1)
+        val allowRefreshToFinish = CountDownLatch(1)
+        val logoutBarrierEntered = CountDownLatch(1)
+        val callExecutor = Executors.newSingleThreadExecutor()
+
+        server.dispatcher = object : Dispatcher() {
+            override fun dispatch(request: RecordedRequest): MockResponse = when (request.path) {
+                "/api/game/profile" -> MockResponse().setResponseCode(401)
+                "/api/auth/refresh" -> {
+                    refreshStarted.countDown()
+                    check(allowRefreshToFinish.await(5, TimeUnit.SECONDS))
+                    MockResponse()
+                        .setResponseCode(200)
+                        .setHeader("Set-Cookie", "fd_access=rotated; Path=/; HttpOnly")
+                }
+                else -> MockResponse().setResponseCode(404)
+            }
+        }
+
+        try {
+            val call = callExecutor.submit<Int> {
+                client.newCall(protectedRequest()).execute().use { it.code }
+            }
+            assertTrue(refreshStarted.await(5, TimeUnit.SECONDS))
+
+            val logoutThread = Thread {
+                authenticator.beginLogout()
+                logoutBarrierEntered.countDown()
+            }
+            logoutThread.start()
+
+            assertFalse(logoutBarrierEntered.await(200, TimeUnit.MILLISECONDS))
+            allowRefreshToFinish.countDown()
+            assertTrue(logoutBarrierEntered.await(5, TimeUnit.SECONDS))
+            authenticator.finishLogout()
+
+            call.get(5, TimeUnit.SECONDS)
+            assertTrue(cookieJar.loadForRequest(server.url("/")).isEmpty())
+        } finally {
+            callExecutor.shutdownNow()
+        }
+    }
+
+    @Test
+    fun `401 during logout does not start a refresh`() {
+        val cookieJar = InMemoryCookieJarForTest()
+        val authenticator = RefreshAuthenticator(server.url("/").toString().removeSuffix("/"), cookieJar)
+        val client = OkHttpClient.Builder()
+            .cookieJar(cookieJar)
+            .authenticator(authenticator)
+            .build()
+        authenticator.beginLogout()
+        server.enqueue(MockResponse().setResponseCode(401))
+
+        try {
+            client.newCall(protectedRequest()).execute().use { response ->
+                assertEquals(401, response.code)
+            }
+            assertEquals(1, server.requestCount)
+            assertEquals("/api/game/profile", server.takeRequest().path)
+        } finally {
+            authenticator.finishLogout()
+        }
+    }
+
+    @Test
+    fun `request queued before logout invalidation cannot reuse an old refresh generation`() {
+        val cookieJar = InMemoryCookieJarForTest()
+        val snapshotTaken = CountDownLatch(1)
+        val allowQueuedRequest = CountDownLatch(1)
+        val authenticator = RefreshAuthenticator(
+            baseUrl = server.url("/").toString().removeSuffix("/"),
+            cookieJar = cookieJar,
+            afterAuthSnapshot = {
+                snapshotTaken.countDown()
+                check(allowQueuedRequest.await(5, TimeUnit.SECONDS))
+            }
+        )
+        val queuedResult = arrayOfNulls<Request>(1)
+        val queued = Thread {
+            queuedResult[0] = authenticator.authenticate(null, unauthorizedResponse())
+        }
+        queued.start()
+        assertTrue(snapshotTaken.await(5, TimeUnit.SECONDS))
+
+        authenticator.beginLogout()
+        authenticator.finishLogout()
+        allowQueuedRequest.countDown()
+        queued.join(5_000)
+
+        assertFalse(queued.isAlive)
+        assertNull(queuedResult[0])
+        assertEquals(0, server.requestCount)
+    }
+
+    private fun unauthorizedResponse() = okhttp3.Response.Builder()
+        .request(protectedRequest())
+        .protocol(okhttp3.Protocol.HTTP_1_1)
+        .code(401)
+        .message("Unauthorized")
+        .build()
 }

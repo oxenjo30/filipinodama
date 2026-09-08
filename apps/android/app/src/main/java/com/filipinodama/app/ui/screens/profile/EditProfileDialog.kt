@@ -15,6 +15,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -57,7 +58,7 @@ import kotlinx.coroutines.launch
 @Composable
 fun EditProfileDialog(onClose: () -> Unit, onChangeAvatar: () -> Unit) {
     val scope = rememberCoroutineScope()
-    val me = AuthRepository.state.value.user
+    val me = AuthRepository.state.collectAsStateWithLifecycle().value.user
 
     // Saveable: MainActivity declares no android:configChanges, so a rotation /
     // unfold / split-screen / font-size change destroys the Activity and a plain

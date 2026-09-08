@@ -703,3 +703,15 @@
 - Rule: for any user-facing surface, run it and navigate to it the way a player
   would before calling it done. Grep for which route actually renders a screen
   before adding to that screen; two files can both plausibly be "settings".
+
+## 2026-09-08 - Audit functional fixes independently of abandoned redesigns
+
+- Mistake: The archived queue fix could leave internal state SEARCHING after transport dispatch failed, preventing retry. Notification cleanup also introduced non-atomic writes and an unbounded read path.
+- Cause: Existing fixes were interleaved with design work and had not covered these failure paths.
+- Rule: Restore a verified release baseline, port behavior separately, test failure/retry and transaction boundaries, and bound reconciliation by the requested page before promoting local main.
+
+## 2026-09-08 - Verify the final integrated UI snapshot
+
+- Mistake: A ported guild conditional had inconsistent indentation; compile passed but lint rejected it.
+- Cause: Narrow text edits and overlapping verification did not validate the final complete source snapshot.
+- Rule: Freeze worker edits before the final full suite, build and lint; inspect structured lint findings and fix actual issues rather than suppressing them.

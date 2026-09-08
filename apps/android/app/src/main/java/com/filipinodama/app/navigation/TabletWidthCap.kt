@@ -1,7 +1,6 @@
 package com.filipinodama.app.navigation
 
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.widthIn
@@ -70,7 +69,7 @@ fun TabletWidthCap(
         content()
         return
     }
-    BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
+    Box(modifier = Modifier.fillMaxSize()) {
         // On phones maxWidth <= the cap, so widthIn(max=cap) is inert and the
         // child fills the full width exactly as before. On tablets the child is
         // centered and stops growing past the cap.

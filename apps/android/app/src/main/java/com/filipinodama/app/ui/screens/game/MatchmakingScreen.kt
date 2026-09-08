@@ -16,10 +16,12 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -30,6 +32,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.activity.compose.BackHandler
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.filipinodama.app.R
 import com.filipinodama.app.data.AuthRepository
@@ -56,6 +59,32 @@ import com.filipinodama.app.ui.screens.profile.AvatarView
  * search/found sub-states, auto hand-off to [OnlineMatchScreen] when the
  * store flips to PLAYING/ENDED (mirrors web's OnlineMatchPage timings).
  */
+internal data class MatchmakingExit(val leaveQueue: Boolean, val reset: Boolean, val navigate: Boolean) {
+    companion object { val None = MatchmakingExit(false, false, false) }
+}
+internal enum class MatchmakingBackAction { UserExit, ConsumeFoundReveal, PassThrough }
+internal object MatchmakingBackPolicy {
+    fun forStatus(status: MatchStatus): MatchmakingBackAction = when (status) {
+        MatchStatus.FOUND -> MatchmakingBackAction.ConsumeFoundReveal
+        MatchStatus.PLAYING -> MatchmakingBackAction.PassThrough
+        else -> MatchmakingBackAction.UserExit
+    }
+}
+internal class MatchmakingScreenLifecycleOwner {
+    private var userExitRequested = false
+    private var disposalCleaned = false
+    fun requestUserExit(status: MatchStatus): MatchmakingExit {
+        if (userExitRequested) return MatchmakingExit.None
+        userExitRequested = true
+        return MatchmakingExit(status == MatchStatus.SEARCHING, reset = true, navigate = true)
+    }
+    fun disposeIfOwned(status: MatchStatus): Boolean {
+        if (userExitRequested || disposalCleaned || status != MatchStatus.SEARCHING) return false
+        disposalCleaned = true
+        return true
+    }
+}
+
 @Composable
 fun MatchmakingScreen(mode: String, onCancel: () -> Unit, onEnteredMatch: () -> Unit) {
     val ui by MatchRepository.state.collectAsStateWithLifecycle()
@@ -66,6 +95,14 @@ fun MatchmakingScreen(mode: String, onCancel: () -> Unit, onEnteredMatch: () -> 
     // (fastest match, the default so search still starts instantly). Vs a bot you
     // always get your pick; vs humans it's honoured when compatible.
     var colorPref by remember { mutableStateOf("either") }
+    val lifecycleOwner = remember(mode) { MatchmakingScreenLifecycleOwner() }
+    val currentStatus by rememberUpdatedState(ui.status)
+    val requestUserExit = {
+        val exit = lifecycleOwner.requestUserExit(currentStatus)
+        if (exit.leaveQueue) MatchRepository.leaveQueue()
+        if (exit.reset) MatchRepository.reset()
+        if (exit.navigate) onCancel()
+    }
 
     LaunchedEffect(mode) {
         MatchRepository.joinQueue(mode, colorPref)
@@ -73,6 +110,18 @@ fun MatchmakingScreen(mode: String, onCancel: () -> Unit, onEnteredMatch: () -> 
 
     LaunchedEffect(ui.status) {
         if (ui.status == MatchStatus.PLAYING || ui.status == MatchStatus.ENDED) onEnteredMatch()
+    }
+    val backAction = MatchmakingBackPolicy.forStatus(ui.status)
+    BackHandler(enabled = backAction != MatchmakingBackAction.PassThrough) {
+        if (backAction == MatchmakingBackAction.UserExit) requestUserExit()
+    }
+    DisposableEffect(lifecycleOwner) {
+        onDispose {
+            if (lifecycleOwner.disposeIfOwned(currentStatus)) {
+                MatchRepository.leaveQueue()
+                MatchRepository.reset()
+            }
+        }
     }
 
     val found = ui.status == MatchStatus.FOUND && ui.opponent != null
@@ -153,19 +202,19 @@ fun MatchmakingScreen(mode: String, onCancel: () -> Unit, onEnteredMatch: () -> 
                     ColorPrefPill("🔴 Red", colorPref == "red") {
                         if (colorPref != "red") {
                             colorPref = "red"
-                            MatchRepository.leaveQueue(); MatchRepository.reset(); MatchRepository.joinQueue(mode, "red")
+                            MatchRepository.replaceQueue(mode, "red")
                         }
                     }
                     ColorPrefPill("Either", colorPref == "either") {
                         if (colorPref != "either") {
                             colorPref = "either"
-                            MatchRepository.leaveQueue(); MatchRepository.reset(); MatchRepository.joinQueue(mode, "either")
+                            MatchRepository.replaceQueue(mode, "either")
                         }
                     }
                     ColorPrefPill("🔵 Blue", colorPref == "blue") {
                         if (colorPref != "blue") {
                             colorPref = "blue"
-                            MatchRepository.leaveQueue(); MatchRepository.reset(); MatchRepository.joinQueue(mode, "blue")
+                            MatchRepository.replaceQueue(mode, "blue")
                         }
                     }
                 }
@@ -278,9 +327,7 @@ fun MatchmakingScreen(mode: String, onCancel: () -> Unit, onEnteredMatch: () -> 
                     .align(Alignment.BottomCenter)
                     .padding(bottom = 56.dp)
                     .clickable {
-                        MatchRepository.leaveQueue()
-                        MatchRepository.reset()
-                        onCancel()
+                        requestUserExit()
                     }
                     .background(Color(0x1AFF5A6A), RoundedCornerShape(14.dp))
                     .border(1.dp, Color(0x59FF5A6A), RoundedCornerShape(14.dp))

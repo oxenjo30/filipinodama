@@ -1,4 +1,5 @@
 import type { FastifyInstance } from "fastify";
+import type { Prisma } from "@prisma/client";
 import { friendRequestSchema, friendRequestByTagSchema } from "@dama/shared";
 import { prisma } from "../db/client.js";
 import { ok, err } from "../lib/errors.js";
@@ -48,6 +49,22 @@ const friendSelect = {
 } as const;
 
 /**
+ * Keep this as a PrismaPromise so a friend-request mutation and its stale-bell
+ * dismissal commit or roll back together inside the caller's transaction.
+ */
+function dismissFriendRequestNotifications(userId: string, requestId: string) {
+  return prisma.notification.updateMany({
+    where: {
+      userId,
+      type: "friend_request",
+      dismissedAt: null,
+      data: { path: ["requestId"], equals: requestId } as Prisma.JsonFilter,
+    },
+    data: { dismissedAt: new Date() },
+  });
+}
+
+/**
  * Create (or auto-accept) a friend request from `me` → `toUserId`.
  * Shared by POST /friends/request and POST /friends/request-by-tag so both
  * enforce the same honest guards: no self-friend, target exists, not already
@@ -77,6 +94,7 @@ async function createFriendRequest(me: string, toUserId: string) {
     await prisma.$transaction([
       prisma.friendRequest.update({ where: { id: reverse.id }, data: { status: "accepted" } }),
       prisma.friendship.create({ data: { aId, bId } }),
+      dismissFriendRequestNotifications(me, reverse.id),
     ]);
     return { status: "accepted" as const };
   }
@@ -206,6 +224,7 @@ export async function friendRoutes(app: FastifyInstance) {
           update: {},
           create: { aId, bId },
         }),
+        dismissFriendRequestNotifications(me, request.id),
       ]);
 
       await prisma.notification.create({
@@ -231,7 +250,10 @@ export async function friendRoutes(app: FastifyInstance) {
       if (!request || request.toId !== me) throw err.notFound("REQUEST_NOT_FOUND", "Friend request not found");
       if (request.status !== "pending") throw err.conflict("NOT_PENDING", "Request is no longer pending");
 
-      await prisma.friendRequest.update({ where: { id: request.id }, data: { status: "declined" } });
+      await prisma.$transaction([
+        prisma.friendRequest.update({ where: { id: request.id }, data: { status: "declined" } }),
+        dismissFriendRequestNotifications(me, request.id),
+      ]);
       return ok({ status: "declined" });
     },
   );

@@ -99,7 +99,9 @@ fun LoadingOverlay(
     onFinished: () -> Unit = {}
 ) {
     val spec = specFor(context)
-    var pct by remember(context) { mutableFloatStateOf(0f) }
+    val normalizedDuration = durationMs.coerceAtLeast(1)
+    val latestOnFinished by androidx.compose.runtime.rememberUpdatedState(onFinished)
+    var pct by remember(context, normalizedDuration) { mutableFloatStateOf(0f) }
     var tipIdx by remember(context) { mutableIntStateOf(0) }
 
     // Loading-screen music (mirrors the web's startLoadingMusic on its loader).
@@ -113,21 +115,21 @@ fun LoadingOverlay(
     // One-shot smooth fill 0->100 over durationMs, guaranteed to REACH 100 and
     // hold briefly before finishing, so the board never appears mid-fill (owner
     // fix: "it needs to reach 100% before the match shows up", no sudden jump
-    // from ~66%). Keyed on durationMs (not context) so a context flip mid-fill
-    // doesn't restart the bar; the last frame is pinned to exactly 100.
-    LaunchedEffect(durationMs) {
-        val t0 = System.currentTimeMillis()
+    // from ~66%). Context and normalized duration share one timer identity.
+    // The last frame is pinned to exactly 100 before the current callback fires.
+    LaunchedEffect(context, normalizedDuration) {
+        val t0 = android.os.SystemClock.elapsedRealtime()
         while (true) {
-            val elapsed = System.currentTimeMillis() - t0
-            pct = (elapsed.toFloat() / durationMs * 100f).coerceAtMost(100f)
-            if (elapsed >= durationMs) break
+            val elapsed = android.os.SystemClock.elapsedRealtime() - t0
+            pct = (elapsed.toFloat() / normalizedDuration * 100f).coerceAtMost(100f)
+            if (elapsed >= normalizedDuration) break
             delay(32)
         }
         pct = 100f
         // Hold the full bar visibly for a beat so 100% actually registers on
         // screen before we hand off to the board.
         delay(180)
-        onFinished()
+        latestOnFinished()
     }
     // Tips rotate every 3800ms regardless of duration (mockup componentDidMount).
     LaunchedEffect(context) {

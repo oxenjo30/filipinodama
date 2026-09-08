@@ -7,6 +7,11 @@ import okhttp3.Cookie
 import okhttp3.CookieJar
 import okhttp3.HttpUrl
 
+/** A [CookieJar] whose complete state can be cleared by the logout barrier. */
+interface ClearableCookieJar : CookieJar {
+    fun clearAll()
+}
+
 /**
  * OkHttp CookieJar that persists cookies into SecureStore so the httpOnly
  * `fd_access` (~15min JWT) and `fd_refresh` (rotation) cookies from
@@ -25,7 +30,7 @@ import okhttp3.HttpUrl
  * loosely; the exact-host keying happened to prevent cross-origin send, but the
  * Secure/path checks were missing.)
  */
-class PersistentCookieJar(private val secureStore: SecureStore) : CookieJar {
+class PersistentCookieJar(private val secureStore: SecureStore) : ClearableCookieJar {
 
     private val json = Json { ignoreUnknownKeys = true }
 
@@ -33,6 +38,7 @@ class PersistentCookieJar(private val secureStore: SecureStore) : CookieJar {
         loadFromStore().toMutableMap()
     }
 
+    @Synchronized
     override fun saveFromResponse(url: HttpUrl, cookies: List<Cookie>) {
         if (cookies.isEmpty()) return
         val host = url.host
@@ -46,6 +52,7 @@ class PersistentCookieJar(private val secureStore: SecureStore) : CookieJar {
         persist()
     }
 
+    @Synchronized
     override fun loadForRequest(url: HttpUrl): List<Cookie> {
         val now = System.currentTimeMillis()
         var sweptAny = false
@@ -70,7 +77,8 @@ class PersistentCookieJar(private val secureStore: SecureStore) : CookieJar {
     }
 
     /** Wipes every persisted + in-memory cookie (used by logout). */
-    fun clearAll() {
+    @Synchronized
+    override fun clearAll() {
         memoryCache.clear()
         secureStore.remove(SecureStore.KEY_COOKIE_JAR_BLOB)
     }

@@ -2,6 +2,8 @@ package com.filipinodama.app.data
 
 import android.content.Context
 import com.filipinodama.app.BuildConfig
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
 import okhttp3.MediaType.Companion.toMediaType
 import com.filipinodama.app.data.system.NetworkLiveness
@@ -38,6 +40,8 @@ object ApiClient {
     /** Set during [init]; shared with AuthRepository (logout must clear cookies). */
     lateinit var cookieJar: PersistentCookieJar
         private set
+
+    private lateinit var refreshAuthenticator: RefreshAuthenticator
 
     /**
      * Set during [init]; shared with [SocketClient] so the Socket.IO handshake
@@ -93,9 +97,11 @@ object ApiClient {
                 chain.proceed(chain.request()).also { NetworkLiveness.reachedServer() }
             }
 
+            val refreshAuthenticator = RefreshAuthenticator(BuildConfig.BASE_URL, cookieJar)
+            this.refreshAuthenticator = refreshAuthenticator
             val okHttpClient = OkHttpClient.Builder()
                 .cookieJar(cookieJar)
-                .authenticator(RefreshAuthenticator(BuildConfig.BASE_URL, cookieJar))
+                .authenticator(refreshAuthenticator)
                 .addNetworkInterceptor(livenessInterceptor)
                 .addInterceptor(loggingInterceptor)
                 .connectTimeout(TIMEOUT_SECONDS, TimeUnit.SECONDS)
@@ -119,5 +125,15 @@ object ApiClient {
         val instance = retrofit
             ?: error("ApiClient.init(context) must be called before ApiClient.create()")
         return instance.create(T::class.java)
+    }
+
+    /** Waits for any dispatcher-thread refresh before server logout begins. */
+    suspend fun beginLogoutBarrier() = withContext(Dispatchers.IO) {
+        refreshAuthenticator.beginLogout()
+    }
+
+    /** Clears cookies and releases the refresh barrier away from the UI thread. */
+    suspend fun finishLogoutBarrier() = withContext(Dispatchers.IO) {
+        refreshAuthenticator.finishLogout()
     }
 }

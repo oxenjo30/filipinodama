@@ -127,13 +127,14 @@ fun HomeScreen(
     val authState by AuthRepository.state.collectAsStateWithLifecycle()
     val me = authState.user
 
-    var activeMatch by remember { mutableStateOf<ActiveMatchDto?>(null) }
-    var loadingActive by remember { mutableStateOf(true) }
-    var homeQuests by remember { mutableStateOf<List<QuestDto>>(emptyList()) }
-    var unreadNotifs by remember { mutableStateOf(0) }
-    var daily by remember { mutableStateOf<DailyLoginStatusResponse?>(null) }
-    var season by remember { mutableStateOf<SeasonCurrentResponse?>(null) }
-    var tournaments by remember { mutableStateOf<List<TournamentListItemDto>>(emptyList()) }
+    val snackbar = com.filipinodama.app.ui.components.LocalSnackbar.current
+    var activeMatch by remember(me?.id) { mutableStateOf<ActiveMatchDto?>(null) }
+    var loadingActive by remember(me?.id) { mutableStateOf(true) }
+    var homeQuests by remember(me?.id) { mutableStateOf<List<QuestDto>>(emptyList()) }
+    var unreadNotifs by remember(me?.id) { mutableStateOf(0) }
+    var daily by remember(me?.id) { mutableStateOf<DailyLoginStatusResponse?>(null) }
+    var season by remember(me?.id) { mutableStateOf<SeasonCurrentResponse?>(null) }
+    var tournaments by remember(me?.id) { mutableStateOf<List<TournamentListItemDto>>(emptyList()) }
 
     // Re-fetch the active-match ("Continue Playing") card whenever Home is
     // resumed — not just once — so a match that ended or was ABANDONED (the
@@ -155,31 +156,40 @@ fun HomeScreen(
     // re-fetching active match, quests, daily-login status, season, and
     // tournaments from the server (not a cosmetic spinner).
     suspend fun loadHomeData() {
+        val requestSession = AuthRepository.currentSessionKey()
+        var failed = false
         when (val result = EconomyRepository.activeMatch()) {
-            is EconomyResult.Success -> activeMatch = result.data.match
-            is EconomyResult.Failure -> activeMatch = null
+            // Ignore results from a previous account or login generation.
+            is EconomyResult.Success -> if (AuthRepository.currentSessionKey() == requestSession) activeMatch = result.data.match
+            is EconomyResult.Failure -> failed = true
         }
 
         when (val q = EconomyRepository.quests()) {
-            is EconomyResult.Success -> homeQuests = q.data.daily.take(2)
-            is EconomyResult.Failure -> homeQuests = emptyList()
+            // Ignore results from a previous account or login generation.
+            is EconomyResult.Success -> if (AuthRepository.currentSessionKey() == requestSession) homeQuests = q.data.daily.take(2)
+            is EconomyResult.Failure -> failed = true
         }
 
         when (val d = EconomyRepository.dailyLoginStatus()) {
-            is EconomyResult.Success -> daily = d.data
-            is EconomyResult.Failure -> daily = null
+            // Ignore results from a previous account or login generation.
+            is EconomyResult.Success -> if (AuthRepository.currentSessionKey() == requestSession) daily = d.data
+            is EconomyResult.Failure -> failed = true
         }
 
         when (val s = EconomyRepository.seasonCurrent()) {
-            is EconomyResult.Success -> season = s.data
-            is EconomyResult.Failure -> season = null
+            // Ignore results from a previous account or login generation.
+            is EconomyResult.Success -> if (AuthRepository.currentSessionKey() == requestSession) season = s.data
+            is EconomyResult.Failure -> failed = true
         }
 
         when (val t = TournamentsRepository.list()) {
-            is EconomyResult.Success -> tournaments = t.data.items
-            is EconomyResult.Failure -> tournaments = emptyList()
+            // Ignore results from a previous account or login generation.
+            is EconomyResult.Success -> if (AuthRepository.currentSessionKey() == requestSession) tournaments = t.data.items
+            is EconomyResult.Failure -> failed = true
         }
 
+        if (AuthRepository.currentSessionKey() != requestSession) return
+        if (failed) snackbar.show("Some Home data could not be refreshed. Pull down to retry.")
         com.filipinodama.app.data.social.NotificationsRepository.load()
     }
 

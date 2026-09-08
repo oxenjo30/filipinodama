@@ -752,7 +752,7 @@ fun AppNavHost() {
                 arguments = listOf(navArgument("userId") { type = NavType.StringType })
             ) { backStackEntry ->
                 val userId = backStackEntry.arguments?.getString("userId") ?: ""
-                val signedIn = AuthRepository.state.value.user != null
+                val signedIn = AuthRepository.state.collectAsStateWithLifecycle().value.user != null
                 PublicProfileScreen(
                     userId = userId,
                     onOpenMatch = { matchId -> navController.navigate(AppDestinations.matchDetail(matchId)) },

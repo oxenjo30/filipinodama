@@ -27,6 +27,7 @@ import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -102,6 +103,7 @@ fun GuildHallScreen(
     onRequireSignIn: () -> Unit = {}
 ) {
     val me = AuthRepository.state.collectAsStateWithLifecycle().value.user
+    val hasRealAccount = isRealGuildAccount(me)
     val scope = rememberCoroutineScope()
     val snackbar = LocalSnackbar.current
 
@@ -115,6 +117,7 @@ fun GuildHallScreen(
     var requestsError by remember { mutableStateOf(false) }
     var requests by remember { mutableStateOf<List<GuildJoinRequestDto>?>(null) }
     var busy by remember { mutableStateOf(false) }
+    val membershipLoadGate = remember { GuildMembershipLoadGate() }
     // Dialog visibility + the selected tab are saveable so a configuration change
     // (rotation, unfold, split screen, font-size change — MainActivity declares no
     // android:configChanges, so every one of them recreates the Activity) doesn't
@@ -130,33 +133,36 @@ fun GuildHallScreen(
 
     // Extracted as a suspend fun (not just scope.launch'd) so pull-to-refresh and
     // loadMembership() can await the whole chain directly.
-    suspend fun loadDetailData(guildId: String, roleHint: String?) {
+    suspend fun loadDetailData(guildId: String, roleHint: String?, request: GuildMembershipLoadRequest) {
         when (val d = GuildsRepository.detail(guildId)) {
             is SocialResult.Success -> {
+                if (!membershipLoadGate.isCurrent(request)) return
                 detail = d.data
                 guildLoadError = false
                 val role = d.data.myRole ?: roleHint
                 if (role != null && guildRoleAtLeast(role, "OFFICER")) {
                     when (val r = GuildsRepository.requests(guildId)) {
-                        is SocialResult.Success -> { requests = r.data.requests; requestsError = false }
-                        is SocialResult.Failure -> { requests = emptyList(); requestsError = true }
+                        is SocialResult.Success -> if (membershipLoadGate.isCurrent(request)) { requests = r.data.requests; requestsError = false }
+                        is SocialResult.Failure -> if (membershipLoadGate.isCurrent(request)) { requests = emptyList(); requestsError = true }
                     }
                 } else {
                     requests = null
                 }
             }
-            is SocialResult.Failure -> { detail = null; guildLoadError = true }
+            is SocialResult.Failure -> if (membershipLoadGate.isCurrent(request)) { detail = null; guildLoadError = true }
         }
     }
 
     fun loadDetail(guildId: String, roleHint: String?) {
-        scope.launch { loadDetailData(guildId, roleHint) }
+        val request = membershipLoadGate.current()
+        scope.launch { loadDetailData(guildId, roleHint, request) }
     }
 
     // Extracted as a suspend fun so pull-to-refresh can await the whole membership
     // + detail chain directly via PullRefreshContainer's onRefresh.
     suspend fun loadMembershipData() {
-        if (me == null) {
+        val request = membershipLoadGate.begin()
+        if (!hasRealAccount) {
             membershipChecked = true
             myGuildId = null
             detail = null
@@ -172,19 +178,22 @@ fun GuildHallScreen(
         // simplest honest source is: try GET /api/guilds/{browse-derived id}
         // is not viable without an id. We fall back to the SAME contract web
         // uses: GET /api/users/:me.id returns { user: { guild } }.
-        val userResult = com.filipinodama.app.data.profile.ProfileRepository.publicUser(me.id)
+        val accountId = me?.id ?: return
+        val userResult = com.filipinodama.app.data.profile.ProfileRepository.publicUser(accountId)
         when (userResult) {
             is com.filipinodama.app.data.profile.ProfileResult.Success -> {
+                if (!membershipLoadGate.isCurrent(request)) return
                 val gid = userResult.data.user.guild?.id
                 myGuildId = gid
                 guildLoadError = false
-                if (gid != null) loadDetailData(gid, userResult.data.user.guild?.role)
+                if (gid != null) loadDetailData(gid, userResult.data.user.guild?.role, request)
                 else {
                     detail = null
                     requests = null
                 }
             }
             is com.filipinodama.app.data.profile.ProfileResult.Failure -> {
+                if (!membershipLoadGate.isCurrent(request)) return
                 // A failed membership probe is NOT "no guild" — flag the error so
                 // the render shows a retry state, not the empty "not in a guild" copy.
                 myGuildId = null
@@ -192,18 +201,27 @@ fun GuildHallScreen(
                 guildLoadError = true
             }
         }
-        membershipChecked = true
+        if (membershipLoadGate.isCurrent(request)) membershipChecked = true
     }
 
     fun loadMembership() {
         scope.launch { loadMembershipData() }
     }
 
-    LaunchedEffect(me?.id) {
+    // Clear account-owned guild state before loading the new account, and make
+    // the effect respond when an authenticated user becomes a guest.
+    LaunchedEffect(me?.id, hasRealAccount) {
+        membershipChecked = false
+        myGuildId = null
+        detail = null
+        requests = null
         loadMembership()
     }
+    DisposableEffect(Unit) {
+        onDispose { membershipLoadGate.begin() }
+    }
 
-    val inGuild = myGuildId != null && detail != null
+    val inGuild = hasRealAccount && myGuildId != null && detail != null
     val myRole = detail?.myRole
     val canManage = myRole != null && guildRoleAtLeast(myRole, "OFFICER")
     val isLeader = myRole == "LEADER"
@@ -211,6 +229,7 @@ fun GuildHallScreen(
     if (createOpen) {
         GuildCreateDialog(
             onClose = { createOpen = false },
+            onRequireSignIn = onRequireSignIn,
             onCreated = { guildId ->
                 myGuildId = guildId
                 loadDetail(guildId, "LEADER")
@@ -517,7 +536,7 @@ fun GuildHallScreen(
                     // Creating a guild requires an account — prompt sign-in for
                     // an anonymous user instead of opening the create dialog.
                     ActionChip("＋ Create Guild", modifier = Modifier.weight(1f)) {
-                        if (anon) onRequireSignIn() else createOpen = true
+                      if (!hasRealAccount) onRequireSignIn() else createOpen = true
                     }
                 }
             }
@@ -1091,7 +1110,7 @@ private fun GuildChatPanel(guildId: String, guildName: String, onOpenProfile: (S
 }
 
 @Composable
-fun GuildCreateDialog(onClose: () -> Unit, onCreated: (String) -> Unit) {
+fun GuildCreateDialog(onClose: () -> Unit, onRequireSignIn: () -> Unit = {}, onCreated: (String) -> Unit) {
     val scope = rememberCoroutineScope()
     // Everything the founder actually filled in survives Activity recreation —
     // a rotation used to wipe the name, tag and description they had just typed.
@@ -1148,7 +1167,10 @@ fun GuildCreateDialog(onClose: () -> Unit, onCreated: (String) -> Unit) {
                                     onCreated(res.data.guild.id)
                                     onClose()
                                 }
-                                is SocialResult.Failure -> error = res.message
+                                is SocialResult.Failure -> when (val handoff = guildCreateFailureHandoff(res.code, res.message)) {
+                                    GuildCreateFailureHandoff.RequireSignIn -> onRequireSignIn()
+                                    is GuildCreateFailureHandoff.ShowInline -> error = handoff.message
+                                }
                             }
                             busy = false
                         }

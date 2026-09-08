@@ -4,6 +4,7 @@ import com.filipinodama.app.data.ApiClient
 import com.filipinodama.app.data.AuthRepository
 import com.filipinodama.app.data.SocketClient
 import io.socket.client.Socket
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -41,36 +42,47 @@ object GuildChatRepository {
 
     private var socket: Socket? = null
     private var joinedGuildId: String? = null
+    private val openGate = GuildChatOpenGate()
 
     suspend fun open(guildId: String) {
+        val request = openGate.begin(guildId)
         _state.value = GuildChatUiState(guildId = guildId, loading = true)
         try {
             val envelope = api.chatHistory(guildId)
-            if (_state.value.guildId != guildId) return
+            if (!openGate.isCurrent(request, _state.value.guildId)) return
             if (envelope.ok && envelope.data != null) {
                 _state.update { it.copy(messages = envelope.data.messages) }
             } else {
                 _state.update { it.copy(error = "Couldn't load chat.") }
             }
+        } catch (e: CancellationException) {
+            throw e
         } catch (_: Exception) {
-            if (_state.value.guildId == guildId) _state.update { it.copy(error = "Couldn't load chat.") }
+            if (openGate.isCurrent(request, _state.value.guildId)) _state.update { it.copy(error = "Couldn't load chat.") }
         } finally {
-            if (_state.value.guildId == guildId) _state.update { it.copy(loading = false) }
+            if (openGate.isCurrent(request, _state.value.guildId)) _state.update { it.copy(loading = false) }
         }
 
+        // A panel can be disposed while history is loading. Do not attach a
+        // shared socket listener or emit a join for that stale composition.
+        if (!openGate.isCurrent(request, _state.value.guildId)) return
         try {
             val s = SocketClient.connect(ApiClient.okHttpClient) ?: return
+            if (!openGate.isCurrent(request, _state.value.guildId)) return
             socket = s
             s.off(EV.guildChatMessage)
             s.on(EV.guildChatMessage) { args -> onMessage(args) }
             s.emit(EV.guildChatJoin, org.json.JSONObject().put("guildId", guildId))
             joinedGuildId = guildId
+        } catch (e: CancellationException) {
+            throw e
         } catch (_: Exception) {
             // live updates unavailable; history + send-refresh still work
         }
     }
 
     fun close() {
+        openGate.invalidate()
         val gid = joinedGuildId
         val s = socket
         if (gid != null && s != null) {
@@ -156,6 +168,8 @@ object GuildChatRepository {
                     s.copy(messages = s.messages.filterNot { it.id == localId }, error = "Message failed to send.")
                 }
             }
+        } catch (e: CancellationException) {
+            throw e
         } catch (_: Exception) {
             _state.update { s ->
                 s.copy(messages = s.messages.filterNot { it.id == localId }, error = "Message failed to send.")
@@ -167,11 +181,33 @@ object GuildChatRepository {
 
     /** Test/teardown hook. */
     fun hardReset() {
+        openGate.invalidate()
         socket = null
         joinedGuildId = null
         _state.value = GuildChatUiState()
     }
 }
+
+/**
+ * Monotonic lifecycle guard for a Guild chat panel. A completed network request
+ * may only attach its socket listener while it still belongs to the visible
+ * panel that opened it; [invalidate] is called on close and session reset.
+ */
+internal class GuildChatOpenGate {
+    private var generation = 0L
+
+    fun begin(guildId: String): GuildChatOpenRequest =
+        GuildChatOpenRequest(guildId = guildId, generation = ++generation)
+
+    fun invalidate() {
+        generation += 1
+    }
+
+    fun isCurrent(request: GuildChatOpenRequest, activeGuildId: String?): Boolean =
+        request.generation == generation && request.guildId == activeGuildId
+}
+
+internal data class GuildChatOpenRequest(val guildId: String, val generation: Long)
 
 data class GuildChatUiState(
     val guildId: String? = null,

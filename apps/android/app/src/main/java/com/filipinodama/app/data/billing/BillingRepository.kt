@@ -16,12 +16,18 @@ import com.android.billingclient.api.consumePurchase
 import com.android.billingclient.api.queryProductDetails
 import com.filipinodama.app.data.ApiClient
 import com.filipinodama.app.data.AuthRepository
+import com.filipinodama.app.data.AuthSessionKey
 import com.filipinodama.app.data.economy.EconomyRepository
+import com.filipinodama.app.data.isCurrentAuthSession
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
 /**
@@ -60,36 +66,67 @@ object BillingRepository {
     @Volatile
     private var connecting = false
 
+    /** Session that launched the currently open Play purchase sheet. */
+    @Volatile
+    private var activePurchaseSessionKey: AuthSessionKey? = null
+
     private val _products = MutableStateFlow<List<ProductDetails>>(emptyList())
     /** Play's own product listing (real formatted prices) — never fabricated. */
     val products: StateFlow<List<ProductDetails>> = _products.asStateFlow()
 
-    private val _purchaseState = MutableStateFlow<PurchaseUiState>(PurchaseUiState.Idle)
-    val purchaseState: StateFlow<PurchaseUiState> = _purchaseState.asStateFlow()
+    /**
+     * Purchase feedback is tagged with the account that started it. The public
+     * state also observes auth changes, so an account switch immediately turns
+     * an older player's verification/result into [PurchaseUiState.Idle] even
+     * when it races with an in-flight billing callback.
+     */
+    private val _purchaseState = MutableStateFlow(
+        SessionPurchaseUiState(sessionKey = null, state = PurchaseUiState.Idle)
+    )
+    private val purchaseStateScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+    val purchaseState: StateFlow<PurchaseUiState> = combine(_purchaseState, AuthRepository.state) { purchase, auth ->
+        purchaseUiStateForSession(
+            requestSession = purchase.sessionKey,
+            currentSession = com.filipinodama.app.data.authSessionKey(auth),
+            desiredState = purchase.state,
+        )
+    }.stateIn(
+        scope = purchaseStateScope,
+        started = SharingStarted.Eagerly,
+        initialValue = PurchaseUiState.Idle,
+    )
 
     private val purchasesUpdatedListener = PurchasesUpdatedListener { billingResult, purchases ->
+        val initiatingSession = activePurchaseSessionKey
         when (billingResult.responseCode) {
             BillingClient.BillingResponseCode.OK -> {
                 if (purchases.isNullOrEmpty()) {
-                    _purchaseState.value = PurchaseUiState.Idle
+                    initiatingSession?.let { publishPurchaseState(it, PurchaseUiState.Idle) }
+                    activePurchaseSessionKey = null
                     return@PurchasesUpdatedListener
                 }
-                purchases.forEach { purchase -> handlePurchase(purchase) }
+                purchases.forEach { purchase -> handlePurchase(purchase, initiatingSession) }
+                activePurchaseSessionKey = null
             }
             BillingClient.BillingResponseCode.USER_CANCELED -> {
                 // Quiet — matches the mockup's "cancel" affordance, no error toast.
-                _purchaseState.value = PurchaseUiState.Idle
+                initiatingSession?.let { publishPurchaseState(it, PurchaseUiState.Idle) }
+                activePurchaseSessionKey = null
             }
             BillingClient.BillingResponseCode.ITEM_ALREADY_OWNED -> {
                 // A pending consumable from a previous session Play still thinks is
                 // "owned" — reconcile it via queryPurchases so it gets verified +
                 // consumed instead of stranding the user unable to buy again.
-                reconcileUnfinishedPurchases()
+                reconcileUnfinishedPurchases(initiatingSession)
+                activePurchaseSessionKey = null
             }
             else -> {
-                _purchaseState.value = PurchaseUiState.Error(
-                    billingResult.debugMessage.ifBlank { "Purchase could not be started." }
-                )
+                initiatingSession?.let { sessionKey ->
+                    publishPurchaseState(sessionKey, PurchaseUiState.Error(
+                        billingResult.debugMessage.ifBlank { "Purchase could not be started." }
+                    ))
+                }
+                activePurchaseSessionKey = null
             }
         }
     }
@@ -181,7 +218,7 @@ object BillingRepository {
     fun launchPurchase(activity: Activity, productDetails: ProductDetails) {
         val client = billingClient
         if (client == null || !client.isReady) {
-            _purchaseState.value = PurchaseUiState.Error("Store connection isn't ready yet. Try again in a moment.")
+            publishPurchaseState(PurchaseUiState.Error("Store connection isn't ready yet. Try again in a moment."))
             return
         }
         // Diamond packs are one-time (INAPP) products, not subscriptions — v7.1.1's
@@ -206,9 +243,10 @@ object BillingRepository {
         // any purchase whose token doesn't match the CALLER's own — so a token
         // lifted from another account is worthless. Must stay byte-for-byte
         // identical to the server's playAccountToken() (payments.ts).
-        val accountToken = playAccountToken(AuthRepository.state.value.user?.id)
+        val sessionKey = AuthRepository.currentSessionKey()
+        val accountToken = playAccountToken(sessionKey.userId)
         if (accountToken == null) {
-            _purchaseState.value = PurchaseUiState.Error("Sign in to buy diamonds.")
+            publishPurchaseState(sessionKey, PurchaseUiState.Error("Sign in to buy diamonds."))
             return
         }
 
@@ -217,18 +255,20 @@ object BillingRepository {
             .setObfuscatedAccountId(accountToken)
             .build()
 
-        _purchaseState.value = PurchaseUiState.Purchasing
+        activePurchaseSessionKey = sessionKey
+        publishPurchaseState(sessionKey, PurchaseUiState.Purchasing)
         val billingResult = client.launchBillingFlow(activity, flowParams)
         if (billingResult.responseCode != BillingClient.BillingResponseCode.OK) {
-            _purchaseState.value = PurchaseUiState.Error(
+            publishPurchaseState(sessionKey, PurchaseUiState.Error(
                 billingResult.debugMessage.ifBlank { "Couldn't open the purchase flow." }
-            )
+            ))
+            activePurchaseSessionKey = null
         }
         // Further progress is reported via purchasesUpdatedListener.
     }
 
     fun dismissPurchaseState() {
-        _purchaseState.value = PurchaseUiState.Idle
+        _purchaseState.value = SessionPurchaseUiState(sessionKey = null, state = PurchaseUiState.Idle)
     }
 
     /**
@@ -239,7 +279,7 @@ object BillingRepository {
      * lost, and no diamonds are ever credited without a fresh, successful
      * server verification of that specific purchase token.
      */
-    private fun reconcileUnfinishedPurchases() {
+    private fun reconcileUnfinishedPurchases(initiatingSession: AuthSessionKey? = null) {
         val client = billingClient ?: return
         client.queryPurchasesAsync(
             com.android.billingclient.api.QueryPurchasesParams.newBuilder()
@@ -249,7 +289,7 @@ object BillingRepository {
             if (billingResult.responseCode != BillingClient.BillingResponseCode.OK) return@queryPurchasesAsync
             purchases
                 .filter { it.purchaseState == com.android.billingclient.api.Purchase.PurchaseState.PURCHASED }
-                .forEach { handlePurchase(it) }
+                .forEach { handlePurchase(it, initiatingSession) }
         }
     }
 
@@ -260,14 +300,22 @@ object BillingRepository {
      * (next launch's [reconcileUnfinishedPurchases], or the user re-opening
      * the Wallet) instead of silently losing the player's payment.
      */
-    private fun handlePurchase(purchase: com.android.billingclient.api.Purchase) {
+    private fun handlePurchase(
+        purchase: com.android.billingclient.api.Purchase,
+        initiatingSession: AuthSessionKey? = null,
+    ) {
         if (purchase.purchaseState != com.android.billingclient.api.Purchase.PurchaseState.PURCHASED) {
             return
         }
         val productId = purchase.products.firstOrNull() ?: return
         val purchaseToken = purchase.purchaseToken
+        val sessionKey = purchaseSessionForCallback(
+            initiatingSession = initiatingSession,
+            currentSession = AuthRepository.currentSessionKey(),
+            purchaseAccountId = purchase.accountIdentifiers?.obfuscatedAccountId,
+        ) ?: return
 
-        _purchaseState.value = PurchaseUiState.Verifying
+        publishPurchaseState(sessionKey, PurchaseUiState.Verifying)
         CoroutineScope(Dispatchers.IO).launch {
             val result = try {
                 val envelope = api.verifyPlay(PlayVerifyRequest(productId = productId, purchaseToken = purchaseToken))
@@ -294,23 +342,68 @@ object BillingRepository {
                     // Reflect the server-confirmed balance everywhere (Home currency
                     // header, Wallet tile, etc.) via the same balance refresh path
                     // the rest of the economy surface uses after a purchase/claim.
-                    AuthRepository.refreshMe()
-                    _purchaseState.value = PurchaseUiState.Success(
+                    if (isCurrentPurchaseSession(sessionKey)) {
+                        AuthRepository.refreshMe(sessionKey)
+                    }
+                    publishPurchaseState(sessionKey, PurchaseUiState.Success(
                         diamonds = result.data.diamonds,
                         consumed = consumeOk
-                    )
+                    ))
                 }
                 is VerifyOutcome.Failure -> {
-                    _purchaseState.value = PurchaseUiState.Error(result.message)
+                    publishPurchaseState(sessionKey, PurchaseUiState.Error(result.message))
                 }
             }
         }
     }
 
+    private fun publishPurchaseState(state: PurchaseUiState) {
+        publishPurchaseState(AuthRepository.currentSessionKey(), state)
+    }
+
+    private fun publishPurchaseState(sessionKey: AuthSessionKey, state: PurchaseUiState) {
+        _purchaseState.value = SessionPurchaseUiState(sessionKey = sessionKey, state = state)
+    }
+
+    private fun isCurrentPurchaseSession(sessionKey: AuthSessionKey): Boolean =
+        isCurrentAuthSession(AuthRepository.state.value, sessionKey)
+
     private sealed class VerifyOutcome {
         data class Success(val data: PlayVerifyResponse) : VerifyOutcome()
         data class Failure(val message: String) : VerifyOutcome()
     }
+}
+
+private data class SessionPurchaseUiState(
+    val sessionKey: AuthSessionKey?,
+    val state: PurchaseUiState,
+)
+
+/**
+ * Makes stale purchase feedback disappear instead of letting one player see a
+ * verification or result belonging to another account on the same device.
+ */
+internal fun purchaseUiStateForSession(
+    requestSession: AuthSessionKey?,
+    currentSession: AuthSessionKey,
+    desiredState: PurchaseUiState,
+): PurchaseUiState =
+    if (requestSession == null || requestSession == currentSession) desiredState else PurchaseUiState.Idle
+
+/**
+ * Resolves which account may verify a Play callback. A live purchase keeps the
+ * exact session that launched the Play sheet; a recovered purchase may use the
+ * current session only when Google's echoed account binding matches it.
+ */
+internal fun purchaseSessionForCallback(
+    initiatingSession: AuthSessionKey?,
+    currentSession: AuthSessionKey,
+    purchaseAccountId: String?,
+): AuthSessionKey? {
+    val requestSession = initiatingSession ?: currentSession
+    if (requestSession != currentSession) return null
+    val expectedAccountId = playAccountToken(requestSession.userId) ?: return null
+    return requestSession.takeIf { purchaseAccountId == expectedAccountId }
 }
 
 /**
