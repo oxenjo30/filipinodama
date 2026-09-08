@@ -11,3 +11,10 @@ The owner has stopped mobile redesign work. Keep the published v60 design. Prior
 - [x] Record final evidence and recovery details
 
 See docs/ops/v60-local-reconciliation-20260908.md. No push, production deployment or Play upload is requested.
+# C-drive archive cleanup — 2026-09-08
+
+- [x] Measure relevant C: usage and D: capacity; preserve v60 release and source recovery branches
+- [x] Verify old scratch-worktree state and stop only identified idle build daemons
+- [x] Copy/hash-verify C: Gradle home and old FilipinoDama temporary work to D:
+- [x] Remove verified C: originals and retain compatible paths with junctions
+- [x] Verify Git/build access, measure recovered space, and document archive paths

@@ -715,3 +715,9 @@
 - Mistake: A ported guild conditional had inconsistent indentation; compile passed but lint rejected it.
 - Cause: Narrow text edits and overlapping verification did not validate the final complete source snapshot.
 - Rule: Freeze worker edits before the final full suite, build and lint; inspect structured lint findings and fix actual issues rather than suppressing them.
+
+## 2026-09-08 - Keep cleanup guards independent of their own invocation
+
+- Mistake: An inventory piped directly from a PowerShell foreach statement; a draft process guard could match its own `-Target gradle` command line.
+- Cause: Shell statement syntax and broad text matching were used where structured results and exact process types were needed.
+- Rule: Collect loop output before piping; parse cleanup scripts first, match actual JVM/build processes, and recheck activity immediately before deleting only hash-verified originals.
