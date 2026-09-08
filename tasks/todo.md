@@ -7,7 +7,7 @@ The owner has stopped mobile redesign work. Keep the published v60 design. Prior
 - [x] Merge origin/main and the published v60 source in an isolated worktree
 - [x] Extract non-design functional fixes while preserving v60 assets, theme and audio
 - [x] Complete final Android, server and web verification and review
-- [ ] Preserve tracked edits and make the primary local checkout main
-- [ ] Record final evidence and recovery details
+- [x] Preserve tracked edits and make the primary local checkout main
+- [x] Record final evidence and recovery details
 
 See docs/ops/v60-local-reconciliation-20260908.md. No push, production deployment or Play upload is requested.
