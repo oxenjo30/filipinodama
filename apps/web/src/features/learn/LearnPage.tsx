@@ -315,8 +315,8 @@ export function LearnPage() {
       }}
     >
       <SiteHead
-        title="Filipino Dama Rules: How to Play (Complete Guide)"
-        description="Learn Filipino Dama rules: board setup, mandatory maximum captures, backward captures for men, flying kings, and how to win — with FAQ and interactive lessons."
+        title="Dama Rules: How to Play Filipino Dama"
+        description="Learn Dama rules and how to play Filipino Dama: board setup, mandatory maximum captures, backward captures for men, flying kings, and how to win."
         path="/learn"
         alternates={[
           { hrefLang: "en-PH", path: "/learn" },
@@ -601,12 +601,10 @@ export function LearnPage() {
               color: "var(--gold-lt)",
             }}
           >
-            Learn Filipino Dama Rules and
-            <br />
-            Master the Strategy
+            Dama Rules: How to Play Filipino Dama
           </h1>
           <div style={{ font: "500 13px Inter", color: "var(--ink)", marginTop: 10 }}>
-            ✦ Your journey to becoming a Dama master starts here ✦
+            Filipino Dama uses 12 pieces per player, mandatory maximum captures, backward captures for men, and long-range flying kings.
           </div>
         </div>
 

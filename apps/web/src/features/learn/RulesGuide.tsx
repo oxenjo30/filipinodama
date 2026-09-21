@@ -281,6 +281,8 @@ export function RulesGuide() {
             <li style={LI}><Link to="/blog/2026-06-20-dama-vs-checkers-what-is-the-difference" style={{ color: "var(--gold)" }}>See how Dama differs from American checkers</Link>.</li>
             <li style={LI}><Link to="/blog/2026-06-19-how-to-play-filipino-dama-a-complete-beginner-guide" style={{ color: "var(--gold)" }}>Read the complete beginner guide</Link> and learn the setup.</li>
             <li style={LI}><Link to="/blog/2026-07-09-how-many-pieces-are-in-dama" style={{ color: "var(--gold)" }}>Review the 12-pieces-per-player setup</Link>.</li>
+            <li style={LI}><Link to="/blog/2026-07-02-can-you-move-backwards-in-dama" style={{ color: "var(--gold)" }}>Learn when you can move or capture backwards in Dama</Link>.</li>
+            <li style={LI}><Link to="/blog/2026-07-11-dama-vs-chess-which-should-you-learn-first" style={{ color: "var(--gold)" }}>Compare Dama and chess for beginners</Link>.</li>
             <li style={LI}><Link to="/blog/2026-07-06-dama-notation-how-to-read-and-record-moves" style={{ color: "var(--gold)" }}>Learn board numbering and notation</Link>.</li>
             <li style={LI}><Link to="/play" style={{ color: "var(--gold)" }}>Practice the rules in an online game</Link>.</li>
           </ul>

@@ -1,5 +1,11 @@
 # Lessons
 
+## 2026-09-21 - Verify prerendered routes with the exact production server command
+
+- Mistake: The first local QA server used `serve -s`, which forced every content route to return the homepage, and two PowerShell checks piped directly from `foreach`, causing parser errors.
+- Cause: The verification commands diverged from the repository's documented production start command and an existing PowerShell loop-output lesson.
+- Rule: Collect `foreach` output before piping, and validate prerendered routes with `pnpm --filter web exec serve dist -c serve.json` exactly; assert each route's title, canonical, content, and redirects before trusting the result.
+
 ## 2026-07-31 - Verify a "broken page" against LIVE prod before fixing; and /rules vs /learn
 
 - Situation: a status doc flagged /rules AND /blog as "empty SPA shells." Curling live prod showed /blog was ALREADY fixed (HTTP 200, real prerendered "Dama Blog" <h1> — an earlier `**`-catch-all serve.json rewrite bug, since resolved) and /rules was actually a **noindex 404**, not an empty shell — because /rules was never a route/component/prerender entry at all. The canonical "dama rules" content lives at **/learn** (title "Dama Rules — How to Play…", already indexed + in sitemap + llms.txt).

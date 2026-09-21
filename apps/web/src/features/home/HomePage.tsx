@@ -332,8 +332,8 @@ export function HomePage() {
   return (
     <>
       <SiteHead
-        title="FilipinoDama Royal — Play Filipino Dama Online"
-        description="Play Filipino Dama online — real-time multiplayer Filipino checkers (dama). Challenge the AI, play ranked, learn the rules, and rise through the ranks."
+        title="Filipino Dama — Rules, Strategy & Online Game"
+        description="Discover Filipino Dama rules, strategy guides, history, and the free online game. Learn the Philippine checkers variant, then play against AI or real players."
         path="/"
         jsonLd={websiteJsonLd()}
       />

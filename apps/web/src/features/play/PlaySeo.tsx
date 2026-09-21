@@ -69,8 +69,8 @@ export function PlaySeo() {
   return (
     <>
       <SiteHead
-        title="Play Filipino Dama Online Free — vs AI or Real Players"
-        description="Play Filipino Dama (Filipino checkers) free in your browser — no download. Practice vs AI, battle real players in ranked multiplayer, or play a friend."
+        title="Play Filipino Dama Online Free | Pinoy Dama"
+        description="Play Filipino Dama online free in your browser — no download. Practice vs AI, face real players in ranked matches, or create a private game with friends."
         path="/play"
         jsonLd={[videoGameJsonLd(), faqJsonLd(PLAY_FAQ)]}
       />

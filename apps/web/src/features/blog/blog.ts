@@ -28,9 +28,9 @@ export interface Article {
 
 const SEO_REFRESH = {
   "2026-06-20-dama-vs-checkers-what-is-the-difference": {
-    title: "Dama vs Checkers: Same Game? 4 Key Differences",
+    title: "Are Dama and Checkers the Same? 4 Key Differences",
     description:
-      "Is Dama the same as checkers? No. Compare four key Filipino Dama rules: maximum captures, backward jumps, flying kings, and landing choices.",
+      "Are Dama and checkers the same? No. Compare four Filipino Dama rules: maximum captures, backward jumps, flying kings, and flexible landing choices.",
   },
   "2026-06-21-filipino-dama-rules-explained-with-examples": {
     title: "Filipino Dama Rules: Captures, Kings and Setup",
