@@ -29,6 +29,16 @@ a{color:inherit;text-decoration:none}
 @keyframes fdcoinbob{0%,100%{transform:translateY(0)}50%{transform:translateY(-12px)}}
 /* captured piece fade-out: shrink + fade where it stood */
 @keyframes fdcapture{0%{transform:scale(1);opacity:1}60%{transform:scale(1.12);opacity:.8}100%{transform:scale(.2);opacity:0}}
+@keyframes fdboardshake{0%,100%{transform:translate(0,0)}20%{transform:translate(-5px,2px)}40%{transform:translate(5px,-2px)}60%{transform:translate(-3px,1px)}80%{transform:translate(2px,0)}}
+@keyframes fdparticleburst{0%{opacity:1;transform:translate(-50%,-50%) scale(1) rotate(0)}100%{opacity:0;transform:translate(calc(-50% + var(--fd-particle-x)),calc(-50% + var(--fd-particle-y))) scale(.15) rotate(150deg)}}
+@keyframes fdcapturebanner{from{opacity:0;transform:translate(-50%,-12px) scale(.9)}to{opacity:1;transform:translate(-50%,0) scale(1)}}
+.fd-board-shake{animation:fdboardshake .35s ease-out both}
+.fd-capture-feedback{position:absolute;inset:0;z-index:5;pointer-events:none;overflow:hidden}
+.fd-capture-particle{position:absolute;z-index:1;width:7px;height:7px;border-radius:2px;animation:fdparticleburst .68s var(--fd-particle-delay) cubic-bezier(.11,.65,.3,1) both}
+.fd-capture-particle--blue{background:#85d7ff;box-shadow:0 0 8px #66c4f6}
+.fd-capture-particle--red{background:#ffab85;box-shadow:0 0 8px #ff806b}
+.fd-capture-banner{position:absolute;z-index:2;top:19px;left:50%;transform:translateX(-50%);display:flex;align-items:center;padding:8px 12px;border-radius:5px;color:#27291e;background:#f5c979;font:900 10px Inter,sans-serif;letter-spacing:.08em;white-space:nowrap;box-shadow:0 7px 20px rgba(0,0,0,.3);animation:fdcapturebanner .25s ease-out both}
+@media(prefers-reduced-motion:reduce){.fd-board-shake{animation:none}.fd-capture-particle{display:none}.fd-capture-banner{animation:none;transform:translateX(-50%)}}
 @keyframes fdshadowpulse{0%,100%{transform:scaleX(1);opacity:.5}50%{transform:scaleX(.72);opacity:.28}}
 @keyframes fdsheen{0%,100%{opacity:0;transform:translateX(-120%) skewX(-18deg)}12%{opacity:.7}30%{opacity:0;transform:translateX(220%) skewX(-18deg)}}
 /* slow Ken-Burns drift for the loading-screen background image */

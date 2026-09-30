@@ -82,6 +82,8 @@ export function GamePage({ mode = "ai" }: { mode?: "ai" | "local" }) {
     blueCaptured,
     flip,
     onSquareClick,
+    onMoveClick,
+    clearSelection,
     newGame,
     newLocalGame,
     rematch,
@@ -396,7 +398,10 @@ export function GamePage({ mode = "ai" }: { mode?: "ai" | "local" }) {
             captureTargets={captureTargets}
             selected={selected}
             mustCapture={mustCapture && humanTurn}
-            onSquareClick={onSquareClick}
+            onSquareClick={(humanTurn) ? onSquareClick : undefined}
+            onMoveClick={onMoveClick}
+            onClearSelection={clearSelection}
+            enableCaptureEffects
             boardTheme={boardTheme}
             skin={skin}
             flip={flip}

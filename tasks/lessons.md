@@ -727,3 +727,9 @@
 - Mistake: An inventory piped directly from a PowerShell foreach statement; a draft process guard could match its own `-Target gradle` command line.
 - Cause: Shell statement syntax and broad text matching were used where structured results and exact process types were needed.
 - Rule: Collect loop output before piping; parse cleanup scripts first, match actual JVM/build processes, and recheck activity immediately before deleting only hash-verified originals.
+
+## 2026-09-30 - Board QA fixtures and Windows text encoding
+
+- Mistake: A successful null API mock crashed an unrelated feature flag consumer; piping Git text through PowerShell also corrupted Unicode comments.
+- Cause: The fixture ignored API response contracts, and native-output decoding differed from UTF-8.
+- Rule: Model unavailable backend responses as errors, inspect screenshots after consent dismissal, and read/write source text explicitly as UTF-8 without native shell text transcoding.

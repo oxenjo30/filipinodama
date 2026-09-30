@@ -63,6 +63,10 @@ export type GameStore = {
   rematch: () => void;
   /** handle a tap on any board square */
   onSquareClick: (sq: Square) => void;
+  /** Submit an exact legal route from the current uncommitted selection. */
+  onMoveClick: (move: Move) => void;
+  /** Clear only the uncommitted board selection. */
+  clearSelection: () => void;
   /**
    * Revert the last human move (offline AI/local only). In AI mode this rolls
    * back two plies (the AI's reply + the human's move) so control returns to the
@@ -259,6 +263,34 @@ export const useGameStore = create<GameStore>((set, get) => {
       set((s) => ({ flip: !s.flip }));
     },
 
+    clearSelection: () => {
+      const { state } = get();
+      set({ selected: null, ...derive(state, null) });
+    },
+
+    onMoveClick: (move) => {
+      const { state, selected, status, mode } = get();
+      if (status !== "playing" || state.result || !selected) return;
+      if (mode === "ai" && state.turn !== HUMAN_COLOR) return;
+      if (!sameSquare(selected, move.from)) return;
+      const options = movesFrom(state, selected);
+      // Use the engine's canonical move so stale or forged capture metadata cannot be submitted.
+      const chosen = options.find((m) =>
+        m.path.length === move.path.length &&
+        m.path.every((sq, i) => sameSquare(sq, move.path[i])),
+      );
+      if (!chosen) return;
+      const next = applyMove(state, chosen);
+      set({
+        state: next,
+        selected: null,
+        status: next.result ? "over" : "playing",
+        ...derive(next, null),
+      });
+      // vs-AI: hand the turn to the AI. Local: the other human just plays next.
+      if (!next.result && mode === "ai") scheduleAiMove();
+    },
+
     onSquareClick: (sq) => {
       const { state, selected, status, mode } = get();
       if (status !== "playing" || state.result) return;
@@ -272,15 +304,7 @@ export const useGameStore = create<GameStore>((set, get) => {
         const options = movesFrom(state, selected);
         const chosen = options.find((m) => sameSquare(landing(m), sq));
         if (chosen) {
-          const next = applyMove(state, chosen);
-          set({
-            state: next,
-            selected: null,
-            status: next.result ? "over" : "playing",
-            ...derive(next, null),
-          });
-          // vs-AI: hand the turn to the AI. Local: the other human just plays next.
-          if (!next.result && mode === "ai") scheduleAiMove();
+          get().onMoveClick(chosen);
           return;
         }
       }

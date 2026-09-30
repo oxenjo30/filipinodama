@@ -1,8 +1,18 @@
-import { useEffect, useRef, useState, type CSSProperties } from "react";
-import type { GameState, Square, Piece as PieceModel } from "@dama/shared";
+import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
+import type { GameState, Square, Move, Piece as PieceModel } from "@dama/shared";
 import { isDark } from "@dama/shared";
 import { boardTexture, type BoardTextureKey, type PieceSkin } from "../lib/assets";
 import { Piece } from "./Piece";
+import { boardMoves, squareLabel } from "./boardMoves";
+
+type CaptureParticle = {
+  id: number;
+  square: Square;
+  x: number;
+  y: number;
+  delay: number;
+  color: PieceModel["color"];
+};
 
 /** Procedural marble square gradients (default board), from the prototype. */
 const MARBLE = {
@@ -91,12 +101,16 @@ export type BoardProps = {
   state: GameState;
   /** squares a selected piece may legally move to (quiet moves) */
   legalTargets?: Square[];
-  /** squares that are capture landings (subset styling: red-glow target) */
+  /** squares that are capture landings (green ring) */
   captureTargets?: Square[];
   /** currently selected square (gold ring on its piece) */
   selected?: Square | null;
-  /** when true, own pieces that can capture pulse with a gold glow */
+  /** when true, engine-approved capturing sources pulse with a gold glow */
   mustCapture?: boolean;
+  /** Clear only an uncommitted selection. */
+  onClearSelection?: () => void;
+  /** Submit an explicitly chosen complete legal route. */
+  onMoveClick?: (move: Move) => void;
   /** click handler for any playable square */
   onSquareClick?: (sq: Square) => void;
   /**
@@ -105,6 +119,8 @@ export type BoardProps = {
    * preview). Without this the board can't go below 280px and overflows/scrolls.
    */
   compact?: boolean;
+  /** play capture particles, shake, and banner for newly appended moves */
+  enableCaptureEffects?: boolean;
   /**
    * board surface. "marble" (default) uses the procedural marble+gold squares;
    * any other key uses that full-image texture with the grid inset over it.
@@ -162,12 +178,15 @@ export function Board({
   selected,
   mustCapture = false,
   onSquareClick,
+  onMoveClick,
+  onClearSelection,
   boardTheme = "marble",
   skin = "default",
   redSkin,
   blueSkin,
   flip = false,
   compact = false,
+  enableCaptureEffects = false,
   className,
   style,
 }: BoardProps) {
@@ -176,7 +195,92 @@ export function Board({
   const skinFor = (color: PieceModel["color"]): PieceSkin =>
     (color === "red" ? redSkin : blueSkin) ?? skin;
   const grid = toGrid(state.pieces);
-  const turn = state.turn;
+  const { captureSources, selectedMoves } = useMemo(
+    () => mustCapture || selected ? boardMoves(state, selected) : { captureSources: [], selectedMoves: [] },
+    [state, selected, mustCapture],
+  );
+  const [preview, setPreview] = useState<{ state: GameState; selected: Square | null | undefined; index: number; persistent: boolean } | null>(null);
+  const previewIndex = preview?.state === state && preview.selected === selected ? preview.index : -1;
+  const activePreview = selectedMoves[previewIndex];
+  const previewRoute = (index = -1) => setPreview(index < 0 ? null : { state, selected, index, persistent: true });
+  const hoverRoute = (index = -1) => setPreview((current) =>
+    current?.persistent && current.state === state && current.selected === selected
+      ? current : index < 0 ? null : { state, selected, index, persistent: false });
+  const showGuidance = !compact && !!onSquareClick && !state.result;
+  const captureCount = selectedMoves[0]?.captures.length ?? 0;
+  const uniformCaptureCount = selectedMoves.every((move) => move.captures.length === captureCount);
+  const ambiguous = selectedMoves.some((move, index) => selectedMoves.some((other, otherIndex) =>
+    otherIndex !== index && same(other.path.at(-1), move.path.at(-1)!.r, move.path.at(-1)!.c)));
+
+  // Capture feedback is driven by one authoritative history step. This avoids
+  // replaying effects on initial load, undo/reset, repeated socket state, or a
+  // multi-move reconnect catch-up.
+  const feedbackCursorRef = useRef({ gameId: state.id, historyLength: state.history.length });
+  const particleIdRef = useRef(0);
+  const particleTimerRef = useRef<number | undefined>(undefined);
+  const shakeTimerRef = useRef<number | undefined>(undefined);
+  const bannerTimerRef = useRef<number | undefined>(undefined);
+  const [particles, setParticles] = useState<CaptureParticle[]>([]);
+  const [shake, setShake] = useState(false);
+  const [captureBanner, setCaptureBanner] = useState<string | null>(null);
+
+  useEffect(() => {
+    const previous = feedbackCursorRef.current;
+    const next = { gameId: state.id, historyLength: state.history.length };
+    feedbackCursorRef.current = next;
+    const clearFeedback = () => {
+      window.clearTimeout(particleTimerRef.current);
+      window.clearTimeout(shakeTimerRef.current);
+      window.clearTimeout(bannerTimerRef.current);
+      setParticles([]);
+      setShake(false);
+      setCaptureBanner(null);
+    };
+    if (!enableCaptureEffects || compact) {
+      clearFeedback();
+      return;
+    }
+    // Clock-only server updates may replace the state object while preserving
+    // history. Leave active timers alone in that case.
+    if (previous.gameId === next.gameId && previous.historyLength === next.historyLength) return;
+    if (previous.gameId !== next.gameId || next.historyLength !== previous.historyLength + 1) {
+      clearFeedback();
+      return;
+    }
+
+    const move = state.history.at(-1);
+    if (!move?.captures.length) return;
+    const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    const capturedColor = state.turn;
+    if (!reducedMotion) {
+      setParticles(move.captures.flatMap((square) => Array.from({ length: 9 }, (_, index) => {
+        const angle = (index / 9) * Math.PI * 2 + Math.random() * 0.3;
+        const distance = 27 + Math.random() * 45;
+        return {
+          id: ++particleIdRef.current,
+          square,
+          x: Math.cos(angle) * distance,
+          y: Math.sin(angle) * distance,
+          delay: Math.random() * 55,
+          color: capturedColor,
+        };
+      })));
+      setShake(true);
+      window.clearTimeout(particleTimerRef.current);
+      window.clearTimeout(shakeTimerRef.current);
+      particleTimerRef.current = window.setTimeout(() => setParticles([]), 800);
+      shakeTimerRef.current = window.setTimeout(() => setShake(false), 380);
+    }
+    setCaptureBanner(move.captures.length > 1 ? `${move.captures.length}X COMBO!` : "NICE TAKE!");
+    window.clearTimeout(bannerTimerRef.current);
+    bannerTimerRef.current = window.setTimeout(() => setCaptureBanner(null), 1700);
+  }, [compact, enableCaptureEffects, state.id, state.history, state.turn]);
+
+  useEffect(() => () => {
+    window.clearTimeout(particleTimerRef.current);
+    window.clearTimeout(shakeTimerRef.current);
+    window.clearTimeout(bannerTimerRef.current);
+  }, []);
 
   // ── Capture-fade tracking ──
   // Pieces slide between squares (overlay below, keyed by piece.id). A CAPTURED
@@ -212,7 +316,7 @@ export function Board({
       const isMove = has(legalTargets, r, c);
       const isCap = has(captureTargets, r, c);
       const glow =
-        mustCapture && !!p && p.color === turn && canCapture(grid, r, c, turn);
+        mustCapture && !!p && has(captureSources, r, c);
 
       const kids: JSX.Element[] = [];
 
@@ -270,20 +374,39 @@ export function Board({
         (isSel ? ", inset 0 0 0 3px rgba(245,215,131,.95)" : "") +
         (glow && !isSel ? ", inset 0 0 0 3px rgba(245,215,131,.6)" : "");
 
+      const destinationIndex = selectedMoves.findIndex((move) => same(move.path.at(-1), r, c));
+      const pathStep = activePreview?.path.findIndex((square) => same(square, r, c)) ?? -1;
+      if (pathStep >= 0) kids.push(
+        <span key="step" aria-hidden style={{ position: "absolute", inset: "12%", display: "grid", placeItems: "center", borderRadius: "50%", background: "#f5d783", color: "#241b10", font: "800 clamp(10px,2.5vw,18px) Inter", zIndex: 2 }}>{pathStep + 1}</span>,
+      );
+
       cells.push(
-        <div
+        <button
           key={key}
+          type="button"
+          data-square={`${r}-${c}`}
+          data-selected={isSel || undefined}
+          data-capture-source={glow || undefined}
+          data-destination={isMove || isCap || undefined}
+          aria-label={`${squareLabel({ r, c })}${p ? `, ${p.color} ${p.king ? "dama" : "piece"}` : ""}${isSel ? ", selected" : ""}${glow ? ", capture required" : ""}${isMove || isCap ? ", legal destination" : ""}`}
+          aria-pressed={isSel}
+          disabled={!playable || !onSquareClick}
+          onPointerEnter={(event) => { if (event.pointerType === "mouse") hoverRoute(destinationIndex); }}
+          onPointerLeave={() => hoverRoute()}
+          onFocus={() => hoverRoute(destinationIndex)}
+          onBlur={() => hoverRoute()}
           onClick={playable && onSquareClick ? () => onSquareClick({ r, c }) : undefined}
           style={{
             position: "relative",
+            padding: 0, border: 0, minWidth: 0, minHeight: 0, appearance: "none",
             background: cellBg,
             cursor: playable && onSquareClick ? "pointer" : "default",
             boxShadow: cellShadow,
-            animation: glow ? "fdglow 1.6s ease-in-out infinite" : undefined,
+            animation: glow && !isSel ? "fdglow 1.6s ease-in-out infinite" : undefined,
           }}
         >
           {kids}
-        </div>,
+        </button>,
       );
     }
   }
@@ -302,7 +425,7 @@ export function Board({
   const selectedId = selected ? grid[selected.r]?.[selected.c]?.id : undefined;
   const glowIds = new Set(
     state.pieces
-      .filter((p) => mustCapture && p.color === turn && canCapture(grid, p.square.r, p.square.c, turn))
+      .filter((p) => mustCapture && has(captureSources, p.square.r, p.square.c))
       .map((p) => p.id),
   );
 
@@ -328,7 +451,7 @@ export function Board({
               king={p.king}
               skin={skinFor(p.color)}
               selected={p.id === selectedId}
-              glow={glowIds.has(p.id)}
+              glow={p.id !== selectedId && glowIds.has(p.id)}
             />
           </div>
         );
@@ -355,6 +478,23 @@ export function Board({
     </div>
   );
 
+  const feedbackOverlay = enableCaptureEffects && !compact && (
+    <div className="fd-capture-feedback">
+      {particles.map((particle) => {
+        const position = posOf(particle.square);
+        const particleStyle = {
+          left: `calc(${position.left} + ${cellPct / 2}%)`,
+          top: `calc(${position.top} + ${cellPct / 2}%)`,
+          "--fd-particle-x": `${particle.x}px`,
+          "--fd-particle-y": `${particle.y}px`,
+          "--fd-particle-delay": `${particle.delay}ms`,
+        } as CSSProperties;
+        return <i key={particle.id} className={`fd-capture-particle fd-capture-particle--${particle.color}`} style={particleStyle} />;
+      })}
+      {captureBanner && <div key={captureBanner} className="fd-capture-banner" role="status" aria-live="polite">{captureBanner}</div>}
+    </div>
+  );
+
   const gridEl = (
     <div
       style={{
@@ -373,7 +513,12 @@ export function Board({
       }}
     >
       {cells}
+      {activePreview && <svg aria-hidden viewBox="0 0 800 800" style={{ position: "absolute", inset: 0, width: "100%", height: "100%", pointerEvents: "none" }}>
+        <polyline points={[activePreview.from, ...activePreview.path].map((sq) => `${(flip ? 7 - sq.c : sq.c) * 100 + 50},${(flip ? 7 - sq.r : sq.r) * 100 + 50}`).join(" ")}
+          fill="none" stroke="#f5d783" strokeWidth="6" strokeDasharray="12 8" />
+      </svg>}
       {piecesOverlay}
+      {feedbackOverlay}
     </div>
   );
 
@@ -427,50 +572,29 @@ export function Board({
   }
   return (
     <div className={className ? `fd-board-scroll ${className}` : "fd-board-scroll"} style={style}>
-      <div style={{ minWidth: 280 }}>{surface}</div>
+      <div className={shake ? "fd-board-shake" : undefined} style={{ minWidth: 280 }}>{surface}</div>
+      {showGuidance && <div style={{ marginTop: 10, font: "600 12px Inter", color: "var(--gold-lt, #f5d783)", lineHeight: 1.6 }}>
+        <div role="status" aria-live="polite">
+          {selected ? `${squareLabel(selected)} selected. ${captureCount ? `${uniformCaptureCount ? `Capture required: ${captureCount} ${captureCount === 1 ? "piece" : "pieces"}.` : "Capture required."} Tap a green destination to play the full route.` : "Tap a green destination to move."}`
+            : mustCapture ? "Capture required. Select a glowing piece." : "Select a piece to see its legal destinations."}
+        </div>
+        {selected && onClearSelection && <button type="button" onClick={() => { previewRoute(); onClearSelection(); }} style={guidanceButtonStyle}>Clear selection</button>}
+        {!!captureCount && <div style={{ marginTop: 6 }}>
+          {ambiguous && <div>Some routes share a destination. Choose a route below; tapping that square plays the first route.</div>}
+          {selectedMoves.map((move, index) => <div key={index} style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 6, marginTop: 4 }}>
+            <button type="button" aria-pressed={previewIndex === index} onClick={() => previewRoute(previewIndex === index ? -1 : index)}
+              style={{ ...guidanceButtonStyle, background: previewIndex === index ? "rgba(232,184,75,.2)" : "transparent" }}>Preview route {index + 1} ({move.captures.length} {move.captures.length === 1 ? "capture" : "captures"}): {move.path.map(squareLabel).join(" → ")}</button>
+            {ambiguous && onMoveClick && <button type="button" onClick={() => { previewRoute(); onMoveClick(move); }} style={guidanceButtonStyle}>Play route {index + 1}</button>}
+          </div>)}
+        </div>}
+      </div>}
     </div>
   );
 }
 
-/** Local mirror of the capture rule for highlighting must-capture sources.
- *  Filipino Dama: a man may capture forward OR backward; a king slides along a
- *  diagonal and captures a lone enemy with an empty landing beyond it. This is
- *  used only for the visual glow — move legality is owned by the game engine. */
-function canCapture(
-  grid: (PieceModel | null)[][],
-  r: number,
-  c: number,
-  turn: PieceModel["color"],
-): boolean {
-  const p = grid[r][c];
-  if (!p || p.color !== turn) return false;
-  const at = (rr: number, cc: number) =>
-    rr >= 0 && rr < 8 && cc >= 0 && cc < 8 ? grid[rr][cc] : undefined;
-  const dirs = [
-    [-1, -1],
-    [-1, 1],
-    [1, -1],
-    [1, 1],
-  ];
-  for (const [dr, dc] of dirs) {
-    if (p.king) {
-      // scan along the diagonal for the first piece; capture if it's an enemy
-      // with an empty square immediately beyond it.
-      let rr = r + dr;
-      let cc = c + dc;
-      while (at(rr, cc) === null) {
-        rr += dr;
-        cc += dc;
-      }
-      const blocker = at(rr, cc);
-      if (blocker && blocker.color !== turn && at(rr + dr, cc + dc) === null) return true;
-    } else {
-      const mid = at(r + dr, c + dc);
-      const land = at(r + 2 * dr, c + 2 * dc);
-      if (mid && mid.color !== turn && land === null) return true;
-    }
-  }
-  return false;
-}
+const guidanceButtonStyle: CSSProperties = {
+  minHeight: 44, padding: "6px 10px", marginTop: 4, borderRadius: 6,
+  border: "1px solid var(--gold, #e8b84b)", background: "transparent", color: "inherit", font: "inherit", maxWidth: "100%", overflowWrap: "anywhere",
+};
 
 export default Board;

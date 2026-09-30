@@ -89,7 +89,7 @@ export function OnlineMatchPage() {
     status, matchId, myColor, opponent, state,
     selected, moveTargets, captureTargets, mustCapture, end, error,
     connectionLost, pendingMove, chat, offeredByMe, offeredByOpponent, rematchDeclined, viewers,
-    joinQueue, leaveQueue, resync, spectate, onSquareClick, resign, reset,
+    joinQueue, leaveQueue, resync, spectate, onSquareClick, onMoveClick, clearSelection, resign, reset,
     sendChat: sendMatchChat, sendEmote, offerRematch, acceptRematch, declineRematch,
   } = useOnlineStore();
   const isSpectating = !!spectateId;
@@ -635,7 +635,10 @@ export function OnlineMatchPage() {
             captureTargets={captureTargets}
             selected={selected}
             mustCapture={mustCapture && myTurn}
-            onSquareClick={onSquareClick}
+            onSquareClick={(myTurn && !pendingMove && !isSpectating) ? onSquareClick : undefined}
+            onMoveClick={onMoveClick}
+            onClearSelection={clearSelection}
+            enableCaptureEffects={!isSpectating}
             redSkin={myColor === "red" ? skin : oppSkin}
             blueSkin={myColor === "blue" ? skin : oppSkin}
             flip={flip}

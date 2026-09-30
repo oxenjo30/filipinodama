@@ -37,3 +37,21 @@ See docs/ops/v60-local-reconciliation-20260908.md. No push, production deploymen
 - [ ] Push local `main` to `origin/main` without force
 - [ ] Confirm the remote branch resolves to the pushed commit and CI is green
 - [ ] Smoke-test the deployed search metadata, canonicals, redirects, and sitemap
+
+# Board capture feedback integration — 2026-09-30
+
+- [x] Inspect the source combo effect, shared board lifecycle, dirty state, and project lessons
+- [x] Integrate Robin's engine-derived board guidance and route selection changes
+- [x] Add capture particles, board shake, and NICE TAKE / nX COMBO feedback to playable boards
+- [x] Suppress motion for reduced-motion users while retaining the readable capture banner
+- [x] Run engine tests plus web typecheck, lint, and build
+- [x] Review the scoped diff and start the local web preview for user testing
+
+# Board feedback production release — 2026-09-30
+
+- [x] Confirm visual acceptance and production authorization
+- [x] Verify the approved 11-file scope and clean diff formatting
+- [x] Fetch origin and confirm `origin/main` matches local `main`
+- [x] Commit only the approved board feedback files
+- [ ] Push `main` to `origin/main` without force
+- [ ] Verify the remote commit and GitHub checks
