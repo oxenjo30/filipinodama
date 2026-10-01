@@ -6,6 +6,7 @@ import { prisma } from "../db/client.js";
 import { ok, err } from "../lib/errors.js";
 import { requireAdmin } from "../auth/guards.js";
 import { audit } from "../lib/audit.js";
+import { pushUnreadCount } from "../lib/notify.js";
 
 /**
  * Campaigns section — /api/admin/campaigns* (ECONOMY-gated).
@@ -42,13 +43,15 @@ export function segmentWhere(segment: string, now: Date = new Date()): Prisma.Us
 }
 
 const CHUNK = 1000;
+const LIVE_PUSH_CONCURRENCY = 25;
 
 const channelSchema = z.enum(["push", "email", "in-app"]);
-export function requireAvailableChannel(channel: string): "in-app" {
-  if (channel !== "in-app") {
-    throw err.badRequest("CHANNEL_UNAVAILABLE", "Only in-app inbox delivery is configured");
+export function requireAvailableChannel(channel: string): "push" | "in-app" {
+  if (channel === "email") {
+    throw err.badRequest("CHANNEL_UNAVAILABLE", "Email campaigns are not connected");
   }
-  return channel;
+  if (channel === "push" || channel === "in-app") return channel;
+  throw err.badRequest("CHANNEL_UNAVAILABLE", "Campaign delivery channel is unavailable");
 }
 const contentSchema = z.object({
   title: z.string().trim().min(1).max(120),
@@ -70,6 +73,21 @@ export async function fanOutNotifications(seg: string, title: string, body: stri
     const slice = targets.slice(i, i + CHUNK);
     const res = await prisma.notification.createMany({ data: slice.map((u) => ({ userId: u.id, type: "announcement", title, body })) });
     reach += res.count;
+    // The database remains authoritative. Emit fresh badge counts only after
+    // this chunk has committed, with bounded concurrency for large audiences.
+    let cursor = 0;
+    const workers = Array.from({ length: Math.min(LIVE_PUSH_CONCURRENCY, slice.length) }, async () => {
+      while (cursor < slice.length) {
+        const user = slice[cursor++];
+        try {
+          await pushUnreadCount(user.id);
+        } catch {
+          // The inbox row is already committed. A live badge failure for one
+          // recipient must not fail the campaign or stop the remaining pushes.
+        }
+      }
+    });
+    await Promise.all(workers);
   }
   return reach;
 }

@@ -27,7 +27,7 @@ const SEGMENTS: { value: string; label: string }[] = [
 const SEGMENT_LABEL: Record<string, string> = Object.fromEntries(SEGMENTS.map((s) => [s.value, s.label]));
 
 const CHANNELS: { value: "push" | "email" | "in-app"; label: string }[] = [
-  { value: "push", label: "Push" },
+  { value: "push", label: "In-app live push" },
   { value: "email", label: "Email" },
   { value: "in-app", label: "In-app" },
 ];
@@ -130,12 +130,12 @@ export function Campaigns() {
                   <button
                     key={c.value}
                     type="button"
-                    disabled={c.value !== "in-app"}
-                    title={c.value === "in-app" ? undefined : `${c.label} delivery is not configured`}
+                    disabled={c.value === "email"}
+                    title={c.value === "email" ? "Email campaigns are not connected" : undefined}
                     className={`chip${channel === c.value ? " on" : ""}`}
                     onClick={() => setChannel(c.value)}
                   >
-                    {c.label}{c.value === "in-app" ? "" : " · Not configured"}
+                    {c.label}{c.value === "email" ? " · Not connected" : ""}
                   </button>
                 ))}
               </div>

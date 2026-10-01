@@ -180,7 +180,7 @@ describe("campaign channel/schedule/status", () => {
     await app.close();
   });
 
-  it.each(["push", "email"])("rejects unavailable %s delivery for every create action", async (channel) => {
+  it("rejects unavailable email delivery for every create action", async () => {
     const app = await buildTestApp();
     const eco = await seedUser({ adminRole: "ECONOMY" });
     const cookie = authFor({ sub: eco.id, adminRole: "ECONOMY" });
@@ -189,13 +189,27 @@ describe("campaign channel/schedule/status", () => {
         method: "POST",
         url: "/api/admin/campaigns",
         headers: { cookie },
-        payload: { title: "Unavailable", body: "x", segment: "all", reason: "test", action, channel, ...(action === "schedule" ? { scheduledFor: new Date(Date.now() + 60_000).toISOString() } : {}) },
+        payload: { title: "Unavailable", body: "x", segment: "all", reason: "test", action, channel: "email", ...(action === "schedule" ? { scheduledFor: new Date(Date.now() + 60_000).toISOString() } : {}) },
       });
       expect(res.statusCode).toBe(400);
       expect(res.json().error.code).toBe("CHANNEL_UNAVAILABLE");
     }
     expect(await prisma.campaign.count({ where: { title: "Unavailable" } })).toBe(0);
     expect(await prisma.notification.count({ where: { title: "Unavailable" } })).toBe(0);
+    await app.close();
+  });
+
+  it("accepts in-app live push as the persisted inbox plus live-badge channel", async () => {
+    const app = await buildTestApp();
+    const eco = await seedUser({ adminRole: "ECONOMY" });
+    await seedUser();
+    const res = await app.inject({
+      method: "POST", url: "/api/admin/campaigns", headers: { cookie: authFor({ sub: eco.id, adminRole: "ECONOMY" }) },
+      payload: { title: "Live push", body: "Inbox and badge", segment: "all", reason: "test", action: "send", channel: "push" },
+    });
+    expect(res.statusCode).toBe(200);
+    expect((await prisma.campaign.findFirst({ where: { title: "Live push" } }))!.channel).toBe("push");
+    expect(await prisma.notification.count({ where: { title: "Live push", type: "announcement" } })).toBe(res.json().data.reach);
     await app.close();
   });
 });

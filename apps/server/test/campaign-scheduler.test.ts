@@ -106,16 +106,28 @@ describe("campaign-scheduler", () => {
     expect(emptyAfter!.status).not.toBe("sent");
   });
 
-  it("fails a historical scheduled campaign whose delivery channel is unavailable", async () => {
+  it("fails a historical scheduled email campaign before inbox fan-out", async () => {
     const admin = await seedUser({ adminRole: "ECONOMY" });
     await seedUser();
     const camp = await prisma.campaign.create({
-      data: { title: "Old push", body: "body", segment: "all", status: "scheduled", channel: "push", scheduledFor: new Date(Date.now() - 60_000), reach: 0, sentById: admin.id, sentByName: "Admin#1000" },
+      data: { title: "Old email", body: "body", segment: "all", status: "scheduled", channel: "email", scheduledFor: new Date(Date.now() - 60_000), reach: 0, sentById: admin.id, sentByName: "Admin#1000" },
     });
 
     await runDueCampaigns(new Date());
 
     expect((await prisma.campaign.findUnique({ where: { id: camp.id } }))!.status).toBe("failed");
-    expect(await prisma.notification.count({ where: { title: "Old push" } })).toBe(0);
+    expect(await prisma.notification.count({ where: { title: "Old email" } })).toBe(0);
+  });
+
+  it("delivers a historical scheduled push row through inbox and live-badge fan-out", async () => {
+    const admin = await seedUser({ adminRole: "ECONOMY" });
+    await seedUser();
+    const camp = await prisma.campaign.create({
+      data: { title: "Live push", body: "body", segment: "all", status: "scheduled", channel: "push", scheduledFor: new Date(Date.now() - 60_000), reach: 0, sentById: admin.id, sentByName: "Admin#1000" },
+    });
+    await runDueCampaigns(new Date());
+    const after = await prisma.campaign.findUnique({ where: { id: camp.id } });
+    expect(after!.status).toBe("sent");
+    expect(await prisma.notification.count({ where: { title: "Live push" } })).toBe(after!.reach);
   });
 });

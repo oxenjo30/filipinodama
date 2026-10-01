@@ -44,9 +44,9 @@ async function runOne(id: string): Promise<void> {
   if (!camp) return;
 
   try {
-    // Historical rows can contain channels that were previously accepted as
-    // metadata but never had a real provider. Never misdeliver those as inbox
-    // announcements; mark them failed through the existing failure path.
+    // Historical email rows were accepted as metadata but campaign email is
+    // not connected. Push and in-app rows both use persisted inbox delivery
+    // plus the existing live unread-badge event.
     requireAvailableChannel(camp.channel);
     const reach = await fanOutNotifications(camp.segment, camp.title, camp.body);
     await prisma.campaign.update({ where: { id }, data: { status: "sent", reach } });

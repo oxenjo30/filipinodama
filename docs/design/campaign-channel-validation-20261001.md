@@ -1,0 +1,11 @@
+# Campaign channel validation — 2026-10-01
+
+The platform has working persisted in-app notifications, Socket.IO live unread-badge updates, and Resend transactional email. Earlier wording that push/email were generally unavailable was too broad. The Campaigns bulk fan-out path did not invoke live badge updates or the email sender; channel metadata did not prove delivery.
+
+One authorized email was sent to dark@filipinodama.com using the existing built application sendEmail function with process-only production Resend settings. It returned sent=true/dev=false, provider ID 01a0f6e9-78e4-7247-81ca-9b7bceba13ee at 2026-10-01T10:01:31Z. Delivery lookup returned 401, so provider acceptance is confirmed and inbox receipt awaits the user's confirmation. No player email campaign was sent.
+
+Local campaign draft: cmupdaenx0009ol54cadupgb8. Title: Ready for another round of Dama? Body: Balik laro! Your next Dama match is waiting. Open FilipinoDama and play a ranked match this weekend. Audience: inactive7to30d. Channel: in-app. Status: draft; not scheduled or sent. The user explicitly approved scheduling. Production campaign campaign-return-20261002-1900-manila is now scheduled for 2026-10-02T11:00:00Z (Friday October 2, 7 PM Asia/Manila), channel in-app, audience inactive7to30d, reach 0. Current eligible audience: 99; eligibility is reevaluated at send time. It was saved once with a campaign.schedule audit record under the verified operator SUPERADMIN through authenticated Railway service access. No immediate notifications were sent.
+
+Local correction connects campaign fan-out to the existing in-app live notification path, and labels the push option explicitly as in-app live push. Campaign email remains a separate integration from proven transactional mail; do not infer campaign deliverability from channel metadata or provider configuration.
+
+Validation of the live campaign correction: 44/44 focused tests passed, including a 1001-recipient two-chunk mocked test with forced event failure, unique attempts, bounded concurrency 25, and continuation after rejection. Admin/server typechecks and builds passed. Independent review approved per-recipient best-effort isolation. Local browser confirmed In-app live push and In-app enabled, Email campaigns specifically not connected, and draft visible. Native OS/Web push is not claimed.
