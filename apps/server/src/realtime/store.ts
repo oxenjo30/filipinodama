@@ -164,26 +164,119 @@ export type QueueEntry = { userId: string; joinedAt: number; colorPref: "red" | 
 const qKey = (m: string) => `rt:mmq:${m}`;
 const qMeta = (m: string) => `rt:mmqMeta:${m}`;
 
+const QUEUE_INSERT_LUA = `
+redis.call('LREM', KEYS[1], 0, ARGV[1])
+redis.call(ARGV[3], KEYS[1], ARGV[1])
+redis.call('HSET', KEYS[2], ARGV[1], ARGV[2])
+return 1
+`;
+async function queueInsert(mode: string, e: QueueEntry, command: "LPUSH" | "RPUSH"): Promise<void> {
+  await redis.eval(QUEUE_INSERT_LUA, 2, qKey(mode), qMeta(mode), e.userId, JSON.stringify(e), command);
+}
 export async function queuePush(mode: string, e: QueueEntry): Promise<void> {
-  await redis.pipeline().rpush(qKey(mode), e.userId).hset(qMeta(mode), e.userId, JSON.stringify(e)).exec();
+  await queueInsert(mode, e, "RPUSH");
 }
 export async function queueUnshift(mode: string, e: QueueEntry): Promise<void> {
-  await redis.pipeline().lpush(qKey(mode), e.userId).hset(qMeta(mode), e.userId, JSON.stringify(e)).exec();
+  await queueInsert(mode, e, "LPUSH");
+}
+const CLASSIC_QUEUE_JOIN_LUA = `
+redis.call('LREM', KEYS[1], 0, ARGV[1])
+redis.call('HDEL', KEYS[2], ARGV[1])
+redis.call('LREM', KEYS[3], 0, ARGV[1])
+redis.call('HDEL', KEYS[4], ARGV[1])
+local listKey = KEYS[1]
+local metaKey = KEYS[2]
+if ARGV[3] == 'RANKED' then listKey = KEYS[3]; metaKey = KEYS[4] end
+redis.call('RPUSH', listKey, ARGV[1])
+redis.call('HSET', metaKey, ARGV[1], ARGV[2])
+redis.call('SET', KEYS[5], ARGV[3], 'EX', 3600)
+return 1
+`;
+/** Atomically move a user into exactly one Classic queue across all instances. */
+export async function queueJoinClassic(mode: "CASUAL" | "RANKED", e: QueueEntry): Promise<void> {
+  await redis.eval(
+    CLASSIC_QUEUE_JOIN_LUA,
+    5,
+    qKey("CASUAL"), qMeta("CASUAL"), qKey("RANKED"), qMeta("RANKED"), queuedInKey("classic", e.userId),
+    e.userId, JSON.stringify(e), mode,
+  );
+}
+const CLASSIC_QUEUE_LEAVE_LUA = `
+local prior = redis.call('GET', KEYS[5])
+redis.call('LREM', KEYS[1], 0, ARGV[1])
+redis.call('HDEL', KEYS[2], ARGV[1])
+redis.call('LREM', KEYS[3], 0, ARGV[1])
+redis.call('HDEL', KEYS[4], ARGV[1])
+redis.call('DEL', KEYS[5])
+return prior
+`;
+export async function queueLeaveClassic(userId: string): Promise<boolean> {
+  const prior = await redis.eval(
+    CLASSIC_QUEUE_LEAVE_LUA,
+    5,
+    qKey("CASUAL"), qMeta("CASUAL"), qKey("RANKED"), qMeta("RANKED"), queuedInKey("classic", userId),
+    userId,
+  );
+  return prior != null;
+}
+
+const CLASSIC_QUEUE_REQUEUE_LUA = `
+if redis.call('EXISTS', KEYS[5]) == 1 then return 0 end
+redis.call('LREM', KEYS[1], 0, ARGV[1])
+redis.call('HDEL', KEYS[2], ARGV[1])
+redis.call('LREM', KEYS[3], 0, ARGV[1])
+redis.call('HDEL', KEYS[4], ARGV[1])
+local listKey = KEYS[1]
+local metaKey = KEYS[2]
+if ARGV[3] == 'RANKED' then listKey = KEYS[3]; metaKey = KEYS[4] end
+redis.call('LPUSH', listKey, ARGV[1])
+redis.call('HSET', metaKey, ARGV[1], ARGV[2])
+redis.call('SET', KEYS[5], ARGV[3], 'EX', 3600)
+return 1
+`;
+export async function queueRequeueClassic(mode: "CASUAL" | "RANKED", e: QueueEntry): Promise<boolean> {
+  const inserted = await redis.eval(
+    CLASSIC_QUEUE_REQUEUE_LUA,
+    5,
+    qKey("CASUAL"), qMeta("CASUAL"), qKey("RANKED"), qMeta("RANKED"), queuedInKey("classic", e.userId),
+    e.userId, JSON.stringify(e), mode,
+  );
+  return inserted === 1;
 }
 export async function queueRemove(mode: string, userId: string): Promise<void> {
   await redis.pipeline().lrem(qKey(mode), 0, userId).hdel(qMeta(mode), userId).exec();
 }
 const POP_PAIR_LUA = `
-if redis.call('LLEN', KEYS[1]) < 2 then return nil end
-local a = redis.call('LPOP', KEYS[1])
-local b = redis.call('LPOP', KEYS[1])
-local ma = redis.call('HGET', KEYS[2], a)
-local mb = redis.call('HGET', KEYS[2], b)
+local a = nil
+local ma = nil
+while redis.call('LLEN', KEYS[1]) > 0 and not a do
+  local candidate = redis.call('LPOP', KEYS[1])
+  local meta = redis.call('HGET', KEYS[2], candidate)
+  if meta then a = candidate; ma = meta end
+end
+if not a then return nil end
+
+local b = nil
+local mb = nil
+while redis.call('LLEN', KEYS[1]) > 0 and not b do
+  local candidate = redis.call('LPOP', KEYS[1])
+  local meta = redis.call('HGET', KEYS[2], candidate)
+  if candidate ~= a and meta then b = candidate; mb = meta end
+end
+if not b then
+  redis.call('LPUSH', KEYS[1], a)
+  return nil
+end
+
+redis.call('LREM', KEYS[1], 0, a)
+redis.call('LREM', KEYS[1], 0, b)
 redis.call('HDEL', KEYS[2], a, b)
+if redis.call('GET', 'rt:queuedIn:' .. a) == ARGV[1] then redis.call('DEL', 'rt:queuedIn:' .. a) end
+if redis.call('GET', 'rt:queuedIn:' .. b) == ARGV[1] then redis.call('DEL', 'rt:queuedIn:' .. b) end
 return {ma, mb}
 `;
 export async function queuePopPair(mode: string): Promise<[QueueEntry, QueueEntry] | null> {
-  const res = (await redis.eval(POP_PAIR_LUA, 2, qKey(mode), qMeta(mode))) as [string, string] | null;
+  const res = (await redis.eval(POP_PAIR_LUA, 2, qKey(mode), qMeta(mode), mode)) as [string, string] | null;
   if (!res) return null;
   return [JSON.parse(res[0]), JSON.parse(res[1])];
 }

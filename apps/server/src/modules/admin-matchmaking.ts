@@ -1,4 +1,5 @@
 import type { MatchMode, Prisma } from "@prisma/client";
+import { prisma } from "../db/client.js";
 
 type HumanMatchmakingWindow = {
   since: Date;
@@ -12,6 +13,7 @@ export function humanMatchmakingWhere({ since, until, mode }: HumanMatchmakingWi
     origin: "MATCHMAKING",
     ...(mode ? { mode } : {}),
     startedAt: { gte: since, lte: until },
+    NOT: { redId: { equals: prisma.match.fields.blueId } },
     red: { is: { isBot: false } },
     blue: { is: { isBot: false } },
   };

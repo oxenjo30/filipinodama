@@ -139,6 +139,89 @@ describe("rt domain wrappers", () => {
     expect(pair![1].userId).toBe("u2");
   });
 
+  it("queue: concurrent-style duplicate enqueue keeps one seat per user", async () => {
+    const { queuePush, queuePopPair, redis: redisExport } = await import("../src/realtime/store.js");
+    const mode = "RANKED";
+
+    await Promise.all([
+      queuePush(mode, { userId: "same-user", joinedAt: 100, colorPref: "red" }),
+      queuePush(mode, { userId: "same-user", joinedAt: 101, colorPref: "blue" }),
+    ]);
+    expect(await redisExport.lrange(`rt:mmq:${mode}`, 0, -1)).toEqual(["same-user"]);
+
+    await queuePush(mode, { userId: "opponent", joinedAt: 200, colorPref: "either" });
+    const pair = await queuePopPair(mode);
+    expect(pair?.map((entry) => entry.userId)).toEqual(["same-user", "opponent"]);
+    expect(pair?.[0].userId).not.toBe(pair?.[1].userId);
+  });
+
+  it("queue: concurrent cross-mode joins leave one Classic seat with matching metadata and pointer", async () => {
+    const { queueJoinClassic, redis: redisExport } = await import("../src/realtime/store.js");
+    const userId = "cross-mode-user";
+    await Promise.all([
+      queueJoinClassic("CASUAL", { userId, joinedAt: 100, colorPref: "red" }),
+      queueJoinClassic("RANKED", { userId, joinedAt: 101, colorPref: "blue" }),
+    ]);
+
+    const pointer = await redisExport.get(`rt:queuedIn:${userId}`);
+    expect(["CASUAL", "RANKED"]).toContain(pointer);
+    const casual = await redisExport.lrange("rt:mmq:CASUAL", 0, -1);
+    const ranked = await redisExport.lrange("rt:mmq:RANKED", 0, -1);
+    expect([...casual, ...ranked]).toEqual([userId]);
+    expect(pointer === "CASUAL" ? casual : ranked).toEqual([userId]);
+    const selectedMeta = await redisExport.hget(`rt:mmqMeta:${pointer}`, userId);
+    const otherMeta = await redisExport.hget(`rt:mmqMeta:${pointer === "CASUAL" ? "RANKED" : "CASUAL"}`, userId);
+    expect(JSON.parse(selectedMeta ?? "null")?.userId).toBe(userId);
+    expect(otherMeta).toBeNull();
+  });
+
+  it("queue: pairing clears matched pointers but preserves a newer different-mode pointer", async () => {
+    const { queueJoinClassic, queuePush, queuePopPair, setQueuedIn, getQueuedIn } = await import("../src/realtime/store.js");
+    await queueJoinClassic("CASUAL", { userId: "paired-a", joinedAt: 100, colorPref: "either" });
+    await queueJoinClassic("CASUAL", { userId: "paired-b", joinedAt: 101, colorPref: "either" });
+    expect(await queuePopPair("CASUAL")).not.toBeNull();
+    expect(await getQueuedIn("paired-a")).toBeNull();
+    expect(await getQueuedIn("paired-b")).toBeNull();
+
+    await queuePush("CASUAL", { userId: "stale-a", joinedAt: 200, colorPref: "either" });
+    await queuePush("CASUAL", { userId: "stale-b", joinedAt: 201, colorPref: "either" });
+    await setQueuedIn("stale-a", "RANKED");
+    await setQueuedIn("stale-b", "RANKED");
+    expect(await queuePopPair("CASUAL")).not.toBeNull();
+    expect(await getQueuedIn("stale-a")).toBe("RANKED");
+    expect(await getQueuedIn("stale-b")).toBe("RANKED");
+  });
+
+  it("queue: concurrent Classic join and leave finish in a coherent state", async () => {
+    const { queueJoinClassic, queueLeaveClassic, getQueuedIn, redis: redisExport } = await import("../src/realtime/store.js");
+    const userId = "join-leave-user";
+    await Promise.all([
+      queueJoinClassic("RANKED", { userId, joinedAt: 300, colorPref: "either" }),
+      queueLeaveClassic(userId),
+    ]);
+    const pointer = await getQueuedIn(userId);
+    const seats = [
+      ...(await redisExport.lrange("rt:mmq:CASUAL", 0, -1)),
+      ...(await redisExport.lrange("rt:mmq:RANKED", 0, -1)),
+    ].filter((id) => id === userId);
+    expect(pointer === null ? seats : [pointer, ...seats]).toEqual(pointer === null ? [] : ["RANKED", userId]);
+  });
+
+  it("queue: legacy duplicate list entries are scrubbed before returning a pair", async () => {
+    const { queuePopPair, redis: redisExport } = await import("../src/realtime/store.js");
+    const mode = "CASUAL";
+    const duplicate = { userId: "same-user", joinedAt: 100, colorPref: "either" };
+    const opponent = { userId: "opponent", joinedAt: 200, colorPref: "either" };
+    await redisExport.rpush(`rt:mmq:${mode}`, duplicate.userId, duplicate.userId, opponent.userId, duplicate.userId);
+    await redisExport.hset(`rt:mmqMeta:${mode}`, duplicate.userId, JSON.stringify(duplicate));
+    await redisExport.hset(`rt:mmqMeta:${mode}`, opponent.userId, JSON.stringify(opponent));
+
+    const pair = await queuePopPair(mode);
+    expect(pair?.map((entry) => entry.userId)).toEqual([duplicate.userId, opponent.userId]);
+    expect(pair?.[0].userId).not.toBe(pair?.[1].userId);
+    expect(await redisExport.lrange(`rt:mmq:${mode}`, 0, -1)).toEqual([]);
+  });
+
   it("queue: queueRemove removes mid-list entry", async () => {
     const { queuePush, queueRemove, redis: redisExport } = await import("../src/realtime/store.js");
 

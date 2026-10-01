@@ -4,6 +4,7 @@ import { useNavigate } from "react-router-dom";
 import { api } from "../lib/api";
 
 export type MatchCompletionFilter = "all" | "completed" | "unfinished";
+export type MatchmakingMode = "CASUAL" | "RANKED";
 type OutcomeFilter = "all" | "red" | "blue" | "draw" | "unfinished";
 type Player = { id: string; username: string; displayName: string; tag: string; deleted: boolean };
 type Match = { id: string; mode: string; red: Player; blue: Player; startedAt: string; endedAt: string | null; durationMs: number | null; outcome: "red" | "blue" | "draw" | "unfinished" | "unknown"; completion: "completed" | "unfinished"; reason: string | null; redTrophyDelta: number | null; blueTrophyDelta: number | null };
@@ -20,7 +21,7 @@ const toUtc = (value: string) => {
   return Number.isFinite(parsed) ? new Date(parsed).toISOString() : null;
 };
 
-export function MatchmakingMatches({ initialCompletion, timeWindow, onClose }: { initialCompletion: MatchCompletionFilter; timeWindow: { since: string; until: string }; onClose: () => void }) {
+export function MatchmakingMatches({ mode, initialCompletion, timeWindow, onClose }: { mode: MatchmakingMode; initialCompletion: MatchCompletionFilter; timeWindow: { since: string; until: string }; onClose: () => void }) {
   const navigate = useNavigate();
   const titleId = useId();
   const dialog = useRef<HTMLDivElement>(null);
@@ -83,13 +84,13 @@ export function MatchmakingMatches({ initialCompletion, timeWindow, onClose }: {
     let live = true;
     if (dateError) { setData(null); setError(false); return () => { live = false; }; }
     setData(null); setError(false);
-    const query = new URLSearchParams({ mode: "RANKED", page: String(page), limit: "25", completion, outcome, since: timeWindow.since, until: timeWindow.until });
+    const query = new URLSearchParams({ mode, page: String(page), limit: "25", completion, outcome, since: timeWindow.since, until: timeWindow.until });
     if (playerQuery) query.set("player", playerQuery);
     if (fromUtc) query.set("startedFrom", fromUtc);
     if (toUtcValue) query.set("startedTo", toUtcValue);
     api.get<Response>(`/api/admin/analytics/matchmaking-matches?${query}`).then((value) => { if (live) setData(value); }).catch(() => { if (live) setError(true); });
     return () => { live = false; };
-  }, [completion, outcome, playerQuery, fromUtc, toUtcValue, dateError, page, retry, timeWindow.since, timeWindow.until]);
+  }, [mode, completion, outcome, playerQuery, fromUtc, toUtcValue, dateError, page, retry, timeWindow.since, timeWindow.until]);
 
   const update = (fn: () => void) => { setPage(1); fn(); };
   const openPlayer = (id: string) => { onClose(); navigate(`/players?open=${encodeURIComponent(id)}`); };
@@ -97,7 +98,7 @@ export function MatchmakingMatches({ initialCompletion, timeWindow, onClose }: {
   return createPortal(<div className="match-drilldown-layer" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
     <div ref={dialog} className="match-drilldown" role="dialog" aria-modal="true" aria-labelledby={titleId}>
       <header className="match-drilldown-head">
-        <div><div className="route-eyebrow">Ranked matchmaking</div><h2 id={titleId}>Match drill-down</h2><p>Snapshot {when(timeWindow.since)} – {when(timeWindow.until)} (Asia/Manila)</p></div>
+        <div><div className="route-eyebrow">{mode === "RANKED" ? "Ranked" : "Casual"} matchmaking</div><h2 id={titleId}>Match drill-down</h2><p>Snapshot {when(timeWindow.since)} – {when(timeWindow.until)} (Asia/Manila)</p></div>
         <button className="abtn" onClick={onClose} aria-label="Close match drill-down">Close</button>
       </header>
       <div className="match-filters">
@@ -109,7 +110,7 @@ export function MatchmakingMatches({ initialCompletion, timeWindow, onClose }: {
       </div>
       {dateError ? <div id="match-date-error" className="match-filter-error" role="alert">{dateError}</div> : null}
       <div className="match-results" aria-live="polite">
-        {dateError ? null : error ? <div className="match-state" role="alert">Couldn't load ranked matches. <button className="abtn" onClick={() => setRetry((n) => n + 1)}>Retry</button></div> : !data ? <div className="match-state">Loading ranked matches…</div> : data.items.length === 0 ? <div className="match-state">No ranked matches match these filters.</div> : <>
+        {dateError ? null : error ? <div className="match-state" role="alert">Couldn't load {mode.toLowerCase()} matches. <button className="abtn" onClick={() => setRetry((n) => n + 1)}>Retry</button></div> : !data ? <div className="match-state">Loading {mode.toLowerCase()} matches…</div> : data.items.length === 0 ? <div className="match-state">No {mode.toLowerCase()} matches match these filters.</div> : <>
           <div className="match-summary">{data.total.toLocaleString()} matches · newest first</div>
           <div className="match-table-wrap"><table className="tbl match-table"><thead><tr><th>Match</th><th>Red player</th><th>Blue player</th><th>Started</th><th>Ended</th><th>Duration</th><th>Result</th><th></th></tr></thead><tbody>{data.items.map((m) => <MatchRows key={m.id} match={m} expanded={expanded === m.id} onToggle={() => setExpanded(expanded === m.id ? null : m.id)} openPlayer={openPlayer} />)}</tbody></table></div>
           <div className="match-pagination"><button className="abtn" disabled={data.page <= 1} onClick={() => setPage((p) => p - 1)}>Previous</button><span>Page {data.page} of {Math.max(1, data.totalPages)}</span><button className="abtn" disabled={data.page >= data.totalPages} onClick={() => setPage((p) => p + 1)}>Next</button></div>

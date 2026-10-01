@@ -36,6 +36,7 @@ describe("admin analytics matchmaking drill-down", () => {
     const endedAt = new Date(now.getTime() + 1_000);
 
     await prisma.match.create({ data: { mode: "RANKED", origin: "MATCHMAKING", redId: red.id, blueId: blue.id, settings: {}, moves: [], startedAt: now, endedAt, winner: "red" } });
+    await prisma.match.create({ data: { mode: "RANKED", origin: "MATCHMAKING", redId: red.id, blueId: red.id, settings: {}, moves: [], startedAt: now, endedAt, winner: "red" } });
     await prisma.match.create({ data: { mode: "RANKED", origin: "MATCHMAKING", redId: red.id, blueId: bot.id, settings: {}, moves: [], startedAt: now } });
     await prisma.match.create({ data: { mode: "RANKED", origin: "ROOM", redId: red.id, blueId: blue.id, settings: {}, moves: [], startedAt: now, endedAt } });
     await prisma.match.create({ data: { mode: "RANKED", origin: "REMATCH", redId: red.id, blueId: blue.id, settings: {}, moves: [], startedAt: now, endedAt } });
@@ -55,7 +56,33 @@ describe("admin analytics matchmaking drill-down", () => {
     expect(list.statusCode).toBe(200);
     expect(list.json().data.total).toBe(ranked.humanVsHumanStarted);
     expect(list.json().data.total).toBe(1);
+    expect(list.json().data.items.every((row: { red: { id: string }; blue: { id: string } }) => row.red.id !== row.blue.id)).toBe(true);
     expect(list.json().data.timeWindow).toEqual(aggregateData.timeWindow);
+    await app.close();
+  });
+
+  it("reconciles the casual aggregate and list using the same distinct-human cohort", async () => {
+    const app = await buildTestApp();
+    const admin = await seedUser({ adminRole: "ECONOMY" });
+    const red = await seedUser();
+    const blue = await seedUser();
+    const now = new Date();
+
+    await prisma.match.create({ data: { id: "casual-valid", mode: "CASUAL", origin: "MATCHMAKING", redId: red.id, blueId: blue.id, settings: {}, moves: [], startedAt: now } });
+    await prisma.match.create({ data: { id: "casual-self", mode: "CASUAL", origin: "MATCHMAKING", redId: red.id, blueId: red.id, settings: {}, moves: [], startedAt: now } });
+    await prisma.match.create({ data: { id: "ranked-valid", mode: "RANKED", origin: "MATCHMAKING", redId: red.id, blueId: blue.id, settings: {}, moves: [], startedAt: now } });
+
+    const aggregate = await app.inject({ method: "GET", url: "/api/admin/analytics?window=30d", headers: authHeader(admin.id, "ECONOMY") });
+    expect(aggregate.statusCode).toBe(200);
+    const aggregateData = aggregate.json().data;
+    const casual = aggregateData.humanMatchmaking.byMode.find((row: { mode: string }) => row.mode === "CASUAL");
+    const params = new URLSearchParams({ mode: "CASUAL", since: aggregateData.timeWindow.since, until: aggregateData.timeWindow.until });
+    const list = await app.inject({ method: "GET", url: `/api/admin/analytics/matchmaking-matches?${params}`, headers: authHeader(admin.id, "ECONOMY") });
+
+    expect(list.statusCode).toBe(200);
+    expect(list.json().data.total).toBe(casual.humanVsHumanStarted);
+    expect(list.json().data.total).toBe(1);
+    expect(list.json().data.items.map((row: { id: string; mode: string }) => [row.id, row.mode])).toEqual([["casual-valid", "CASUAL"]]);
     await app.close();
   });
 

@@ -123,6 +123,31 @@ afterEach(async () => {
 });
 
 describe("matchmaking bot-fill survives a multi-socket user", () => {
+  it("keeps one queue seat when two tabs join concurrently on the same account", async () => {
+    const server = await startRealtimeServer();
+    servers.push(server);
+    const userId = `u_double_join_${process.pid}`;
+    const first = connect(server.url, userId);
+    const second = connect(server.url, userId);
+    sockets.push(first, second);
+    await Promise.all([waitFor(first, "connect"), waitFor(second, "connect")]);
+
+    const firstSearching = waitFor(first, EV.mmSearching);
+    const secondSearching = waitFor(second, EV.mmSearching);
+    first.emit(EV.mmJoin, { mode: "CASUAL", colorPref: "red" });
+    second.emit(EV.mmJoin, { mode: "RANKED", colorPref: "blue" });
+    await Promise.all([firstSearching, secondSearching]);
+    await settle(200);
+
+    const [casual, ranked, pointer] = await Promise.all([
+      redis.lrange("rt:mmq:CASUAL", 0, -1),
+      redis.lrange("rt:mmq:RANKED", 0, -1),
+      redis.get(`rt:queuedIn:${userId}`),
+    ]);
+    expect([...casual, ...ranked]).toEqual([userId]);
+    expect(pointer === "CASUAL" ? casual : ranked).toEqual([userId]);
+  }, 15000);
+
   it("arms a bot-fill job when a lone player queues for RANKED", async () => {
     const server = await startRealtimeServer();
     servers.push(server);

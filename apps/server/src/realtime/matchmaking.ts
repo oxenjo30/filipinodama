@@ -4,7 +4,7 @@ import type { MatchMode as PrismaMatchMode } from "@prisma/client";
 import { prisma } from "../db/client.js";
 import { createLiveMatch, maybePlayBotMove } from "./match.js";
 import { scheduleJob, cancelJob } from "./jobs.js";
-import { queuePush, queueUnshift, queueRemove, queuePopPair, getQueuedIn, setQueuedIn, matchIdsForUser, getMatch, type QueueEntry, type StoredMatch } from "./store.js";
+import { queueJoinClassic, queueLeaveClassic, queueRequeueClassic, queuePopPair, getQueuedIn, matchIdsForUser, getMatch, type QueueEntry, type StoredMatch } from "./store.js";
 
 /** Mirrors ClientDevice from ./index.ts (kept as a plain union here to avoid an
  *  import cycle — index.ts registers this module). */
@@ -60,11 +60,7 @@ function isQueueMode(x: unknown): x is QueueMode {
  *  Returns true if they were in one. */
 export async function leaveAllQueues(userId: string): Promise<boolean> {
   await cancelJob("bot-fill", userId); // no longer waiting → drop any pending bot fallback
-  const mode = await getQueuedIn(userId);
-  if (!mode) return false;
-  await queueRemove(mode, userId);
-  await setQueuedIn(userId, null);
-  return true;
+  return queueLeaveClassic(userId);
 }
 
 /**
@@ -197,6 +193,16 @@ async function tryMatch(io: IOServer, mode: QueueMode): Promise<void> {
     if (!pair) break;
     const [a, b] = pair;
 
+    // A match must always have two distinct accounts. queuePush de-duplicates
+    // atomically and queuePopPair scrubs legacy duplicates, but keep this final
+    // invariant at the database-creation boundary so corrupted queue state can
+    // never mint another self-match.
+    if (a.userId === b.userId) {
+      console.error(`[matchmaking] refused duplicate-seat pair for ${a.userId} (${mode})`);
+      await requeueFront(mode, a);
+      break;
+    }
+
     // Resolve each player's CURRENT live socket by userId — NOT the socketId
     // captured at mm:join. Mobile sockets reconnect routinely (network changes,
     // the polling→websocket upgrade), so the stored socketId is frequently stale
@@ -294,8 +300,7 @@ async function tryMatch(io: IOServer, mode: QueueMode): Promise<void> {
 }
 
 async function requeueFront(mode: QueueMode, w: QueueEntry): Promise<void> {
-  await queueUnshift(mode, w);
-  await setQueuedIn(w.userId, mode);
+  await queueRequeueClassic(mode, w);
 }
 
 /** How old a live match may be and still be offered back to a player as "you're
@@ -534,8 +539,7 @@ export function registerMatchmaking(io: IOServer, socket: Socket) {
     await leaveAllQueues(userId);
 
     const entry: QueueEntry = { userId, joinedAt: Date.now(), colorPref };
-    await queuePush(mode, entry);
-    await setQueuedIn(userId, mode);
+    await queueJoinClassic(mode, entry);
 
     socket.emit(EV.mmSearching, { mode });
 
