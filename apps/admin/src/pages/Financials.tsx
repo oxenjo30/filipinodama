@@ -92,7 +92,7 @@ export function Financials() {
         className="acard"
         style={{
           padding: 22,
-          background: "linear-gradient(135deg, rgba(90,150,255,.12), #1b1030)",
+          background: "linear-gradient(135deg, #f2edf8, #ffffff)",
           border: "1px solid rgba(90,150,255,.25)",
         }}
       >
@@ -117,7 +117,7 @@ export function Financials() {
           <StatTile label="Avg order" value={money(d.stats.avgOrderCents)} />
           <StatTile label="💎 Sold" value={d.stats.diamondsSold.toLocaleString()} />
           {d.stats.refundedCount > 0 && (
-            <StatTile label="Refunds" value={money(d.stats.refundedCents)} sub={`${d.stats.refundedCount} order${d.stats.refundedCount === 1 ? "" : "s"}`} tone="var(--red-lt)" />
+            <StatTile label="Refunds" value={money(d.stats.refundedCents)} sub={`${d.stats.refundedCount} order${d.stats.refundedCount === 1 ? "" : "s"}`} tone="var(--red)" />
           )}
         </div>
       </div>
@@ -175,7 +175,7 @@ export function Financials() {
                   ) : (
                     <>
                       <div style={{ textAlign: "right" }}>
-                        <div className="mono" style={{ fontWeight: 700, fontSize: 13, color: "var(--gold-lt)" }}>{money(row.amountCents)}</div>
+                        <div className="mono" style={{ fontWeight: 700, fontSize: 13, color: "var(--admin-purple)" }}>{money(row.amountCents)}</div>
                         <div className="dim" style={{ fontSize: 10, marginTop: 2 }}>{new Date(row.createdAt).toLocaleString()}</div>
                       </div>
                       <button
@@ -220,9 +220,9 @@ export function Financials() {
 
 function StatTile({ label, value, sub, tone }: { label: string; value: string; sub?: string; tone?: string }) {
   return (
-    <div style={{ background: "rgba(6,3,14,.35)", border: "1px solid rgba(232,184,75,.12)", borderRadius: 12, padding: "12px 14px" }}>
-      <div style={{ font: "700 9.5px var(--sans)", letterSpacing: 1, textTransform: "uppercase", color: "var(--dim)" }}>{label}</div>
-      <div className="mono" style={{ font: "800 19px var(--mono)", color: tone ?? "var(--gold-lt)", marginTop: 6 }}>{value}</div>
+    <div style={{ background: "var(--panel-2)", border: "1px solid var(--edge)", borderRadius: 12, padding: "12px 14px" }}>
+      <div style={{ font: "700 12px var(--sans)", letterSpacing: 1, textTransform: "uppercase", color: "var(--dim)" }}>{label}</div>
+      <div className="mono" style={{ font: "800 22px var(--mono)", color: tone ?? "var(--ink)", marginTop: 6 }}>{value}</div>
       {sub && <div className="dim" style={{ fontSize: 10, marginTop: 3 }}>{sub}</div>}
     </div>
   );

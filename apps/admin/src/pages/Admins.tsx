@@ -169,7 +169,7 @@ function AdminRowView({ a, isMe, onDone }: { a: AdminRow; isMe: boolean; onDone:
           className="select"
           style={{
             maxWidth: 170, color: ROLE_TILE[role],
-            background: "#0f0720", border: "1px solid rgba(232,184,75,.24)", borderRadius: 8,
+            background: "var(--panel-2)", border: "1px solid var(--edge)", borderRadius: 8,
             padding: "7px 10px", font: "700 11.5px var(--sans)",
           }}
           value={role}
@@ -186,7 +186,7 @@ function AdminRowView({ a, isMe, onDone }: { a: AdminRow; isMe: boolean; onDone:
           className="abtn"
           disabled={isMe}
           onClick={toggle}
-          style={{ border: "1px solid rgba(232,184,75,.28)", color: "#f0cf72", background: "transparent", padding: "7px 12px", font: "700 11px var(--sans)", borderRadius: 8 }}
+          style={{ border: "1px solid var(--edge)", color: "var(--admin-purple)", background: "transparent", padding: "7px 12px", font: "700 11px var(--sans)", borderRadius: 8 }}
         >
           {isDisabled ? "Enable" : "Disable"}
         </button>
@@ -194,7 +194,7 @@ function AdminRowView({ a, isMe, onDone }: { a: AdminRow; isMe: boolean; onDone:
           className="abtn"
           disabled={isMe}
           onClick={revoke}
-          style={{ border: "1px solid rgba(255,143,174,.35)", color: "#ff8fae", background: "transparent", padding: "7px 12px", font: "700 11px var(--sans)", borderRadius: 8, marginLeft: 6 }}
+          style={{ border: "1px solid #e8bfc8", color: "var(--red)", background: "transparent", padding: "7px 12px", font: "700 11px var(--sans)", borderRadius: 8, marginLeft: 6 }}
         >
           Revoke
         </button>
@@ -238,7 +238,8 @@ function GrantCard({ onDone }: { onDone: () => void }) {
       </div>
       <div className="row" style={{ marginTop: 14, alignItems: "flex-end" }}>
         <input
-          className="input" style={{ maxWidth: 300 }}
+          className="input admin-search-input" style={{ maxWidth: 300 }}
+          aria-label="Find user for admin access"
           placeholder="email, username#tag, or user id"
           value={query}
           onChange={(e) => setQuery(e.target.value)}

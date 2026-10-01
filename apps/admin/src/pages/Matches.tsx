@@ -269,7 +269,8 @@ function MatchBrowser() {
     <>
       <div className="row" style={{ marginBottom: 14 }}>
         <input
-          className="input" style={{ maxWidth: 300 }}
+          className="input admin-search-input" style={{ maxWidth: 300 }}
+          aria-label="Filter matches by player ID"
           placeholder="Filter by player id (red or blue)"
           value={playerId}
           onChange={(e) => setPlayerId(e.target.value)}

@@ -158,7 +158,7 @@ function ConstantsForm({ rows, onDone }: { rows: ConfigRow[]; onDone: () => void
               className="mono"
               value={vals[row.key]}
               onChange={(e) => setVals((v) => ({ ...v, [row.key]: e.target.value }))}
-              style={{ width: 90, background: "#0f0720", border: "1px solid rgba(232, 184, 75, .2)", borderRadius: 7, padding: "8px 10px", color: "var(--gold-lt)", fontWeight: 700, fontSize: 12, textAlign: "right" }}
+              style={{ width: 90, background: "var(--panel-2)", border: "1px solid var(--edge)", borderRadius: 7, padding: "8px 10px", color: "var(--ink)", fontWeight: 700, fontSize: 12, textAlign: "right" }}
             />
           </div>
         ))}
@@ -468,7 +468,7 @@ function PlayBillingCard() {
             value={pkg}
             onChange={(e) => setPkg(e.target.value)}
             placeholder="com.filipinodama.app"
-            style={{ flex: 1, background: "#0f0720", border: "1px solid rgba(232, 184, 75, .2)", borderRadius: 7, padding: "8px 10px", color: "var(--gold-lt)", fontSize: 12 }}
+            style={{ flex: 1, background: "var(--panel-2)", border: "1px solid var(--edge)", borderRadius: 7, padding: "8px 10px", color: "var(--ink)", fontSize: 12 }}
           />
           <button className="abtn btn-gold-pill sm" disabled={pkg.trim() === data.packageName} onClick={() => void savePackage()}>Save</button>
         </div>
@@ -490,7 +490,7 @@ function PlayBillingCard() {
           onChange={(e) => setSa(e.target.value)}
           placeholder={data.serviceAccount.configured ? "Paste a new key to replace the stored one…" : "Paste the Play Developer API service-account JSON key…"}
           rows={4}
-          style={{ width: "100%", boxSizing: "border-box", background: "#0f0720", border: "1px solid rgba(232, 184, 75, .2)", borderRadius: 7, padding: "8px 10px", color: "var(--gold-lt)", fontSize: 11, fontFamily: "monospace", resize: "vertical" }}
+          style={{ width: "100%", boxSizing: "border-box", background: "var(--panel-2)", border: "1px solid var(--edge)", borderRadius: 7, padding: "8px 10px", color: "var(--ink)", fontSize: 11, fontFamily: "monospace", resize: "vertical" }}
         />
         <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
           <button className="abtn btn-gold-pill sm" disabled={sa.trim() === ""} onClick={() => void saveServiceAccount()}>Save key</button>
@@ -518,7 +518,7 @@ function PlayBillingCard() {
                 value={products[p.id] ?? ""}
                 onChange={(e) => setProducts((m) => ({ ...m, [p.id]: e.target.value }))}
                 placeholder="com.filipinodama.diamonds.xxx"
-                style={{ flex: 1, minWidth: 200, background: "#0f0720", border: "1px solid rgba(232, 184, 75, .2)", borderRadius: 7, padding: "7px 10px", color: "var(--gold-lt)", fontSize: 11 }}
+                style={{ flex: 1, minWidth: 200, background: "var(--panel-2)", border: "1px solid var(--edge)", borderRadius: 7, padding: "7px 10px", color: "var(--ink)", fontSize: 11 }}
               />
             </div>
           ))}
@@ -640,7 +640,7 @@ function GatewayStatusCard({ data, onDone }: { data: GatewaysResponse; onDone: (
                     if (Number.isFinite(n) && n >= 0 && n <= 100 && n !== g.feePct) void saveFee(g, n);
                     else setFees((f) => ({ ...f, [g.id]: String(g.feePct) }));
                   }}
-                  style={{ width: 64, background: "#0f0720", border: "1px solid rgba(232, 184, 75, .2)", borderRadius: 7, padding: "6px 8px", color: "var(--gold-lt)", fontWeight: 700, fontSize: 12, textAlign: "right" }}
+                  style={{ width: 64, background: "var(--panel-2)", border: "1px solid var(--edge)", borderRadius: 7, padding: "6px 8px", color: "var(--ink)", fontWeight: 700, fontSize: 12, textAlign: "right" }}
                 />
                 <span className="dim" style={{ fontSize: 12 }}>%</span>
               </div>
@@ -803,7 +803,7 @@ function CredentialFieldRow({
             value={value}
             onChange={(e) => setValue(e.target.value)}
             placeholder={status.configured ? "Enter new value to replace" : "Enter value"}
-            style={{ flex: 2, minWidth: 160, background: "#0f0720", border: "1px solid rgba(232, 184, 75, .2)", borderRadius: 7, padding: "8px 10px", color: "var(--gold-lt)", fontSize: 12 }}
+            style={{ flex: 2, minWidth: 160, background: "var(--panel-2)", border: "1px solid var(--edge)", borderRadius: 7, padding: "8px 10px", color: "var(--ink)", fontSize: 12 }}
           />
           <button className="abtn btn-gold-pill sm" disabled={value.trim() === ""} onClick={() => void save()}>Save</button>
           {status.source === "admin" && (
@@ -811,7 +811,7 @@ function CredentialFieldRow({
           )}
         </>
       ) : (
-        <input disabled value="••••••••" style={{ width: 120, background: "#0f0720", border: "1px solid rgba(232, 184, 75, .12)", borderRadius: 7, padding: "6px 8px", color: "var(--dim)", fontSize: 12, opacity: 0.6 }} />
+        <input disabled value="••••••••" style={{ width: 120, background: "var(--panel-2)", border: "1px solid var(--edge)", borderRadius: 7, padding: "6px 8px", color: "var(--dim)", fontSize: 12, opacity: 0.6 }} />
       )}
       <span className={`badge-st ${badge.cls}`} style={{ minWidth: 96, textAlign: "center" }}>{badge.label}</span>
     </div>

@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import { api } from "../lib/api";
 import { useAdminMutation } from "../lib/ui";
 
@@ -118,6 +119,13 @@ export function Support() {
   const [rows, setRows] = useState<TicketRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [searchParams, setSearchParams] = useSearchParams();
+  useEffect(() => {
+    const openId = searchParams.get("open");
+    if (!openId) return;
+    setSelectedId(openId);
+    setSearchParams((p) => { p.delete("open"); return p; }, { replace: true });
+  }, [searchParams, setSearchParams]);
 
   const loadList = () => {
     setLoading(true);
@@ -147,7 +155,7 @@ export function Support() {
               padding: "10px 15px",
               ...(status === s
                 ? { background: "var(--gold)", color: "#3a2405", border: "1px solid rgba(232,184,75,.5)" }
-                : { background: "var(--panel)", color: "#b9a9d6", border: "1px solid rgba(232,184,75,.18)" }),
+                : { background: "var(--panel)", color: "var(--ink)", border: "1px solid var(--edge)" }),
             }}
           >
             {s === "OPEN" ? "Open" : "Resolved"}
@@ -155,7 +163,7 @@ export function Support() {
         ))}
       </div>
 
-      <div className="fd-2col" style={{ gridTemplateColumns: "1fr 1.3fr", alignItems: "start" }}>
+      <div className="admin-split-grid support" style={{ alignItems: "start" }}>
         <TicketList rows={rows} loading={loading} selectedId={selectedId} onSelect={setSelectedId} />
         <div
           className="panel"
@@ -226,7 +234,7 @@ function TicketList({
             onClick={() => onSelect(t.id)}
             style={{
               cursor: "pointer",
-              background: active ? "#241640" : "var(--panel)",
+              background: active ? "#f3ecfa" : "var(--panel)",
               border: `1px solid ${active ? "rgba(232,184,75,.35)" : "rgba(232,184,75,.12)"}`,
               borderRadius: 12,
               padding: "15px 16px",
@@ -236,13 +244,13 @@ function TicketList({
               <div className="fd-avatar" style={{ borderColor: "rgba(232,184,75,.25)" }}>{initials(t.userName)}</div>
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 7 }}>
-                  <span className="mono" style={{ font: "600 10.5px var(--mono)", color: "#8b78ad" }}>{t.id}</span>
+                  <span className="mono" style={{ font: "600 10.5px var(--mono)", color: "var(--dim)" }}>{t.id}</span>
                   <PriorityBadge priority={t.priority} />
                 </div>
                 <div
                   style={{
                     font: "700 12.5px var(--sans)",
-                    color: "#e9e0f7",
+                    color: "var(--ink)",
                     marginTop: 2,
                     whiteSpace: "nowrap",
                     overflow: "hidden",
@@ -255,10 +263,10 @@ function TicketList({
               <StatusBadge status={t.status} />
             </div>
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: 9, paddingLeft: 44 }}>
-              <span style={{ font: "500 11px var(--sans)", color: "#8b78ad" }}>
+              <span style={{ font: "500 11px var(--sans)", color: "var(--dim)" }}>
                 {t.userName} {t.user.tag} · {t.category}
               </span>
-              <span style={{ font: "500 10.5px var(--sans)", color: "#6f5f92" }}>{timeAgo(t.updatedAt)}</span>
+              <span style={{ font: "500 10.5px var(--sans)", color: "var(--dim)" }}>{timeAgo(t.updatedAt)}</span>
             </div>
           </div>
         );
@@ -356,7 +364,7 @@ function TicketDetailPane({ id, onClose, onChanged }: { id: string; onClose: () 
       <div className="card-header" style={{ alignItems: "flex-start" }}>
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-            <span className="mono" style={{ font: "600 10.5px var(--mono)", color: "#8b78ad" }}>{ticket.id}</span>
+            <span className="mono" style={{ font: "600 10.5px var(--mono)", color: "var(--dim)" }}>{ticket.id}</span>
             <span className="badge-rect" style={{ color: c.fg, background: c.bg, borderColor: `${c.fg}44`, borderRadius: 20, fontSize: 9.5 }}>
               {ticket.status === "OPEN" ? "Open" : "Resolved"}
             </span>
@@ -375,7 +383,7 @@ function TicketDetailPane({ id, onClose, onChanged }: { id: string; onClose: () 
             </select>
           </div>
           <div style={{ font: "800 15px var(--serif)", color: "var(--gold-lt)", marginTop: 6 }}>{ticket.subject}</div>
-          <div style={{ font: "500 11px var(--sans)", color: "#8b78ad", marginTop: 4 }}>
+          <div style={{ font: "500 11px var(--sans)", color: "var(--dim)", marginTop: 4 }}>
             {ticket.userName} {ticket.tag}
             {ticket.userEmail ? ` · ${ticket.userEmail}` : ""} · {ticket.category}
             {ticket.userGone && " · account deleted"}
@@ -388,7 +396,7 @@ function TicketDetailPane({ id, onClose, onChanged }: { id: string; onClose: () 
           style={{
             background: "transparent",
             border: "1px solid rgba(232,184,75,.2)",
-            color: "#b9a9d6",
+            color: "var(--ink)",
             width: 30,
             height: 30,
             borderRadius: 8,
@@ -403,7 +411,7 @@ function TicketDetailPane({ id, onClose, onChanged }: { id: string; onClose: () 
       <div style={{ flex: 1, padding: "18px 20px", display: "flex", flexDirection: "column", gap: 12, overflowY: "auto", maxHeight: 340 }}>
         {thread.map((m) => (
           <div key={m.id} style={{ display: "flex", flexDirection: "column", alignItems: m.isStaff ? "flex-end" : "flex-start" }}>
-            <div style={{ font: "600 10px var(--sans)", color: "#8b78ad", marginBottom: 4, textAlign: m.isStaff ? "right" : "left" }}>
+            <div style={{ font: "600 10px var(--sans)", color: "var(--dim)", marginBottom: 4, textAlign: m.isStaff ? "right" : "left" }}>
               {m.authorName} · {timeAgo(m.createdAt)}
             </div>
             <div
@@ -417,13 +425,13 @@ function TicketDetailPane({ id, onClose, onChanged }: { id: string; onClose: () 
                 wordBreak: "break-word",
                 ...(m.isStaff
                   ? {
-                      background: "linear-gradient(180deg,#3a2a12,#2a1e0c)",
-                      color: "#f3e6c8",
+                      background: "var(--admin-gold-soft)",
+                      color: "var(--ink)",
                       border: "1px solid rgba(232,184,75,.25)",
                     }
                   : {
                       background: "var(--bg-2)",
-                      color: "#d9ccf0",
+                      color: "var(--ink)",
                       border: "1px solid rgba(232,184,75,.1)",
                     }),
               }}

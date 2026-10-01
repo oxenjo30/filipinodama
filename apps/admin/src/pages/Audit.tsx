@@ -43,7 +43,7 @@ export function AuditPage() {
   return (
     <>
       <div className="row" style={{ marginBottom: 14 }}>
-        <input className="input" style={{ maxWidth: 280 }} placeholder="Filter by action (e.g. user.ban)" value={action} onChange={(e) => setAction(e.target.value)} />
+        <input aria-label="Filter audit log by action" className="input admin-search-input" style={{ maxWidth: 280 }} placeholder="Filter by action (e.g. user.ban)" value={action} onChange={(e) => setAction(e.target.value)} />
         {actor && (
           <button className="chip on" onClick={clearActor} title="Clear the my-activity filter">
             My activity ✕
@@ -72,7 +72,7 @@ export function AuditPage() {
                     <td className="mono dim" style={{ whiteSpace: "nowrap", fontSize: 11, fontWeight: 500 }}>{new Date(r.createdAt).toLocaleString()}</td>
                     <td><span style={{ color: "var(--ink-3)" }}>{r.actor.username}</span> <span className="dim mono">{r.actor.tag}</span></td>
                     <td className="mono" style={{ color: "var(--gold-lt)", fontWeight: 700, fontSize: 11 }}>{r.action}</td>
-                    <td className="mono" style={{ color: "#a996c9" }}>{r.targetType ?? ""} {r.targetId ? r.targetId.slice(0, 8) : ""}</td>
+                    <td className="mono" style={{ color: "var(--dim)" }}>{r.targetType ?? ""} {r.targetId ? r.targetId.slice(0, 8) : ""}</td>
                     <td className="dim">{r.reason ?? "—"}</td>
                   </tr>
                 ))

@@ -1,5 +1,5 @@
 import type { CSSProperties } from "react";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { RANK_TIERS } from "@dama/shared";
 import { api } from "../lib/api";
@@ -7,6 +7,8 @@ import { useAuth } from "../lib/auth";
 import { useAdminMutation, useToast } from "../lib/ui";
 import { avatar, frameArt } from "../lib/assets";
 import { Pagination, usePagination } from "../components/Pagination";
+import { SavedViews, type PlayerFilter } from "../components/SavedViews";
+import { PlayerTimeline } from "../components/PlayerTimeline";
 
 type PlayerRow = {
   id: string; username: string; displayName: string; tag: string; email: string | null;
@@ -97,7 +99,7 @@ function PlayerAvatar({ avatarUrl, frameId, name, className }: { avatarUrl: stri
 // Drawer action-button styles — copied verbatim from the mockup (actDefs).
 const BTN_FONT: CSSProperties = { font: "700 11px Inter", letterSpacing: ".4px", borderRadius: 8, padding: "9px 14px", cursor: "pointer" };
 const BTN_BASE: CSSProperties = { ...BTN_FONT, border: "1px solid rgba(232,184,75,.4)", color: "#3a2405", background: "linear-gradient(180deg,#f0cf72,#c99a2e)" };
-const BTN_GHOST: CSSProperties = { ...BTN_FONT, border: "1px solid rgba(232,184,75,.3)", color: "#e9e0f7", background: "#221534" };
+const BTN_GHOST: CSSProperties = { ...BTN_FONT, border: "1px solid var(--edge)", color: "var(--ink)", background: "var(--panel)" };
 const BTN_DANGER: CSSProperties = { ...BTN_FONT, border: "1px solid rgba(194,73,90,.5)", color: "#fff", background: "linear-gradient(180deg,#c2495a,#8a2f3c)" };
 const BTN_AMBER: CSSProperties = { ...BTN_FONT, border: "1px solid rgba(217,145,31,.5)", color: "#3a2405", background: "linear-gradient(180deg,#e8b04a,#c98a1e)" };
 const BTN_RESTORE: CSSProperties = { ...BTN_FONT, border: "1px solid rgba(47,143,91,.5)", color: "#fff", background: "linear-gradient(180deg,#2f8f5b,#1c6e42)" };
@@ -105,11 +107,13 @@ const BTN_RESTORE: CSSProperties = { ...BTN_FONT, border: "1px solid rgba(47,143
 /** 1.3/1.4 Players — search, list, detail drawer, sanctions. */
 export function PlayersPage() {
   const [q, setQ] = useState("");
-  const [filter, setFilter] = useState<(typeof FILTERS)[number]>("all");
+  const [filter, setFilter] = useState<PlayerFilter>("all");
   const [rows, setRows] = useState<PlayerRow[]>([]);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
   const [selId, setSelId] = useState<string | null>(null);
+  const [drawerClosing, setDrawerClosing] = useState(false);
+  const closeTimer = useRef<number | null>(null);
   // Client-side pagination of the (already fully fetched) player list.
   const pg = usePagination(rows, 10);
   // Deep-link from the header global search (handoffv3 row 16): a player
@@ -122,8 +126,14 @@ export function PlayersPage() {
       setSelId(openId);
       setSearchParams((p) => { p.delete("open"); return p; }, { replace: true });
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [searchParams, setSearchParams]);
+  useEffect(() => () => { if (closeTimer.current !== null) window.clearTimeout(closeTimer.current); }, []);
+  const closePlayer = () => {
+    if (!selId || drawerClosing) return;
+    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) { setSelId(null); return; }
+    setDrawerClosing(true);
+    closeTimer.current = window.setTimeout(() => { setSelId(null); setDrawerClosing(false); closeTimer.current = null; }, 280);
+  };
 
   const load = (query: string) => {
     setLoading(true);
@@ -159,9 +169,11 @@ export function PlayersPage() {
 
   return (
     <>
+      <SavedViews query={q} filter={filter} onApply={(view) => { setQ(view.query); setFilter(view.filter); }} />
       <div className="row" style={{ marginBottom: 16, gap: 10, flexWrap: "wrap" }}>
         <input
-          className="input" style={{ flex: 1, minWidth: 220 }}
+          aria-label="Search players"
+          className="input admin-search-input" style={{ flex: 1, minWidth: 220 }}
           placeholder="Search by username, tag, email, or ID…"
           value={q}
           onChange={(e) => setQ(e.target.value)}
@@ -217,24 +229,41 @@ export function PlayersPage() {
         {!loading && <Pagination {...pg} noun="players" />}
       </div>
 
-      {selId && <PlayerDrawer id={selId} onClose={() => setSelId(null)} onChanged={() => load(q)} />}
+      {selId && <PlayerDrawer key={selId} id={selId} closing={drawerClosing} onClose={closePlayer} onChanged={() => load(q)} />}
     </>
   );
 }
 
 // ── Detail drawer ─────────────────────────────────────────────────────────────
-function PlayerDrawer({ id, onClose, onChanged }: { id: string; onClose: () => void; onChanged: () => void }) {
+function PlayerDrawer({ id, closing, onClose, onChanged }: { id: string; closing: boolean; onClose: () => void; onChanged: () => void }) {
   const { can } = useAuth();
   const mutate = useAdminMutation();
   const toast = useToast();
   const [d, setD] = useState<Detail | null>(null);
+  const [detailError, setDetailError] = useState(false);
   const [matches, setMatches] = useState<MatchRow[]>([]);
+  const drawerRef = useRef<HTMLDivElement>(null);
 
   const load = () => {
-    api.get<Detail>(`/api/admin/users/${id}`).then(setD).catch(() => setD(null));
+    setDetailError(false);
+    api.get<Detail>(`/api/admin/users/${id}`).then(setD).catch(() => { setD(null); setDetailError(true); });
     api.get<{ items: MatchRow[] }>(`/api/admin/users/${id}/matches?limit=15`).then((r) => setMatches(r.items)).catch(() => setMatches([]));
   };
   useEffect(load, [id]);
+  useEffect(() => {
+    drawerRef.current?.focus();
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") { onClose(); return; }
+      if (e.key !== "Tab" || !drawerRef.current) return;
+      const nodes = [...drawerRef.current.querySelectorAll<HTMLElement>('button:not([disabled]),input:not([disabled]),select:not([disabled]),textarea:not([disabled]),a[href]')];
+      if (!nodes.length) { e.preventDefault(); drawerRef.current.focus(); return; }
+      const first = nodes[0], last = nodes[nodes.length - 1];
+      if (e.shiftKey && (document.activeElement === first || document.activeElement === drawerRef.current)) { e.preventDefault(); last.focus(); }
+      else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [onClose]);
 
   const after = () => { load(); onChanged(); };
 
@@ -310,10 +339,12 @@ function PlayerDrawer({ id, onClose, onChanged }: { id: string; onClose: () => v
   });
 
   return (
-    <div className="drawer-wrap">
+    <div className={`drawer-wrap${closing ? " is-closing" : ""}`}>
       <div className="drawer-bd" onClick={onClose} />
-      <div className="player-drawer">
-        {!d ? (
+      <div ref={drawerRef} className="player-drawer" role="dialog" aria-modal="true" aria-label="Player details" tabIndex={-1}>
+        {detailError ? (
+          <div style={{ padding: 24 }}><div style={{ color: "var(--red)", marginBottom: 12 }}>Player details could not be loaded.</div><button className="abtn" onClick={load}>Retry</button></div>
+        ) : !d ? (
           <div style={{ padding: 24 }} className="dim">Loading…</div>
         ) : (
           <>
@@ -333,9 +364,9 @@ function PlayerDrawer({ id, onClose, onChanged }: { id: string; onClose: () => v
             <div className="pd-body">
               {/* 3 KPI tiles */}
               <div className="pd-tiles">
-                <div className="pd-tile"><div className="pd-tile-l">TROPHIES</div><div className="pd-tile-v" style={{ color: "#f5d783" }}>{d.trophies.toLocaleString()}</div></div>
-                <div className="pd-tile"><div className="pd-tile-l">GOLD</div><div className="pd-tile-v" style={{ color: "#f2d493" }}>{d.gold.toLocaleString()}</div></div>
-                <div className="pd-tile"><div className="pd-tile-l">DIAMONDS</div><div className="pd-tile-v" style={{ color: "#ff9aa8" }}>{d.diamonds.toLocaleString()}</div></div>
+                <div className="pd-tile"><div className="pd-tile-l">TROPHIES</div><div className="pd-tile-v" style={{ color: "var(--ink)" }}>{d.trophies.toLocaleString()}</div></div>
+                <div className="pd-tile"><div className="pd-tile-l">GOLD</div><div className="pd-tile-v" style={{ color: "var(--admin-purple)" }}>{d.gold.toLocaleString()}</div></div>
+                <div className="pd-tile"><div className="pd-tile-l">DIAMONDS</div><div className="pd-tile-v" style={{ color: "var(--admin-purple)" }}>{d.diamonds.toLocaleString()}</div></div>
               </div>
 
               {/* Status row */}
@@ -343,6 +374,10 @@ function PlayerDrawer({ id, onClose, onChanged }: { id: string; onClose: () => v
                 <span className="pd-status-l">Status</span>
                 <StatusBadge s={d.status} />
               </div>
+
+              {/* Recent matches */}
+              <div className="pd-section-l">ACTIVITY</div>
+              <PlayerTimeline playerId={id} />
 
               {/* Recent matches */}
               <div className="pd-section-l">RECENT MATCHES</div>

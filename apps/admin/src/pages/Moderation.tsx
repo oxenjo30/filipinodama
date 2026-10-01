@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import { api } from "../lib/api";
 import { useAdminMutation } from "../lib/ui";
 import { Pagination, usePagination } from "../components/Pagination";
@@ -54,6 +55,7 @@ export function Moderation() {
   const [reason, setReason] = useState<string>("");
   const [rows, setRows] = useState<Report[]>([]);
   const [loading, setLoading] = useState(true);
+  const [searchParams, setSearchParams] = useSearchParams();
   // Client-side pagination of the (already fully fetched) reports queue.
   const pg = usePagination(rows, 10);
 
@@ -68,6 +70,24 @@ export function Moderation() {
       .finally(() => setLoading(false));
   };
   useEffect(load, [status, reason]);
+  useEffect(() => {
+    const openId = searchParams.get("open");
+    if (!openId || loading) return;
+    const requestedStatus = searchParams.get("status");
+    if (requestedStatus && STATUS_FILTERS.includes(requestedStatus as (typeof STATUS_FILTERS)[number]) && requestedStatus !== status) {
+      setStatus(requestedStatus as (typeof STATUS_FILTERS)[number]);
+      return;
+    }
+    if (reason) { setReason(""); return; }
+    const index = rows.findIndex((r) => r.id === openId);
+    if (index < 0) return;
+    pg.setPage(Math.floor(index / pg.pageSize) + 1);
+    const timer = window.setTimeout(() => {
+      document.getElementById(`report-${openId}`)?.scrollIntoView({ behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth", block: "center" });
+      setSearchParams((p) => { p.delete("open"); p.delete("status"); return p; }, { replace: true });
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, [loading, rows, searchParams, setSearchParams, pg.pageSize, pg.setPage, reason, status]);
 
   const filtersActive = status !== "OPEN" || reason !== "";
   const clearFilters = () => { setStatus("OPEN"); setReason(""); };
@@ -183,7 +203,7 @@ function ReportCard({ r, onDone }: { r: Report; onDone: () => void }) {
     });
 
   return (
-    <div className="acard" style={{ borderLeft: `3px solid ${badge.accent}`, borderRadius: 12 }}>
+    <div id={`report-${r.id}`} className="acard" style={{ borderLeft: `3px solid ${badge.accent}`, borderRadius: 12 }}>
       <div className="row" style={{ alignItems: "flex-start", gap: 12, flexWrap: "wrap" }}>
         <div style={{ flex: 1, minWidth: 240 }}>
           <div className="row" style={{ marginBottom: 6, gap: 8 }}>

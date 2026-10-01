@@ -147,7 +147,7 @@ function AnalyticsBody({ d }: { d: AnalyticsData }) {
           returns no prior-window count to diff, so each tile's sub-line carries
           the honest window label instead of an invented ±%. */}
       <ZoneLabel>Overview</ZoneLabel>
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 14 }} className="ov-2col">
+      <div className="admin-kpi-grid" style={{ gap: 14 }}>
         <Card label="Total Players" value={d.kpis.totalPlayers.toLocaleString()} sub="all-time real accounts" />
         <Card label="New Players" value={d.kpis.newPlayers.toLocaleString()} sub={`in ${d.window}`} />
         <Card label="Active Players" value={d.kpis.activePlayers.toLocaleString()} sub={`seen in ${d.window}`} />
@@ -161,7 +161,7 @@ function AnalyticsBody({ d }: { d: AnalyticsData }) {
       {/* ── ZONE 2 · ACQUISITION & ENGAGEMENT ───────────────────────────── */}
       <ZoneLabel top>Acquisition &amp; engagement</ZoneLabel>
 
-      <div style={{ display: "grid", gridTemplateColumns: "1.6fr 1fr", gap: 16 }} className="ov-2col">
+      <div className="admin-split-grid chart" style={{ gap: 16 }}>
         {/* New players per day — gold gradient column chart. */}
         <Panel title="New players per day" meta={`last ${d.days} days`}>
           <div style={{ display: "flex", alignItems: "flex-end", gap: Math.max(2, 12 - Math.floor(d.newPlayersPerDay.length / 12)), height: 156, marginTop: 20, overflowX: "auto" }}>
@@ -189,7 +189,7 @@ function AnalyticsBody({ d }: { d: AnalyticsData }) {
       </div>
 
       {/* Acquisition funnel (real tapered funnel) + Matches by mode. */}
-      <div style={{ display: "grid", gridTemplateColumns: "1.35fr 1fr", gap: 16, marginTop: 16 }} className="ov-2col">
+      <div className="admin-split-grid wide" style={{ gap: 16, marginTop: 16 }}>
         <Panel title="Acquisition funnel" meta={`${d.window} signup cohort`}>
           {/* Real funnel: each stage is a centered, tapering bar whose width tracks
               its share of the cohort, so the drop-off between stages is visible at
@@ -252,7 +252,7 @@ function AnalyticsBody({ d }: { d: AnalyticsData }) {
       </div>
 
       <Panel title="Human matchmaking" meta={d.window}>
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(4,minmax(0,1fr))", gap: 12, marginTop: 18 }} className="ov-2col">
+        <div className="admin-kpi-grid" style={{ gap: 12, marginTop: 18 }}>
           <Card label="Human vs human started" value={humanMatchmaking.humanVsHumanStarted.toLocaleString()} sub="successful pairings" />
           <Card label="Human vs human completed" value={humanMatchmaking.humanVsHumanCompleted.toLocaleString()} sub="matches with an end" />
           <Card label="Human vs bot started" value={humanMatchmaking.humanVsBotStarted.toLocaleString()} sub="successful pairings" />
@@ -284,7 +284,7 @@ function AnalyticsBody({ d }: { d: AnalyticsData }) {
       {/* Retention + Top regions. align-start so the compact 3-cell retention
           panel keeps its natural height instead of stretching to match the
           taller region list and leaving dead space below the cells. */}
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, marginTop: 16, alignItems: "start" }} className="ov-2col">
+      <div className="admin-split-grid" style={{ gap: 16, marginTop: 16, alignItems: "start" }}>
         <Panel title="Retention" meta={`${d.window} signup cohort`}>
           {!d.retentionTracked ? (
             <div className="dim" style={{ font: "500 12px var(--sans)", marginTop: 16, lineHeight: 1.65 }}>
@@ -296,7 +296,7 @@ function AnalyticsBody({ d }: { d: AnalyticsData }) {
               {/* Distinct treatment: three stat cells with the % prominent, not
                   another bar list. Each cell shows Day, the big retained-% number,
                   and the raw retained/eligible beneath it. */}
-              <div style={{ marginTop: 18, display: "grid", gridTemplateColumns: `repeat(${Math.max(1, d.retention.length)},1fr)`, gap: 12 }}>
+              <div className="admin-retention-grid" style={{ marginTop: 18, gap: 12 }}>
                 {d.retention.map((r) => (
                   <div
                     key={r.day}
@@ -397,7 +397,7 @@ function AnalyticsBody({ d }: { d: AnalyticsData }) {
 
       {/* Gold spend by category (left) + Match outcomes (right) — paired into one
           balanced row so neither sits alone with dead space beside it. */}
-      <div style={{ display: "grid", gridTemplateColumns: "1.5fr 1fr", gap: 16, marginTop: 16, alignItems: "start" }} className="ov-2col">
+      <div className="admin-split-grid wide" style={{ gap: 16, marginTop: 16, alignItems: "start" }}>
         <Panel title="Gold spend by category" meta={`store purchases · ${d.window}`}>
           {d.goldByCategory.length === 0 ? (
             <div className="dim" style={{ font: "500 12px var(--sans)", marginTop: 16 }}>No store purchases in this window.</div>
@@ -437,7 +437,7 @@ function AnalyticsBody({ d }: { d: AnalyticsData }) {
 
       {/* Rank-tier distribution (left) + Top cosmetics table (right) — paired so
           the tier bars and the ownership table fill one row with no orphan. */}
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, alignItems: "start" }} className="ov-2col">
+      <div className="admin-split-grid" style={{ gap: 16, alignItems: "start" }}>
         <Panel title="Rank-tier distribution" meta="all-time">
           <div style={{ marginTop: 18, display: "flex", flexDirection: "column", gap: 4 }}>
             {d.rankTiers.map((t) => (
