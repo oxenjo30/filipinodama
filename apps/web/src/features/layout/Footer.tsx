@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { openConsentSettings } from "../consent/consentTracking";
 
 /**
  * Footer — site-wide footer, reproduced from the handoff prototype
@@ -90,6 +91,7 @@ export function Footer() {
                 {l.label}
               </button>
             ))}
+            <button type="button" onClick={openConsentSettings} style={{ background: "none", border: "none", cursor: "pointer", padding: "4px 10px", font: "600 12px Inter", color: "var(--ink2)" }}>Cookie settings</button>
           </nav>
           <div
             style={{

@@ -142,9 +142,9 @@ export function PlayHubPage() {
 
   const modeOverview: OverviewRow[] = [
     { label: "Total Modes", value: "4", icon: <StatIcon src={`${ASSET}/sb-modes.png`} /> },
-    { label: "Active Players", value: "2,458", icon: <StatIcon src={`${ASSET}/sb-players.png`} /> },
-    { label: "Matches Today", value: "14,820", icon: <StatIcon src={`${ASSET}/sb-matches.png`} /> },
-    { label: "Total Victories", value: "4.2M", icon: <StatIcon src={`${ASSET}/sb-trophy.png`} /> },
+    { label: "Multiplayer", value: "Online", icon: <StatIcon src={`${ASSET}/sb-players.png`} /> },
+    { label: "Practice", value: "AI", icon: <StatIcon src={`${ASSET}/sb-matches.png`} /> },
+    { label: "Local Play", value: "2 Players", icon: <StatIcon src={`${ASSET}/sb-trophy.png`} /> },
   ];
 
   return (

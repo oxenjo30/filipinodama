@@ -34,17 +34,12 @@ const MODES = [
 ];
 
 // prototype `updates` (line 3816) & `quickStats` (line 3819).
-// Ambient PLATFORM-WIDE stats (not the user's personal data). These are the
-// documented "big-platform numbers" exception to the no-mock rule — the same
-// class as the players-online pill and global-leaderboard ambience. They are
-// community-scale figures, NEVER presented as the signed-in user's own stats
-// (personal stats live on the Profile page and are 100% real per-user). When a
-// real aggregate-metrics endpoint lands, swap these for its values.
+// Supported play options rather than unmeasured community totals.
 const QUICK_STATS = [
-  { value: "128,945", label: "Active Players", icon: "sb-players.png" },
-  { value: "4.2M", label: "Matches Played", icon: "sb-matches.png" },
-  { value: "56,230", label: "Ranked Wins", icon: "sb-trophy.png" },
-  { value: "87", label: "Countries", icon: "sb-modes.png" },
+  { value: "Online", label: "Multiplayer", icon: "sb-players.png" },
+  { value: "AI", label: "Practice Matches", icon: "sb-matches.png" },
+  { value: "Ranked", label: "Competitive Play", icon: "sb-trophy.png" },
+  { value: "Local", label: "Two Player Mode", icon: "sb-modes.png" },
 ];
 
 // GET /api/matches/active — the caller's in-progress online match (endedAt
@@ -362,7 +357,7 @@ export function HomePage() {
                 <span style={{ width: 26, height: 26, borderRadius: "50%", background: "linear-gradient(160deg,#89c,#358)", border: "2px solid #1c1030", marginLeft: -9 }} />
               </div>
               <span style={{ width: 8, height: 8, borderRadius: "50%", background: "#3fbf6f", boxShadow: "0 0 8px #3fbf6f" }} />
-              <span style={{ font: "600 13px Inter", color: "var(--ink)" }}><b style={{ color: "#fff" }}>2,458</b> players online</span>
+              <span style={{ font: "600 13px Inter", color: "var(--ink)" }}><b style={{ color: "#fff" }}>Online</b> multiplayer available</span>
             </div>
           </div>
           <div style={{ display: "flex", alignItems: "center", justifyContent: "center" }}>

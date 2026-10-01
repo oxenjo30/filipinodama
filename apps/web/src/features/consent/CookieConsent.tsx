@@ -1,41 +1,28 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-
-/**
- * CookieConsent — bottom-fixed cookie/consent bar, reproduced VERBATIM from the
- * prototype. Shown until the visitor chooses; the choice is persisted in
- * localStorage under "fdr.consent" ("all" | "necessary"). Lives once in
- * AppLayout so it appears on every page. z-index 365 intentionally sits above
- * content and the login/onboarding overlays (z 358-360).
- */
-
-const CONSENT_KEY = "fdr.consent";
-
-function readConsent(): string | null {
-  try {
-    return localStorage.getItem(CONSENT_KEY);
-  } catch {
-    return null;
-  }
-}
+import { CONSENT_SETTINGS_EVENT, ConsentTracking, readConsent, saveConsent } from "./consentTracking";
 
 export function CookieConsent() {
   const navigate = useNavigate();
   // Initialize from localStorage: if a choice already exists, the bar never shows.
   const [visible, setVisible] = useState(() => readConsent() === null);
 
-  if (!visible) return null;
+  useEffect(() => {
+    const reopen = () => setVisible(true);
+    window.addEventListener(CONSENT_SETTINGS_EVENT, reopen);
+    return () => window.removeEventListener(CONSENT_SETTINGS_EVENT, reopen);
+  }, []);
+
+  if (!visible) return <ConsentTracking />;
 
   function choose(value: "all" | "necessary") {
-    try {
-      localStorage.setItem(CONSENT_KEY, value);
-    } catch {
-      // localStorage can throw (private mode / disabled) — dismiss anyway.
-    }
+    saveConsent(value);
     setVisible(false);
   }
 
   return (
+    <>
+    <ConsentTracking />
     <div
       style={{
         position: "fixed",
@@ -72,7 +59,7 @@ export function CookieConsent() {
             <span style={{ font: "800 15px Cinzel,serif", color: "var(--gold-lt)" }}>We value your privacy</span>
           </div>
           <p style={{ margin: 0, font: "400 12.5px/1.55 Inter", color: "var(--ink)" }}>
-            We use cookies to keep you signed in, remember your preferences, and improve the game. See our{" "}
+            Essential storage keeps you signed in and remembers game preferences. Accept all enables Google Analytics on public pages to measure visits. Necessary only keeps optional trackers off. Change your choice anytime in Cookie settings. See our{" "}
             <button
               onClick={() => navigate("/privacy")}
               style={{
@@ -90,7 +77,7 @@ export function CookieConsent() {
             for details.
           </p>
         </div>
-        <div style={{ display: "flex", gap: 10, flex: "none", flexWrap: "wrap" }}>
+        <div style={{ display: "flex", gap: 10, flex: "0 1 auto", minWidth: 0, maxWidth: "100%", flexWrap: "wrap" }}>
           <button
             className="btn"
             onClick={() => choose("necessary")}
@@ -110,6 +97,7 @@ export function CookieConsent() {
         </div>
       </div>
     </div>
+    </>
   );
 }
 

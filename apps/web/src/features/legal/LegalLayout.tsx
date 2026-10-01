@@ -23,7 +23,7 @@ type LegalDoc = {
 
 export type LegalKey = "privacy" | "terms" | "community" | "anticheat" | "data";
 
-const UPDATED = "July 8, 2026";
+const UPDATED = "October 1, 2026";
 
 const LEGAL_DATA: Record<LegalKey, LegalDoc> = {
   privacy: {
@@ -61,14 +61,14 @@ const LEGAL_DATA: Record<LegalKey, LegalDoc> = {
           '§ 4.3 Information Collected Automatically',
           'When you access the Service, we may automatically collect your IP address, browser type and version, operating system, device identifiers where available, time zone, login timestamps, pages visited, referring URLs, approximate geographic region derived from network information, error logs, security events, and performance diagnostics.',
           '§ 4.4 Cookies and Similar Technologies',
-          'FilipinoDama uses cookies and similar technologies for authentication, remembering your preferences, maintaining secure sessions, detecting abuse, preventing unauthorized access, and improving performance. Essential cookies are required for core functionality. If optional analytics cookies are introduced in the future, we will provide appropriate notice where required by law.',
+          'Essential browser storage supports sign-in, game preferences, and security. On the website, Google Analytics measures visits to public pages only after you choose Accept all. Meta Pixel has been removed. Google may process cookie identifiers, browser and device information, visited pages, and connection information such as your IP address under its privacy policy. Choose Necessary only to keep optional trackers off. You can change or withdraw your choice using Cookie settings in the footer. Withdrawal stops optional tracking and removes known first-party tracking cookies; it does not erase information already sent to providers. The native Android app does not load these website trackers or an advertising SDK. Google Analytics advertising features and ad personalization remain disabled. Third-party advertising is not enabled in this release. Provider privacy information: https://policies.google.com/privacy.',
         ],
       },
       {
         no: '5',
         heading: 'Information We Do Not Intentionally Collect',
         paras: [
-          'FilipinoDama does not intentionally collect payment card information because the Service does not currently sell virtual currency or accept payments for in-game purchases. We also do not knowingly request government-issued identification numbers unless required to comply with applicable law or to respond to a legal request.',
+          'Where purchases are offered, platform payment providers such as Google Play process payment details. FilipinoDama receives purchase identifiers and transaction status needed to verify purchases and deliver items, but does not receive your full payment card details. We also do not knowingly request government-issued identification numbers unless required to comply with applicable law or to respond to a legal request.',
         ],
       },
       {
@@ -92,7 +92,7 @@ const LEGAL_DATA: Record<LegalKey, LegalDoc> = {
           '§ 8.1 We Do Not Sell Personal Information',
           'FilipinoDama does not sell your personal information to advertisers or data brokers.',
           '§ 8.2 Service Providers',
-          'We may share limited information with trusted service providers that help operate the Service. These providers may include infrastructure and hosting providers such as Railway, authentication providers, email delivery providers, monitoring services, logging platforms, analytics services (if implemented), and customer support platforms. Each provider receives only the information reasonably necessary to perform its services.',
+          'We may share limited information with trusted service providers that help operate the Service. These providers may include infrastructure and hosting providers such as Railway, authentication providers, email delivery providers, monitoring services, logging platforms, Google Analytics for website visitors who opt in, and customer support platforms. Each provider receives only the information reasonably necessary to perform its services.',
           '§ 8.3 Legal Requirements',
           'We may disclose information where required by law, court order, subpoena, or other lawful government request, or where disclosure is reasonably necessary to protect the rights, safety, property, or security of FilipinoDama, our users, or the public.',
         ],
@@ -143,14 +143,14 @@ const LEGAL_DATA: Record<LegalKey, LegalDoc> = {
         no: '15',
         heading: 'Managing Cookies',
         paras: [
-          'Most web browsers allow you to control cookies through browser settings. Disabling essential cookies may affect your ability to sign in, maintain game sessions, or use certain features. Where optional cookies are introduced in the future, additional choices may be provided where required by law.',
+          'You can accept or reject optional website tracking in the consent banner and revisit Cookie settings in the footer at any time. Browser settings also let you control cookies. Disabling essential storage may affect sign-in and saved preferences. These website cookie choices do not enable advertising or tracking in the native Android app.',
         ],
       },
       {
         no: '16',
         heading: 'Philippine Data Privacy Act',
         paras: [
-          'Where applicable, FilipinoDama endeavors to process personal information in accordance with Republic Act No. 10173 (Data Privacy Act of 2012) and its implementing rules and regulations. Users may exercise applicable rights by contacting us through the official privacy contact listed below once published.',
+          'Where applicable, FilipinoDama endeavors to process personal information in accordance with Republic Act No. 10173 (Data Privacy Act of 2012) and its implementing rules and regulations. Users may exercise applicable rights by contacting support@filipinodama.com.',
         ],
       },
       {
@@ -792,7 +792,7 @@ export function LegalLayout({ active }: { active: LegalKey }) {
             Privacy First
           </div>
           <div style={{ font: "500 11px/1.5 Inter", color: "var(--ink2)" }}>
-            Built to respect your data — compliant with the Philippine Data Privacy Act, and, where applicable, the GDPR and CCPA.
+            Built to respect your data. Read the policies above for our practices and your choices.
           </div>
         </div>
       </div>

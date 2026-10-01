@@ -83,6 +83,7 @@ const PROSE_CSS = `
 .fd-article code{font-family:'JetBrains Mono',monospace;font-size:.9em;background:rgba(15,8,32,.7);border:1px solid rgba(232,184,75,.2);border-radius:5px;padding:.1em .4em}
 .fd-article pre{background:rgba(15,8,32,.7);border:1px solid rgba(232,184,75,.2);border-radius:10px;padding:14px 16px;overflow-x:auto;margin:0 0 1.2em}
 .fd-article pre code{background:none;border:none;padding:0}
+.fd-article .fd-position-description{margin:1.2em 0;padding:16px;border:1px solid rgba(232,184,75,.2);border-radius:10px;background:rgba(15,8,32,.5)}
 .fd-article img{max-width:100%;height:auto;border-radius:10px}
 .fd-article table{width:100%;border-collapse:collapse;margin:0 0 1.2em;display:block;overflow-x:auto}
 .fd-article th,.fd-article td{border:1px solid rgba(232,184,75,.2);padding:8px 12px;text-align:left}
@@ -97,8 +98,8 @@ const PROSE_CSS = `
  * `/blog/slug.html`, and same-origin absolute URLs. Normalize only those forms;
  * leave external, mailto, anchor, and unrelated .html links untouched.
  */
-function rewriteBodyLinks(html: string): string {
-  return html.replace(/href=(["'])([^"']*)\1/gi, (match, quote: string, href: string) => {
+export function rewriteBodyLinks(html: string, now: Date = new Date()): string {
+  const normalized = html.replace(/href=(["'])([^"']*)\1/gi, (match, quote: string, href: string) => {
     let path = href;
     let suffix = "";
 
@@ -122,6 +123,10 @@ function rewriteBodyLinks(html: string): string {
     const slug = bareSlug?.[1] ?? legacyBlogSlug?.[1] ?? htmlBlogSlug?.[1];
 
     return slug ? `href=${quote}/blog/${slug}${suffix}${quote}` : match;
+  });
+  return normalized.replace(/<a\b([^>]*?)href=(["'])\/blog\/([^"'?#/]+)(?:[?#][^"']*)?\2([^>]*)>([\s\S]*?)<\/a>/gi, (anchor, _before, _quote, slug, _after, label) => {
+    const target = allBySlug[slug];
+    return target && isPublished(target, now) ? anchor : label;
   });
 }
 
@@ -305,6 +310,8 @@ export function ArticlePage() {
           <h1 style={{ font: "800 clamp(26px,3.6vw,34px)/1.25 Cinzel,serif", color: "var(--gold-lt)", margin: "0 0 24px", overflowWrap: "anywhere" }}>
             {article.title}
           </h1>
+
+          <p style={{ font: "400 12px/1.6 Inter", color: "var(--ink2)" }}>Published by FilipinoDama. Game instructions describe the rules implemented on this platform; agree on house rules before offline play. <Link to="/contact">Report a correction</Link>.</p>
 
           <BlogArticleImage article={article} variant="article" priority />
 

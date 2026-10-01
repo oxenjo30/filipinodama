@@ -265,7 +265,7 @@ export function GamePage({ mode = "ai" }: { mode?: "ai" | "local" }) {
             color: "var(--ink)",
           }}
         >
-          <span style={{ color: "#3fbf6f" }}>📶</span> 2,458 players online
+          <span style={{ color: "#3fbf6f" }}>📶</span> Online multiplayer available
         </div>
       </div>
 
