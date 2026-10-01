@@ -11,7 +11,7 @@ import { Moderation } from "./pages/Moderation";
 import { Support } from "./pages/Support";
 import { EconomyPage } from "./pages/Economy";
 import { LiveOpsPage } from "./pages/LiveOps";
-import { TournamentsPage, formatLabel } from "./pages/Tournaments";
+import { TournamentsPage } from "./pages/Tournaments";
 import { GuildsPage } from "./pages/Guilds";
 import { MatchesPage } from "./pages/Matches";
 import { AuditPage } from "./pages/Audit";
@@ -20,14 +20,12 @@ import { Admins } from "./pages/Admins";
 import { Settings } from "./pages/Settings";
 import { Campaigns } from "./pages/Campaigns";
 import { Financials } from "./pages/Financials";
+import { CommandPalette } from "./components/CommandPalette";
+import { NotificationCenter } from "./components/NotificationCenter";
 
 /**
- * Admin shell — reproduces the approved FilipinoDama Admin.dc.html layout: the
- * grouped sidebar with per-item dot colors + live count badges, the sticky topbar
- * with eyebrow + Cinzel title + "Viewing as" role preview + user chip.
- *
- * navDefs / secTitles / role order are copied verbatim from the prototype so the
- * structure matches 1:1. Sections with no live wiring yet show a Phase-2 stub.
+ * Admin shell for the approved light workspace. Navigation, route access,
+ * preview roles and account behavior remain backed by the existing app state.
  */
 
 // [route, label, dot color, group, min-role, phase2?]
@@ -71,117 +69,27 @@ const TITLES: Record<string, [string, string]> = {
   "/admins": ["Access Control", "Admin users"],
   "/audit": ["Governance", "Audit log"],
 };
+const DESCRIPTIONS: Record<string, string> = {
+  "/overview": "Live operational status across the FilipinoDama platform.",
+  "/analytics": "Gameplay, audience, and economy performance over time.",
+  "/players": "Find players, review activity, and take role-gated actions.",
+  "/moderation": "Investigate player reports and resolve the moderation queue.",
+  "/support": "Review player requests, reply, resolve, and reopen tickets.",
+  "/matches": "Inspect flagged matches and engine-analysis signals.",
+  "/economy": "Manage store items and player currency operations.",
+  "/financials": "Review orders, receipts, revenue totals, and refunds.",
+  "/fraud": "Payment risk tooling remains scheduled for Phase 2.",
+  "/liveops": "Operate seasons, quests, ladder cycles, and scheduled events.",
+  "/tournaments": "Manage tournament formats, brackets, and lifecycle states.",
+  "/guilds": "Review guilds, applications, rosters, and community actions.",
+  "/campaigns": "Compose, schedule, send, and review player campaigns.",
+  "/settings": "Configure platform flags, constants, gateways, and packs.",
+  "/admins": "Manage administrator access within existing role protections.",
+  "/audit": "Review append-only operator activity and system changes.",
+};
 
 const ROLE_LABEL: Record<AdminRole, string> = { SUPPORT: "Support", MODERATOR: "Moderator", ECONOMY: "Economy admin", SUPERADMIN: "Superadmin" };
 const RANK: Record<AdminRole, number> = { SUPPORT: 1, MODERATOR: 2, ECONOMY: 3, SUPERADMIN: 4 };
-
-// ── Header global search (handoffv3 row 16) ─────────────────────────────────
-type SearchPlayer = { id: string; displayName: string; tag: string; trophies: number; rankTier: string };
-type SearchGuild = { id: string; name: string; tag: string; members: number };
-type SearchCup = { id: string; name: string; format: string; status: string };
-type SearchResults = { players: SearchPlayer[]; guilds: SearchGuild[]; cups: SearchCup[] };
-
-/**
- * Deep-link convention for search results: navigate to the section route with
- * `?open=<id>` — Players/Guilds/Tournaments all already have a per-record
- * detail view (drawer) keyed by id, so each page reads `?open=` once on mount
- * and opens that same drawer, then strips the param from the URL.
- */
-function GlobalSearch() {
-  const navigate = useNavigate();
-  const [q, setQ] = useState("");
-  const [results, setResults] = useState<SearchResults | null>(null);
-  const [open, setOpen] = useState(false);
-  const wrapRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    const query = q.trim();
-    if (query.length < 2) {
-      setResults(null);
-      return;
-    }
-    const t = setTimeout(() => {
-      api
-        .get<SearchResults>(`/api/admin/search?q=${encodeURIComponent(query)}`)
-        .then(setResults)
-        .catch(() => setResults({ players: [], guilds: [], cups: [] }));
-    }, 250);
-    return () => clearTimeout(t);
-  }, [q]);
-
-  useEffect(() => {
-    if (!open) return;
-    const onDown = (e: MouseEvent) => {
-      if (wrapRef.current && !wrapRef.current.contains(e.target as Node)) setOpen(false);
-    };
-    document.addEventListener("mousedown", onDown);
-    return () => document.removeEventListener("mousedown", onDown);
-  }, [open]);
-
-  const go = (path: string) => {
-    setOpen(false);
-    setQ("");
-    setResults(null);
-    navigate(path);
-  };
-
-  const hasQuery = q.trim().length > 0;
-  const hasResults = !!results && (results.players.length > 0 || results.guilds.length > 0 || results.cups.length > 0);
-
-  return (
-    <div className="gs-wrap fd-hide-sm" ref={wrapRef}>
-      <input
-        className="input gs-input"
-        placeholder="Search players, guilds, cups…"
-        value={q}
-        onChange={(e) => { setQ(e.target.value); setOpen(true); }}
-        onFocus={() => setOpen(true)}
-      />
-      {open && hasQuery && (
-        <div className="gs-dropdown">
-          {hasResults ? (
-            <>
-              {results!.players.map((p) => (
-                <button key={`p-${p.id}`} className="gs-row abtn" onClick={() => go(`/players?open=${p.id}`)}>
-                  <span className="gs-row-badge" style={{ background: "#4a2d7a" }}>{(p.displayName || "?").slice(0, 2).toUpperCase()}</span>
-                  <span style={{ flex: 1, minWidth: 0 }}>
-                    <span className="gs-row-label">{p.displayName} {p.tag}</span>
-                    <span className="gs-row-sub">{p.rankTier} · {p.trophies.toLocaleString()} trophies</span>
-                  </span>
-                  <span className="gs-row-kind">Player</span>
-                </button>
-              ))}
-              {results!.guilds.map((g) => (
-                <button key={`g-${g.id}`} className="gs-row abtn" onClick={() => go(`/guilds?open=${g.id}`)}>
-                  <span className="gs-row-badge" style={{ background: "#2f6f5b" }}>G</span>
-                  <span style={{ flex: 1, minWidth: 0 }}>
-                    <span className="gs-row-label">{g.name}</span>
-                    <span className="gs-row-sub">[{g.tag}]</span>
-                  </span>
-                  <span className="gs-row-kind">Guild</span>
-                </button>
-              ))}
-              {results!.cups.map((t) => (
-                <button key={`t-${t.id}`} className="gs-row abtn" onClick={() => go(`/tournaments?open=${t.id}`)}>
-                  <span className="gs-row-badge" style={{ background: "#7a4bbf" }}>T</span>
-                  <span style={{ flex: 1, minWidth: 0 }}>
-                    <span className="gs-row-label">{t.name}</span>
-                    {/* Friendly label, not the raw enum — falls back to the enum
-                        itself for a format this build doesn't know about. */}
-                    <span className="gs-row-sub">{formatLabel(t.format)}</span>
-                  </span>
-                  <span className="gs-row-kind">Cup</span>
-                </button>
-              ))}
-            </>
-          ) : (
-            <div className="gs-empty">No matches</div>
-          )}
-        </div>
-      )}
-    </div>
-  );
-}
 
 // ── Account chip → dropdown menu + sign-out interstitial (handoffv3 rows 17-18) ──
 function AccountMenu({
@@ -195,10 +103,30 @@ function AccountMenu({
   const auth = useAuth();
   const toast = useToast();
   const [open, setOpen] = useState(false);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const dialogRef = useRef<HTMLDivElement>(null);
   const initials = (me.displayName || me.username).slice(0, 2).toUpperCase();
 
-  const manage = () => {
+  const closeMenu = (restoreFocus = false) => {
     setOpen(false);
+    if (restoreFocus) requestAnimationFrame(() => triggerRef.current?.focus());
+  };
+
+  useEffect(() => {
+    if (!open) return;
+    requestAnimationFrame(() => dialogRef.current?.querySelector<HTMLButtonElement>("button")?.focus());
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        closeMenu(true);
+      }
+    };
+    document.addEventListener("keydown", onKeyDown);
+    return () => document.removeEventListener("keydown", onKeyDown);
+  }, [open]);
+
+  const manage = () => {
+    closeMenu();
     if (realRole === "SUPERADMIN") {
       navigate("/admins");
       toast("ok", "Opened admin & role management.");
@@ -207,7 +135,7 @@ function AccountMenu({
     }
   };
   const activity = () => {
-    setOpen(false);
+    closeMenu();
     // Prototype routes to Settings → Config with the same copy; production has
     // a real per-actor audit filter (actorId, SUPERADMIN-only endpoint), so
     // route there instead — an improvement over the mockup's generic settings
@@ -217,7 +145,7 @@ function AccountMenu({
     toast("ok", "Your actions appear in the audit log.");
   };
   const signOut = () => {
-    setOpen(false);
+    closeMenu();
     onSignedOut();
     // logout() ends the real session server-side (writes the session.signout
     // audit row there — see auth/routes.ts) and flips auth to "anon"; the
@@ -228,7 +156,7 @@ function AccountMenu({
 
   return (
     <div className="acct-wrap">
-      <button className="abtn acct-chip" onClick={() => setOpen((o) => !o)}>
+      <button ref={triggerRef} className="abtn acct-chip" aria-haspopup="dialog" aria-expanded={open} aria-controls="admin-account-dialog" onClick={() => open ? closeMenu(true) : setOpen(true)}>
         <div className="userchip av" style={{ width: 30, height: 30 }}>{initials}</div>
         <div className="fd-hide-sm" style={{ textAlign: "left" }}>
           <div style={{ font: "700 12px var(--sans)", color: "var(--ink-2)", lineHeight: 1 }}>{me.displayName}</div>
@@ -238,8 +166,8 @@ function AccountMenu({
       </button>
       {open && (
         <>
-          <button aria-label="Close menu" className="acct-menu-backdrop" onClick={() => setOpen(false)} />
-          <div className="acct-menu">
+          <button aria-label="Close account menu" className="acct-menu-backdrop" onClick={() => closeMenu(true)} />
+          <div ref={dialogRef} id="admin-account-dialog" className="acct-menu" role="dialog" aria-modal="false" aria-label="Account actions">
             <div className="acct-menu-head">
               <div className="acct-menu-name">{me.displayName}</div>
               <div className="acct-menu-email">{me.email ?? me.username}</div>
@@ -358,12 +286,11 @@ export function App() {
   return (
     <div className="app">
       <aside className="sidebar">
-        {/* Logo lockup — exact mockup: gold-gradient "D" tile + FilipinoDama / ADMIN CONSOLE */}
+        {/* Approved light-workspace lockup: the brand stays restrained inside the plum rail. */}
         <div className="brand">
-          <span className="mark">D</span>
           <div className="brandtext">
-            <span className="name">FilipinoDama</span>
-            <span className="sub">ADMIN CONSOLE</span>
+            <span className="name">FILIPINODAMA</span>
+            <span className="sub">Administration</span>
           </div>
         </div>
         <div className="navwrap">
@@ -394,11 +321,8 @@ export function App() {
           ))}
         </div>
         <div className="foot">
-          <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-            <span style={{ width: 7, height: 7, borderRadius: "50%", background: "var(--green)", boxShadow: "0 0 8px var(--green)" }} />
-            All systems operational
-          </div>
-          <div style={{ marginTop: 5, fontFamily: "var(--mono)" }}>v1.0.0 · prod</div>
+          <div className="sidebar-account">{(me.displayName || me.username).slice(0, 2).toUpperCase()} &nbsp; {me.displayName || me.username} · {ROLE_LABEL[realRole]}</div>
+          <div className="sidebar-account-sub">Account menu / sign out</div>
         </div>
       </aside>
 
@@ -407,13 +331,8 @@ export function App() {
             line up with the .main content column below (same max-width + centering). */}
         <header className="topbar">
           <div className="topbar-inner">
-            <div style={{ minWidth: 0 }}>
-              <div className="eyebrow">{eyebrow}</div>
-              <div className="title">{title}</div>
-            </div>
+            <CommandPalette effectiveRole={effRole} />
             <div style={{ flex: 1 }} />
-            {/* Global search — handoffv3 row 16 (players/guilds/cups, ≤6/4/4). */}
-            <GlobalSearch />
             {/* Viewing-as — SUPERADMIN can preview lower-role views (client-only). */}
             {realRole === "SUPERADMIN" && (
               <div className="viewingas fd-hide-sm">
@@ -427,6 +346,8 @@ export function App() {
                 </select>
               </div>
             )}
+            <span className="environment-badge">{import.meta.env.PROD ? "PRODUCTION" : "LOCAL"}</span>
+            <NotificationCenter />
             {/* Account chip → dropdown menu + real sign-out — handoffv3 row 17. */}
             <AccountMenu
               me={me}
@@ -436,30 +357,37 @@ export function App() {
           </div>
         </header>
 
-        <main className="main">
-          <Routes>
-            <Route path="/" element={<Navigate to="/overview" replace />} />
-            <Route path="/overview" element={<Overview />} />
-            <Route path="/analytics" element={<Analytics />} />
-            <Route path="/players" element={<PlayersPage />} />
-            <Route path="/moderation" element={<Moderation />} />
-            <Route path="/support" element={<Support />} />
-            <Route path="/matches" element={<MatchesPage />} />
-            <Route path="/economy" element={<EconomyPage />} />
-            {/* Store catalog merged into the single "Store & economy" page (mockup secEconomy is one section). Old link redirects. */}
-            <Route path="/store" element={<Navigate to="/economy" replace />} />
-            <Route path="/liveops" element={<LiveOpsPage />} />
-            <Route path="/tournaments" element={<TournamentsPage />} />
-            <Route path="/guilds" element={<GuildsPage />} />
-            <Route path="/audit" element={<AuditPage />} />
-            <Route path="/campaigns" element={<Campaigns />} />
-            <Route path="/settings" element={<Settings />} />
-            <Route path="/admins" element={<Admins />} />
-            <Route path="/financials" element={<Financials />} />
-            {/* Phase-2 stub */}
-            <Route path="/fraud" element={<Phase2 title="Fraud & AML" note="Payment-driven risk engine (blocked on payments)." />} />
-            <Route path="*" element={<Navigate to="/overview" replace />} />
-          </Routes>
+        <main className="main" key={loc.pathname} aria-labelledby="admin-page-title">
+          <header className="route-heading">
+            <div className="route-eyebrow">{eyebrow}</div>
+            <h1 id="admin-page-title">{title}</h1>
+            <p>{DESCRIPTIONS[loc.pathname]}</p>
+          </header>
+          <div className="route-body">
+            <Routes>
+              <Route path="/" element={<Navigate to="/overview" replace />} />
+              <Route path="/overview" element={<Overview />} />
+              <Route path="/analytics" element={<Analytics />} />
+              <Route path="/players" element={<PlayersPage />} />
+              <Route path="/moderation" element={<Moderation />} />
+              <Route path="/support" element={<Support />} />
+              <Route path="/matches" element={<MatchesPage />} />
+              <Route path="/economy" element={<EconomyPage />} />
+              {/* Store catalog merged into the single "Store & economy" page (mockup secEconomy is one section). Old link redirects. */}
+              <Route path="/store" element={<Navigate to="/economy" replace />} />
+              <Route path="/liveops" element={<LiveOpsPage />} />
+              <Route path="/tournaments" element={<TournamentsPage />} />
+              <Route path="/guilds" element={<GuildsPage />} />
+              <Route path="/audit" element={<AuditPage />} />
+              <Route path="/campaigns" element={<Campaigns />} />
+              <Route path="/settings" element={<Settings />} />
+              <Route path="/admins" element={<Admins />} />
+              <Route path="/financials" element={<Financials />} />
+              {/* Phase-2 stub */}
+              <Route path="/fraud" element={<Phase2 title="Fraud & AML" note="Payment-driven risk engine (blocked on payments)." />} />
+              <Route path="*" element={<Navigate to="/overview" replace />} />
+            </Routes>
+          </div>
         </main>
       </div>
     </div>

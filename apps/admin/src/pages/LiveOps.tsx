@@ -239,7 +239,7 @@ function SeasonBanner({
   return (
     <div
       style={{
-        background: "linear-gradient(120deg,#1e1338,#241645)",
+        background: "linear-gradient(120deg,#f2edf8,#ffffff)",
         border: "1px solid rgba(232,184,75,.2)",
         borderRadius: 14,
         padding: 22,
@@ -252,7 +252,7 @@ function SeasonBanner({
           <div style={{ font: "800 22px var(--serif)", color: "var(--gold-lt)", marginTop: 4 }}>
             {activeSeason ? `${activeSeason.number ? `S${activeSeason.number} · ` : ""}${activeSeason.name}` : "No active season"}
           </div>
-          <div style={{ marginTop: 6, font: "500 12px var(--sans)", color: "#a996c9" }}>
+          <div style={{ marginTop: 6, font: "500 12px var(--sans)", color: "var(--dim)" }}>
             {activeSeason
               ? activeSeason.endsLabel || `Ends ${fmtDate(activeSeason.endsAt)} · ${activeSeason.tierCount} tiers · ${activeSeason.participants.toLocaleString()} participants`
               : "Create a season below to start a live track."}

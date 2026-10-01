@@ -95,9 +95,9 @@ export function Pagination<T>({
         justifyContent: "space-between",
         flexWrap: "wrap",
         gap: 12,
-        padding: "12px 4px 2px",
+        padding: "14px 16px 12px",
         marginTop: 6,
-        borderTop: "1px solid rgba(232,184,75,.1)",
+        borderTop: "1px solid var(--edge)",
       }}
     >
       <div className="dim" style={{ font: "600 11.5px var(--sans)" }}>
@@ -169,13 +169,13 @@ function PageBtn({
       onClick={onClick}
       disabled={disabled}
       style={{
-        minWidth: 30,
-        height: 30,
-        padding: "0 8px",
+        minWidth: 40,
+        minHeight: 40,
+        padding: "0 10px",
         borderRadius: 8,
-        border: active ? "1px solid var(--gold)" : "1px solid rgba(232,184,75,.18)",
-        background: active ? "rgba(232,184,75,.16)" : "#1b1030",
-        color: active ? "var(--gold-lt)" : "#b9a9d6",
+        border: active ? "1px solid var(--admin-purple)" : "1px solid var(--edge)",
+        background: active ? "var(--admin-purple)" : "#fff",
+        color: active ? "#fff" : "var(--ink)",
         font: "700 12px var(--sans)",
         cursor: disabled ? "not-allowed" : "pointer",
         opacity: disabled ? 0.4 : 1,

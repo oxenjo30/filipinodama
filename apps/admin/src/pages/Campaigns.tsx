@@ -111,7 +111,7 @@ export function Campaigns() {
   return (
     <>
       <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-        <div className="fd-2col" style={{ gridTemplateColumns: "1.5fr 1fr", alignItems: "start", gap: 16 }}>
+        <div className="admin-split-grid wide" style={{ alignItems: "start", gap: 16 }}>
           {/* composer */}
           <div className="acard" style={{ display: "flex", flexDirection: "column", gap: 16, padding: 22 }}>
             <div>
@@ -162,7 +162,7 @@ export function Campaigns() {
                 className="abtn"
                 style={{
                   font: "700 12px var(--sans)", borderRadius: 9, padding: "10px 16px",
-                  border: "1px solid rgba(232, 184, 75, .24)", color: "#d9ccf0", background: "transparent",
+                  border: "1px solid var(--edge)", color: "var(--ink)", background: "transparent",
                 }}
                 disabled={!valid}
                 onClick={() => run("draft")}
@@ -173,7 +173,7 @@ export function Campaigns() {
                 className="abtn"
                 style={{
                   font: "700 12px var(--sans)", borderRadius: 9, padding: "10px 16px",
-                  border: "1px solid rgba(240, 207, 114, .4)", color: "#f0cf72", background: "rgba(15, 8, 32, .5)",
+                  border: "1px solid #e3d4ef", color: "var(--admin-purple)", background: "#f3ecfa",
                 }}
                 disabled={!valid || !scheduledFor}
                 onClick={() => run("schedule")}
@@ -223,7 +223,7 @@ export function Campaigns() {
 
         <div className="panel" style={{ overflowX: "auto" }}>
           <div className="card-header" style={{ padding: "14px 16px" }}>
-            <span className="t" style={{ font: "700 12px var(--sans)", letterSpacing: ".4px", color: "#e9e0f7" }}>Campaign history</span>
+            <span className="t" style={{ font: "700 12px var(--sans)", letterSpacing: ".4px", color: "var(--ink)" }}>Campaign history</span>
           </div>
           <table className="tbl" style={{ minWidth: 760 }}>
             <thead>

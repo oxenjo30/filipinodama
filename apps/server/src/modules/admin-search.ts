@@ -11,9 +11,9 @@ import { requireAdmin } from "../auth/guards.js";
  * under 2 chars returns all-empty (matches the mockup's `gsq.length>0` gate,
  * plus a floor so a single keystroke doesn't scan the whole table).
  *
- * SUPPORT-gated — the lowest admin tier, same as the individual list endpoints
- * this fans out to (/admin/users, /admin/guilds, /admin/tournaments), so any
- * admin who could reach those sections directly can also find them via search.
+ * SUPPORT-gated for player search, then category-filtered using the live DB role:
+ * guild results require MODERATOR and tournament results require ECONOMY, matching
+ * the destination routes. The client mirrors this only for presentation.
  */
 export async function adminSearchRoutes(app: FastifyInstance) {
   app.get("/admin/search", { preHandler: requireAdmin("SUPPORT") }, async (req) => {
@@ -21,6 +21,8 @@ export async function adminSearchRoutes(app: FastifyInstance) {
 
     if (q.length < 2) return ok({ players: [], guilds: [], cups: [] });
 
+    const canModerate = req.adminRole === "MODERATOR" || req.adminRole === "ECONOMY" || req.adminRole === "SUPERADMIN";
+    const canEconomy = req.adminRole === "ECONOMY" || req.adminRole === "SUPERADMIN";
     const [players, guilds, cups] = await Promise.all([
       prisma.user.findMany({
         where: {
@@ -36,7 +38,7 @@ export async function adminSearchRoutes(app: FastifyInstance) {
         orderBy: { trophies: "desc" },
         select: { id: true, displayName: true, username: true, tag: true, trophies: true, rankTier: true },
       }),
-      prisma.guild.findMany({
+      canModerate ? prisma.guild.findMany({
         where: {
           OR: [
             { name: { contains: q, mode: "insensitive" } },
@@ -46,13 +48,13 @@ export async function adminSearchRoutes(app: FastifyInstance) {
         take: 4,
         orderBy: { weeklyPoints: "desc" },
         select: { id: true, name: true, tag: true, _count: { select: { members: true } } },
-      }),
-      prisma.tournament.findMany({
+      }) : Promise.resolve([]),
+      canEconomy ? prisma.tournament.findMany({
         where: { name: { contains: q, mode: "insensitive" } },
         take: 4,
         orderBy: { createdAt: "desc" },
         select: { id: true, name: true, format: true, status: true },
-      }),
+      }) : Promise.resolve([]),
     ]);
 
     return ok({

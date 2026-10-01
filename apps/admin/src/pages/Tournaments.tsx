@@ -282,8 +282,7 @@ export function TournamentsPage() {
       setViewingId(openId);
       setSearchParams((p) => { p.delete("open"); return p; }, { replace: true });
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [searchParams, setSearchParams]);
 
   const load = () => {
     setLoading(true);
@@ -346,8 +345,8 @@ export function TournamentsPage() {
         {creating && <TournamentForm onClose={() => setCreating(false)} onDone={load} />}
         {editing && <TournamentForm tournament={editing} onClose={() => setEditing(null)} onDone={load} />}
 
-        <div className="panel">
-          <table className="tbl">
+        <div className="panel" style={{ overflowX: "auto", minWidth: 0 }}>
+          <table className="tbl" style={{ minWidth: 720 }}>
             <thead>
               <tr>
                 <th>Tournament</th>
@@ -487,7 +486,7 @@ function TournamentRow({
       <td className="num">{t.registeredCount} / {t.maxPlayers}</td>
       <td className="dim" style={{ whiteSpace: "nowrap" }}>{fmtDate(t.startsAt)}</td>
       <td className="num">
-        <div className="row" style={{ justifyContent: "flex-end", flexWrap: "nowrap" }}>
+        <div className="row admin-wrap-actions" style={{ justifyContent: "flex-end" }}>
           <button className="btn" style={EDIT_BTN_STYLE} onClick={onEdit}>Edit</button>
           {t.status === "DRAFT" && (
             <>
@@ -1246,7 +1245,7 @@ function SlotRow({
           </span>
         </div>
         {m.status === "ready" && m.redEntryId && m.blueEntryId && (
-          <div className="row" style={{ flexWrap: "nowrap" }}>
+          <div className="row admin-wrap-actions">
             <button className="btn" onClick={() => report(m.redEntryId!)}>Report {entryLabel(m.redEntryId).split(" ")[0]} wins</button>
             <button className="btn" onClick={() => report(m.blueEntryId!)}>Report {entryLabel(m.blueEntryId).split(" ")[0]} wins</button>
           </div>

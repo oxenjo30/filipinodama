@@ -68,8 +68,8 @@ describe("GET /api/admin/search", () => {
 
   it("finds guilds by name/tag substring and includes a member count", async () => {
     const app = await buildTestApp();
-    const support = await seedUser({ adminRole: "SUPPORT" });
-    const cookie = authFor({ sub: support.id, adminRole: "SUPPORT" });
+    const support = await seedUser({ adminRole: "MODERATOR" });
+    const cookie = authFor({ sub: support.id, adminRole: "MODERATOR" });
     const member = await seedUser();
     const guild = await prisma.guild.create({ data: { name: "Alpha Battalion", tag: "#SRCH1" } });
     await prisma.guildMember.create({ data: { guildId: guild.id, userId: member.id, role: "LEADER" } });
@@ -84,8 +84,8 @@ describe("GET /api/admin/search", () => {
 
   it("finds tournaments (cups) by name substring", async () => {
     const app = await buildTestApp();
-    const support = await seedUser({ adminRole: "SUPPORT" });
-    const cookie = authFor({ sub: support.id, adminRole: "SUPPORT" });
+    const support = await seedUser({ adminRole: "ECONOMY" });
+    const cookie = authFor({ sub: support.id, adminRole: "ECONOMY" });
     const admin = await seedUser({ adminRole: "ECONOMY" });
     const cup = await prisma.tournament.create({
       data: { name: "Alpha Weekend Cup", status: "OPEN", format: "SINGLE_ELIM", createdById: admin.id },
@@ -101,8 +101,8 @@ describe("GET /api/admin/search", () => {
 
   it("respects the 6/4/4 caps even when more than that many rows match", async () => {
     const app = await buildTestApp();
-    const support = await seedUser({ adminRole: "SUPPORT" });
-    const cookie = authFor({ sub: support.id, adminRole: "SUPPORT" });
+    const support = await seedUser({ adminRole: "ECONOMY" });
+    const cookie = authFor({ sub: support.id, adminRole: "ECONOMY" });
     const admin = await seedUser({ adminRole: "ECONOMY" });
 
     for (let i = 0; i < 8; i++) await seedUser({ displayName: `Zeta Player ${i}` });
@@ -115,6 +115,21 @@ describe("GET /api/admin/search", () => {
     expect(players.length).toBe(6);
     expect(guilds.length).toBe(4);
     expect(cups.length).toBe(4);
+    await app.close();
+  });
+
+  it("filters result categories to the admin's authorized sections", async () => {
+    const app = await buildTestApp();
+    const support = await seedUser({ adminRole: "SUPPORT" });
+    await seedUser({ displayName: "Scope Player" });
+    await prisma.guild.create({ data: { name: "Scope Guild", tag: "#SRCHSCOPE" } });
+    const creator = await seedUser({ adminRole: "ECONOMY" });
+    await prisma.tournament.create({ data: { name: "Scope Cup", status: "DRAFT", format: "SINGLE_ELIM", createdById: creator.id } });
+    const res = await app.inject({ method: "GET", url: "/api/admin/search?q=scope", headers: { cookie: authFor({ sub: support.id, adminRole: "SUPPORT" }) } });
+    expect(res.statusCode).toBe(200);
+    expect(res.json().data.players).toHaveLength(1);
+    expect(res.json().data.guilds).toEqual([]);
+    expect(res.json().data.cups).toEqual([]);
     await app.close();
   });
 });

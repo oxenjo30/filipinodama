@@ -226,7 +226,8 @@ export function StoreCatalog() {
       {/* filters */}
       <div className="row" style={{ margin: "4px 0 14px" }}>
         <input
-          className="input"
+          className="input admin-search-input"
+          aria-label="Search store items"
           style={{ maxWidth: 220 }}
           placeholder="Search name or id"
           value={q}

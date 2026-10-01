@@ -39,14 +39,14 @@ export function Overview() {
     <>
       {/* KPI cards — real counts; each tile's trend is a real prior-window delta.
           The one metric with no data source (Revenue) is honestly labeled instead. */}
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 14 }}>
+      <div className="admin-kpi-grid">
         <Card label="Total Players" value={d.totalPlayers.toLocaleString()} delta={delta(d.totalPlayers, d.totalPlayersPrev)} deltaCaption="vs last wk" />
         <Card label="Active (7d)" value={d.activePlayers.toLocaleString()} delta={delta(d.activePlayers, d.activePlayersPrev)} deltaCaption="vs prior 7d" />
         <Card label="Matches (all-time)" value={d.matchesTotal.toLocaleString()} delta={delta(d.matches7d, d.matchesPrev7d)} deltaCaption="7d vs prior 7d" />
         <Card label="Revenue" value="—" sub="needs analytics pipeline" muted />
       </div>
 
-      <div className="fd-2col chart" style={{ marginTop: 14 }}>
+      <div className="admin-split-grid chart" style={{ marginTop: 14 }}>
         {/* Matches per day — real */}
         <div className="acard" style={{ padding: 20 }}>
           <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between" }}>
@@ -57,7 +57,7 @@ export function Overview() {
             {d.matchesPerDay.map((b, i) => (
               <div key={i} style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", gap: 8, height: "100%", justifyContent: "flex-end" }}>
                 <div style={{ font: "600 10px var(--mono)", color: "var(--dim)" }}>{b.count}</div>
-                <div style={{ width: "100%", borderRadius: "6px 6px 0 0", background: "linear-gradient(180deg,#f0cf72,#c99a2e)", height: `${Math.max(2, (b.count / maxMatch) * 100)}%` }} />
+                <div style={{ width: "100%", borderRadius: "6px 6px 0 0", background: "linear-gradient(180deg,#8660b6,#69419d)", height: `${Math.max(2, (b.count / maxMatch) * 100)}%` }} />
                 <div style={{ font: "600 10px var(--sans)", color: "var(--dim-2)" }}>{b.day}</div>
               </div>
             ))}
@@ -77,7 +77,7 @@ export function Overview() {
         </div>
       </div>
 
-      <div className="fd-2col" style={{ marginTop: 14 }}>
+      <div className="admin-split-grid" style={{ marginTop: 14 }}>
         {/* Economy health — real faucet vs sink from the ledger */}
         <div className="acard" style={{ padding: 20 }}>
           <div style={{ font: "700 13px var(--sans)", color: "var(--ink-2)" }}>

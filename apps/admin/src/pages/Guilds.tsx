@@ -85,8 +85,7 @@ export function GuildsPage() {
       setSelId(openId);
       setSearchParams((p) => { p.delete("open"); return p; }, { replace: true });
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [searchParams, setSearchParams]);
 
   const load = (query: string) => {
     setLoading(true);
@@ -204,8 +203,9 @@ export function GuildsPage() {
 
       <div className="row" style={{ marginBottom: 12 }}>
         <input
-          className="input"
+          className="input admin-search-input"
           style={{ maxWidth: 340 }}
+          aria-label="Search guilds"
           placeholder="Search guilds by name or tag…"
           value={q}
           onChange={(e) => setQ(e.target.value)}
