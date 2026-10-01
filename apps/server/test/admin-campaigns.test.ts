@@ -1,6 +1,7 @@
 import { describe, it, expect, afterEach, afterAll } from "vitest";
 import { prisma } from "../src/db/client.js";
 import { buildTestApp, seedUser, authFor, truncateAll } from "./helpers.js";
+import { segmentWhere } from "../src/modules/admin-campaigns.js";
 
 // Clean up Campaign + Notification rows THIS file creates, in addition to
 // truncateAll()'s users/Report/AuditLog/etc — otherwise a leftover
@@ -68,13 +69,13 @@ describe("campaign channel/schedule/status", () => {
       method: "POST",
       url: "/api/admin/campaigns",
       headers: { cookie },
-      payload: { title: "Draft one", body: "wip", segment: "all", reason: "planning", action: "draft", channel: "email" },
+      payload: { title: "Draft one", body: "wip", segment: "all", reason: "planning", action: "draft", channel: "in-app" },
     });
     expect(res.statusCode).toBe(200);
     expect(res.json().data.status).toBe("draft");
     const camp = await prisma.campaign.findFirst({ where: { title: "Draft one" } });
     expect(camp!.status).toBe("draft");
-    expect(camp!.channel).toBe("email");
+    expect(camp!.channel).toBe("in-app");
     expect(camp!.reach).toBe(0);
     expect(camp!.scheduledFor).toBeNull();
     expect(await prisma.notification.count({ where: { title: "Draft one" } })).toBe(0);
@@ -91,7 +92,7 @@ describe("campaign channel/schedule/status", () => {
       method: "POST",
       url: "/api/admin/campaigns",
       headers: { cookie },
-      payload: { title: "Sched", body: "later", segment: "all", reason: "promo", action: "schedule", channel: "push" },
+      payload: { title: "Sched", body: "later", segment: "all", reason: "promo", action: "schedule", channel: "in-app" },
     });
     expect(missing.statusCode).toBe(400);
     expect(missing.json().error.code).toBe("SCHEDULE_REQUIRED");
@@ -100,13 +101,13 @@ describe("campaign channel/schedule/status", () => {
       method: "POST",
       url: "/api/admin/campaigns",
       headers: { cookie },
-      payload: { title: "Sched", body: "later", segment: "all", reason: "promo", action: "schedule", channel: "push", scheduledFor: when },
+      payload: { title: "Sched", body: "later", segment: "all", reason: "promo", action: "schedule", channel: "in-app", scheduledFor: when },
     });
     expect(okRes.statusCode).toBe(200);
     expect(okRes.json().data.status).toBe("scheduled");
     const camp = await prisma.campaign.findFirst({ where: { title: "Sched" } });
     expect(camp!.status).toBe("scheduled");
-    expect(camp!.channel).toBe("push");
+    expect(camp!.channel).toBe("in-app");
     expect(camp!.scheduledFor!.toISOString()).toBe(when);
     expect(camp!.reach).toBe(0);
     expect(await prisma.notification.count({ where: { title: "Sched" } })).toBe(0);
@@ -149,12 +150,12 @@ describe("campaign channel/schedule/status", () => {
       method: "POST",
       url: "/api/admin/campaigns",
       headers: { cookie },
-      payload: { title: "GetMe", body: "x", segment: "all", reason: "r", action: "schedule", channel: "email", scheduledFor: when },
+      payload: { title: "GetMe", body: "x", segment: "all", reason: "r", action: "schedule", channel: "in-app", scheduledFor: when },
     });
     const list = await app.inject({ method: "GET", url: "/api/admin/campaigns", headers: { cookie } });
     expect(list.statusCode).toBe(200);
     const item = list.json().data.items.find((c: { title: string }) => c.title === "GetMe");
-    expect(item.channel).toBe("email");
+    expect(item.channel).toBe("in-app");
     expect(item.status).toBe("scheduled");
     expect(item.scheduledFor).toBe(when);
     await app.close();
@@ -176,6 +177,61 @@ describe("campaign channel/schedule/status", () => {
     const camp = await prisma.campaign.findFirst({ where: { title: "Legacy" } });
     expect(camp!.status).toBe("sent");
     expect(await prisma.notification.count({ where: { type: "announcement", title: "Legacy" } })).toBe(res.json().data.reach);
+    await app.close();
+  });
+
+  it.each(["push", "email"])("rejects unavailable %s delivery for every create action", async (channel) => {
+    const app = await buildTestApp();
+    const eco = await seedUser({ adminRole: "ECONOMY" });
+    const cookie = authFor({ sub: eco.id, adminRole: "ECONOMY" });
+    for (const action of ["draft", "send", "schedule"] as const) {
+      const res = await app.inject({
+        method: "POST",
+        url: "/api/admin/campaigns",
+        headers: { cookie },
+        payload: { title: "Unavailable", body: "x", segment: "all", reason: "test", action, channel, ...(action === "schedule" ? { scheduledFor: new Date(Date.now() + 60_000).toISOString() } : {}) },
+      });
+      expect(res.statusCode).toBe(400);
+      expect(res.json().error.code).toBe("CHANNEL_UNAVAILABLE");
+    }
+    expect(await prisma.campaign.count({ where: { title: "Unavailable" } })).toBe(0);
+    expect(await prisma.notification.count({ where: { title: "Unavailable" } })).toBe(0);
+    await app.close();
+  });
+});
+
+describe("campaign inactivity audiences", () => {
+  it("uses deterministic, gap-free 7/30/90-day boundaries and keeps preview aligned", async () => {
+    const app = await buildTestApp();
+    const now = new Date();
+    const eco = await seedUser({ adminRole: "ECONOMY" });
+    const cookie = authFor({ sub: eco.id, adminRole: "ECONOMY" });
+    const at7 = await seedUser();
+    const at30 = await seedUser();
+    const older30 = await seedUser();
+    const at90 = await seedUser();
+    const older90 = await seedUser();
+    const day = 86_400_000;
+    await Promise.all([
+      prisma.user.update({ where: { id: at7.id }, data: { lastSeenAt: new Date(now.getTime() - 7 * day) } }),
+      prisma.user.update({ where: { id: at30.id }, data: { lastSeenAt: new Date(now.getTime() - 30 * day) } }),
+      prisma.user.update({ where: { id: older30.id }, data: { lastSeenAt: new Date(now.getTime() - 30 * day - 1) } }),
+      prisma.user.update({ where: { id: at90.id }, data: { lastSeenAt: new Date(now.getTime() - 90 * day) } }),
+      prisma.user.update({ where: { id: older90.id }, data: { lastSeenAt: new Date(now.getTime() - 90 * day - 1) } }),
+    ]);
+    const firstWindow = (await prisma.user.findMany({ where: segmentWhere("inactive7to30d", now), select: { id: true } })).map((u) => u.id);
+    const secondWindow = (await prisma.user.findMany({ where: segmentWhere("inactive30to90d", now), select: { id: true } })).map((u) => u.id);
+    const activeWindow = (await prisma.user.findMany({ where: segmentWhere("active7d", now), select: { id: true } })).map((u) => u.id);
+    expect(activeWindow).toContain(at7.id);
+    expect(firstWindow).toContain(at30.id);
+    for (const id of [at7.id, older30.id, at90.id, older90.id]) expect(firstWindow).not.toContain(id);
+    expect(secondWindow).toEqual(expect.arrayContaining([older30.id, at90.id]));
+    for (const id of [at30.id, older90.id]) expect(secondWindow).not.toContain(id);
+    expect(activeWindow.filter((id) => firstWindow.includes(id) || secondWindow.includes(id))).toEqual([]);
+    expect(firstWindow.filter((id) => secondWindow.includes(id))).toEqual([]);
+    const preview = await app.inject({ method: "POST", url: "/api/admin/campaigns/preview", headers: { cookie }, payload: { segment: "inactive7to30d" } });
+    expect(preview.statusCode).toBe(200);
+    expect(preview.json().data.count).toBe(1);
     await app.close();
   });
 });

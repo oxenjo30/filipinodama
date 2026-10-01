@@ -20,6 +20,8 @@ type Campaign = {
 const SEGMENTS: { value: string; label: string }[] = [
   { value: "all", label: "All players" },
   { value: "active7d", label: "Active (7d)" },
+  { value: "inactive7to30d", label: "Inactive 7–30 days" },
+  { value: "inactive30to90d", label: "Inactive 30–90 days" },
   ...RANK_TIERS.map((t) => ({ value: `rank:${t.key}`, label: t.label })),
 ];
 const SEGMENT_LABEL: Record<string, string> = Object.fromEntries(SEGMENTS.map((s) => [s.value, s.label]));
@@ -59,7 +61,7 @@ export function Campaigns() {
   useEffect(load, []);
 
   const mutate = useAdminMutation();
-  const [channel, setChannel] = useState<"push" | "email" | "in-app">("push");
+  const [channel, setChannel] = useState<"push" | "email" | "in-app">("in-app");
   const [segment, setSegment] = useState(SEGMENTS[0]!.value);
   const [title, setTitle] = useState("");
   const [body, setBody] = useState("");
@@ -117,7 +119,7 @@ export function Campaigns() {
             <div>
               <div style={{ font: "700 15px var(--sans)", color: "var(--ink-2)" }}>Compose campaign</div>
               <div style={{ marginTop: 5, font: "500 12px var(--sans)", color: "var(--dim)" }}>
-                Reach players through push, email or in-app messages. Sends land in their Notifications center.
+                Send persisted inbox announcements to players' Notifications center.
               </div>
             </div>
 
@@ -128,10 +130,12 @@ export function Campaigns() {
                   <button
                     key={c.value}
                     type="button"
+                    disabled={c.value !== "in-app"}
+                    title={c.value === "in-app" ? undefined : `${c.label} delivery is not configured`}
                     className={`chip${channel === c.value ? " on" : ""}`}
                     onClick={() => setChannel(c.value)}
                   >
-                    {c.label}
+                    {c.label}{c.value === "in-app" ? "" : " · Not configured"}
                   </button>
                 ))}
               </div>
@@ -198,7 +202,7 @@ export function Campaigns() {
           {/* preview + reach */}
           <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
             <div className="acard" style={{ padding: "16px 18px" }}>
-              <div className="field" style={{ marginBottom: 0 }}><label>Estimated reach · {CHANNEL_LABEL[channel]}</label></div>
+              <div className="field" style={{ marginBottom: 0 }}><label>Persisted inbox reach · {CHANNEL_LABEL[channel]}</label></div>
               <div className="mono" style={{ font: "800 30px var(--mono)", color: "var(--green-lt)", marginTop: 4 }}>
                 {previewing ? "…" : reach !== null ? reach.toLocaleString() : "—"}
               </div>

@@ -5,6 +5,7 @@ import { prisma } from "../db/client.js";
 import { ok } from "../lib/errors.js";
 import { requireAdmin } from "../auth/guards.js";
 import { RANK_TIERS } from "@dama/shared";
+import { humanMatchmakingWhere, humanVsBotMatchmakingWhere } from "./admin-matchmaking.js";
 
 /**
  * Analytics deep-dive — /api/admin/analytics. READ-ONLY: every field here is a
@@ -61,22 +62,8 @@ export async function adminAnalyticsRoutes(app: FastifyInstance) {
     const days = WINDOW_DAYS[window];
     const now = new Date();
     const since = new Date(now.getTime() - days * DAY_MS);
-    const matchmakingBase = {
-      origin: "MATCHMAKING",
-      startedAt: { gte: since },
-    } satisfies Prisma.MatchWhereInput;
-    const humanVsHuman = {
-      ...matchmakingBase,
-      red: { is: { isBot: false } },
-      blue: { is: { isBot: false } },
-    } satisfies Prisma.MatchWhereInput;
-    const humanVsBot = {
-      ...matchmakingBase,
-      OR: [
-        { red: { is: { isBot: false } }, blue: { is: { isBot: true } } },
-        { red: { is: { isBot: true } }, blue: { is: { isBot: false } } },
-      ],
-    } satisfies Prisma.MatchWhereInput;
+    const humanVsHuman = humanMatchmakingWhere({ since, until: now });
+    const humanVsBot = humanVsBotMatchmakingWhere({ since, until: now });
 
     const [
       totalPlayers,
@@ -390,6 +377,7 @@ export async function adminAnalyticsRoutes(app: FastifyInstance) {
     return ok({
       window,
       days,
+      timeWindow: { since: since.toISOString(), until: now.toISOString() },
       kpis: {
         totalPlayers,
         newPlayers,
@@ -414,6 +402,115 @@ export async function adminAnalyticsRoutes(app: FastifyInstance) {
       goldByCategory,
       retention,
       retentionTracked,
+    });
+  });
+
+  app.get("/admin/analytics/matchmaking-matches", { preHandler: requireAdmin("ECONOMY") }, async (req) => {
+    const query = z.object({
+      window: z.enum(["7d", "30d", "90d"]).default("30d"),
+      mode: z.enum(["CASUAL", "RANKED"]).default("RANKED"),
+      page: z.coerce.number().int().min(1).max(10_000).default(1),
+      limit: z.coerce.number().int().min(1).max(100).default(25),
+      completion: z.enum(["all", "completed", "unfinished"]).default("all"),
+      outcome: z.enum(["all", "red", "blue", "draw", "unfinished"]).default("all"),
+      player: z.string().trim().min(1).max(100).optional(),
+      since: z.string().datetime({ offset: true }).optional(),
+      until: z.string().datetime({ offset: true }).optional(),
+      startedFrom: z.string().datetime({ offset: true }).optional(),
+      startedTo: z.string().datetime({ offset: true }).optional(),
+    }).parse(req.query);
+
+    const capturedUntil = new Date();
+    const until = query.until ? new Date(query.until) : capturedUntil;
+    if (until.getTime() > capturedUntil.getTime()) {
+      throw new z.ZodError([{ code: "custom", path: ["until"], message: "until must not be in the future" }]);
+    }
+    const since = query.since ? new Date(query.since) : new Date(until.getTime() - WINDOW_DAYS[query.window] * DAY_MS);
+    if (since.getTime() >= until.getTime()) {
+      throw new z.ZodError([{ code: "custom", path: ["since"], message: "since must be before until" }]);
+    }
+    if (until.getTime() - since.getTime() > WINDOW_DAYS["90d"] * DAY_MS) {
+      throw new z.ZodError([{ code: "custom", path: ["since"], message: "time window must not exceed 90 days" }]);
+    }
+    const requestedFrom = query.startedFrom ? new Date(query.startedFrom) : null;
+    const requestedTo = query.startedTo ? new Date(query.startedTo) : null;
+    if (requestedFrom && requestedTo && requestedFrom.getTime() > requestedTo.getTime()) {
+      throw new z.ZodError([{ code: "custom", path: ["startedFrom"], message: "startedFrom must not be after startedTo" }]);
+    }
+    if (requestedFrom && (requestedFrom < since || requestedFrom > until)) {
+      throw new z.ZodError([{ code: "custom", path: ["startedFrom"], message: "startedFrom must be inside the captured time window" }]);
+    }
+    if (requestedTo && (requestedTo < since || requestedTo > until)) {
+      throw new z.ZodError([{ code: "custom", path: ["startedTo"], message: "startedTo must be inside the captured time window" }]);
+    }
+    const effectiveFrom = requestedFrom ?? since;
+    const effectiveTo = requestedTo ?? until;
+
+    const where = humanMatchmakingWhere({ since, until, mode: query.mode });
+    const and: Prisma.MatchWhereInput[] = [];
+    and.push({ startedAt: { gte: effectiveFrom, lte: effectiveTo } });
+    if (query.completion === "completed") and.push({ endedAt: { not: null } });
+    if (query.completion === "unfinished") and.push({ endedAt: null });
+    if (query.outcome === "unfinished") and.push({ endedAt: null });
+    else if (query.outcome !== "all") and.push({ endedAt: { not: null }, winner: query.outcome });
+    if (query.player) {
+      const player = query.player;
+      const identity: Prisma.UserWhereInput = {
+        OR: [
+          { id: player },
+          { username: { contains: player, mode: "insensitive" } },
+          { displayName: { contains: player, mode: "insensitive" } },
+          { tag: { contains: player, mode: "insensitive" } },
+        ],
+      };
+      and.push({ OR: [{ red: { is: identity } }, { blue: { is: identity } }] });
+    }
+    if (and.length) where.AND = and;
+
+    const [total, matches] = await Promise.all([
+      prisma.match.count({ where }),
+      prisma.match.findMany({
+        where,
+        select: {
+          id: true, mode: true, startedAt: true, endedAt: true, winner: true, reason: true,
+          redTrophyDelta: true, blueTrophyDelta: true,
+          red: { select: { id: true, username: true, displayName: true, tag: true, deletedAt: true } },
+          blue: { select: { id: true, username: true, displayName: true, tag: true, deletedAt: true } },
+        },
+        orderBy: [{ startedAt: "desc" }, { id: "desc" }],
+        skip: (query.page - 1) * query.limit,
+        take: query.limit,
+      }),
+    ]);
+
+    return ok({
+      mode: query.mode,
+      timeWindow: { since: since.toISOString(), until: until.toISOString() },
+      filters: {
+        completion: query.completion,
+        outcome: query.outcome,
+        player: query.player ?? "",
+        startedFrom: query.startedFrom ?? "",
+        startedTo: query.startedTo ?? "",
+      },
+      page: query.page,
+      limit: query.limit,
+      total,
+      totalPages: Math.ceil(total / query.limit),
+      items: matches.map((match) => ({
+        id: match.id,
+        mode: match.mode,
+        red: { id: match.red!.id, username: match.red!.username, displayName: match.red!.displayName, tag: match.red!.tag, deleted: match.red!.deletedAt !== null },
+        blue: { id: match.blue!.id, username: match.blue!.username, displayName: match.blue!.displayName, tag: match.blue!.tag, deleted: match.blue!.deletedAt !== null },
+        startedAt: match.startedAt.toISOString(),
+        endedAt: match.endedAt?.toISOString() ?? null,
+        durationMs: match.endedAt ? Math.max(0, match.endedAt.getTime() - match.startedAt.getTime()) : null,
+        outcome: match.endedAt ? (match.winner === "red" || match.winner === "blue" || match.winner === "draw" ? match.winner : "unknown") : "unfinished",
+        completion: match.endedAt ? "completed" : "unfinished",
+        reason: match.reason,
+        redTrophyDelta: match.redTrophyDelta,
+        blueTrophyDelta: match.blueTrophyDelta,
+      })),
     });
   });
 }

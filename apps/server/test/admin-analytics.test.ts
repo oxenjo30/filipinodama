@@ -58,6 +58,8 @@ describe("admin-analytics RBAC", () => {
     const { data } = res.json();
     expect(data).toHaveProperty("window");
     expect(data).toHaveProperty("days");
+    expect(data).toHaveProperty("timeWindow");
+    expect(new Date(data.timeWindow.since).getTime()).toBeLessThan(new Date(data.timeWindow.until).getTime());
     expect(data).toHaveProperty("kpis");
     expect(data).toHaveProperty("newPlayersPerDay");
     expect(data).toHaveProperty("activePerDay");

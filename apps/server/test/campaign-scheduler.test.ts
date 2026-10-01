@@ -105,4 +105,17 @@ describe("campaign-scheduler", () => {
     // failed one should not be left claimed-forever as "sending" — and must not be "sent"
     expect(emptyAfter!.status).not.toBe("sent");
   });
+
+  it("fails a historical scheduled campaign whose delivery channel is unavailable", async () => {
+    const admin = await seedUser({ adminRole: "ECONOMY" });
+    await seedUser();
+    const camp = await prisma.campaign.create({
+      data: { title: "Old push", body: "body", segment: "all", status: "scheduled", channel: "push", scheduledFor: new Date(Date.now() - 60_000), reach: 0, sentById: admin.id, sentByName: "Admin#1000" },
+    });
+
+    await runDueCampaigns(new Date());
+
+    expect((await prisma.campaign.findUnique({ where: { id: camp.id } }))!.status).toBe("failed");
+    expect(await prisma.notification.count({ where: { title: "Old push" } })).toBe(0);
+  });
 });

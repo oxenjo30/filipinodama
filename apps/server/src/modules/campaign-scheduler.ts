@@ -1,6 +1,6 @@
 import { prisma } from "../db/client.js";
 import { audit } from "../lib/audit.js";
-import { fanOutNotifications } from "./admin-campaigns.js";
+import { fanOutNotifications, requireAvailableChannel } from "./admin-campaigns.js";
 
 /**
  * Due-campaign poller — the server-side half of the admin "Schedule" button.
@@ -44,6 +44,10 @@ async function runOne(id: string): Promise<void> {
   if (!camp) return;
 
   try {
+    // Historical rows can contain channels that were previously accepted as
+    // metadata but never had a real provider. Never misdeliver those as inbox
+    // announcements; mark them failed through the existing failure path.
+    requireAvailableChannel(camp.channel);
     const reach = await fanOutNotifications(camp.segment, camp.title, camp.body);
     await prisma.campaign.update({ where: { id }, data: { status: "sent", reach } });
     // sentById can be null if the scheduling admin's account was later deleted

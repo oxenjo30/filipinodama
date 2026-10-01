@@ -20,19 +20,36 @@ import { audit } from "../lib/audit.js";
 const segmentSchema = z.union([
   z.literal("all"),
   z.literal("active7d"),
+  z.literal("inactive7to30d"),
+  z.literal("inactive30to90d"),
   z.string().startsWith("rank:").transform((s) => s.slice(5)).pipe(rankTierSchema).transform((k) => `rank:${k}` as const),
 ]);
 
-export function segmentWhere(segment: string): Prisma.UserWhereInput {
+export function segmentWhere(segment: string, now: Date = new Date()): Prisma.UserWhereInput {
   const base: Prisma.UserWhereInput = { isBot: false, isGuest: false, deletedAt: null };
   if (segment === "all") return base;
-  if (segment === "active7d") return { ...base, lastSeenAt: { gte: new Date(Date.now() - 7 * 86_400_000) } };
+  const day = 86_400_000;
+  if (segment === "active7d") return { ...base, lastSeenAt: { gte: new Date(now.getTime() - 7 * day) } };
+  if (segment === "inactive7to30d") {
+    // User.lastSeenAt is non-nullable in Prisma; these bounds therefore exclude
+    // null at the schema/query level as well as defining the audience window.
+    return { ...base, lastSeenAt: { lt: new Date(now.getTime() - 7 * day), gte: new Date(now.getTime() - 30 * day) } };
+  }
+  if (segment === "inactive30to90d") {
+    return { ...base, lastSeenAt: { lt: new Date(now.getTime() - 30 * day), gte: new Date(now.getTime() - 90 * day) } };
+  }
   return { ...base, rankTier: segment.slice(5) };
 }
 
 const CHUNK = 1000;
 
 const channelSchema = z.enum(["push", "email", "in-app"]);
+export function requireAvailableChannel(channel: string): "in-app" {
+  if (channel !== "in-app") {
+    throw err.badRequest("CHANNEL_UNAVAILABLE", "Only in-app inbox delivery is configured");
+  }
+  return channel;
+}
 const contentSchema = z.object({
   title: z.string().trim().min(1).max(120),
   body: z.string().trim().min(1).max(1000),
@@ -86,13 +103,14 @@ export async function adminCampaignsRoutes(app: FastifyInstance) {
   // Unified create endpoint: draft | schedule | send.
   app.post("/admin/campaigns", { preHandler: requireAdmin("ECONOMY") }, async (req) => {
     const content = contentSchema.parse(req.body);
-    const { action, channel, scheduledFor } = z
+    const { action, channel: requestedChannel, scheduledFor } = z
       .object({
         action: z.enum(["draft", "schedule", "send"]).default("send"),
         channel: channelSchema.default("in-app"),
         scheduledFor: z.string().datetime().optional(),
       })
       .parse(req.body);
+    const channel = requireAvailableChannel(requestedChannel);
     const seg = parseSegment(req.body);
     const actor = await prisma.user.findUnique({ where: { id: req.userId! }, select: { username: true, tag: true } });
     const sentByName = `${actor!.username}${actor!.tag}`;

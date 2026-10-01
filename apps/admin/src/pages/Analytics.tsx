@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { api } from "../lib/api";
+import { MatchmakingMatches, type MatchCompletionFilter } from "../components/MatchmakingMatches";
 
 type Window = "7d" | "30d" | "90d";
 
@@ -48,6 +49,7 @@ type HumanMatchmaking = {
 type AnalyticsData = {
   window: Window;
   days: number;
+  timeWindow?: { since: string; until: string };
   kpis: Kpis;
   newPlayersPerDay: DayBucket[];
   activePerDay: DayBucket[];
@@ -84,6 +86,7 @@ export function Analytics() {
   const [w, setW] = useState<Window>("30d");
   const [d, setD] = useState<AnalyticsData | null>(null);
   const [err, setErr] = useState(false);
+  const [matches, setMatches] = useState<{ completion: MatchCompletionFilter; timeWindow: { since: string; until: string } } | null>(null);
 
   useEffect(() => {
     setD(null);
@@ -114,13 +117,25 @@ export function Analytics() {
       ) : !d ? (
         <div className="dim" style={{ padding: 24 }}>Loading…</div>
       ) : (
-        <AnalyticsBody d={d} />
+        <AnalyticsBody
+          d={d}
+          onOpenMatches={(completion) => {
+            if (d.timeWindow) setMatches({ completion, timeWindow: d.timeWindow });
+          }}
+        />
       )}
+      {matches ? (
+        <MatchmakingMatches
+          initialCompletion={matches.completion}
+          timeWindow={matches.timeWindow}
+          onClose={() => setMatches(null)}
+        />
+      ) : null}
     </>
   );
 }
 
-function AnalyticsBody({ d }: { d: AnalyticsData }) {
+function AnalyticsBody({ d, onOpenMatches }: { d: AnalyticsData; onOpenMatches: (completion: MatchCompletionFilter) => void }) {
   // Keep the page usable during a rolling deployment where the new admin bundle
   // may briefly reach an older server instance without this response field.
   const humanMatchmaking = d.humanMatchmaking ?? {
@@ -267,8 +282,8 @@ function AnalyticsBody({ d }: { d: AnalyticsData }) {
               {humanMatchmaking.byMode.map((m) => (
                 <tr key={m.mode} className="arow">
                   <td>{m.mode === "CASUAL" ? "Casual" : "Ranked"}</td>
-                  <td className="num mono">{m.humanVsHumanStarted.toLocaleString()}</td>
-                  <td className="num mono">{m.humanVsHumanCompleted.toLocaleString()}</td>
+                  <td className="num mono">{m.mode === "RANKED" ? <button className="analytics-count-link" disabled={!d.timeWindow} onClick={() => onOpenMatches("all")} aria-label={`View ${m.humanVsHumanStarted.toLocaleString()} ranked matches started`}>{m.humanVsHumanStarted.toLocaleString()}</button> : m.humanVsHumanStarted.toLocaleString()}</td>
+                  <td className="num mono">{m.mode === "RANKED" ? <button className="analytics-count-link" disabled={!d.timeWindow} onClick={() => onOpenMatches("completed")} aria-label={`View ${m.humanVsHumanCompleted.toLocaleString()} ranked matches completed`}>{m.humanVsHumanCompleted.toLocaleString()}</button> : m.humanVsHumanCompleted.toLocaleString()}</td>
                   <td className="num mono">{m.humanVsBotStarted.toLocaleString()}</td>
                   <td className="num mono">{Math.round(m.completionRate * 100)}%</td>
                 </tr>
