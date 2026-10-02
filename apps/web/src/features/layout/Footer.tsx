@@ -6,9 +6,9 @@ import { openConsentSettings } from "../consent/consentTracking";
  * Footer — site-wide footer, reproduced from the handoff prototype
  * (handoff/FilipinoDama Royal.dc.html footer, lines 2219-2238).
  *
- * Three rows: tagline + copyright, a hairline divider, the legal/contact nav
- * + "Rated E for Everyone", and the external approval badge. Rendered by
- * AppLayout after <main>. Legal links navigate to the dedicated legal routes.
+ * Two rows: tagline + copyright and approval badge, a hairline divider, then
+ * the legal/contact nav + "Rated E for Everyone". Rendered by AppLayout after
+ * <main>. Legal links navigate to the dedicated legal routes.
  *
  * The prototype's `style-hover` attribute has no React inline-style equivalent,
  * so the legal-link hover color is done with local hover state (no CSS class,
@@ -54,8 +54,23 @@ export function Footer() {
           <div style={{ font: "600 12px Cinzel,serif", letterSpacing: 3, color: "var(--gold)" }}>
             STRATEGY · HERITAGE · VICTORY
           </div>
-          <div style={{ font: "500 12px Inter", color: "var(--ink2)" }}>
-            © {new Date().getFullYear()} filipinodama.com
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 16, flexWrap: "wrap" }}>
+            <div style={{ font: "500 12px Inter", color: "var(--ink2)" }}>
+              © {new Date().getFullYear()} filipinodama.com
+            </div>
+            <a
+              href="https://pixelpicked.com/game/428K9x6LEAj/dama-royal-filipino-dama/"
+              target="_blank"
+              rel="noopener"
+            >
+              <img
+                src="https://api.pixelpicked.com/api/badges/428K9x6LEAj/live.png?theme=dark"
+                width={250}
+                height={54}
+                alt="Approved on PixelPicked"
+                style={{ display: "block", maxWidth: "100%", height: "auto" }}
+              />
+            </a>
           </div>
         </div>
 
@@ -107,21 +122,6 @@ export function Footer() {
           </div>
         </div>
 
-        <div style={{ display: "flex", justifyContent: "center" }}>
-          <a
-            href="https://pixelpicked.com/game/428K9x6LEAj/dama-royal-filipino-dama/"
-            target="_blank"
-            rel="noopener"
-          >
-            <img
-              src="https://api.pixelpicked.com/api/badges/428K9x6LEAj/live.png?theme=dark"
-              width={250}
-              height={54}
-              alt="Approved on PixelPicked"
-              style={{ display: "block", maxWidth: "100%", height: "auto" }}
-            />
-          </a>
-        </div>
       </div>
     </footer>
   );
